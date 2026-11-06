@@ -112,7 +112,7 @@ class LyricsHelper
             // getAsync, not the blocking get operator: that one answers with the fallback when the
             // first DataStore snapshot has not landed and the caller is on the main thread, and this
             // is reachable from the lyrics panel's composition effect.
-            val prioritizeWordSynced = context.dataStore.getAsync(PrioritizeWordSyncedLyricsKey) ?: true
+            val prioritizeWordSynced = context.dataStore.getAsync(PrioritizeWordSyncedLyricsKey) ?: false
             if (!LyricsUtils.needsWordSyncedUpgrade(prioritizeWordSynced, stored)) return false
             val storedLyrics = stored?.lyrics ?: return false
             return synchronized(wordSyncedUpgradeAttempts) { wordSyncedUpgradeAttempts[mediaId] != storedLyrics }
@@ -161,7 +161,7 @@ class LyricsHelper
             // returning the old line-synced/plain result and the word-synced lookup
             // would never run.
             val prioritizeWordSynced =
-                !preferredProviderOnly && (context.dataStore.getAsync(PrioritizeWordSyncedLyricsKey) ?: true)
+                !preferredProviderOnly && (context.dataStore.getAsync(PrioritizeWordSyncedLyricsKey) ?: false)
 
             if (forceRefresh) {
                 invalidateCache(cacheKey)

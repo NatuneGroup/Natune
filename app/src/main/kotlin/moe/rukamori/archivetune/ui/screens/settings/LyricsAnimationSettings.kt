@@ -33,9 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
-import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
@@ -48,15 +46,8 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.rememberPreference
 import androidx.compose.foundation.layout.asPaddingValues
-
-internal fun lyricsAnimationDisabledReason(v2Selected: Boolean, animationsDisabled: Boolean, usesMotion: Boolean): Int? =
-    when {
-        !v2Selected -> R.string.lyrics_animation_style_v2_only
-        animationsDisabled && usesMotion -> R.string.settings_lyrics_motion_disabled
-        else -> null
-    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,18 +55,14 @@ fun LyricsAnimationSettings(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val prefs = rememberPreferenceSnapshot()
-    val (bounceFactor, onBounceFactorChange) = prefs.state(LyricsV2BounceFactorKey, defaultValue = 1f)
-    val (glowFactor, onGlowFactorChange) = prefs.state(LyricsV2GlowFactorKey, defaultValue = 1f)
-    val (fillTransitionWidth, onFillTransitionWidthChange) = prefs.state(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
-    val (lrcBounceEnabled, onLrcBounceEnabledChange) = prefs.state(LyricsV2LrcBounceEnabledKey, defaultValue = true)
-    val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = prefs.state(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
-    val (softWordReveal, onSoftWordRevealChange) = prefs.state(LyricsV2SoftWordRevealKey, defaultValue = true)
-    val (emphasizeLastWord, onEmphasizeLastWordChange) = prefs.state(LyricsV2EmphasizeLastWordKey, defaultValue = false)
-    val (interludeDots, onInterludeDotsChange) = prefs.state(LyricsV2InterludeDotsKey, defaultValue = true)
-    val v2Selected = prefs.current[LyricsModeKey] == "V2"
-    val motionReason = lyricsAnimationDisabledReason(v2Selected, LocalAnimationsDisabled.current, usesMotion = true)
-    val rendererReason = lyricsAnimationDisabledReason(v2Selected, LocalAnimationsDisabled.current, usesMotion = false)
+    val (bounceFactor, onBounceFactorChange) = rememberPreference(LyricsV2BounceFactorKey, defaultValue = 1f)
+    val (glowFactor, onGlowFactorChange) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
+    val (fillTransitionWidth, onFillTransitionWidthChange) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
+    val (lrcBounceEnabled, onLrcBounceEnabledChange) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
+    val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
+    val (softWordReveal, onSoftWordRevealChange) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
+    val (emphasizeLastWord, onEmphasizeLastWordChange) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
+    val (interludeDots, onInterludeDotsChange) = rememberPreference(LyricsV2InterludeDotsKey, defaultValue = true)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -119,18 +106,16 @@ fun LyricsAnimationSettings(
                         ),
                     ).padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
         ) {
-            PreferenceGroup(title = stringResource(R.string.settings_lyrics_tuning)) {
+            PreferenceGroup(title = "Animation Tuning") {
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_animation_style"),
-                        title = { Text(stringResource(R.string.settings_lyrics_line_bounce)) },
-                        description = stringResource(motionReason ?: R.string.settings_lyrics_line_bounce_desc),
-                        isEnabled = motionReason == null,
+                        title = { Text("Line Bounce Effect") },
+                        description = "Enable bounce animation for line-synced (LRC) lyrics",
                         icon = { Icon(painterResource(R.drawable.animation), null) },
                         trailingContent = {
                             Switch(
                                 checked = lrcBounceEnabled,
-                                enabled = motionReason == null,
                                 onCheckedChange = onLrcBounceEnabledChange,
                             )
                         },
@@ -139,15 +124,12 @@ fun LyricsAnimationSettings(
 
                 item {
                     PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_adaptive_scroll_spring"),
-                        title = { Text(stringResource(R.string.settings_lyrics_adaptive_scroll)) },
-                        description = stringResource(rendererReason ?: R.string.settings_lyrics_adaptive_scroll_desc),
-                        isEnabled = rendererReason == null,
+                        title = { Text("Adaptive Scroll Spring") },
+                        description = "Match scroll speed to the gap between lines (fast lyrics snap, slow lyrics glide)",
                         icon = { Icon(painterResource(R.drawable.animation), null) },
                         trailingContent = {
                             Switch(
                                 checked = adaptiveScrollSpring,
-                                enabled = rendererReason == null,
                                 onCheckedChange = onAdaptiveScrollSpringChange,
                             )
                         },
@@ -156,15 +138,12 @@ fun LyricsAnimationSettings(
 
                 item {
                     PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_soft_word_reveal"),
-                        title = { Text(stringResource(R.string.settings_lyrics_soft_reveal)) },
-                        description = stringResource(rendererReason ?: R.string.settings_lyrics_soft_reveal_desc),
-                        isEnabled = rendererReason == null,
+                        title = { Text("Soft Word Reveal") },
+                        description = "Feather the sung-word edge with a sliding gradient instead of a hard clip",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         trailingContent = {
                             Switch(
                                 checked = softWordReveal,
-                                enabled = rendererReason == null,
                                 onCheckedChange = onSoftWordRevealChange,
                             )
                         },
@@ -173,15 +152,12 @@ fun LyricsAnimationSettings(
 
                 item {
                     PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_emphasize_last_word"),
-                        title = { Text(stringResource(R.string.settings_lyrics_last_word)) },
-                        description = stringResource(motionReason ?: R.string.settings_lyrics_last_word_desc),
-                        isEnabled = motionReason == null,
+                        title = { Text("Last-Word Emphasize") },
+                        description = "Replay the final word of each line with a per-character glow and float (off by default)",
                         icon = { Icon(painterResource(R.drawable.animation), null) },
                         trailingContent = {
                             Switch(
                                 checked = emphasizeLastWord,
-                                enabled = motionReason == null,
                                 onCheckedChange = onEmphasizeLastWordChange,
                             )
                         },
@@ -190,15 +166,12 @@ fun LyricsAnimationSettings(
 
                 item {
                     PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_interlude_dots"),
-                        title = { Text(stringResource(R.string.settings_lyrics_interlude)) },
-                        description = stringResource(motionReason ?: R.string.settings_lyrics_interlude_desc),
-                        isEnabled = motionReason == null,
+                        title = { Text("Interlude Dots") },
+                        description = "Show breathing dots beside the note during instrumental breaks",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         trailingContent = {
                             Switch(
                                 checked = interludeDots,
-                                enabled = motionReason == null,
                                 onCheckedChange = onInterludeDotsChange,
                             )
                         },
@@ -209,15 +182,12 @@ fun LyricsAnimationSettings(
                     var bounceFactorDraft by remember(bounceFactor) { mutableFloatStateOf(bounceFactor) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_scale_animation"),
-                        title = { Text(stringResource(R.string.settings_lyrics_bounce_amplitude)) },
-                        description = motionReason?.let { stringResource(it) }
-                            ?: stringResource(R.string.settings_lyrics_bounce_amplitude_desc, (bounceFactorDraft * 100).toInt()),
-                        isEnabled = motionReason == null,
+                        title = { Text("Bounce Amplitude") },
+                        description = "Adjust the bounce effect when a word is sung (${(bounceFactorDraft * 100).toInt()}%)",
                         icon = { Icon(painterResource(R.drawable.animation), null) },
                         content = {
                             Slider(
                                 value = bounceFactorDraft,
-                                enabled = motionReason == null,
                                 onValueChange = { bounceFactorDraft = it },
                                 onValueChangeFinished = { onBounceFactorChange(bounceFactorDraft) },
                                 valueRange = 0f..2f,
@@ -230,15 +200,12 @@ fun LyricsAnimationSettings(
                     var glowFactorDraft by remember(glowFactor) { mutableFloatStateOf(glowFactor) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_glow_animation"),
-                        title = { Text(stringResource(R.string.settings_lyrics_glow)) },
-                        description = motionReason?.let { stringResource(it) }
-                            ?: stringResource(R.string.settings_lyrics_glow_desc, (glowFactorDraft * 100).toInt()),
-                        isEnabled = motionReason == null,
+                        title = { Text("Glow Intensity") },
+                        description = "Adjust the glow brightness of the sung word (${(glowFactorDraft * 100).toInt()}%)",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         content = {
                             Slider(
                                 value = glowFactorDraft,
-                                enabled = motionReason == null,
                                 onValueChange = { glowFactorDraft = it },
                                 onValueChangeFinished = { onGlowFactorChange(glowFactorDraft) },
                                 valueRange = 0f..2f,
@@ -251,15 +218,12 @@ fun LyricsAnimationSettings(
                     var fillTransitionWidthDraft by remember(fillTransitionWidth) { mutableFloatStateOf(fillTransitionWidth) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_fade_animation"),
-                        title = { Text(stringResource(R.string.settings_lyrics_fill)) },
-                        description = rendererReason?.let { stringResource(it) }
-                            ?: stringResource(R.string.settings_lyrics_fill_desc, fillTransitionWidthDraft.toInt()),
-                        isEnabled = rendererReason == null,
+                        title = { Text("Fill Transition Smoothness") },
+                        description = "Adjust the gradient edge width of the liquid fill effect (${fillTransitionWidthDraft.toInt()} dp)",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         content = {
                             Slider(
                                 value = fillTransitionWidthDraft,
-                                enabled = rendererReason == null,
                                 onValueChange = { fillTransitionWidthDraft = it },
                                 onValueChangeFinished = { onFillTransitionWidthChange(fillTransitionWidthDraft) },
                                 valueRange = 2f..24f,

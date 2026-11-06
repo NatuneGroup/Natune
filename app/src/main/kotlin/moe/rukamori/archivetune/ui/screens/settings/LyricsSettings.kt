@@ -501,6 +501,8 @@ internal fun PreferredLyricsProvider.displayName(): String =
         PreferredLyricsProvider.PAXSENIX_MUSIXMATCH -> "Paxsenix: Musixmatch"
         PreferredLyricsProvider.PAXSENIX_YOUTUBE -> "Paxsenix: YouTube"
         PreferredLyricsProvider.UNISON -> "Unison"
+        // Kept from the Natune data layer: the Lyprio provider still ships and is selectable, even
+        // though its dedicated toggle is not part of the ArchiveTune dev settings screen.
         PreferredLyricsProvider.LYPRIO -> "Lyprio"
         PreferredLyricsProvider.TIDAL -> "Tidal"
         PreferredLyricsProvider.DEEZER -> "Deezer"
