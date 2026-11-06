@@ -116,11 +116,14 @@ off). That is the only path that compiles and links both Swift sources and all t
 bridges into an `ArchiveTune.app`: it requires five object files, a defined text entry point
 per bridge and an `ArchiveTuneShared` Kotlin symbol in the executable. It is not on the
 pull-request trigger because the closure build alone measured 3 h 09 m on the device leg (run
-41735716057, job 126264425424) and an `actions/cache` entry written by one pull request is not
+41735716057, job 126264425424, GitHub-hosted `macos-26`) and an `actions/cache` entry written by one pull request is not
 readable from another, so a per-pull-request gate would need a closure cache produced on `dev`
 - a larger change than this workflow edit. The pull-request trigger therefore still stops at
 the framework link and the `swiftc -typecheck`, and the opt-in link has not run yet: the
 app-target link and the closure linkage through `Native.xcconfig` stay **UNVERIFIED**.
+Both paths now run on `blacksmith-12vcpu-macos-26`; the 45-minute default and 330-minute opt-in
+ceilings bound a run at 1,800 and 13,200 equivalent minutes respectively at the provider's 40x
+macOS multiplier. Xcode 26.4 selection and actual duration on that image remain unverified.
 The opt-in closure may restore the validated pinned-download cache. A per-platform
 dependency-prefix cache is deferred: the current evidence does not prove the Mach-O platform
 (device versus simulator) and every static-archive member, so the dependency build and portable

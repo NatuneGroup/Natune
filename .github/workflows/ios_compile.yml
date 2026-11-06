@@ -1,9 +1,10 @@
 name: iOS compile
 
-# Compiles the shared modules for the iOS simulator on a macOS runner. Linux skips these tasks because Apple
-# cinterop needs the Xcode toolchain, so this is the only compile signal for iosMain. It then links the static
-# simulator framework and type-checks the Swift app against it on an Xcode 26 SDK, which the iOS 26 glass and
-# lyric views need. Runs only when iOS-facing sources change, to keep macOS minutes bounded.
+# Compiles the shared modules for the iOS simulator on the organization's 12 vCPU Blacksmith macOS 26 runner.
+# Linux skips these tasks because Apple cinterop needs the Xcode toolchain, so this is the only compile signal
+# for iosMain. It then links the static simulator framework and type-checks the Swift app against it on an
+# Xcode 26 SDK, which the iOS 26 glass and lyric views need. Runs only when iOS-facing sources change, to keep
+# those billable macOS minutes bounded.
 on:
   pull_request:
     branches:
@@ -29,8 +30,9 @@ on:
     inputs:
       # The app target links a static FFmpeg/TDLib/OpenSSL closure built by scripts/build_ios_native_core.sh
       # (shared-data/build/ios-native/<platform>/lib). Only the release pipeline builds it, and its device leg
-      # took 3 h 09 m (run 41735716057, job 126264425424), so the pull-request path stops at the framework link
-      # and the Swift type-check. This input runs the real unsigned simulator app link on demand.
+      # took 3 h 09 m on the GitHub-hosted macos-26 image (run 41735716057, job 126264425424), so the pull-request
+      # path stops at the framework link and the Swift type-check. This input runs the real unsigned simulator
+      # app link on demand.
       ios_simulator_app:
         description: 'Build the native closure and link the unsigned simulator app target (hours, not minutes)'
         required: false
@@ -46,11 +48,16 @@ concurrency:
 
 jobs:
   ios-compile:
-    # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships Xcode 26.x
-    # (the Select step below pins /Applications/Xcode_26.4.app for the iOS 26 SDK APIs).
-    runs-on: macos-26
+    # Blacksmith's 12 vCPU macOS 26 image is Apple silicon and follows the macOS 26 runner image.
+    # setup-xcode must resolve 26.4 to /Applications/Xcode_26.4.app; that selection is unverified on
+    # the Blacksmith image until a run passes. At the provider's 40x macOS multiplier the 45-minute
+    # default ceiling below caps a trial at 1,800 equivalent minutes; the opt-in 330-minute app link
+    # is a 13,200-equivalent-minute cap.
+    runs-on: blacksmith-12vcpu-macos-26
     # The pull-request path finishes in minutes; only the on-demand app link carries the closure build's hours
-    # (the measured device leg was 3 h 09 m and the app build follows it), so the ceiling covers that whole run.
+    # (the GitHub-hosted macos-26 device baseline was 3 h 09 m and the app build follows it), so the ceiling
+    # covers that whole run. The 330-minute opt-in path needs explicit budget approval; the default 45-minute
+    # path is the bounded 1,800-equivalent-minute trial.
     timeout-minutes: ${{ inputs.ios_simulator_app && 330 || 45 }}
     env:
       # The job compiles only Kotlin/Native iOS targets; it never needs the Android SDK.
@@ -70,7 +77,8 @@ jobs:
 
       # The Liquid Glass and TextRenderer APIs exist only in the iOS 26 SDK. The native closure pins 26.4
       # and setup-xcode resolves exactly that release (26.4 -> /Applications/Xcode_26.4.app) — a newer
-      # 26.x is never substituted, matching the release pipeline's macOS jobs.
+      # 26.x is never substituted, matching the release pipeline's macOS jobs. The Blacksmith image has
+      # not been checked for that Xcode yet; the first approved run verifies the selection.
       - name: Select Xcode 26.4
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -201,10 +209,11 @@ jobs:
       # bridges only syntax-checked. That link needs the static FFmpeg/TDLib/OpenSSL closure from
       # scripts/build_ios_native_core.sh, because Native.xcconfig links shared-data/build/ios-native/$(PLATFORM_NAME)/lib
       # and a missing -l archive stops the linker. Only the release pipeline builds the closure (its device leg
-      # measured 3 h 09 m, run 41735716057 job 126264425424), and an actions/cache entry written by one pull request
-      # is not readable from another, so putting it on the default trigger would charge those hours to every pull
-      # request against a macOS runner. The default trigger therefore keeps the framework link and the type-check,
-      # and this input adds the complete unsigned simulator build on demand:
+      # measured 3 h 09 m on the GitHub-hosted macos-26 image, run 41735716057 job 126264425424), and an
+      # actions/cache entry written by one pull request is not readable from another, so putting it on the default
+      # trigger would charge those hours to every pull request against a 12 vCPU macOS runner. The default trigger
+      # therefore keeps the framework link and the type-check, and this input adds the complete unsigned simulator
+      # build on demand:
       #   gh workflow run ios_compile.yml --ref <branch> -f ios_simulator_app=true
       # It has not run yet, so it proves nothing until a run of that input passes.
       - name: Install the FFmpeg release-key prerequisite (macOS)
