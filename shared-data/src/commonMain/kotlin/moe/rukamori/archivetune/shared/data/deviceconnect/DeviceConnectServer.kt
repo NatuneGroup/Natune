@@ -19,7 +19,7 @@ class DeviceConnectServer(
 ) {
     private var server: EmbeddedServer<*, *>? = null
 
-    suspend fun start(): Int = withContext(Dispatchers.IO) {
+    suspend fun start(): Int = withContext(Dispatchers.Default) {
         check(server == null) { "Device Connect server already started" }
         val started = embeddedServer(CIO, port = 0, host = "0.0.0.0") {
             install(WebSockets) {

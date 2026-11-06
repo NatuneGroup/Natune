@@ -17,7 +17,7 @@ import platform.Foundation.NSNetService
 import platform.Foundation.NSNetServiceBrowser
 import platform.Foundation.NSNetServiceBrowserDelegateProtocol
 import platform.Foundation.NSNetServiceDelegateProtocol
-import platform.Foundation.NSObject
+import platform.darwin.NSObject
 import platform.Foundation.create
 import platform.Foundation.timeIntervalSince1970
 
@@ -31,7 +31,6 @@ class IosDeviceDiscovery : DeviceDiscovery {
     private var delegate: Delegate? = null
     private var listener: DeviceDiscovery.Listener? = null
     private var advertisement: DeviceAdvertisement? = null
-    private val names = mutableMapOf<String, String>()
 
     override suspend fun start(advertisement: DeviceAdvertisement, listener: DeviceDiscovery.Listener) {
         stop()
@@ -43,7 +42,7 @@ class IosDeviceDiscovery : DeviceDiscovery {
             DeviceConnectLimits.SERVICE_DOMAIN,
             DeviceConnectLimits.SERVICE_TYPE,
             "${advertisement.name}-${advertisement.deviceId.take(6)}",
-            advertisement.port.toLong(),
+            advertisement.port,
         )
         service.delegate = delegate
         service.setTXTRecordData(txtRecord(advertisement))
@@ -72,7 +71,6 @@ class IosDeviceDiscovery : DeviceDiscovery {
         delegate = null
         listener = null
         advertisement = null
-        names.clear()
     }
 
     internal fun publish(service: NSNetService) {
@@ -84,21 +82,15 @@ class IosDeviceDiscovery : DeviceDiscovery {
         if (id == advertisement?.deviceId) return
         val name = (dictionary["name"] as? NSData)?.toByteArray()?.decodeToString().orEmpty().ifBlank { service.name }
         val platform = DevicePlatform.fromWire((dictionary["platform"] as? NSData)?.toByteArray()?.decodeToString())
-        names[service.name] = id
         listener?.onFound(
             DiscoveredDevice(
                 deviceId = id,
                 name = name,
                 platform = platform,
-                endpoint = DeviceEndpoint(host, service.port.toInt()),
+                endpoint = DeviceEndpoint(host, service.port),
                 lastSeenEpochMs = (NSDate().timeIntervalSince1970 * 1000.0).toLong(),
             ),
         )
-    }
-
-    internal fun removed(serviceName: String) {
-        val id = names.remove(serviceName) ?: return
-        listener?.onLost(id)
     }
 
     internal fun failure(message: String) {
@@ -131,14 +123,6 @@ class IosDeviceDiscovery : DeviceDiscovery {
         ) {
             didFindService.delegate = this
             didFindService.resolveWithTimeout(5.0)
-        }
-
-        override fun netServiceBrowser(
-            browser: NSNetServiceBrowser,
-            didRemoveService: NSNetService,
-            moreComing: Boolean,
-        ) {
-            owner.removed(didRemoveService.name)
         }
 
     }
