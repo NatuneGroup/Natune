@@ -37,10 +37,9 @@ class DesktopYouTubeResolverTest {
         formats: String = CIPHERED_FORMAT,
     ): String {
         val reasonPart = reason?.let { ",\"reason\":\"$it\"" }.orEmpty()
-        val adaptive = formats.takeIf(String::isNotBlank)?.let { ",$it" }.orEmpty()
         return "{\"playabilityStatus\":{\"status\":\"$status\"$reasonPart}," +
             "\"videoDetails\":{\"title\":\"Song\",\"author\":\"Artist\",\"lengthSeconds\":\"180\"}," +
-            "\"streamingData\":{\"adaptiveFormats\":[$adaptive]}}"
+            "\"streamingData\":{\"adaptiveFormats\":[$formats]}}"
     }
 
     @Test
