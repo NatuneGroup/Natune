@@ -30,6 +30,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
+import moe.rukamori.archivetune.shared.data.provider.PoolResponse
 import moe.rukamori.archivetune.shared.data.stream.aes.Aes256Gcm
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.Sha256
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
@@ -135,8 +136,8 @@ internal class IosPlaybackPool(
         if (discoveredAtMs > 0L && nowMs() - discoveredAtMs < DISCOVERY_INTERVAL_MS) return discovered
         discoveredAtMs = nowMs()
         val body = fetch("/api/discovery/tidal")
-        if (body == null || body.first != 200 || !enabled()) return discovered
-        discovered = parseDiscoveredInstances(body.second).mapNotNull(::normalizeInstanceUrl).distinct()
+        if (body == null || body.status != 200 || !enabled()) return discovered
+        discovered = parseDiscoveredInstances(body.body).mapNotNull(::normalizeInstanceUrl).distinct()
         return discovered
     }
 
@@ -185,7 +186,10 @@ internal class IosPlaybackPool(
                                     contentType(ContentType.Application.Json)
                                     setBody(body)
                                 }
-                            reply.status.value to if (reply.status.value in 200..299) reply.bodyAsText() else ""
+                            PoolResponse(
+                                status = reply.status.value,
+                                body = if (reply.status.value in 200..299) reply.bodyAsText() else "",
+                            )
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -193,8 +197,8 @@ internal class IosPlaybackPool(
                         null
                     }
                 } ?: return@launch
-                if (response.first !in 200..299) return@launch
-                val root = parseObject(response.second) ?: return@launch
+                if (response.status !in 200..299) return@launch
+                val root = parseObject(response.body) ?: return@launch
                 if ((root["ok"] as? JsonPrimitive)?.booleanOrNull == true && enabled()) mergeReplacement(root, service, id)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -233,8 +237,8 @@ internal class IosPlaybackPool(
             if (!shouldRefresh(nowMs(), lastAttemptAtMs, refreshIntervalMs(), force)) return@withLock hasAccounts()
             lastAttemptAtMs = nowMs()
             var result = fetch("/api/accounts")
-            if (result?.first == 404) result = fetch("/api/sources")
-            val root = result?.takeIf { it.first == 200 }?.second?.let(::parseObject)
+            if (result?.status == 404) result = fetch("/api/sources")
+            val root = result?.takeIf { it.status == 200 }?.body?.let(::parseObject)
             when {
                 root != null && enabled() -> {
                     val decrypt = decryptorFor(root)
@@ -248,9 +252,11 @@ internal class IosPlaybackPool(
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
-                result.first == 401 -> log("Playback Pool rejected the read key (HTTP 401)")
-                result.first == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
-                else -> log("Playback Pool feed returned HTTP ${result.first}")
+                result.status == 304 -> Unit
+                result.status == 401 || result.status == 403 -> log("Playback Pool rejected the read key (HTTP ${result.status})")
+                result.status == 429 || result.status == 503 -> log("Playback Pool refused the feed (HTTP ${result.status})")
+                result.status == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
+                else -> log("Playback Pool feed returned HTTP ${result.status}")
             }
             persist()
             hasAccounts()
@@ -342,12 +348,15 @@ internal class IosPlaybackPool(
         }
     }
 
-    private suspend fun fetch(path: String): Pair<Int, String>? =
+    private suspend fun fetch(path: String): PoolResponse? =
         ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
             try {
                 withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
                     val response = http.get("$base$path") { poolHeaders() }
-                    response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+                    PoolResponse(
+                        status = response.status.value,
+                        body = if (response.status.value == 200) response.bodyAsText() else "",
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

@@ -262,6 +262,14 @@ provider-local caches without overwriting personal accounts. An APK-delivery/rea
 extractable, not a server administrator/session/database secret; server-side authorization
 remains essential.
 
+Pool requests are deliberately sparse on every host. The account feed keeps its 24 h (5 h while
+a service is missing) cadence with jitter and revalidates with `ETag`; discovery asks at most once
+per six hours per service, persists its list and `ETag`, coalesces concurrent callers into one
+request and stops while the host is backgrounded. `401`/`403` are configuration, not transient:
+a refused key buys hours of silence instead of a retry per launch, and `429`/`503` honour the
+server's `Retry-After`. Reports are deduplicated per account and capped per five-minute window,
+and they are never retried after a refusal.
+
 ## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
 
 `shared-domain/.../dsp/acoustic/` owns the audit state machine (`AcousticAuditOwner`), the FFT

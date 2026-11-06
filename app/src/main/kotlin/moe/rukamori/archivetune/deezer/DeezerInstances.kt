@@ -10,13 +10,11 @@ package moe.rukamori.archivetune.deezer
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
-import moe.rukamori.archivetune.BuildConfig
-import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolDiscovery
 import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 import java.net.URLEncoder
@@ -41,7 +39,6 @@ import moe.rukamori.archivetune.utils.withAppProxy
  */
 object DeezerInstances {
     private const val TAG = "DeezerInstances"
-    private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L
     private const val FAILURE_COOLDOWN_MS = 10 * 60 * 1000L
     private const val USER_AGENT = "ArchiveTune-Android"
 
@@ -59,9 +56,6 @@ object DeezerInstances {
 
     @Volatile
     private var discovered: List<String> = emptyList()
-
-    @Volatile
-    private var discoveredAt = 0L
 
     /** "base" -> time it may be tried first again. */
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
@@ -93,7 +87,7 @@ object DeezerInstances {
 
     fun invalidatePoolInstancesCache() {
         discovered = emptyList()
-        discoveredAt = 0L
+        PoolDiscovery.forget("deezer")
     }
 
     /**
@@ -101,8 +95,7 @@ object DeezerInstances {
      * cached pool entries, and a configured pool whose feed has not been fetched yet.
      */
     fun hasInstances(): Boolean =
-        userInstances.isNotEmpty() ||
-            (PoolAccountManager.isPoolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrls().isNotEmpty())
+        userInstances.isNotEmpty() || (PoolAccountManager.isPoolEnabled() && poolFeedUrls().isNotEmpty())
 
     /** User instances first, then pool ones; cooling-down instances sort last rather than vanish. */
     fun instances(): List<String> {
@@ -243,83 +236,23 @@ object DeezerInstances {
     private fun poolFeedUrls(): List<String> =
         PoolEndpoints.bases().map { "$it/api/instances/deezer" }
 
-    /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
+    /**
+     * The shared [PoolDiscovery] read: six-hour jittered window, persisted list, ETag revalidation,
+     * single-flight guard and refusal backoff. A failed read keeps the previous list, because a
+     * transient error should not drop instances that were working a moment ago. Never throws.
+     */
     private fun discoverIfStale(): List<String> {
         if (!PoolAccountManager.isPoolEnabled()) {
             invalidatePoolInstancesCache()
             return emptyList()
         }
-        val now = System.currentTimeMillis()
-        if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
-        synchronized(this) {
-            if (!PoolAccountManager.isPoolEnabled()) {
-                invalidatePoolInstancesCache()
-                return emptyList()
-            }
-            if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
-            val result =
-                runCatching {
-                    for (url in poolFeedUrls()) {
-                        if (!PoolAccountManager.isPoolEnabled()) break
-                        val builder = Request.Builder().url(url).header("User-Agent", USER_AGENT)
-                        if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                            builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                        }
-                        var answered = false
-                        val reply =
-                            try {
-                                client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
-                                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use null
-                                    answered = true
-                                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
-                                    if (!response.isSuccessful) {
-                                        Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
-                                        return@use null
-                                    }
-                                    parseFeed(response.body?.string().orEmpty())
-                                }
-                            } catch (failure: Exception) {
-                                failure.rethrowIfAudioSourceCancelled()
-                                Timber.tag(TAG).w(failure, "pool instance feed failed")
-                                null
-                            }
-                        if (answered) return@runCatching reply
-                    }
-                    null
-                }.getOrElse {
-                    it.rethrowIfAudioSourceCancelled()
-                    Timber.tag(TAG).w(it, "pool instance feed failed")
-                    null
-                }
-            if (!PoolAccountManager.isPoolEnabled()) {
-                invalidatePoolInstancesCache()
-                return emptyList()
-            }
-            // A failed fetch keeps the previous list: a transient error should not drop instances
-            // that were working a moment ago.
-            if (result != null) discovered = result
-            discoveredAt = System.currentTimeMillis()
-            return discovered
+        val result = PoolDiscovery.instances("deezer", "/api/instances/deezer", USER_AGENT, client)
+        if (!PoolAccountManager.isPoolEnabled()) {
+            invalidatePoolInstancesCache()
+            return emptyList()
         }
-    }
-
-    /** The pool's `{ streaming, api }` shape; `streaming` first, both deduplicated. */
-    private fun parseFeed(body: String): List<String> {
-        val root = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
-        val out = LinkedHashSet<String>()
-        for (key in listOf("streaming", "api")) {
-            val arr: JSONArray = root.optJSONArray(key) ?: continue
-            for (i in 0 until arr.length()) {
-                val value =
-                    when (val item = arr.opt(i)) {
-                        is String -> item
-                        is JSONObject -> item.optString("url").ifBlank { item.optString("baseUrl") }
-                        else -> null
-                    }
-                normalize(value)?.let(out::add)
-            }
-        }
-        return out.toList()
+        if (result.isNotEmpty()) discovered = result.mapNotNull(::normalize).distinct()
+        return discovered
     }
 
     private fun normalize(raw: String?): String? {

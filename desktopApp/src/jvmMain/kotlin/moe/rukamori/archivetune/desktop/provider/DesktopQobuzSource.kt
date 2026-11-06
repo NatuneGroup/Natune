@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.rukamori.archivetune.shared.data.provider.NoPoolDiscoveryStore
 import moe.rukamori.archivetune.shared.data.provider.JvmQobuzRequestDigest
 import moe.rukamori.archivetune.shared.data.provider.KtorQobuzAccountIdentity
 import moe.rukamori.archivetune.shared.data.provider.KtorQobuzRepository
@@ -49,6 +50,7 @@ internal class DesktopQobuzSource(
         poolEnabled = { pool?.enabled() == true },
         sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
         sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+        discoveryStore = pool?.discoveryStore(DesktopPlaybackPool.QOBUZ) ?: NoPoolDiscoveryStore,
     )
     private class Cached(val lease: DesktopSourceAdmissions.Lease, val repository: KtorQobuzRepository)
     private data class CacheKey(val entry: QobuzTokenEntry, val pooled: Boolean)
