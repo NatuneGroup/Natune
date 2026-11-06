@@ -57,17 +57,18 @@ fun HomeFeedShelfCard(
     val isCircular = item.ref.kind == ContentKind.ARTIST
     val shape: Shape = if (isCircular) CircleShape else RoundedCornerShape(HomeShelfCardCorner)
     val isWideFrame = !isCircular && abs(thumbnailAspectRatio - 1f) > 0.001f
+    val cardWidth = LocalHomeShelfCardWidth.current
     Column(
         modifier =
             modifier
-                .width(HomeShelfCardWidth)
+                .width(cardWidth)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         // The artwork box keeps the square height whatever frame goes in it, so a shelf that mixes a wide still with
         // square sleeves stays one row high with one title baseline, and the skeleton standing in for it does not have
         // to move when the data does. A wide frame sits centred, and the space either side is the cost of one row height.
         Box(
-            modifier = Modifier.fillMaxWidth().height(HomeShelfCardWidth),
+            modifier = Modifier.fillMaxWidth().height(cardWidth),
             contentAlignment = Alignment.Center,
         ) {
             artwork(
