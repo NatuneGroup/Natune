@@ -24,10 +24,11 @@ import moe.rukamori.archivetune.shared.ui.settings.PoTokenGeneration
 /**
  * The desktop BotGuard owner, the counterpart of Android's process-wide `BotGuardTokenGenerator`
  * object: one shared engine whose QuickJS session, mint cache and broken state the primary player
- * walk, the InnerTubeX tier and the settings generation all share. Minting only runs while the
- * `webClientPoTokenEnabled` preference is on and the build carries both BotGuard credentials —
- * every other state reads exactly like the shipped unconfigured path (null tokens, untokened
- * requests) rather than fabricating a token.
+ * walk, the InnerTubeX tier and the settings generation all share. Minting runs while the
+ * `webClientPoTokenEnabled` preference is on and the build, environment or a system property
+ * supplies both BotGuard credentials. Every other state reads exactly like the shipped
+ * unconfigured path (null tokens, untokened requests) rather than fabricating a token, which is
+ * what a blank release build still does today.
  */
 internal class DesktopPoTokenOwner(
     private val http: HttpClient,
@@ -46,15 +47,15 @@ internal class DesktopPoTokenOwner(
 
     private fun credentials(): PoTokenCredentials? =
         PoTokenCredentials(
-            requestKey = DesktopCredentials.value("ARCHIVETUNE_POTOKEN_REQUEST_KEY"),
-            googleApiKey = DesktopCredentials.value("ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"),
+            requestKey = DesktopCredentials.value(REQUEST_KEY_NAME),
+            googleApiKey = DesktopCredentials.value(API_KEY_NAME),
         )
 
     /**
      * The minted pair for one [videoId] resolve under the current session, as
      * `resolvePlayerPoToken`/`resolveGvsPoToken` would read them: the video-id-bound player token
-     * first, the session token as the fallback. Null when the feature is off, unconfigured or the
-     * mint failed — the caller then sends the same untokened request it always did.
+     * first, the session token as the fallback. Null when the feature is off or the mint failed —
+     * the caller then sends the same untokened request it always did.
      */
     suspend fun mintForPlayback(
         videoId: String,
@@ -171,7 +172,15 @@ internal class DesktopPoTokenOwner(
             override suspend fun close() = engine.invalidate()
         }
 
+    /** Drops the minted session and the identifier cache after the network rejected a token. */
+    suspend fun invalidateAttestation() {
+        if (engineRef.isInitialized()) engine.invalidate()
+    }
+
     private companion object {
+        const val REQUEST_KEY_NAME = "ARCHIVETUNE_POTOKEN_REQUEST_KEY"
+        const val API_KEY_NAME = "ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"
+
         // A fixed sanitized detail; never a credential fragment.
         const val NOT_CONFIGURED_DETAIL = "BotGuard credentials are not configured"
 

@@ -467,7 +467,7 @@ class DesktopPlaybackPort(
             fail(request, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
             return
         }
-        sessions[index] = DeckSession(request, generation)
+        sessions[index] = DeckSession(request, generation, lease = source.leaseOrNull())
         failureMappers[index].beginRequest(request, generation)
         mapper.beginRequest(request, generation)
         stallWatchdogs[index].reset()
@@ -525,7 +525,7 @@ class DesktopPlaybackPort(
             fail(next, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
             return false
         }
-        sessions[incomingIndex] = DeckSession(next, generation, trackGainDb, trackPeak)
+        sessions[incomingIndex] = DeckSession(next, generation, trackGainDb, trackPeak, lease = source.leaseOrNull())
         failureMappers[incomingIndex].beginRequest(next, generation)
         stallWatchdogs[incomingIndex].reset()
         applySession(mix, incomingIndex, plan)
@@ -723,8 +723,11 @@ class DesktopPlaybackPort(
             for (index in 0 until DECK_COUNT) {
                 val engine = mix.deck(index)
                 val state = engine.snapshot()
-                failureMappers[index].failure(state) { engine.lastError() }
-                    ?.let { publishedFailures.tryEmit(it) }
+                failureMappers[index].failure(state) {
+                    // The lease knows the HTTP status or expiry the native code collapsed into a generic read error.
+                    val detail = sessions[index]?.lease?.failureDetail()
+                    if (detail == null) engine.lastError() else "${engine.lastError()} ($detail)"
+                }?.let { publishedFailures.tryEmit(it) }
                 watchStall(mix, index, timing, state, now)
                 // A stall recovery rebuilt the output under this poll; the snapshot's decks are dead now.
                 if (mixer !== mix) return true
@@ -866,7 +869,7 @@ class DesktopPlaybackPort(
             fail(session.request, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
             return
         }
-        sessions[index] = session.copy(generation = generation)
+        sessions[index] = session.copy(generation = generation, lease = source.leaseOrNull())
         failureMappers[index].beginRequest(session.request, generation)
         mapper.beginRequest(session.request, generation)
         rebuiltForLoadGeneration = NO_LOAD
@@ -938,7 +941,7 @@ class DesktopPlaybackPort(
             fail(session.request, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
             return
         }
-        sessions[deckIndex] = session.copy(generation = generation)
+        sessions[deckIndex] = session.copy(generation = generation, lease = source.leaseOrNull())
         failureMappers[deckIndex].beginRequest(session.request, generation)
         mapper.beginRequest(session.request, generation)
         rebuiltForLoadGeneration = generation
@@ -962,6 +965,9 @@ class DesktopPlaybackPort(
         } else {
             PlaybackFailureReason.UNSUPPORTED_LOCATOR to "the engine cannot open this kind of source"
         }
+
+    /** The host lease behind a leased source, or null for a direct local file. */
+    private fun EngineSource.leaseOrNull(): NativeStreamLease? = (this as? EngineSource.Leased)?.lease
 
     private companion object {
         const val DEFAULT_POLL_INTERVAL_MS = 20L

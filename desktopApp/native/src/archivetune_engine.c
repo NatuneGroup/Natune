@@ -87,6 +87,15 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "Realtime output requires lock-free in
 #define AE_MAX_INTERRUPTED_READS 256
 
 /*
+ * A direct (unleased) HTTP open is a fallback path: the host reads remote sources through its own ranged lease. It
+ * still gets a bounded read timeout and a browser-like agent, because FFmpeg's own reader would otherwise block with
+ * no timeout and announce itself as "Lavf/...", which media CDNs treat as a bot.
+ */
+#define AE_DIRECT_HTTP_TIMEOUT_US "15000000"
+#define AE_DIRECT_HTTP_USER_AGENT \
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+
+/*
  * The producer's copy of a host source. FFmpeg's AVIO callbacks receive a pointer to it, so it must stay
  * at a fixed address until its AVIOContext is freed; the producer's ae_source owns it for that reason.
  */
@@ -878,6 +887,13 @@ static int source_open(ae_engine *e, ae_source *s, const char *path, int64_t sta
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
         /* Ktor and the app own connection reuse, so FFmpeg must not keep its own HTTP connections. */
         av_dict_set(&options, "multiple_requests", "0", 0);
+        /*
+         * The host lease normally reads every remote source, so this direct open is a fallback (a probe or a source
+         * without a lease). It still must not hang forever or identify itself as FFmpeg's library reader: googlevideo
+         * treats the Lavf agent as a bot, and an HTTP read with no timeout can block until the process exits.
+         */
+        av_dict_set(&options, "rw_timeout", AE_DIRECT_HTTP_TIMEOUT_US, 0);
+        av_dict_set(&options, "user_agent", AE_DIRECT_HTTP_USER_AGENT, 0);
     }
 
     s->format = avformat_alloc_context();

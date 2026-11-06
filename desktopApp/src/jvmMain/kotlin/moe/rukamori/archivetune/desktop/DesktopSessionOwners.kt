@@ -211,10 +211,11 @@ internal suspend fun assembleDesktopSessionOwners(
         pool = playbackPool,
     )
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
-    // as Android's BotGuardTokenGenerator object feeds every resolver there.
+    // as Android's BotGuardTokenGenerator object feeds every resolver there. An explicitly configured
+    // deployment mints by default; a blank build leaves the stored preference in charge.
     val poTokens = DesktopPoTokenOwner(
         http = http,
-        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: DesktopCredentials.botGuardConfigured },
     )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
