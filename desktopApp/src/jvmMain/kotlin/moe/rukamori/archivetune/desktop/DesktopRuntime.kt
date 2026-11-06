@@ -2,6 +2,8 @@ package moe.rukamori.archivetune.desktop
 
 import java.awt.Desktop
 import java.awt.Toolkit
+import moe.rukamori.archivetune.desktop.integration.windows.WindowsDpiAwareness
+import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 
 /** The application name, used for the window title and the Linux window class. */
 internal const val APP_NAME = "Natune"
@@ -53,5 +55,12 @@ internal object DesktopRuntime {
         // moves to another monitor. The UI then freezes while audio keeps playing. Windows renders by
         // a different path and does not show this, so the switch is limited to other platforms.
         if (!isWindows) System.setProperty("skiko.vsync.enabled", "false")
+        // Records the requested renderer and the support escape hatch before Skiko reads either property.
+        DesktopRendererDiagnostics.prepare()
+        // The launcher manifest owns DPI awareness; one line names what the process actually received, which is the
+        // first fact a mixed-DPI ("the second monitor is blurry") report needs.
+        if (isWindows) {
+            DesktopDiagnosticLog.host("display: dpiAwareness=${WindowsDpiAwareness.describe()}", DiagnosticLevel.INFO)
+        }
     }
 }

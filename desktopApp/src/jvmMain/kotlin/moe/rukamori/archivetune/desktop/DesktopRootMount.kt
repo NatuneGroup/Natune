@@ -271,6 +271,8 @@ internal fun DesktopMountedRoot(
     val effectiveDark = platformDark ?: isSystemInDarkTheme()
     // The Windows frame belongs to DWM, not to the client area: without this the dark app sits under a light title bar.
     LaunchedEffect(window, effectiveDark) { WindowsWindowChrome.apply(window, effectiveDark) }
+    // Logs the renderer Skiko settled on and turns blur off when it fell back to CPU rasterisation.
+    LaunchedEffect(window) { DesktopRendererDiagnostics.observe(window) }
     // Host actions leave their one-line notices here (the player's Share says what it copied), so no action owns UI.
     val notices = remember { SnackbarHostState() }
     LaunchedEffect(graph) {
@@ -286,7 +288,7 @@ internal fun DesktopMountedRoot(
                 // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
                 visible = activity.visible && !activity.minimized && !activity.occluded,
                 resumed = activity.resumed,
-                opticalCapabilities = DesktopOpticalCapabilities,
+                opticalCapabilities = rememberDesktopOpticalCapabilities(),
                 systemDark = effectiveDark,
                 // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
                 rootKeyFocus = true,
