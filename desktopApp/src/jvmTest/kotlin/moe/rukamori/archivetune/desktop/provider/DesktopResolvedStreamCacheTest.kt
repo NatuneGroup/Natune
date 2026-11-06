@@ -37,7 +37,7 @@ class DesktopResolvedStreamCacheTest {
             ),
         )
 
-    private fun key(videoId: String = "dQw4w9WgXcQ", quality: String = "AUTO", session: String = "anonymous", network: String = "direct") =
+    private fun key(videoId: String = "dQw4w9WgXcQ", quality: String = "AUTO", session: String = "anonymous", network: String? = "direct") =
         DesktopResolvedStreamCache.Key(videoId, quality, session, network)
 
     @Test
@@ -87,6 +87,30 @@ class DesktopResolvedStreamCacheTest {
         assertNull(cache.get(key(session = "session:abc")))
         assertNull(cache.get(key(network = "HTTP:proxy.example:8080")))
         assertNull(cache.get(key(videoId = "aaaaaaaaaaa")))
+    }
+
+    @Test
+    fun aResolutionWithoutANameableRouteIsNeverStoredOrShared() = runTest {
+        val cache = cache()
+        val audio = stream(expiresAtEpochMs = now + 600_000L)
+        val uncacheable = key(network = null)
+
+        // Nothing is stored, so nothing can be handed out later either.
+        cache.put(uncacheable, audio)
+        assertEquals(0, cache.size())
+        assertNull(cache.get(uncacheable))
+
+        // Two callers of the same uncacheable key each resolve: there is no entry to reuse and none to hold a flight.
+        var loads = 0
+        assertEquals(audio, cache.resolve(uncacheable) { loads++; audio })
+        assertEquals(audio, cache.resolve(uncacheable) { loads++; audio })
+        assertEquals(2, loads)
+        assertEquals(0, cache.size())
+
+        // A nameable route still caches as before, so the bypass is the null scope and not the class.
+        cache.put(key(), audio)
+        assertEquals(1, cache.size())
+        assertNotNull(cache.get(key()))
     }
 
     @Test
