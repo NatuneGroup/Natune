@@ -46,7 +46,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.DesktopSearchFocus
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.navigation.ShellTab
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
 import moe.rukamori.archivetune.shared.ui.theme.RowHeights
 import moe.rukamori.archivetune.shared.ui.theme.Space
