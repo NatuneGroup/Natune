@@ -55,4 +55,12 @@ class LyricsInterludeTest {
             previous = scale
         }
     }
+
+    @Test
+    fun reducedMotionKeepsTheDotsAtTheirSeatedSize() {
+        val interlude = LyricsInterlude(0L, 10_000L)
+        assertEquals(1f, LyricsInterludeMotion.scale(interlude, 1_000L, reduceMotion = true), 0.0001f)
+        // The end swell counts as motion: a reduced-motion indicator must not grow 1.3x into the next line.
+        assertEquals(1f, LyricsInterludeMotion.scale(interlude, 9_999L, reduceMotion = true), 0.0001f)
+    }
 }

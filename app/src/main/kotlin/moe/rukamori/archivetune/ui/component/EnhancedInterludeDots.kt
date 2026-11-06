@@ -166,15 +166,13 @@ internal object EnhancedInterludeMotion {
      * The dots' scale at [positionMs]: the slow breath, multiplied by the end swell. A product of two
      * continuous, seamless cycles, so the indicator never restarts and never jumps — at a break's end
      * the factor returns to 1 and the breath carries on where it was.
+     *
+     * Both factors are motion, so reduced motion returns the neutral 1: holding only the breath still
+     * left the end swell scaling the dots to [END_SWELL_TO] under a setting that asks for no motion.
      */
     fun scale(interlude: EnhancedInterlude, positionMs: Long, reduceMotion: Boolean): Float {
-        val breath =
-            if (reduceMotion) {
-                1f
-            } else {
-                breath(positionMs)
-            }
-        return breath * endSwell(interlude, positionMs)
+        if (reduceMotion) return 1f
+        return breath(positionMs) * endSwell(interlude, positionMs)
     }
 
     /** How visible the whole indicator is at [positionMs]. It fades in as the break starts and out before it ends. */

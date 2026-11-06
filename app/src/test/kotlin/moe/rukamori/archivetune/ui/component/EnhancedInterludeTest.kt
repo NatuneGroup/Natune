@@ -166,6 +166,17 @@ class EnhancedInterludeTest {
             EnhancedInterludeMotion.scale(breakWindow, 9_000L, reduceMotion = true),
             0.0001f,
         )
+        // The end swell is motion too: under reduced motion the dots stay at 1 into the arriving line
+        // instead of growing 1.3x over the last 1.5 s of the break.
+        assertEquals(
+            1f,
+            EnhancedInterludeMotion.scale(
+                breakWindow,
+                breakWindow.endMs - 1L,
+                reduceMotion = true,
+            ),
+            0.0001f,
+        )
     }
 
     @Test
