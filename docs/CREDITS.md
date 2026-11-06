@@ -46,6 +46,7 @@ Portions of the port come from:
 | [rukamori/core](https://github.com/rukamori/core) → [vossgraves/core](https://github.com/vossgraves/core) | Rukamori, forked by vossgraves | The InnerTube client (`core` submodule), a NewPipeExtractor-based fork without `NetworkGatekeeper`. |
 | [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | The icon pack for the icon switcher, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark, and the media obfuscator (the `deobfuscator` submodule; upstream `rukamori/morideobfuscator`). |
 | [4nx3b/lyrics](https://github.com/4nx3b/lyrics) | 4nx3b | The `lyrics` submodule: enhanced and word-synced LRC parsing and the lyrics providers. |
+| [JmDNS](https://github.com/jmdns/jmdns) | JmDNS contributors | Desktop Device Connect discovery (`org.jmdns:jmdns:3.6.4`, Apache-2.0). Not modified; linked only in `shared-data`'s JVM source set. |
 
 ## Icon artwork licence (CC-BY-SA-4.0)
 
