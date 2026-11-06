@@ -135,6 +135,21 @@ fun IntegrationScreen(
             }
 
             PreferenceGroup(
+                modifier = positions.modifierFor("device_connect"),
+                title = stringResource(R.string.device_connect),
+            ) {
+                item {
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("device_connect_entry"),
+                        title = { Text(stringResource(R.string.device_connect)) },
+                        description = stringResource(R.string.device_connect_desc),
+                        icon = { Icon(painterResource(R.drawable.cast_connected), null) },
+                        onClick = { navController.navigate("settings/integrations/device_connect") },
+                    )
+                }
+            }
+
+            PreferenceGroup(
                 modifier = positions.modifierFor("discord_presence"),
                 title = stringResource(R.string.general),
             ) {

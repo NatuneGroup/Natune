@@ -335,7 +335,15 @@ internal class IosSessionGraph private constructor(
      * then the queue is checkpointed while the owner can still write, and only then are the database and the client
      * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
+    private var deviceConnectOwner: IosDeviceConnect? = null
+
+    /** Created on first use, closed with the graph. The settings row and sheet read this one owner. */
+    internal val deviceConnect: IosDeviceConnect
+        get() = deviceConnectOwner ?: IosDeviceConnect(this).also { deviceConnectOwner = it }
+
     suspend fun close() = withContext(NonCancellable) {
+        deviceConnectOwner?.close()
+        deviceConnectOwner = null
         outputMutePolicy.close()
         playbackPort.cancelNext()
         discord.close()

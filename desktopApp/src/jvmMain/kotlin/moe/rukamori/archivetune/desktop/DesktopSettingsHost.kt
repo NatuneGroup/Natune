@@ -285,7 +285,7 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
     "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute, TidalLoginRoute,
-    "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
+    "settings/integrations/device_connect", "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
     "settings/lyrics/providers",
     "settings/ai_integration", "settings/amazon", "settings/applemusic", "settings/canvas", "settings/changelog",
@@ -539,6 +539,7 @@ private fun DesktopSettingsRouteBody(
             "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
             DesktopListenTogetherSettingsRoute ->
                 DesktopListenTogetherSettingsPage(graph, owners.controller, onNotice, onFailure, unavailable, scrollTo)
+            "settings/integrations/device_connect" -> DesktopDeviceConnectSettingsPage(graph)
             "settings/misc" -> DesktopDeveloperSettingsPage(graph, owners.discord, owners.controller, navigate, onFailure, scrollTo)
             "settings/logcat" -> DesktopDiagnosticLogPage(graph.settings, navigation, ::show)
             "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo, ::show)

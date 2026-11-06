@@ -413,7 +413,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/account", YouTubeAccountRoute, YouTubeLoginRoute, IosYouTubeOAuthRoute,
-    "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
+    "settings/integration", "settings/integrations/device_connect", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
 
@@ -652,6 +652,7 @@ private fun IosSettingsRouteBody(
                     scrollTo = scrollTo,
                 )
             }
+            "settings/integrations/device_connect" -> IosDeviceConnectSettingsPage(owners.graph)
             IosListenTogetherSettingsRoute -> IosListenTogetherSettingsPage(
                 owner = owners.graph.listenTogether,
                 controller = owners.controller,

@@ -1636,6 +1636,8 @@
 
     <!-- Listen Together (ported from vivi-music beta) -->
     <string name="listen_together">Listen Together</string>
+    <string name="device_connect">Device Connect</string>
+    <string name="device_connect_desc">Pair your own devices on the same network and move playback between them</string>
     <string name="setting_listen_together_desc">Listen with friends</string>
     <string name="listen_together_server_url">Server URL</string>
     <string name="listen_together_choose_server">Choose server</string>

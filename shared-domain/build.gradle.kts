@@ -3,6 +3,8 @@ import org.gradle.api.plugins.ExtensionAware
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    // Device Connect wire payloads are serialized in common code, like the provider models in :shared-data.
+    alias(libs.plugins.kotlin.serialization)
     // Declared without applying so the Android DSL types resolve; applied below only when an SDK is configured.
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
 }
