@@ -679,4 +679,6 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         NativeIosInterfaceKey,
         DisableAnimatedArtworkOnMobileDataKey,
         ThemePaletteStyleKey,
+        DesktopSystemWindowFrameKey,
+        DesktopHideToTrayKey,
     )

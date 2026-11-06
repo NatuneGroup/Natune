@@ -76,7 +76,6 @@ import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
-import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
@@ -84,15 +83,24 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsTwoPane
-import moe.rukamori.archivetune.shared.ui.settings.settingsHomeRows
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.TidalLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
-import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
+import moe.rukamori.archivetune.shared.ui.settings.DesktopEqualizerRoute
+import moe.rukamori.archivetune.shared.ui.settings.DesktopIntegrationsRoute
+import moe.rukamori.archivetune.shared.ui.settings.DesktopQueueRoute
+import moe.rukamori.archivetune.shared.ui.settings.DesktopShortcutsRoute
+import moe.rukamori.archivetune.shared.ui.settings.IntegrationsOverlay
+import moe.rukamori.archivetune.shared.ui.settings.desktopIntegrationDestinations
+import moe.rukamori.archivetune.shared.ui.settings.desktopPrivacySettingsRows
+import moe.rukamori.archivetune.shared.ui.settings.desktopQueueSettingsRows
+import moe.rukamori.archivetune.shared.ui.settings.desktopSettingsNavListRows
+import moe.rukamori.archivetune.shared.ui.settings.desktopSettingsNavRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
+import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcutsDialog
 import org.jetbrains.compose.resources.stringResource
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.EnableTranslatorKey
@@ -282,12 +290,13 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
         it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES || it in DESKTOP_EXTRA_SETTINGS_ROUTES
     }
 
-private val DESKTOP_SETTINGS_ROUTES = setOf(
+/** The settings routes this host mounts itself. Kept next to the route body so a page and its mount cannot drift. */
+internal val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
     "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute, TidalLoginRoute,
     "settings/integrations/device_connect", "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
-    "settings/lyrics/providers",
+    "settings/lyrics/providers", DesktopQueueRoute,
     "settings/ai_integration", "settings/amazon", "settings/applemusic", "settings/canvas", "settings/changelog",
     "settings/content", "settings/discord", "settings/downloads", "settings/internet", "settings/jiosaavn",
     "settings/language_packs", "settings/lyrics/romanisation", "settings/player/ytdlp", "settings/po_token",
@@ -342,6 +351,10 @@ private fun DesktopSettingsRouteBody(
         show(DesktopStrings["settings_change_failed"])
     }
     val unavailable: () -> Unit = { show(DesktopStrings["settings_feature_unavailable"]) }
+    // The two overlays the tree opens instead of replacing the page: the separate integrations list, and the shortcut
+    // table Ctrl/Cmd + / opens. Both dismiss back to the page that was already showing.
+    var showIntegrations by remember { mutableStateOf(false) }
+    var showShortcuts by remember { mutableStateOf(false) }
     val routePath = route.value.substringBefore('?')
     val settingsPage: @Composable (String) -> Unit = { path ->
         when (path) {
@@ -356,13 +369,42 @@ private fun DesktopSettingsRouteBody(
             )
             in DESKTOP_EXTRA_SETTINGS_ROUTES ->
                 DesktopExtraSettingsPage(path, graph, owners.controller, navigation, ::show, onFailure)
-            "settings" -> SettingsHomePage(
-                controller = owners.controller,
-                navigate = navigate,
-                onFailure = onFailure,
-                hideToTrayKey = DesktopHideToTrayKey,
-                scrollTo = scrollTo,
-            )
+            DesktopQueueRoute -> {
+                val snapshot by owners.controller.store.snapshots.collectAsState()
+                val preferences = snapshot
+                if (preferences == null) {
+                    CircularProgressIndicator()
+                } else {
+                    SettingsPage(
+                        rows = desktopQueueSettingsRows(),
+                        preferences = preferences,
+                        controller = owners.controller,
+                        scrollTo = scrollTo,
+                        onFailure = onFailure,
+                    )
+                }
+            }
+            "settings" -> {
+                val snapshot by owners.controller.store.snapshots.collectAsState()
+                val preferences = snapshot
+                if (preferences == null) {
+                    CircularProgressIndicator()
+                } else {
+                    // A narrow window keeps the same tree as one list, so a group cannot exist in one shape only.
+                    SettingsPage(
+                        rows = desktopSettingsNavListRows(
+                            navigate = navigate,
+                            openIntegrations = { showIntegrations = true },
+                            openEqualizer = { graph.equalizer.openSheet() },
+                            openShortcuts = { showShortcuts = true },
+                        ),
+                        preferences = preferences,
+                        controller = owners.controller,
+                        scrollTo = scrollTo,
+                        onFailure = onFailure,
+                    )
+                }
+            }
             "settings/account" -> {
                 val snapshot by graph.settings.snapshots.collectAsState()
                 val channels by owners.youTube.channels.collectAsState()
@@ -795,22 +837,38 @@ private fun DesktopSettingsRouteBody(
             }
         }
     }
+    // The integrations row opens the separate overlay instead of replacing the page, so the pane keeps its selection
+    // and the user returns to the page they were reading.
+    val openIntegrations: () -> Unit = { showIntegrations = true }
+    // A settings target rewrites the current settings route; anything else is a normal page push.
+    val openTarget: (String) -> Unit = { target ->
+        if (target.startsWith("settings")) navigation.reopen(target) { isSettingsRoute(it) } else navigation.open(target)
+    }
     if (twoPane) {
+        // Opening settings with no page yet shows the first Playback page beside the navigation, not an empty detail.
+        val detailPath = if (routePath == "settings") "settings/player" else routePath
         SettingsTwoPane(
-            selectedRoute = routePath,
-            rows = settingsHomeRows(navigate, false, DesktopHideToTrayKey, {}, desktop = true),
+            selectedRoute = detailPath,
+            rows = desktopSettingsNavRows(
+                navigate = navigate,
+                openIntegrations = openIntegrations,
+                openEqualizer = { graph.equalizer.openSheet() },
+                openShortcuts = { showShortcuts = true },
+            ),
             onSelect = { target ->
-                when {
-                    target == routePath -> Unit
-                    target.startsWith("settings") -> navigation.reopen(target) { isSettingsRoute(it) }
-                    else -> navigation.open(target)
+                when (target) {
+                    routePath -> Unit
+                    DesktopIntegrationsRoute -> openIntegrations()
+                    DesktopEqualizerRoute -> graph.equalizer.openSheet()
+                    DesktopShortcutsRoute -> showShortcuts = true
+                    else -> openTarget(target)
                 }
             },
             fallbackTitle = stringResource(Res.string.m6_settings_home_group_settings),
             modifier = Modifier.fillMaxSize().padding(LocalShellContentPadding.current),
         ) {
             Box(Modifier.fillMaxSize()) {
-                settingsPage(routePath)
+                settingsPage(detailPath)
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
             }
         }
@@ -820,9 +878,20 @@ private fun DesktopSettingsRouteBody(
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
+    if (showIntegrations) {
+        IntegrationsOverlay(
+            destinations = desktopIntegrationDestinations(),
+            onSelect = { target -> showIntegrations = false; openTarget(target) },
+            onDismiss = { showIntegrations = false },
+        )
+    }
+    if (showShortcuts) KeyboardShortcutsDialog(onDismiss = { showShortcuts = false })
 }
 
-/** Settings > Privacy on this host: the inline privacy rows, the history controls and the listener-presence opt-in. */
+/**
+ * Settings > Privacy on this host: the history pauses and duration, the clear-history action and the listener-presence
+ * opt-in. Low data mode is not offered: this host has no metered network switch to read it.
+ */
 @Composable
 private fun DesktopPrivacySettingsPage(
     graph: DesktopSessionGraph,
@@ -838,7 +907,7 @@ private fun DesktopPrivacySettingsPage(
         return
     }
     SettingsPage(
-        rows = privacyInlineSettingsRows(),
+        rows = desktopPrivacySettingsRows(),
         preferences = preferences,
         controller = controller,
         scrollTo = scrollTo,
@@ -846,8 +915,6 @@ private fun DesktopPrivacySettingsPage(
         extraItems = {
             item(key = "history_controls") {
                 DesktopHistoryControls(
-                    preferences = preferences,
-                    controller = controller,
                     clearListenHistory = graph.history::reset,
                     show = show,
                     onFailure = onFailure,
