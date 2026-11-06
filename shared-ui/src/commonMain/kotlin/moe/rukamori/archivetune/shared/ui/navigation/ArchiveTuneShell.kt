@@ -98,13 +98,8 @@ fun ArchiveTuneShell(
                 }
             }
         val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
-            navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route),
-            desktop = LocalDesktopLayout.current)
-        val desktop = LocalDesktopLayout.current
-        // Search is the top bar's job on desktop, so the sidebar carries only the two library destinations.
-        val tabs = remember(desktop) {
-            if (desktop) ShellTab.entries.filter { it != ShellTab.Search } else ShellTab.entries
-        }
+            navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route))
+        val tabs = ShellTab.entries
         val hiddenByScroll =
             layout == ShellLayout.MiniPlayerOnly && effectiveScrolledDown && hideOnScroll &&
                 compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED
@@ -192,38 +187,24 @@ fun ArchiveTuneShell(
                 }
             }
         }
-        if (desktop) {
-            // Metrolist's desktop structure: a narrow navigation rail beside the page, and one full-width player bar
-            // under both. Phone hosts keep their existing bottom bar inside the content area.
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.weight(1f).fillMaxWidth()) {
-                    if (layout == ShellLayout.Rail) {
-                        DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
+        Row(Modifier.fillMaxSize()) {
+            if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
+                NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
+                    containerColor = Color.Transparent) {
+                    tabs.forEach { tab ->
+                        NavigationRailItem(
+                            selected = navigation.selectedTab == tab,
+                            onClick = { navigation.select(tab, toRoot = false) },
+                            icon = { TabMark(tab) },
+                            label = { Text(stringResource(tab.label)) },
+                            modifier = Modifier.testTag("shell-tab-${tab.name}"),
+                        )
                     }
-                    Box(Modifier.weight(1f).fillMaxHeight()) { pageArea() }
                 }
-                Box(Modifier.fillMaxWidth()) { bottomChrome() }
             }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
-                    NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
-                        containerColor = Color.Transparent) {
-                        tabs.forEach { tab ->
-                            NavigationRailItem(
-                                selected = navigation.selectedTab == tab,
-                                onClick = { navigation.select(tab, toRoot = false) },
-                                icon = { TabMark(tab) },
-                                label = { Text(stringResource(tab.label)) },
-                                modifier = Modifier.testTag("shell-tab-${tab.name}"),
-                            )
-                        }
-                    }
-                }
-                Box(Modifier.weight(1f).fillMaxHeight()) {
-                    pageArea()
-                    Box(Modifier.align(Alignment.BottomCenter)) { bottomChrome() }
-                }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                pageArea()
+                Box(Modifier.align(Alignment.BottomCenter)) { bottomChrome() }
             }
         }
     }

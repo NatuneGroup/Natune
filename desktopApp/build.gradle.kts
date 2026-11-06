@@ -261,8 +261,13 @@ tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(gener
 compose.desktop {
     application {
         mainClass = "moe.rukamori.archivetune.desktop.MainKt"
-        // Lets DesktopRuntime reach the X11 toolkit's window-class field on Linux.
-        jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        // Lets DesktopRuntime reach the X11 toolkit's window-class field on Linux, and LinuxWindowDrag the AWT
+        // accessor and toolkit that own the display lock and the X11 window id. Both are module-internal JDK
+        // packages; without the second open the drag logs a diagnostic and the caption keeps the system frame.
+        jvmArgs += listOf(
+            "--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED",
+            "--add-opens", "java.desktop/sun.awt=ALL-UNNAMED",
+        )
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi, TargetFormat.Dmg)
             packageName = desktopPackageName

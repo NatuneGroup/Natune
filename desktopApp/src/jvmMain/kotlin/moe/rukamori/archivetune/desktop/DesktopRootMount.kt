@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.WindowState
 import java.awt.AWTEvent
 import java.awt.EventQueue
@@ -137,10 +138,12 @@ internal class DesktopSessionLoader(private val instanceDirectory: Path) {
  */
 @Composable
 internal fun DesktopSessionWindowRoot(
+    frame: FrameWindowScope,
     window: Window,
     sessions: DesktopSessionLoader,
     closeRequests: DesktopCloseRequests,
     windowState: WindowState,
+    frameMode: DesktopFrameMode,
     quit: () -> Unit,
 ) {
     LaunchedEffect(sessions) { sessions.start() }
@@ -155,7 +158,8 @@ internal fun DesktopSessionWindowRoot(
     LaunchedEffect(Unit) { DesktopEnginePrewarm.process.start() }
     val session by sessions.state.collectAsState()
     when (val current = session) {
-        is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit, windowState)
+        is DesktopSessionState.Ready ->
+            DesktopMountedRoot(frame, window, current.graph, closeRequests, quit, windowState, frameMode)
         DesktopSessionState.Loading -> DesktopLoadingRoot()
         DesktopSessionState.Unavailable -> DesktopUnavailableRoot()
     }
@@ -168,11 +172,13 @@ internal fun DesktopSessionWindowRoot(
  */
 @Composable
 internal fun DesktopMountedRoot(
+    frame: FrameWindowScope,
     window: Window,
     graph: DesktopSessionGraph,
     closeRequests: DesktopCloseRequests,
     quit: () -> Unit,
     windowState: WindowState,
+    frameMode: DesktopFrameMode,
 ) {
     val services = remember(window, graph) {
         DesktopHostServices(
@@ -283,27 +289,41 @@ internal fun DesktopMountedRoot(
     LaunchedEffect(graph) {
         graph.notices.receiveAsFlow().collect { message -> notices.showSnackbar(message) }
     }
+    // The stored frame choice is mirrored for the next launch: AWT cannot add or remove a decoration on a live window.
+    val framePreferences by graph.settings.snapshots.collectAsState()
+    LaunchedEffect(framePreferences) {
+        framePreferences?.let { mirrorWindowFramePreference(it, graph.instanceDirectory) }
+    }
     CompositionLocalProvider(
         LocalDesktopWindowShown provides (activity.visible && !activity.minimized),
         LocalDesktopSystemDark provides effectiveDark,
     ) {
-        Box(Modifier.fillMaxSize()) {
-            ArchiveTuneRoot(
-                host = host,
-                // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
-                visible = activity.visible && !activity.minimized && !activity.occluded,
-                resumed = activity.resumed,
-                opticalCapabilities = rememberDesktopOpticalCapabilities(),
+        with(frame) {
+            DesktopWindowFrame(
+                mode = frameMode,
                 systemDark = effectiveDark,
-                // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
-                rootKeyFocus = true,
-                desktopShell = true,
-                desktopTopBar = { navigation, searchFocus -> DesktopTopBar(navigation, searchFocus) },
-            )
-            // The host's notice sits outside the app theme, so it carries the same light/dark reading itself.
-            ArchiveTuneTheme(darkTheme = effectiveDark) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    SnackbarHost(notices, Modifier.padding(16.dp))
+                windowState = windowState,
+                title = DesktopStrings["app_name"],
+                onRequestClose = { closeRequests.request(quit) },
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    ArchiveTuneRoot(
+                        host = host,
+                        // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
+                        visible = activity.visible && !activity.minimized && !activity.occluded,
+                        resumed = activity.resumed,
+                        opticalCapabilities = rememberDesktopOpticalCapabilities(),
+                        systemDark = effectiveDark,
+                        // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
+                        rootKeyFocus = true,
+                        desktopShell = true,
+                    )
+                    // The host's notice sits outside the app theme, so it carries the same light/dark reading itself.
+                    ArchiveTuneTheme(darkTheme = effectiveDark) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                            SnackbarHost(notices, Modifier.padding(16.dp))
+                        }
+                    }
                 }
             }
         }

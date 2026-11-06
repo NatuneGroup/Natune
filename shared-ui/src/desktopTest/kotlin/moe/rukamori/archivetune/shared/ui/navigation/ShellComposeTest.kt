@@ -140,7 +140,9 @@ class ShellComposeTest {
         onAllNodes(hasTestTag("shell-mini-player")).assertCountEquals(1)
     }
 
-    @Test fun desktopSidebarIsNamedAndSurvivesSettings() = runComposeUiTest {
+    @Test fun thisShellStaysThePhoneShellOnADesktopHost() = runComposeUiTest {
+        // The desktop host draws its own scaffold (DesktopShellTest); this shell must not grow a second sidebar, so a
+        // desktop host's flag only widens the pages. The rail here is still the phone/M3 one, search tab included.
         val navigation = ShellNavigation()
         setContent {
             MaterialTheme {
@@ -153,18 +155,8 @@ class ShellComposeTest {
             }
         }
         onNodeWithTag("shell-rail").assertIsDisplayed()
-        onNodeWithText("Home").assertIsDisplayed()
-        onNodeWithText("Library").assertIsDisplayed()
-        // Search lives in the host top bar, not in the sidebar.
-        onNodeWithTag("shell-tab-Search").assertDoesNotExist()
+        ShellTab.entries.forEach { onNodeWithTag("shell-tab-${it.name}").assertIsDisplayed() }
         onNodeWithTag("shell-tab-Library").performClick()
         onNodeWithText("Route library").assertIsDisplayed()
-        // Settings keeps the same sidebar and mini player on desktop.
-        runOnIdle { navigation.open("settings") }
-        onNodeWithText("Route settings").assertIsDisplayed()
-        onNodeWithTag("shell-rail").assertIsDisplayed()
-        onNodeWithTag("shell-tab-Home").assertIsDisplayed()
-        onAllNodes(hasTestTag("shell-mini-player")).assertCountEquals(1)
-        onRoot().writeM4Screenshot("desktop-shell-sidebar.png")
     }
 }
