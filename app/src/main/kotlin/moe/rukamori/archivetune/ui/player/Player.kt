@@ -14,7 +14,6 @@ import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
 
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
@@ -112,7 +111,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -1495,7 +1493,8 @@ fun BottomSheetPlayer(
             )
         }
 
-        Box(
+        // BoxWithConstraints: a pop-up window is "portrait" but only a few hundred dp tall.
+        BoxWithConstraints(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -1523,8 +1522,8 @@ fun BottomSheetPlayer(
             )
         }
 
-        when (LocalConfiguration.current.orientation) {
-            Configuration.ORIENTATION_LANDSCAPE -> {
+        when {
+            PlayerWindowLayout.usesWideArrangement(maxWidth.value, maxHeight.value) -> {
                 if (playerDesignStyle == PlayerDesignStyle.V5) {
                     val littleBackground = MaterialTheme.colorScheme.primaryContainer
                     val littleTextColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -2137,8 +2136,9 @@ fun BottomSheetPlayer(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier.weight(1f),
                         ) {
-                            val screenWidth = LocalConfiguration.current.screenWidthDp
-                            val thumbnailSize = (screenWidth * 0.4).dp
+                            // The smaller side of the pane, not 40% of the device screen width: in
+                            // a pop-up window that square was taller than the window itself.
+                            val thumbnailSize = minOf(maxWidth, maxHeight) * 0.4f
                             Thumbnail(
                                 sliderPositionProvider = { sliderPosition },
                                 modifier = Modifier.size(thumbnailSize),
