@@ -241,7 +241,8 @@ internal object DesktopWindowBounds {
             DesktopScreenSpace(
                 screens = environment.screenDevices.map { it.defaultConfiguration.bounds },
                 workArea = environment.maximumWindowBounds,
-                scale = configuration?.defaultTransform?.scaleX ?: 1f,
+                // AffineTransform.scaleX is a double; the space carries the float Compose's density uses.
+                scale = configuration?.defaultTransform?.scaleX?.toFloat() ?: 1f,
                 defaultScreen = configuration?.bounds,
             )
         }
