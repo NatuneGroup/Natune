@@ -72,6 +72,9 @@ import moe.rukamori.archivetune.constants.TidalAuthFlowKey
 import moe.rukamori.archivetune.constants.TidalCountryCodeKey
 import moe.rukamori.archivetune.constants.TidalInstancesKey
 import moe.rukamori.archivetune.constants.TidalNeedsReloginKey
+import moe.rukamori.archivetune.constants.TidalAnimatedCoversEnabledKey
+import moe.rukamori.archivetune.constants.TidalArtworkFallbackEnabledKey
+import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.TidalRefreshTokenKey
 import moe.rukamori.archivetune.constants.TidalSubscriptionKey
 import moe.rukamori.archivetune.constants.TidalSubscriptionStatus
@@ -113,6 +116,12 @@ fun TidalSettings(navController: NavController, scrollTo: String? = null) {
     val needsRelogin by rememberPreference(TidalNeedsReloginKey, false)
     val countryCode by rememberPreference(TidalCountryCodeKey, "")
     val userId by rememberPreference(TidalUserIdKey, 0L)
+    val (tidalEnabled) = rememberPreference(TidalEnabledKey, defaultValue = true)
+    val (animatedCovers, onAnimatedCoversChange) = rememberPreference(TidalAnimatedCoversEnabledKey, defaultValue = false)
+    // The artwork fallback defaults to false so users do not get unexpected Tidal network traffic; an explicit
+    // choice is preserved either way.
+    val (tidalArtworkFallback, onTidalArtworkFallbackChange) =
+        rememberPreference(TidalArtworkFallbackEnabledKey, defaultValue = false)
 
     val subscription =
         remember(subscriptionRaw) {
@@ -497,6 +506,39 @@ fun TidalSettings(navController: NavController, scrollTo: String? = null) {
                 .verticalScroll(scrollState)
                 .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
         ) {
+            PreferenceGroup(
+                title = stringResource(R.string.tidal_artwork),
+            ) {
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("tidal_animated_covers"),
+                        title = { Text(stringResource(R.string.tidal_animated_covers)) },
+                        description = stringResource(R.string.tidal_animated_covers_description),
+                        icon = { Icon(painterResource(R.drawable.image), null) },
+                        checked = animatedCovers,
+                        onCheckedChange = onAnimatedCoversChange,
+                        isEnabled = tidalEnabled,
+                    )
+                }
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("tidal_artwork_fallback"),
+                        title = { Text(stringResource(R.string.tidal_artwork_fallback)) },
+                        description = stringResource(
+                            if (tidalEnabled) {
+                                R.string.tidal_artwork_fallback_description
+                            } else {
+                                R.string.tidal_artwork_fallback_unavailable
+                            },
+                        ),
+                        icon = { Icon(painterResource(R.drawable.image), null) },
+                        checked = tidalArtworkFallback,
+                        onCheckedChange = onTidalArtworkFallbackChange,
+                        isEnabled = tidalEnabled,
+                    )
+                }
+            }
+
             PreferenceGroup(
                 modifier = positions.modifierFor("tidal_account"),
                 title = stringResource(R.string.tidal_account),

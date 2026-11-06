@@ -15,7 +15,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -89,6 +88,7 @@ fun ContentSettings(
 
     // Used only before Android 13
     val (appLanguage, onAppLanguageChange) = rememberPreference(key = AppLanguageKey, defaultValue = SYSTEM_DEFAULT)
+    val (hideAiMix, onHideAiMixChange) = rememberPreference(HideAiMixKey, defaultValue = false)
 
     val (contentLanguage, onContentLanguageChange) = rememberPreference(key = ContentLanguageKey, defaultValue = "system")
     val (contentCountry, onContentCountryChange) = rememberPreference(key = ContentCountryKey, defaultValue = "system")
@@ -104,7 +104,6 @@ fun ContentSettings(
     // The preference is still read so the underlying DataStore value is preserved
     // for a possible future UI, but the values are intentionally unused.
     @Suppress("UNUSED_VARIABLE")
-    val (quickPicks, onQuickPicksChange) = rememberEnumPreference(key = QuickPicksKey, defaultValue = QuickPicks.QUICK_PICKS)
 
     val scrollState = rememberScrollState()
     val positions = rememberPreferencePositions()
@@ -302,8 +301,16 @@ fun ContentSettings(
                     onValueChange = onLengthTopChange,
                 )
             }
-            // QuickPicksKey is deliberately still stored rather than deleted, so
-            // any saved value survives; it is no longer exposed in the UI.
+            item {
+                SwitchPreference(
+                    modifier = positions.modifierFor("hide_ai_mix"),
+                    title = { Text(stringResource(R.string.hide_ai_mix)) },
+                    description = stringResource(R.string.hide_ai_mix_desc),
+                    icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
+                    checked = hideAiMix,
+                    onCheckedChange = onHideAiMixChange,
+                )
+            }
         }
     }
 

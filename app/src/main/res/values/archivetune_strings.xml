@@ -191,7 +191,7 @@
     <string name="no_title">No title</string>
     <string name="unknown_artist">Unknown artist</string>
     <string name="aod_customize_title">AOD customization</string>
-    <string name="aod_customize_subtitle">Shape, layout, controls, and ambient styling</string>
+    <string name="aod_customize_subtitle">Visibility, artwork size, and timing</string>
     <string name="aod_customize_entry_desc">Customize the always-on player screen</string>
     <string name="aod_customize_preview">Live preview</string>
     <string name="aod_customize_visibility">Visibility</string>
@@ -217,7 +217,7 @@
     <string name="aod_slider_style_thick">Thick</string>
     <string name="aod_slider_style_circular">Circular</string>
     <string name="aod_slider_style_simple">Simple</string>
-    <string name="aod_customize_scale_and_spacing">Scale and spacing</string>
+    <string name="aod_customize_scale_and_spacing">Artwork size</string>
     <string name="aod_customize_thumbnail_size">Thumbnail size</string>
     <string name="aod_customize_shape_rotation">Shape rotation</string>
     <string name="aod_customize_horizontal_padding">Horizontal padding</string>
@@ -237,7 +237,7 @@
     <string name="aod_customize_sample_duration">3:48</string>
     <string name="aod_customize_show_lyrics">Show lyrics</string>
     <string name="aod_customize_show_lyrics_desc">Display the current lyric line beneath the title while music plays.</string>
-    <string name="aod_customize_lyrics">Lyrics</string>
+    <string name="aod_customize_lyrics">Timing</string>
     <string name="aod_customize_auto_timer">Auto-enter AOD</string>
     <string name="aod_customize_auto_timer_off">Off</string>
     <string name="aod_customize_auto_timer_seconds">%1$d s</string>
