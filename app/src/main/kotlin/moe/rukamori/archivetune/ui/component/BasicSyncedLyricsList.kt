@@ -282,11 +282,11 @@ private fun BasicSyncedLyricLine(
         if (animationsDisabled) {
             snap<Float>()
         } else {
-            spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+            spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
         }
     val lineAlpha by animateFloatAsState(
         targetValue = if (isActive) 1f else EnhancedLyricsMotion.INACTIVE_ALPHA,
-        animationSpec = tween(durationMillis = if (animationsDisabled) 0 else 240),
+        animationSpec = tween(durationMillis = if (animationsDisabled) 0 else ACTIVE_FADE_MS),
         label = "enhanced-line-alpha",
     )
     val depthAlpha by animateFloatAsState(depth.alpha, depthSpec, label = "enhanced-depth-alpha")
@@ -306,6 +306,17 @@ private fun BasicSyncedLyricLine(
     val endAligned = karaoke?.alignment == KaraokeAlignment.End
     val horizontal = if (endAligned) Alignment.End else Alignment.Start
     val textAlign = if (endAligned) TextAlign.End else TextAlign.Start
+    // A line that answers the lead voice — a line of background vocals, or the document's second
+    // voice — draws as the smaller secondary line with its own timing, not as another lead line.
+    val secondary = line is KaraokeLine.AccompanimentKaraokeLine
+    val lineStyle = if (secondary) accompanimentLineTextStyle else normalLineTextStyle
+    // A word sweep needs real per-word spans. A line-synced row carries a KaraokeLine only to hang its
+    // reading on, and every syllable in it is a peg at the line's own start (see buildLineSyncedLrcLine):
+    // sweeping those lights the whole row at one instant and drags it through a completion lift it never
+    // earned. Those rows keep the line highlight alone — the row's own fade and pop — which is all their
+    // timing supports.
+    val swept = line.hasWordTiming()
+    val lineColor = if (secondary) textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA) else textColor
     Column(
         horizontalAlignment = horizontal,
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -351,18 +362,23 @@ private fun BasicSyncedLyricLine(
             }
         }
         when {
-            karaoke != null && isActive ->
+            swept && isActive ->
                 EnhancedSweptLine(
-                    syllables = karaoke.syllables,
-                    style = normalLineTextStyle.copy(textAlign = textAlign),
-                    textColor = textColor,
+                    syllables = karaoke!!.syllables,
+                    style = lineStyle.copy(textAlign = textAlign),
+                    textColor = lineColor,
                     reduceMotion = animationsDisabled,
                     currentPosition = currentPosition,
                 )
             karaoke != null ->
-                Text(text = karaoke.syllables.joinSyllableContents(), style = normalLineTextStyle, color = textColor, textAlign = textAlign)
+                Text(
+                    text = karaoke.syllables.joinSyllableContents(),
+                    style = lineStyle,
+                    color = lineColor,
+                    textAlign = textAlign,
+                )
             line is SyncedLine ->
-                Text(text = line.content, style = normalLineTextStyle, color = textColor, textAlign = textAlign)
+                Text(text = line.content, style = lineStyle, color = lineColor, textAlign = textAlign)
         }
         (karaoke as? KaraokeLine.MainKaraokeLine)?.accompanimentLines?.forEach { accompaniment ->
             val accompanimentLine = accompaniment as? KaraokeLine
@@ -376,7 +392,7 @@ private fun BasicSyncedLyricLine(
                     EnhancedSweptLine(
                         syllables = accompanimentSyllables,
                         style = accompanimentLineTextStyle.copy(textAlign = textAlign),
-                        textColor = textColor.copy(alpha = textColor.alpha * 0.6f),
+                        textColor = textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA),
                         reduceMotion = animationsDisabled,
                         currentPosition = currentPosition,
                     )
@@ -384,7 +400,7 @@ private fun BasicSyncedLyricLine(
                     Text(
                         text = accompanimentText,
                         style = accompanimentLineTextStyle,
-                        color = textColor.copy(alpha = 0.6f),
+                        color = textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA),
                         textAlign = textAlign,
                     )
             }
@@ -406,9 +422,15 @@ private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
 private const val AUTO_SCROLL_RESUME_MS = 4_500L
-private const val AUTO_SCROLL_MS = 350
+private const val AUTO_SCROLL_MS = 280
 private const val ACTIVE_POP_MS = 100
 private const val ACTIVE_POP_SCALE = 1.05f
+
+/** How long the lit row takes to reach full strength when the line changes. */
+private const val ACTIVE_FADE_MS = 180
+
+/** How much a secondary line — background vocals or the second voice — gives up to the lead line. */
+private const val SECONDARY_LINE_ALPHA = 0.6f
 
 /** The one animated scroll speed of a line change: a fixed ease-in-out over [AUTO_SCROLL_MS]. */
 private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)

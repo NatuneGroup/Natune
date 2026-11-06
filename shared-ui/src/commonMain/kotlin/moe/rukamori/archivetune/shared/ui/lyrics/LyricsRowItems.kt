@@ -61,6 +61,9 @@ private const val SELECTED_ROW_ALPHA = 0.16f
 private const val BACKGROUND_SIZE_RATIO = 0.7f
 private const val BACKGROUND_ACTIVE_ALPHA = 0.72f
 
+/** The document's second voice: an answer to the lead line, not another lead line. */
+private const val SECOND_VOICE_SIZE_RATIO = 0.82f
+
 /**
  * The soft dark lift under every sung glyph. Artwork behind the rows can be bright or busy, so a
  * short-radius shadow keeps the edges reading on any palette without a visible outline.
@@ -106,6 +109,8 @@ internal fun LyricsRowItem(
 ) {
     // Unsynced text has no timing to follow, so it reads at full strength rather than as an idle line.
     val linePalette = if (row.isSynced) palette else palette.copy(dim = palette.bright)
+    // The document's second voice answers the lead line: its own row, its own sweep, drawn as an answer.
+    val secondVoiceStyle = remember(mainStyle) { lyricsSecondVoiceStyle(mainStyle) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -129,7 +134,7 @@ internal fun LyricsRowItem(
         }
         SweptLyricLine(
             row = row,
-            style = mainStyle,
+            style = if (row.isSecondVoice) secondVoiceStyle else mainStyle,
             palette = linePalette,
             active = active,
             passed = passed,
@@ -313,6 +318,18 @@ internal fun lyricsBackgroundStyle(mainStyle: TextStyle): TextStyle =
     mainStyle.copy(
         fontSize = if (mainStyle.fontSize.isSpecified) mainStyle.fontSize * BACKGROUND_SIZE_RATIO else mainStyle.fontSize,
         lineHeight = if (mainStyle.lineHeight.isSpecified) mainStyle.lineHeight * BACKGROUND_SIZE_RATIO else mainStyle.lineHeight,
+        fontWeight = FontWeight.SemiBold,
+    )
+
+/**
+ * The document's second voice — the backing vocal a lead line is answered by. It is a line of its own, so
+ * it keeps its own sweep, but it reads as an answer rather than as another lead: smaller than the line it
+ * answers, the same way the background row does.
+ */
+internal fun lyricsSecondVoiceStyle(mainStyle: TextStyle): TextStyle =
+    mainStyle.copy(
+        fontSize = if (mainStyle.fontSize.isSpecified) mainStyle.fontSize * SECOND_VOICE_SIZE_RATIO else mainStyle.fontSize,
+        lineHeight = if (mainStyle.lineHeight.isSpecified) mainStyle.lineHeight * SECOND_VOICE_SIZE_RATIO else mainStyle.lineHeight,
         fontWeight = FontWeight.SemiBold,
     )
 

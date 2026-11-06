@@ -84,11 +84,17 @@ separately from the user offset; the iOS host does not add a second route-latenc
 The renderer draws no top bar, so each host owns its own chrome. Android's lyrics sheet header
 (`ui/player/LyricsTrackHeader.kt`) is the one that carries real chrome: artwork, the title and
 artist, and the close, favourite and overflow buttons on a single row. Its sizes come from the row
-it is given (`LyricsHeaderMetrics`): the artwork takes a clamped share of it, the three 48 dp tap
-targets stay 48 dp, and the title and artist keep every remaining dp, so the marquee viewport is
-the row's remainder and the text can never extend under the buttons. Fixed artwork and targets on a
-360 dp phone leave about six characters for the title, which is what a clipped "São Pau" under the
-close button was.
+it is given (`LyricsHeaderMetrics`): the artwork takes a clamped 20% share of it (56-84 dp, so a
+phone gets a tile rather than a thumbnail), the three 48 dp tap targets stay 48 dp — the
+accessibility floor — and the buttons sit with no gap so they read as one group. The title and
+artist keep every remaining dp, and the sheet's side inset is 20 dp on both the header and the
+transport. A title that does not fit one line takes a second one (`LyricsHeaderTitle`: measured once
+per title/style/width, marquee when it fits) instead of being clipped at the first, which is what a
+clipped "São Pau" under the close button was.
+
+The credit row — "Lyrics from <provider>", the overflow menu and the close button
+(`ui/player/LyricsScreenFooter.kt`) — is the sheet's chrome, not a player control: it is drawn below
+the auto-hiding transport, so it stays reachable after the transport has tucked itself away.
 
 ## Sync offsets, romanization and frame scheduling
 
@@ -123,7 +129,18 @@ otherwise, and re-checks at most every 250 ms so a seek still lands promptly. Ev
 shared `rememberLyricsClock`, and Lyrics, V2, SimpMusic and Enhanced on Android) publishes the
 position and line before it parks, and divides the media-time gap by the playback speed
 (`lyricsIdleParkMs` in shared-ui; the app's `sleepUntilNext` wraps it), so a 2× track never sleeps
-through a sweep; paused surfaces poll at 100 ms. The UIKit native pane invalidates its `CADisplayLink`
+through a sweep; paused surfaces poll at 100 ms.
+
+Android's Enhanced pane does not draw the position the loop wrote. The loop anchors
+`EnhancedLyricsDrawClock` with the player position it just read and the vsync instant it read it at,
+and every draw projects that anchor with its own clock (`LyricsPositionProjection`, the one shared
+drift curve: 80 ms forward / 180 ms backward before a re-anchor, 55% of the remainder per frame). A
+frame therefore paints the position of the instant it is painted at instead of the position the
+frame before it published, which is one frame of lag a position-driven sweep cannot hide. The loop
+bumps one `frameTick` state per drawn frame, and that tick is the draw-phase subscription, so a
+parked iteration still repaints the frame it published and asks for nothing else.
+
+The UIKit native pane invalidates its `CADisplayLink`
 and timer when hidden or backgrounded, draws display frames only while advancing without reduced
 motion, and polls a held position at 250 ms. Neither callback advances its Kotlin clock. A word's live span runs
 through its completion lift (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the
@@ -165,6 +182,14 @@ Each word fills over exactly its provider span. `LyricsSweepGeometry.MIN_SWEEP_M
 one frame) only keeps a zero or negative span from dividing by zero, so a quick word is never
 stretched past the next one. The V2 profile keeps its own 180 ms `minSweepMs`.
 
+A word sweep needs **real per-word spans**, and the Enhanced list asks before it draws one
+(`ISyncedLine.hasWordTiming()`: at least two syllables, more than one distinct start, at least one
+span past the 1 ms peg). A line-synced LRC row carries a `KaraokeLine` only so it can show its
+reading (`buildLineSyncedLrcLine`), and every syllable in it is pegged at the line's own start;
+sweeping those lit the whole row at one instant and dragged it through a completion lift it never
+earned. Those rows keep the line highlight alone — the row's own fade and pop — and the same rule
+decides the background voices below.
+
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
 
@@ -196,14 +221,21 @@ them skipped under reduced motion:
   in the draw pass, never a relayout. An emphasized word rides the same drop under its letter
   ripple, and a word wrapped over two visual lines stays seated on Compose. Reduced motion seats
   every word, the same no-bounce behaviour as before. On Android a timed background voice under the
-  sung row sweeps and lifts over its own word spans the same way. A rising or emphasized word's cut
+  sung row sweeps and lifts over its own word spans the same way, and a line that *is* the
+  background voice — a whole line of `x-bg` words, or the document's second voice
+  (`ttm:agent="v2"`) — is published as its own `AccompanimentKaraokeLine` row and drawn smaller
+  under the lead line instead of being promoted to a lead line at full size. The shared renderer
+  does the same for the second voice (`lyricsSecondVoiceStyle`). A rising or emphasized word's cut
   and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
   with the word on their own baseline rather than being clipped or drawn twice.
 - The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
   scaling from its aligned edge.
-- An instrumental break of 9 s or more shows three dots above the next line (`LyricsInterludes`,
-  `LyricsInterludeDots`). They light in turn over the break and breathe, and over the last 1.5 s
-  they swell toward the arriving line.
+- An instrumental break of 9 s or more shows three 14 dp dots above the next line
+  (`LyricsInterludes`, `LyricsInterludeDots`, and `EnhancedInterludeDots` on Android). Their light is
+  a travelling pulse on the lyrics timeline — each dot one half of a cosine, a third of a 1.4 s cycle
+  behind the one before it — so the loop is seamless at the wrap and a break of any length keeps the
+  same rhythm instead of a fill that restarts with every break. A 2.8 s breath scales them, and over
+  the last 1.5 s they swell toward the arriving line.
 - Depth (scale, fade and a uniform 2 dp blur) applies to every non-sung row while the list
   follows (`LyricsDepth.UNIFORM_BLUR_DP`), and waits `LyricsDepth.staggerMs` per step, so a line
   change ripples outward. Rows stay sharp until the listener's hold ends or a line is tapped,
@@ -212,7 +244,7 @@ them skipped under reduced motion:
 - The list moves to a new line at once, and each row starts where it was and eases into place
   after the same stagger (`LyricsLineSettle`). The glide lasts at most 1 s, is off under reduced
   motion, and ends at once on a drag, a seek or a hidden surface. Without a glide, a line at hand
-  eases to the anchor on a fixed 350 ms ease-in-out scroll; a far one keeps the distance-covering
+  eases to the anchor on a fixed 280 ms ease-in-out scroll; a far one keeps the distance-covering
   animation. The line settles at 35% of the box, about a third from the top, and the manual-scroll
   hold is 4.5 s. A feed jump past 1 s re-anchors at once like a seek, but it does not end the hold —
   only a seek or a new session does.
@@ -230,9 +262,10 @@ patched. The in-house path (`EnhancedSweptLine`, `BasicSyncedLyricsList`,
 `EnhancedInterludeDots`) mirrors the shared
 refinements: activation leads on word-synced rows, the shared completion lift, the per-letter
 ripple, the width-share feather, the uniform blur, the
-15% anchor, the 4.5 s hold, the 350 ms scroll, the active-line pop, the dots and the credits footer.
-Line-synced rows light at their own start with no activation lead — the timing the library view
-kept — and descenders keep their band overshoot.
+15% anchor, the 4.5 s hold, the 280 ms scroll, the active-line pop, the dots and the credits footer.
+Line-synced rows light at their own start with no activation lead and take no word sweep — the
+timing the library view kept, without the fabricated per-word pass Natune's own sweep used to run
+over it — and descenders keep their band overshoot.
 
 iOS previously drew its own Enhanced pane in UIKit — a UIKit table, TextKit glyph caches and
 Core Graphics bright masks, with a separate 35% anchor, 350 ms follow and its own dots. That

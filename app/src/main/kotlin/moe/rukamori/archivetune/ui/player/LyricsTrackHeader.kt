@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -29,10 +30,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -40,29 +47,30 @@ import moe.rukamori.archivetune.ui.component.MarqueeText
 
 /**
  * The width budget of the lyrics header. The row is one line holding the artwork tile, the track's
- * title and artist, and three 48 dp targets. At fixed sizes that chrome is 302 dp of a 360 dp phone
- * row, so the title and artist were left about six characters — a clipped line of text sitting under
- * the buttons rather than a track title. The artwork therefore gives way with the row while the tap
- * targets stay 48 dp, and the title and artist keep every dp the chrome does not take, so the marquee
- * always has a readable viewport and the two can never overlap the buttons.
+ * title and artist, and three 48 dp targets. The tap targets stay 48 dp — they are the accessibility
+ * floor — so the row's room comes from the gaps between them (none: the three read as one group), the
+ * gap to the artwork, and the sheet's own side padding. What is left is the title/artist column, and a
+ * title that does not fit one line is allowed a second one rather than being cut off (see
+ * [LyricsHeaderTitle]); the artwork is a share of the row so a phone gets a tile that reads as artwork
+ * instead of a thumbnail.
  */
 internal object LyricsHeaderMetrics {
     /** The artwork tile's share of the row, clamped so it stays artwork and never a thumbnail. */
-    const val ARTWORK_SHARE = 0.13f
-    const val ARTWORK_MIN_DP = 40f
-    const val ARTWORK_MAX_DP = 72f
+    const val ARTWORK_SHARE = 0.20f
+    const val ARTWORK_MIN_DP = 56f
+    const val ARTWORK_MAX_DP = 84f
 
     /** The gap between the artwork and the title/artist column. */
-    const val ARTWORK_GAP_DP = 10f
+    const val ARTWORK_GAP_DP = 8f
 
     /** The gap between the title/artist column and the button group. */
-    const val TRACK_GAP_DP = 6f
+    const val TRACK_GAP_DP = 4f
 
     /** One icon button's tap target; the filled circle drawn inside it is smaller. */
     const val ICON_TARGET_DP = 48f
 
-    /** The gap between two icon buttons: the three of them read as one group at the row's end. */
-    const val BUTTON_GAP_DP = 2f
+    /** The gap between two icon buttons: none, so the three read as one group at the row's end. */
+    const val BUTTON_GAP_DP = 0f
 
     /** Close, favourite and overflow: the three controls the lyrics header always carries. */
     const val BUTTON_COUNT = 3
@@ -133,8 +141,8 @@ internal fun AppleMusicTrackHeader(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                MarqueeText(
-                    text = mediaMetadata.title,
+                LyricsHeaderTitle(
+                    title = mediaMetadata.title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = foregroundColor,
                 )
@@ -156,8 +164,6 @@ internal fun AppleMusicTrackHeader(
                 onClick = onDismissClick,
             )
 
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.BUTTON_GAP_DP.dp))
-
             AppleMusicHeaderIconButton(
                 iconRes = if (isLiked) R.drawable.player_favorite else R.drawable.player_favorite_border,
                 contentDescription = stringResource(
@@ -167,8 +173,6 @@ internal fun AppleMusicTrackHeader(
                 onClick = onToggleLike,
             )
 
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.BUTTON_GAP_DP.dp))
-
             AppleMusicHeaderIconButton(
                 iconRes = R.drawable.player_more_horiz,
                 contentDescription = stringResource(R.string.more_options),
@@ -176,6 +180,46 @@ internal fun AppleMusicTrackHeader(
                 onClick = onMoreClick,
                 onPositioned = onMorePositioned,
             )
+        }
+    }
+}
+
+/**
+ * The header's title. A title that fits its column keeps the app's one-line marquee; one that does not
+ * is given a second line instead of being cut off at the first — the sheet's text column is narrow by
+ * design, and a track title clipped to a few characters names nothing. The measurement is remembered on
+ * the title, the style and the column width, so a recomposition does not shape the text again.
+ */
+@Composable
+private fun LyricsHeaderTitle(
+    title: String,
+    style: TextStyle,
+    color: Color,
+) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints {
+        val density = LocalDensity.current
+        val widthPx = with(density) { maxWidth.roundToPx() }
+        // Laid out at the column's width with no line limit: a title that fits stays on one line, and one
+        // that does not reports the extra lines (or the width it could not use) here.
+        val measured =
+            remember(title, style, widthPx) {
+                measurer.measure(
+                    text = AnnotatedString(title),
+                    style = style,
+                    constraints = Constraints(maxWidth = widthPx),
+                )
+            }
+        if (measured.lineCount > 1 || measured.didOverflowWidth) {
+            Text(
+                text = title,
+                style = style,
+                color = color,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            MarqueeText(text = title, style = style, color = color)
         }
     }
 }
