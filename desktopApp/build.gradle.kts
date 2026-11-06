@@ -315,6 +315,57 @@ val hostIsLinux = System.getProperty("os.name").startsWith("Linux")
 val hostIsWindows = System.getProperty("os.name").startsWith("Windows")
 val hostIsMacos = !hostIsLinux && !hostIsWindows
 val hostArch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
+
+// Windows per-monitor DPI v2 lives in the launcher manifest, not in JVM code: Windows reads it once at process start.
+// jpackage writes the JDK launcher manifest, which declares system DPI awareness, so a mixed-DPI desktop keeps one scale
+// for every monitor. Stamping the committed manifest into the app image's launcher, before packageMsi and the EXE/ZIP
+// staging wrap that image, is the supported way to change it. Opt-in: AWT's per-monitor relayout and the Compose window
+// sizing it causes still need one run on real mixed-DPI hardware (docs/engineering/desktop-windows.md).
+val windowsLauncherManifestFile = layout.projectDirectory.file("packaging/windows/launcher.manifest")
+val windowsLauncherManifestMode = providers.gradleProperty("desktopWindowsLauncherManifest").orElse("")
+val windowsAppImageLauncher =
+    layout.buildDirectory.file("compose/binaries/main/app/$desktopPackageName/$desktopPackageName.exe")
+
+val windowsMtExeOverride = providers.gradleProperty("mtExe").orNull?.trim()?.takeIf(String::isNotEmpty)
+
+/** The Windows SDK's manifest tool, newest kit first; [overridePath] wins so a bare SDK can still be pointed at. */
+fun findWindowsMt(overridePath: String?): File? {
+    if (overridePath != null) return File(overridePath).takeIf { it.isFile }
+    val roots = listOfNotNull(
+        System.getenv("WindowsSdkDir")?.let(::File),
+        File(System.getenv("ProgramFiles(x86)") ?: "C:\\Program Files (x86)", "Windows Kits/10/bin"),
+        File(System.getenv("ProgramFiles") ?: "C:\\Program Files", "Windows Kits/10/bin"),
+    )
+    return roots.asSequence()
+        .filter { it.isDirectory }
+        .flatMap { root -> root.listFiles().orEmpty().sortedByDescending { kit -> kit.name }.asSequence() }
+        .map { kit -> File(File(kit, "x64"), "mt.exe") }
+        .firstOrNull { it.isFile }
+}
+
+val stampWindowsLauncherManifest = tasks.register("stampWindowsLauncherManifest") {
+    group = "distribution"
+    description = "Embeds packaging/windows/launcher.manifest (PerMonitorV2) into the Windows app-image launcher."
+    dependsOn("createDistributable")
+    onlyIf { windowsLauncherManifestMode.get().equals("per-monitor-v2", ignoreCase = true) }
+    doLast {
+        val launcher = windowsAppImageLauncher.get().asFile
+        if (!launcher.isFile) throw GradleException("The Windows app-image launcher is missing: $launcher")
+        val mt = findWindowsMt(windowsMtExeOverride) ?: throw GradleException(
+            "mt.exe was not found: install the Windows SDK or pass -PmtExe=<path> to embed the PMv2 manifest.",
+        )
+        val process = ProcessBuilder(
+            mt.absolutePath, "-nologo", "-manifest", windowsLauncherManifestFile.asFile.absolutePath,
+            "-outputresource:${launcher.absolutePath};#1",
+        ).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        if (process.waitFor() != 0) throw GradleException("mt.exe could not embed $windowsLauncherManifestFile: $output")
+        logger.lifecycle("Embedded ${windowsLauncherManifestFile.asFile.name} into ${launcher.name}")
+    }
+}
+// The MSI (and the EXE/ZIP that wrap the same app image) must be built after the launcher is stamped.
+tasks.matching { it.name == "packageMsi" }.configureEach { dependsOn(stampWindowsLauncherManifest) }
+
 val hostNativeName = when {
     hostIsLinux -> "linux-$hostArch"
     hostIsWindows -> "windows-$hostArch"
