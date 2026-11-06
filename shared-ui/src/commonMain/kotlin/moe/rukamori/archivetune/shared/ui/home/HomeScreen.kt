@@ -19,9 +19,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChipRow
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
+import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
 
 /** A presentation choice only, never serialized as a new replacement for HomeScreenStyle. */
@@ -64,7 +67,7 @@ fun HomePageHeader(
 ) {
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(Res.string.m4_home), style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
             headerActions()
         }
         HomeSourceSwitcher(source, availableSources, onSource)
@@ -142,7 +145,12 @@ fun HomeScreen(
                 items(shelves, key = { "m4-home-shelf-${it.key}" }) { shelf ->
                     Column {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(shelf.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                shelf.title,
+                                style = if (LocalDesktopLayout.current) DesktopType.sectionTitle()
+                                else MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f),
+                            )
                             shelf.more?.let { more ->
                                 TextButton(more, Modifier.testTag("shelf-more-${shelf.key}")) {
                                     Text(stringResource(Res.string.m4_more))

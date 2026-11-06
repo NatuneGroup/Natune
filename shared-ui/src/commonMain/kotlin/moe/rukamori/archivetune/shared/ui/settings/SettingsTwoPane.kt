@@ -48,8 +48,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -130,7 +130,7 @@ fun SettingsTwoPane(
                 ) {
                     Text(
                         selectedTitle,
-                        style = MaterialTheme.typography.headlineMedium.copy(fontSize = 28.sp),
+                        style = DesktopType.pageTitle(),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
