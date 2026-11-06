@@ -215,13 +215,14 @@ internal suspend fun assembleDesktopSessionOwners(
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
     // as Android's BotGuardTokenGenerator object feeds every resolver there. On a build with empty
     // BotGuard keys the managed helper supplies the tokens; its own switch defaults on so a stock
-    // install is not left untokened by the old web-client preference, which still defaults off.
+    // install is not left untokened. An explicitly configured BotGuard deployment mints by default;
+    // a blank build leaves the stored web-client preference in charge.
     val localPoTokenHelperEnabled: () -> Boolean = {
         vault.snapshots.value?.get(DesktopPoTokenHelperEnabledKey) ?: true
     }
     val poTokens = DesktopPoTokenOwner(
         http = http,
-        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: DesktopCredentials.botGuardConfigured },
         localHelper = desktopLocalPoTokenHelper(
             scope = scope,
             instanceDirectory = directory,

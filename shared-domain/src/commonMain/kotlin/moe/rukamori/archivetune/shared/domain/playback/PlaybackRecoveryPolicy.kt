@@ -160,6 +160,12 @@ object PlaybackRecoveryPolicy {
 object PlaybackFailureClassifier {
     fun categorize(failure: PlaybackFailure): PlaybackFailureCategory {
         failure.httpStatus?.let { return fromHttpStatus(it) }
+        // Native leases report the refusal as text ("the source answered HTTP 403", "the stream lease has expired")
+        // because an engine error code cannot carry an HTTP status across JNI. The message is evidence too, so a
+        // 403 or an expiry earns the same re-resolution a carried status would.
+        messageHttpStatus(failure)?.let { return fromHttpStatus(it) }
+        val evidence = (listOf(failure.message) + failure.causes).joinToString("\n").lowercase()
+        if (EXPIRED_TEXT.any { it in evidence }) return PlaybackFailureCategory.URL_EXPIRED
         for (cause in failure.causes) {
             val name = cause.substringBefore(':').trim()
             when {
@@ -188,13 +194,30 @@ object PlaybackFailureClassifier {
     fun fromHttpStatus(status: Int): PlaybackFailureCategory = when {
         status == 401 || status == 407 -> PlaybackFailureCategory.TOKEN
         status == 403 -> PlaybackFailureCategory.CDN_FORBIDDEN
-        status == 404 || status == 410 -> PlaybackFailureCategory.URL_EXPIRED
+        status == 404 || status == 410 || status == 416 -> PlaybackFailureCategory.URL_EXPIRED
         status == 408 -> PlaybackFailureCategory.TIMEOUT
         status == 425 -> PlaybackFailureCategory.NETWORK
         status == 429 -> PlaybackFailureCategory.RATE_LIMIT
         status in 500..599 -> PlaybackFailureCategory.NETWORK
         else -> PlaybackFailureCategory.UNKNOWN
     }
+
+    /** The HTTP status a sanitized failure message names, for hosts whose engine reports text rather than a status. */
+    private fun messageHttpStatus(failure: PlaybackFailure): Int? =
+        (listOf(failure.message) + failure.causes).firstNotNullOfOrNull { line ->
+            HTTP_STATUS_TEXT.find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        }
+
+    private val HTTP_STATUS_TEXT = Regex("""(?:HTTP|Server returned|HTTP error)\s*(\d{3})""", RegexOption.IGNORE_CASE)
+
+    private val EXPIRED_TEXT = listOf(
+        "lease has expired",
+        "stream lease has expired",
+        "url has expired",
+        "stream expired",
+        "expired url",
+        "token expired",
+    )
 
     /** Transport failure names the JVM and Darwin engines surface as cause classes. */
     private val NETWORK_CAUSES = setOf(

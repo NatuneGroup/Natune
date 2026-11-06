@@ -27,6 +27,27 @@ class PlaybackRecoveryPolicyTest {
     }
 
     @Test
+    fun aNativeLeaseMessageCarriesTheStatusTheEngineCannot() {
+        val cases = mapOf(
+            "the source answered HTTP 403" to PlaybackFailureCategory.CDN_FORBIDDEN,
+            "the source answered HTTP 401" to PlaybackFailureCategory.TOKEN,
+            "the source answered HTTP 404" to PlaybackFailureCategory.URL_EXPIRED,
+            "the source answered HTTP 410" to PlaybackFailureCategory.URL_EXPIRED,
+            "the source answered HTTP 416" to PlaybackFailureCategory.URL_EXPIRED,
+            "the stream lease has expired" to PlaybackFailureCategory.URL_EXPIRED,
+            "Server returned 503 Service Unavailable" to PlaybackFailureCategory.NETWORK,
+        )
+        val base = PlaybackFailure("occ", PlaybackFailureReason.DECODE_FAILED, "the source read failed")
+        for ((message, category) in cases) {
+            assertEquals(
+                category,
+                PlaybackFailureClassifier.categorize(base.copy(message = message)),
+                message,
+            )
+        }
+    }
+
+    @Test
     fun aCarriedStatusWinsOverCauseNamesAndReason() {
         val failure = PlaybackFailure(
             "occ", PlaybackFailureReason.DECODE_FAILED, "rejected",
