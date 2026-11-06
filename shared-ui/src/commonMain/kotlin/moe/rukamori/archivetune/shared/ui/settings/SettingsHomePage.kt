@@ -29,6 +29,8 @@ fun SettingsHomePage(
     scrollTo: String? = null,
     resumed: Boolean = true,
     motionEnabled: Boolean = true,
+    /** False on a host with no key path to the shortcut overlay, which then hides that group instead of a dead row. */
+    keyboardShortcuts: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
@@ -41,6 +43,7 @@ fun SettingsHomePage(
         hideToTrayKey = hideToTrayKey,
         openShortcuts = { shortcutsVisible = true },
         desktop = moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout.current,
+        keyboardShortcuts = keyboardShortcuts,
     )
     SettingsPage(
         rows = rows,
