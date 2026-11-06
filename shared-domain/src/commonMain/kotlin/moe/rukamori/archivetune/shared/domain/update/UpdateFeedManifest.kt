@@ -80,25 +80,37 @@ fun parseUpdateFeedManifest(text: String, expectedChannel: UpdateChannel? = null
  * Pick the asset a build can use. The Android host passes the exact artifact name it published
  * (`app-<dist>-<device>-<abi>-<suffix>.apk`); desktop matches its `natune-<platform>-<arch>-*` package.
  * An exact name match always wins over a predicate hit so a platform never grabs another's artifact.
+ * The whole asset is returned so its `size`/`sha256` survive selection instead of being dropped.
  */
+fun selectUpdateFeedAsset(
+    assets: List<UpdateFeedAsset>,
+    expectedArtifactName: String?,
+    matches: ((String) -> Boolean)? = null,
+): UpdateFeedAsset? {
+    if (expectedArtifactName != null) {
+        assets.firstOrNull { it.name == expectedArtifactName }?.let { return it }
+        if (matches == null) return null
+    }
+    return matches?.let { predicate -> assets.firstOrNull { predicate(it.name) } }
+}
+
+/** URL-only selection, kept for callers that never consume the digest. */
 fun selectUpdateFeedAssetUrl(
     assets: List<UpdateFeedAsset>,
     expectedArtifactName: String?,
     matches: ((String) -> Boolean)? = null,
-): String? {
-    if (expectedArtifactName != null) {
-        assets.firstOrNull { it.name == expectedArtifactName }?.let { return it.url }
-        if (matches == null) return null
-    }
-    return matches?.let { predicate -> assets.firstOrNull { predicate(it.name) }?.url }
-}
+): String? = selectUpdateFeedAsset(assets, expectedArtifactName, matches)?.url
 
 /**
  * Fold a manifest into the release shape the checker already reasons about. The manifest's verified
  * `versionCode` is the build code; htmlUrl falls back to the tag page so the release page link always
- * resolves somewhere real.
+ * resolves somewhere real. [sha256] is the selected asset's published digest, null when CI emitted none.
  */
-fun UpdateFeedManifest.toReleaseInfo(assetUrl: String? = null, releasesBaseUrl: String = UpdateRepository.RELEASES_BASE_URL): ReleaseInfo =
+fun UpdateFeedManifest.toReleaseInfo(
+    assetUrl: String? = null,
+    releasesBaseUrl: String = UpdateRepository.RELEASES_BASE_URL,
+    sha256: String? = null,
+): ReleaseInfo =
     ReleaseInfo(
         tagName = tag,
         name = versionName,
@@ -107,6 +119,7 @@ fun UpdateFeedManifest.toReleaseInfo(assetUrl: String? = null, releasesBaseUrl: 
         htmlUrl = releaseUrl?.takeIf { it.isNotBlank() } ?: "$releasesBaseUrl/tag/$tag",
         downloadUrl = assetUrl,
         versionCode = versionCode.coerceAtMost(Int.MAX_VALUE.toLong()),
+        sha256 = sha256?.takeIf { it.isNotBlank() },
     )
 
 /** Per-channel manifest file and feed release URL. */

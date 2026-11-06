@@ -51,11 +51,32 @@ Hard requirements the parser enforces (`UpdateFeedManifest.parseUpdateFeedManife
   `<releases>/tag/<tag>`; `notes` may be blank — the UI then shows
   "release notes unavailable".
 - `assets[]` entries need `name` + `url`; `size`/`sha256` are optional.
+  CI emits `sha256` for published artifacts, and the desktop updater verifies it
+  (see "Digest verification" below), so an asset published without one is
+  installable but only length-checked.
 - Asset selection is **exact-name first, then the host's matcher**
-  (`selectUpdateFeedAssetUrl`). Names therefore must keep the documented
-  shapes: `app-gms-mobile-<arch>-{release|nightly}.apk`,
+  (`selectUpdateFeedAsset`, which returns the whole asset so `size`/`sha256`
+  survive selection; `selectUpdateFeedAssetUrl` is the URL-only shortcut). Names
+  therefore must keep the documented shapes:
+  `app-gms-mobile-<arch>-{release|nightly}.apk`,
   `app-foss-mobile-universal-release.apk`, `app-gms-tv-universal-release.apk`,
   `natune-<os>-<arch>-<version>.<ext>`, `natune-ios-<version>.ipa`.
+
+## Digest verification
+
+The selected asset's `sha256` travels with the offer
+(`ReleaseInfo.sha256` → `UpdateOffer.sha256`) and the desktop download hashes the
+stream with SHA-256 as it writes (`JvmUpdateInstaller`). On a mismatch the
+`natune-update.download` staging file and its `.source`/`.code` sidecars are
+deleted and the download ends in the existing Failed state with an
+`Update digest mismatch: expected sha256:…, got sha256:…` message; a truncated
+body still fails before the digest is compared. A staged artifact reused from an
+earlier run is re-hashed against the digest before it is installed.
+
+A digest is only enforced when the feed publishes one. The `api.github.com`
+releases fallback carries no per-asset `sha256`, so that path keeps the
+length-only check and logs a line instead of pretending the artifact was
+verified. `sha256` may be bare hex or `sha256:<hex>`; both compare equal.
 
 ## versionCode semantics (the allocation edge)
 

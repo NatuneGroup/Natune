@@ -41,6 +41,8 @@ fun updateEligibility(candidateCode: Int?, installedCode: Int): UpdateEligibilit
 /**
  * A resolved release is immutable from its eligibility check through the user's action. The host
  * chooses [downloadUrl] for its distribution (direct download or the release page) before calling.
+ * [sha256] is the feed's published digest of that artifact; null when the feed published none, and
+ * callers that do not verify digests simply ignore it.
  */
 data class UpdateOffer(
     val channel: UpdateChannel,
@@ -49,6 +51,7 @@ data class UpdateOffer(
     val versionName: String,
     val notes: String?,
     val downloadUrl: String,
+    val sha256: String? = null,
 ) {
     val identity: String get() = "${channel.name}|$tag|$versionCode"
 }
@@ -62,11 +65,12 @@ fun eligibleUpdateOffer(
     notes: String?,
     downloadUrl: String?,
     installedCode: Int,
+    sha256: String? = null,
 ): UpdateOffer? {
     val code = buildCode ?: return null
     if (updateEligibility(code, installedCode) != UpdateEligibility.NEWER) return null
     val url = downloadUrl?.takeIf { it.isNotBlank() } ?: return null
-    return UpdateOffer(channel, tag, code, versionName, notes, url)
+    return UpdateOffer(channel, tag, code, versionName, notes, url, sha256?.takeIf { it.isNotBlank() })
 }
 
 /** A feed answer is applied only while both the requested channel and the selection revision still match. */
