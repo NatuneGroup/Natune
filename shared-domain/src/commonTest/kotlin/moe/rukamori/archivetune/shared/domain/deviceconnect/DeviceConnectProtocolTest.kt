@@ -230,6 +230,11 @@ class DeviceConnectStateMachineTest {
         assertTrue(state.awaitingPairApproval(1_000))
         assertTrue(state.canAcceptPairApprove())
         assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_APPROVE))
+        // The responder's stored-grant proof can still arrive after this side asked to pair; the frame
+        // is allowed through and ignored, and this phase can never authenticate, so it proves nothing.
+        assertTrue(state.allowsEncrypted(DeviceMessageType.AUTH_PROOF))
+        assertTrue(state.canAcceptAuthProof())
+        assertFalse(state.canAuthenticate())
         assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_COMMIT))
         assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
         assertTrue(state.awaitingPairCommit())
@@ -256,6 +261,9 @@ class DeviceConnectStateMachineTest {
         assertTrue(state.awaitingPairApproval(1_000))
         assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_APPROVE))
         assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_REJECT))
+        // Only the initiator tolerates a late stored-grant proof; the responder never asked to pair.
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_PROOF))
+        assertFalse(state.canAcceptAuthProof())
         assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
         assertTrue(state.awaitingPairCommit())
         assertTrue(state.canAcceptPairCommit())

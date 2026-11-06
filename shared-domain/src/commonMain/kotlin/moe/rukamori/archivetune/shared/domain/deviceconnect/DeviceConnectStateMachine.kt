@@ -127,6 +127,7 @@ class DeviceHandshakeState(
                 (type == DeviceMessageType.PAIR_REQUEST && role == DeviceConnectRole.RESPONDER)
         DeviceHandshakePhase.AWAITING_PAIR_APPROVAL ->
             type == DeviceMessageType.PAIR_REJECT || type == DeviceMessageType.ERROR ||
+                (type == DeviceMessageType.AUTH_PROOF && role == DeviceConnectRole.INITIATOR) ||
                 (type == DeviceMessageType.PAIR_APPROVE && role == DeviceConnectRole.INITIATOR)
         DeviceHandshakePhase.AWAITING_PAIR_COMMIT ->
             type == DeviceMessageType.PAIR_REJECT || type == DeviceMessageType.ERROR ||
@@ -139,8 +140,17 @@ class DeviceHandshakeState(
                 type == DeviceMessageType.ERROR
     }
 
-    /** A reconnect proof follows the hello and precedes every other pairing step. */
-    fun canAcceptAuthProof(): Boolean = phase == DeviceHandshakePhase.HELLO_RECEIVED
+    /**
+     * A reconnect proof follows the hello and precedes every other pairing step. An initiator that
+     * already sent its pair request can still receive the responder's stored-grant proof, because the
+     * responder sends that proof from its own hello without knowing that the initiator dropped the
+     * grant. That frame is allowed here so the connection survives it; it can never authenticate,
+     * because [canAuthenticate] excludes this phase and a side without the grant has no secret to
+     * verify it against. Only the pairing commit may authenticate a connection in this phase.
+     */
+    fun canAcceptAuthProof(): Boolean =
+        phase == DeviceHandshakePhase.HELLO_RECEIVED ||
+            (phase == DeviceHandshakePhase.AWAITING_PAIR_APPROVAL && role == DeviceConnectRole.INITIATOR)
 
     fun canAcceptPairRequest(): Boolean = phase == DeviceHandshakePhase.HELLO_RECEIVED
 
