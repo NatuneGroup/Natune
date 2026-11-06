@@ -28,8 +28,13 @@ enum class UpdateInstallOutcome { OPENED, REVEALED }
 private val LAUNCHABLE_EXTENSIONS = setOf("msi", "exe", "dmg", "pkg", "appimage")
 
 /** Feed digests arrive as bare hex or `sha256:<hex>`; blank or absent means the feed published none. */
-private fun normalizeSha256(value: String?): String? =
-    value?.trim()?.takeIf { it.isNotEmpty() }?.substringAfter(':').trim()?.takeIf { it.isNotEmpty() }?.lowercase()
+private fun normalizeSha256(value: String?): String? {
+    val trimmed = value?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    // `sha256:<hex>` keeps only the digest; a bare digest has no separator and is used as-is.
+    val hex = trimmed.substringAfter(':', trimmed).trim().lowercase()
+    return hex.ifEmpty { null }
+}
 
 private fun ByteArray.toHexString(): String = joinToString(separator = "") { "%02x".format(it) }
 
