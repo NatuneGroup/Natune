@@ -15,6 +15,11 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
  * load that asked for it. A stream whose provider reported no window is kept for [unknownExpiryTtlMs] only, because
  * nothing else bounds how long YouTube would still accept it.
  *
+ * The route is the one component a caller may not be able to name: under IP rotation the egress that would read a
+ * cached URL is not the egress that minted it. A [Key] with no route ([Key.network] null) is therefore never stored,
+ * never handed out and never shared — [get] answers null and [put] drops the stream, so a rotation run resolves each
+ * load instead of serving a URL another address cannot use.
+ *
  * One load per key is in flight at a time: a second caller of the same key waits for the first answer instead of
  * spending another player request on the same video. The map is a bounded LRU, and [invalidate] drops a video's entry
  * when a resolution or a playback attempt was rejected, so a bad URL is never served twice.
@@ -27,13 +32,19 @@ internal class DesktopResolvedStreamCache(
     /** How long a stream without a reported window stays usable. */
     private val unknownExpiryTtlMs: Long = UNKNOWN_EXPIRY_TTL_MS,
 ) {
-    /** Everything one resolution depends on. A value is only reused when all four match. */
+    /**
+     * Everything one resolution depends on. A value is only reused when all four match, and only at all when the route
+     * is nameable: [network] null means no route describes where the URL would be read, so the resolution is uncached.
+     */
     data class Key(
         val videoId: String,
         val quality: String,
         val session: String,
-        val network: String,
-    )
+        val network: String?,
+    ) {
+        /** Only a resolution whose route can be named may be handed out again. */
+        val cacheable: Boolean get() = network != null
+    }
 
     private class Entry(val audio: PreparedAudio.Progressive, val usableUntilMs: Long)
 
@@ -51,8 +62,12 @@ internal class DesktopResolvedStreamCache(
      */
     private val flights = HashMap<Key, Mutex>()
 
-    /** The cached stream for [key], or null when there is none or its window has closed. Expired entries are dropped. */
+    /**
+     * The cached stream for [key], or null when there is none, its window has closed, or its route cannot be named.
+     * Expired entries are dropped.
+     */
     fun get(key: Key): PreparedAudio.Progressive? {
+        if (!key.cacheable) return null
         val now = nowMs()
         return synchronized(lock) {
             val entry = entries[key] ?: return null
@@ -66,9 +81,11 @@ internal class DesktopResolvedStreamCache(
 
     /**
      * Keeps [audio] for [key] until its URL stops being safe to reuse. A stream whose window already closed is not
-     * stored at all: storing it would only create an entry the next [get] deletes.
+     * stored at all: storing it would only create an entry the next [get] deletes. Neither is a stream whose route
+     * cannot be named, because no later lookup could prove it would be read over the address that minted it.
      */
     fun put(key: Key, audio: PreparedAudio.Progressive) {
+        if (!key.cacheable) return
         val now = nowMs()
         val usableUntil = usableUntilMs(audio, now)
         if (usableUntil <= now) return
@@ -77,8 +94,12 @@ internal class DesktopResolvedStreamCache(
         }
     }
 
-    /** [get] when present, otherwise one [load] shared by every caller of the same key. Null when [load] answers null. */
+    /**
+     * [get] when present, otherwise one [load] shared by every caller of the same key. Null when [load] answers null.
+     * An uncacheable key resolves on its own: there is no entry to share and none worth asserting a flight over.
+     */
     suspend fun resolve(key: Key, load: suspend () -> PreparedAudio.Progressive?): PreparedAudio.Progressive? {
+        if (!key.cacheable) return load()
         get(key)?.let { return it }
         val flight = flightFor(key)
         return flight.withLock {

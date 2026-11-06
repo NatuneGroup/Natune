@@ -61,5 +61,9 @@ class SettingsConflictsRowsTest {
         assertTrue(choice.enabled)
         assertTrue(choice.options.any { it.value == "WEB_REMIX" })
         assertFalse(choice.options.any { it.value == "HI_RES_LOSSLESS" })
+        // The picker is the choice vocabulary and nothing else: every client a host may map is a row here, and no row
+        // exists that a host would have to invent a meaning for.
+        assertEquals(PlaybackClientChoice.entries.map { it.preference }, choice.options.map { it.value })
+        assertEquals(PlaybackClientChoice.WEB_REMIX.preference, choice.default)
     }
 }
