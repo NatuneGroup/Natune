@@ -282,6 +282,8 @@ internal fun DesktopMountedRoot(
                 systemDark = effectiveDark,
                 // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
                 rootKeyFocus = true,
+                desktopShell = true,
+                desktopTopBar = { navigation, searchFocus -> DesktopTopBar(navigation, searchFocus) },
             )
             // The host's notice sits outside the app theme, so it carries the same light/dark reading itself.
             ArchiveTuneTheme(darkTheme = effectiveDark) {

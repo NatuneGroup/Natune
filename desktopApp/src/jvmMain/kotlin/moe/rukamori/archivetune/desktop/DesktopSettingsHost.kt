@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,10 +58,12 @@ import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
+import moe.rukamori.archivetune.shared.ui.navigation.DesktopSettingsTwoPaneMinWidth
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
-import moe.rukamori.archivetune.shared.ui.resources.Res
-import moe.rukamori.archivetune.shared.ui.resources.m6_additional_downloads_spatialflow_font_choose
+import moe.rukamori.archivetune.shared.ui.navigation.isSettingsRoute
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
@@ -80,6 +83,8 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
 import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
+import moe.rukamori.archivetune.shared.ui.settings.SettingsTwoPane
+import moe.rukamori.archivetune.shared.ui.settings.settingsHomeRows
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
@@ -88,6 +93,7 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
+import org.jetbrains.compose.resources.stringResource
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.EnableTranslatorKey
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackState
@@ -304,8 +310,14 @@ internal fun DesktopSettingsScreen(
     navigation: ShellNavigation,
 ) {
     val back: () -> Unit = { navigation.back() }
-    CompositionLocalProvider(LocalSettingsBack provides back) {
-        DesktopSettingsRouteBody(owners, graph, route, navigation)
+    // The two-pane shell draws the sidebar itself, so a detail page no longer needs a lone back header. Narrow desktop
+    // windows fall back to the single-column list -> page flow the phone hosts use.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val twoPane = LocalDesktopLayout.current && maxWidth >= DesktopSettingsTwoPaneMinWidth &&
+            route.value.substringBefore('?').startsWith("settings")
+        CompositionLocalProvider(LocalSettingsBack provides if (twoPane) null else back) {
+            DesktopSettingsRouteBody(owners, graph, route, navigation, twoPane)
+        }
     }
 }
 
@@ -315,6 +327,7 @@ private fun DesktopSettingsRouteBody(
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
     navigation: ShellNavigation,
+    twoPane: Boolean,
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -329,8 +342,9 @@ private fun DesktopSettingsRouteBody(
         show(DesktopStrings["settings_change_failed"])
     }
     val unavailable: () -> Unit = { show(DesktopStrings["settings_feature_unavailable"]) }
-    Box(Modifier.fillMaxSize().padding(LocalShellContentPadding.current)) {
-        when (val path = route.value.substringBefore('?')) {
+    val routePath = route.value.substringBefore('?')
+    val settingsPage: @Composable (String) -> Unit = { path ->
+        when (path) {
             in DESKTOP_GENERAL_SETTINGS_ROUTES -> DesktopGeneralSettingsPage(
                 path = path,
                 controller = owners.controller,
@@ -779,7 +793,31 @@ private fun DesktopSettingsRouteBody(
                 )
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+    }
+    if (twoPane) {
+        SettingsTwoPane(
+            selectedRoute = routePath,
+            rows = settingsHomeRows(navigate, false, DesktopHideToTrayKey, {}, desktop = true),
+            onSelect = { target ->
+                when {
+                    target == routePath -> Unit
+                    target.startsWith("settings") -> navigation.reopen(target) { isSettingsRoute(it) }
+                    else -> navigation.open(target)
+                }
+            },
+            fallbackTitle = stringResource(Res.string.m6_settings_home_group_settings),
+            modifier = Modifier.fillMaxSize().padding(LocalShellContentPadding.current),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                settingsPage(routePath)
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+            }
+        }
+    } else {
+        Box(Modifier.fillMaxSize().padding(LocalShellContentPadding.current)) {
+            settingsPage(routePath)
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 

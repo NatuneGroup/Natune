@@ -85,10 +85,11 @@ class DesktopPlaybackEngineTest {
 
             engine.setSpeed(2f)
             assertEquals(2f, engine.snapshot().playbackSpeed)
-            // The ring holds up to two seconds rendered at the old speed. Draining exactly that much
-            // first makes the measured window reflect the new speed alone. A longer drain at double
-            // speed would run past the four-second fixture and end the playback before the window.
-            engine.renderLeft(FRAMES_PER_SECOND * 2)
+            // The ring holds up to two seconds of media rendered at the old speed. At 2x one second of
+            // output drains exactly that ring, so the measured window reflects the new speed alone.
+            // Draining two seconds of output would consume four seconds of media and run past the
+            // four-second fixture, ending playback before the window.
+            engine.renderLeft(FRAMES_PER_SECOND)
             val windowStart = engine.snapshot().positionUs
             engine.renderLeft(FRAMES_PER_SECOND / 2)
             val advanced = engine.snapshot().positionUs - windowStart

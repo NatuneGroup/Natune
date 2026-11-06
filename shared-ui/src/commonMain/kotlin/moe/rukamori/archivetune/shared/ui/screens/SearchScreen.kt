@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SearchBarPositionKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicSearchBar
 import moe.rukamori.archivetune.shared.ui.navigation.LocalNavigationBarHiddenByScroll
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.NavigationBarAnimationSpec
 import moe.rukamori.archivetune.shared.ui.navigation.NavigationBarHeight
@@ -43,6 +44,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.PillRole
 import moe.rukamori.archivetune.shared.ui.navigation.rememberPillStyle
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
+import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
 
 enum class SearchScope { Online, Local }
@@ -129,8 +131,9 @@ fun SearchScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(Modifier.fillMaxSize()) {
-            if (!searchBarAtBottom) {
-                Text(stringResource(Res.string.m4_search), style = MaterialTheme.typography.headlineLarge,
+            // The desktop top bar owns the search field; this page keeps the scope filters and results only.
+            if (!searchBarAtBottom && !LocalDesktopLayout.current) {
+                Text(stringResource(Res.string.m4_search), style = desktopPageTitle(false),
                     modifier = Modifier.padding(16.dp))
                 SearchField(query, onQuery, onSubmit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     focusRequester = fieldFocus)

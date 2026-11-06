@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedGutter
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -54,15 +56,17 @@ internal fun HomeVariantChipRow(
     onSelect: (HomeVariantChip) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The desktop feed puts the chips directly under the page title, so the row carries no phone-sized breathing room.
+    val compact = LocalDesktopLayout.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier =
             modifier
                 .fillMaxWidth()
-                .heightIn(min = 68.dp)
+                .heightIn(min = if (compact) 44.dp else 68.dp)
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = HomeFeedGutter)
-                .padding(vertical = 10.dp),
+                .padding(start = HomeFeedGutter, end = if (compact) HomeFeedGutter + Space.xs else HomeFeedGutter)
+                .padding(vertical = if (compact) Space.xxs else 10.dp),
     ) {
         chips.forEach { chip ->
             val selected = chip.key == selectedKey

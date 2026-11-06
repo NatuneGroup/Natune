@@ -30,6 +30,8 @@ import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
 import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
+import moe.rukamori.archivetune.shared.ui.theme.artworkPaletteSeed
+import moe.rukamori.archivetune.shared.ui.theme.artworkSurfaceScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.savedPaletteSeed
 import org.jetbrains.compose.resources.stringResource
@@ -94,6 +96,16 @@ fun ArchiveTuneRoot(
      * Android and iOS leave it off and keep their platform back.
      */
     rootKeyFocus: Boolean = false,
+    /**
+     * Desktop opts in: the shell draws the desktop chrome (labelled rail, wider pages) and the root reserves space for
+     * [desktopTopBar]. Android and iOS leave it off and keep their current shell geometry.
+     */
+    desktopShell: Boolean = false,
+    /**
+     * The desktop host's own persistent top bar, placed above the shell on every page. It receives the live navigation
+     * and the Ctrl+K focus state; a host without one keeps the shell's own search entry point.
+     */
+    desktopTopBar: (@Composable (ShellNavigation, DesktopSearchFocus) -> Unit)? = null,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -140,7 +152,8 @@ fun ArchiveTuneRoot(
                 moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
                 ArchiveTuneLoadedRoot(
-                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea, rootKeyFocus,
+                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea,
+                    rootKeyFocus, desktopShell, desktopTopBar,
                 )
             }
         }
@@ -158,6 +171,8 @@ private fun ArchiveTuneLoadedRoot(
     systemDark: Boolean,
     safeArea: SafeAreaPadding,
     rootKeyFocus: Boolean,
+    desktopShell: Boolean,
+    desktopTopBar: (@Composable (ShellNavigation, DesktopSearchFocus) -> Unit)?,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
@@ -167,6 +182,8 @@ private fun ArchiveTuneLoadedRoot(
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
         // consumed, so returning to the tab later does not take focus from the user.
         var searchFocusRequested by remember { mutableStateOf(false) }
+        // The desktop top bar owns the global search field; Ctrl+K asks it for focus instead of opening the Search page.
+        val desktopSearchFocus = remember { DesktopSearchFocus() }
         // Handed to the page content, so a focused search field silences the unmodified shortcuts while typing.
         val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
@@ -210,14 +227,22 @@ private fun ArchiveTuneLoadedRoot(
         val policy = opticalPolicy(preferences, opticalCapabilities, resumed, visible,
             playerExpanded = expanded, lyricsExpanded = expanded && interaction.fullscreenLyrics)
         val darkTheme = darkThemeFor(preferences[DarkModeKey], systemDark)
-        // A palette is rebuilt only when its seed, style or dark flag changes. Without a saved palette the scheme is
-        // the default one, so the default look does not change.
+        val nativeState by host.playerControls.state.collectAsState()
+        // A palette is rebuilt only when its seed, style or dark flag changes. On desktop, with Dynamic theme on and no
+        // saved custom colour, the current sleeve seeds the scheme so the page, rail and top bar carry its tonal family;
+        // turning Dynamic theme off (or a host with no artwork palette) keeps the default scheme unchanged.
         val paletteSeed = preferences.savedPaletteSeed()
         val paletteStyle = preferences.themePaletteStyle()
-        val colorScheme = remember(paletteSeed, paletteStyle, darkTheme) {
-            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) } ?: archiveTuneDefaultColorScheme(darkTheme)
+        val artworkSeed = if (desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null) {
+            artworkPaletteSeed(nativeState.palette)
+        } else {
+            null
         }
-        val nativeState by host.playerControls.state.collectAsState()
+        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme) {
+            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
+                ?: artworkSurfaceScheme(artworkSeed, darkTheme, paletteStyle)
+                ?: archiveTuneDefaultColorScheme(darkTheme)
+        }
         var rememberedMute by remember { mutableStateOf<Float?>(null) }
         fun handleKeymap(action: KeymapAction): Boolean {
             val player = host.queue.player
@@ -252,8 +277,12 @@ private fun ArchiveTuneLoadedRoot(
                 }
                 KeymapAction.Back -> goBack()
                 KeymapAction.Search -> {
-                    navigation.select(ShellTab.Search, toRoot = true)
-                    searchFocusRequested = true
+                    if (desktopTopBar != null) {
+                        desktopSearchFocus.requestFocus()
+                    } else {
+                        navigation.select(ShellTab.Search, toRoot = true)
+                        searchFocusRequested = true
+                    }
                 }
                 KeymapAction.Home -> navigation.select(ShellTab.Home, toRoot = true)
                 KeymapAction.Library -> navigation.select(ShellTab.Library, toRoot = true)
@@ -295,6 +324,7 @@ private fun ArchiveTuneLoadedRoot(
         ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
             fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
+            CompositionLocalProvider(LocalDesktopLayout provides desktopShell) {
             ProvideBackdropSources(policy) { pageSource ->
                 // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
                 // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
@@ -302,6 +332,14 @@ private fun ArchiveTuneLoadedRoot(
                     .safeAreaPadding(safeArea)
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
+                    Column(Modifier.fillMaxSize()) {
+                        // The top bar is host chrome above the shell, so it survives every route including Settings.
+                        if (desktopTopBar != null) {
+                            CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                                desktopTopBar.invoke(navigation, desktopSearchFocus)
+                            }
+                        }
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
@@ -331,6 +369,8 @@ private fun ArchiveTuneLoadedRoot(
                                 onSearchFocusConsumed = { searchFocusRequested = false })
                         }
                     }
+                        }
+                    }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
                     val slots = host.playerSlots(expanded, active, interaction)
@@ -350,6 +390,7 @@ private fun ArchiveTuneLoadedRoot(
                     )
                     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
                 }
+            }
             }
         }
 }

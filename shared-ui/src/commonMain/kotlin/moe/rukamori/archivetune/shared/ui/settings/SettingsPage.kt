@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.marquee.SettingsMarqueeText
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -75,7 +77,8 @@ fun SettingsPage(
                 if (row is SettingsRow.Header) {
                     Text(
                         stringResource(row.title),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = if (LocalDesktopLayout.current) DesktopType.sectionTitle()
+                        else MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.testTag("setting:${row.anchor}")
                             .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp),

@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import org.jetbrains.compose.resources.stringResource
 
 private val HomeWelcomeGutter = 20.dp
@@ -126,6 +127,13 @@ fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
             surface
         }
     val glow = if (dark) 0.17f else 0.12f
+    // On desktop the wash is the artwork-seeded scheme's own family, not a fixed violet/teal/blue that would fight the
+    // sleeve tint. Phone hosts keep the baseline wash exactly.
+    val desktop = LocalDesktopLayout.current
+    val violet = if (desktop) MaterialTheme.colorScheme.primary else Color(0xFF7B4DFF)
+    val teal = if (desktop) MaterialTheme.colorScheme.secondary else Color(0xFF00B8A9)
+    val blue = if (desktop) MaterialTheme.colorScheme.tertiary else Color(0xFF2E6BFF)
+    val washGlow = if (desktop) glow * 0.55f else glow
     Box(
         modifier =
             modifier
@@ -153,19 +161,19 @@ fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
                         }
                     val violetBrush =
                         Brush.radialGradient(
-                            colors = listOf(violet.copy(alpha = glow), Color.Transparent),
+                            colors = listOf(violet.copy(alpha = washGlow), Color.Transparent),
                             center = Offset(w * 0.12f, h * 0.10f),
                             radius = w * 0.62f,
                         )
                     val tealBrush =
                         Brush.radialGradient(
-                            colors = listOf(teal.copy(alpha = glow * 0.8f), Color.Transparent),
+                            colors = listOf(teal.copy(alpha = washGlow * 0.8f), Color.Transparent),
                             center = Offset(w * 0.98f, h * 0.30f),
                             radius = w * 0.55f,
                         )
                     val blueBrush =
                         Brush.radialGradient(
-                            colors = listOf(blue.copy(alpha = glow * 0.85f), Color.Transparent),
+                            colors = listOf(blue.copy(alpha = washGlow * 0.85f), Color.Transparent),
                             center = Offset(w * 0.18f, h * 0.92f),
                             radius = w * 0.70f,
                         )
