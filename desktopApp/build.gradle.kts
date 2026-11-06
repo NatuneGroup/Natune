@@ -731,6 +731,33 @@ tasks.named<Test>("jvmTest") {
     }
 }
 
+/*
+ * The window, icon and renderer suites are pure JVM checks: no native engine, no fixtures, no display. They share the
+ * untrimmed task's single JVM with the native playback suites, whose manual-engine ring is already sensitive to the work
+ * the JVM did first (`DesktopPlaybackEngineTest.speedChangeScalesMediaTimeOnceTheQueuedAudioHasPlayed` assumes the ring
+ * holds no more than the two seconds it drains, and it failed four times on this branch while the same suite passed on
+ * the base). Running them in their own JVM keeps the playback suites the environment they have on the base and lets
+ * these tests run without the engine closure.
+ */
+val desktopWindowTestClasses = listOf(
+    "moe.rukamori.archivetune.desktop.DesktopWindowBoundsTest",
+    "moe.rukamori.archivetune.desktop.DesktopWindowIconTest",
+    "moe.rukamori.archivetune.desktop.DesktopRendererDiagnosticsTest",
+    "moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChromeTest",
+)
+val jvmTestTask = tasks.named<Test>("jvmTest")
+tasks.register<Test>("desktopWindowTests") {
+    group = "verification"
+    description = "Runs the desktop window, icon and renderer diagnostics suites in their own JVM."
+    // The same compiled classes and runtime classpath as jvmTest; only the JVM instance differs.
+    testClassesDirs = files(jvmTestTask.map { it.testClassesDirs })
+    classpath = files(jvmTestTask.map { it.classpath })
+    desktopWindowTestClasses.forEach { filter.includeTestsMatching(it) }
+}
+jvmTestTask.configure {
+    desktopWindowTestClasses.forEach { filter.excludeTestsMatching(it) }
+    dependsOn("desktopWindowTests")
+}
 // KMP names the JVM test task `jvmTest`, but the validation commands run `:desktopApp:test --tests`.
 // The alias is a Test task so Gradle accepts --tests on it. It never runs itself: once the graph is
 // ready, its filter moves to jvmTest, which runs the tests.
