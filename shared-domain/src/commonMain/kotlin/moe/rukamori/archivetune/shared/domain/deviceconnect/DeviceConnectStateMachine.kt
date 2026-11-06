@@ -99,26 +99,63 @@ class DeviceHandshakeState(
     }
 
     /**
-     * Handshake and pairing messages are plaintext until the pair proof authenticates the connection; the
-     * payloads themselves are commitment-, ECDH- and proof-protected. Session traffic is never plaintext.
+     * Only the two commitment messages that precede the key exchange may travel in the clear. As soon as
+     * the hello has been exchanged every pairing step, the authentication result, the device info and all
+     * session traffic must arrive sealed, so a peer cannot skip the exchange and claim a state it never
+     * proved. Anything else unencrypted closes the connection.
      */
     fun allowsPlainText(type: DeviceMessageType): Boolean = when (phase) {
         DeviceHandshakePhase.AWAITING_COMMIT ->
             type == DeviceMessageType.HELLO_COMMIT || type == DeviceMessageType.ERROR
         DeviceHandshakePhase.AWAITING_HELLO ->
             type == DeviceMessageType.HELLO || type == DeviceMessageType.HELLO_COMMIT || type == DeviceMessageType.ERROR
-        DeviceHandshakePhase.HELLO_RECEIVED,
-        DeviceHandshakePhase.AWAITING_PAIR_APPROVAL,
-        DeviceHandshakePhase.AWAITING_PAIR_COMMIT,
-        ->
-            type == DeviceMessageType.AUTH_PROOF || type == DeviceMessageType.PAIR_REQUEST ||
-                type == DeviceMessageType.PAIR_APPROVE || type == DeviceMessageType.PAIR_COMMIT ||
-                type == DeviceMessageType.PAIR_REJECT || type == DeviceMessageType.AUTH_RESULT ||
-                type == DeviceMessageType.DEVICE_INFO || type == DeviceMessageType.ERROR
-        DeviceHandshakePhase.AUTHENTICATED,
+        else -> false
+    }
+
+    /**
+     * True when a sealed frame of [type] is expected now. The pre-authentication set is exactly the pairing
+     * step that belongs to this side of this phase; session, command and device-info frames exist only after
+     * authentication.
+     */
+    fun allowsEncrypted(type: DeviceMessageType): Boolean = when (phase) {
+        DeviceHandshakePhase.AWAITING_COMMIT,
+        DeviceHandshakePhase.AWAITING_HELLO,
         DeviceHandshakePhase.CLOSED,
         -> false
+        DeviceHandshakePhase.HELLO_RECEIVED ->
+            type == DeviceMessageType.AUTH_PROOF || type == DeviceMessageType.ERROR ||
+                (type == DeviceMessageType.PAIR_REQUEST && role == DeviceConnectRole.RESPONDER)
+        DeviceHandshakePhase.AWAITING_PAIR_APPROVAL ->
+            type == DeviceMessageType.PAIR_REJECT || type == DeviceMessageType.ERROR ||
+                (type == DeviceMessageType.PAIR_APPROVE && role == DeviceConnectRole.INITIATOR)
+        DeviceHandshakePhase.AWAITING_PAIR_COMMIT ->
+            type == DeviceMessageType.PAIR_REJECT || type == DeviceMessageType.ERROR ||
+                (type == DeviceMessageType.AUTH_RESULT && role == DeviceConnectRole.INITIATOR) ||
+                (type == DeviceMessageType.PAIR_COMMIT && role == DeviceConnectRole.RESPONDER)
+        DeviceHandshakePhase.AUTHENTICATED ->
+            type == DeviceMessageType.PLAYBACK || type == DeviceMessageType.PLAYBACK_CHUNK ||
+                type == DeviceMessageType.PING || type == DeviceMessageType.PONG ||
+                type == DeviceMessageType.BYE || type == DeviceMessageType.DEVICE_INFO ||
+                type == DeviceMessageType.ERROR
     }
+
+    /** A reconnect proof follows the hello and precedes every other pairing step. */
+    fun canAcceptAuthProof(): Boolean = phase == DeviceHandshakePhase.HELLO_RECEIVED
+
+    fun canAcceptPairRequest(): Boolean = phase == DeviceHandshakePhase.HELLO_RECEIVED
+
+    /** Only the initiator, and only after it asked for approval. */
+    fun canAcceptPairApprove(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_APPROVAL
+
+    /** Only the responder, and only after the user approved its pairing prompt. */
+    fun canAcceptPairCommit(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT
+
+    /** Only the initiator, and only after it sent the pair commitment. */
+    fun canAcceptAuthResult(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT
+
+    /** The only phases from which a verified proof may authenticate the connection. */
+    fun canAuthenticate(): Boolean =
+        phase == DeviceHandshakePhase.HELLO_RECEIVED || phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT
 
     fun pairingExpired(nowMs: Long, startedAtMs: Long? = pairingStartedAtMs): Boolean {
         val started = startedAtMs ?: return false
