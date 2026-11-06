@@ -75,4 +75,6 @@
     <string name="m6_settings_home_group_window">Window</string>
     <string name="m6_settings_home_close_to_tray">Close to tray</string>
     <string name="m6_settings_home_close_to_tray_desc">Closing the window keeps playback running in the system tray</string>
+    <string name="m6_settings_search_hint">Search settings</string>
+    <string name="m6_settings_search_empty">No settings match</string>
 </resources>
