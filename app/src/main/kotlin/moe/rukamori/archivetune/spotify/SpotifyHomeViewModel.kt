@@ -257,8 +257,7 @@ class SpotifyHomeViewModel @Inject constructor(
                             listOf(
                                 SpotifyHomeSection(
                                     title = "spotify_top_tracks",
-                                    type = SectionType.TRACKS,
-                                    tracks = tracks,
+                                    items = tracks.map { SpotifyHomeSectionItem.Track(it) },
                                 ),
                             )
                         }.orEmpty(),
@@ -297,8 +296,7 @@ class SpotifyHomeViewModel @Inject constructor(
                         sections.add(
                             SpotifyHomeSection(
                                 title = "spotify_top_tracks",
-                                type = SectionType.TRACKS,
-                                tracks = topTracks.items,
+                                items = topTracks.items.map { SpotifyHomeSectionItem.Track(it) },
                             )
                         )
                     }
@@ -309,8 +307,7 @@ class SpotifyHomeViewModel @Inject constructor(
                     sections.add(
                         SpotifyHomeSection(
                             title = "spotify_top_tracks",
-                            type = SectionType.TRACKS,
-                            tracks = cached.topTracks,
+                            items = cached.topTracks.map { SpotifyHomeSectionItem.Track(it) },
                         )
                     )
                 }
@@ -321,8 +318,7 @@ class SpotifyHomeViewModel @Inject constructor(
                         sections.add(
                             SpotifyHomeSection(
                                 title = "spotify_new_releases",
-                                type = SectionType.ALBUMS,
-                                albums = albums,
+                                items = albums.map { SpotifyHomeSectionItem.Album(it) },
                             )
                         )
                     }
@@ -411,29 +407,15 @@ class SpotifyHomeViewModel @Inject constructor(
 
     /**
      * Recents and frequent artists are left alone: they are the account's own listening, which the
-     * YouTube home does not filter either. A shelf is filtered on the list its type names.
+     * YouTube home does not filter either. A shelf is filtered item by item, so a shelf that mixes
+     * kinds keeps the albums whose creators are allowed next to its playlists.
      */
     private fun SpotifyHomeScreenState.withoutAiContent(policy: AiContentFilterPolicy): SpotifyHomeScreenState {
         if (this !is SpotifyHomeScreenState.Success || !policy.enabled) return this
         val filtered = sections.mapNotNull { section ->
-            when (section.type) {
-                SectionType.TRACKS ->
-                    filterAiContent.spotifyTracks(section.tracks, policy)
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { section.copy(tracks = it) }
-                SectionType.ARTISTS ->
-                    filterAiContent.spotifyArtists(section.artists, policy)
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { section.copy(artists = it) }
-                SectionType.ALBUMS ->
-                    filterAiContent.spotifyAlbums(section.albums, policy)
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { section.copy(albums = it) }
-                SectionType.PLAYLISTS ->
-                    filterAiContent.spotifyPlaylists(section.playlists, policy)
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { section.copy(playlists = it) }
-            }
+            filterAiContent.spotifySectionItems(section.items, policy)
+                .takeIf { it.isNotEmpty() }
+                ?.let { section.copy(items = it) }
         }
         return if (filtered.isEmpty() && recentItems.isEmpty() && frequentArtists.isEmpty()) {
             SpotifyHomeScreenState.Empty

@@ -15,73 +15,52 @@ import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistOwner
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
 
 /**
- * A feed section as a home shelf: the shelf takes the kind Spotify sent most of and drops the rest,
- * so the row it draws matches what the shelf is mostly about. A section with no title draws nothing.
+ * A feed section as a home shelf: every item the section carries, in the order Spotify sent them,
+ * each tagged with the kind it draws as. A section with no title draws nothing.
+ *
+ * YumaPlayer's mapper kept only the kind the section held most of and dropped the rest, which is
+ * where a six-playlist-four-album shelf lost the albums; this keeps them all.
  */
 internal fun convertHomeSection(feedSection: SpotifyHomeFeedSection): SpotifyHomeSection? {
     val title = feedSection.title ?: return null
 
-    val playlists = feedSection.items.filterIsInstance<SpotifyHomeFeedItem.Playlist>()
-    val albums = feedSection.items.filterIsInstance<SpotifyHomeFeedItem.Album>()
-    val artists = feedSection.items.filterIsInstance<SpotifyHomeFeedItem.Artist>()
+    val items =
+        feedSection.items.map { item ->
+            when (item) {
+                is SpotifyHomeFeedItem.Playlist -> SpotifyHomeSectionItem.Playlist(item.toPlaylist())
+                is SpotifyHomeFeedItem.Album -> SpotifyHomeSectionItem.Album(item.toAlbum())
+                is SpotifyHomeFeedItem.Artist -> SpotifyHomeSectionItem.Artist(item.toArtist())
+            }
+        }
 
-    val counts =
-        arrayOf(
-            SectionType.PLAYLISTS to playlists.size,
-            SectionType.ALBUMS to albums.size,
-            SectionType.ARTISTS to artists.size,
-        )
-    val (dominant, size) = counts.maxByOrNull { it.second } ?: return null
-    if (size == 0) return null
-
-    return when (dominant) {
-        SectionType.PLAYLISTS ->
-            SpotifyHomeSection(
-                title = title,
-                type = SectionType.PLAYLISTS,
-                playlists =
-                    playlists.map {
-                        SpotifyPlaylist(
-                            id = it.id,
-                            name = it.name,
-                            description = it.description,
-                            images = listOfNotNull(it.imageUrl?.let { url -> SpotifyImage(url) }),
-                            owner = it.ownerName?.let { owner -> SpotifyPlaylistOwner(id = "", displayName = owner) },
-                            tracks = SpotifyPlaylistTracksRef(total = it.totalCount),
-                            uri = it.uri,
-                        )
-                    },
-            )
-        SectionType.ALBUMS ->
-            SpotifyHomeSection(
-                title = title,
-                type = SectionType.ALBUMS,
-                albums =
-                    albums.map {
-                        SpotifyAlbum(
-                            id = it.id,
-                            name = it.name,
-                            albumType = it.albumType,
-                            artists = it.artists,
-                            images = listOfNotNull(it.imageUrl?.let { url -> SpotifyImage(url) }),
-                            uri = it.uri,
-                        )
-                    },
-            )
-        SectionType.ARTISTS ->
-            SpotifyHomeSection(
-                title = title,
-                type = SectionType.ARTISTS,
-                artists =
-                    artists.map {
-                        SpotifyArtist(
-                            id = it.id,
-                            name = it.name,
-                            images = listOfNotNull(it.imageUrl?.let { url -> SpotifyImage(url) }),
-                            uri = it.uri,
-                        )
-                    },
-            )
-        else -> null
-    }
+    return items.takeIf { it.isNotEmpty() }?.let { SpotifyHomeSection(title = title, items = it) }
 }
+
+private fun SpotifyHomeFeedItem.Playlist.toPlaylist() =
+    SpotifyPlaylist(
+        id = id,
+        name = name,
+        description = description,
+        images = listOfNotNull(imageUrl?.let { url -> SpotifyImage(url) }),
+        owner = ownerName?.let { owner -> SpotifyPlaylistOwner(id = "", displayName = owner) },
+        tracks = SpotifyPlaylistTracksRef(total = totalCount),
+        uri = uri,
+    )
+
+private fun SpotifyHomeFeedItem.Album.toAlbum() =
+    SpotifyAlbum(
+        id = id,
+        name = name,
+        albumType = albumType,
+        artists = artists,
+        images = listOfNotNull(imageUrl?.let { url -> SpotifyImage(url) }),
+        uri = uri,
+    )
+
+private fun SpotifyHomeFeedItem.Artist.toArtist() =
+    SpotifyArtist(
+        id = id,
+        name = name,
+        images = listOfNotNull(imageUrl?.let { url -> SpotifyImage(url) }),
+        uri = uri,
+    )
