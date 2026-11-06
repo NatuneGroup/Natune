@@ -43,7 +43,6 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.resources.Res
-import moe.rukamori.archivetune.shared.ui.resources.ios_lane_aod_note
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.m6_audio_quality
 import moe.rukamori.archivetune.shared.ui.resources.m6_content_country
@@ -57,7 +56,6 @@ import moe.rukamori.archivetune.shared.ui.resources.m6_source_jio
 import moe.rukamori.archivetune.shared.ui.resources.m6_system_default
 import moe.rukamori.archivetune.shared.ui.settings.AppleMusicLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.AppleMusicSettings
-import moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings
 import moe.rukamori.archivetune.shared.ui.settings.NavigationBarSettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
@@ -67,7 +65,6 @@ import moe.rukamori.archivetune.shared.ui.settings.SourcePoolRefreshOutcome
 import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.YouTubeHiddenPlaylistsRoute
-import moe.rukamori.archivetune.shared.ui.settings.aodSettingsRows
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.ISOCountryCodes
 import platform.Foundation.ISOLanguageCodes
@@ -78,14 +75,15 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (the palette picker, the icon picker and Android Auto) mount an honest unavailable page instead of the
- * unbound boundary.
+ * this host (the palette picker, the icon picker, Android Auto, the Android-only AOD and Liquid Glass tuning pages,
+ * and the Discord button editor) mount an honest unavailable page instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
-    "settings/appearance/icon", "settings/appearance/aod_customized", "settings/appearance/navigation_bar",
-    "settings/appearance/liquid_glass",
+    "settings/appearance/icon", "settings/appearance/navigation_bar",
+    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
+    "settings/discord/experimental",
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
@@ -95,6 +93,9 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
     "settings/appearance/palette_picker", "settings/appearance/icon", "settings/android_auto",
+    // Pages whose rows are Android-only and which this host does not mount.
+    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
+    "settings/discord/experimental",
 )
 
 /** One mounted lane page; the host, notices and the unavailable snackbar come from [IosSettingsScreen]. */
@@ -121,11 +122,6 @@ internal fun IosLaneSettingsPage(
             NavigationBarSettingsPage(
                 owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
             )
-        "settings/appearance/liquid_glass" ->
-            LiquidGlassSettings(
-                owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
-            )
-        "settings/appearance/aod_customized" -> IosLaneAodSettingsPage(owners.controller, onFailure, scrollTo)
         "settings/jiosaavn" -> IosLaneRowsPage(owners.controller, scrollTo, onFailure) { preferences ->
             listOf(
                 SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false),
@@ -188,21 +184,6 @@ private fun IosLaneRowsPage(
         return
     }
     SettingsPage(rows(preferences), preferences, controller, scrollTo, onFailure = onFailure)
-}
-
-/** The always-on-display rows plus the honest note that this host has no such display. */
-@Composable
-private fun IosLaneAodSettingsPage(controller: SettingsController, onFailure: () -> Unit, scrollTo: String?) {
-    IosLaneRowsPage(controller, scrollTo, onFailure) { preferences ->
-        aodSettingsRows(preferences) + SettingsRow.Custom("aod_ios_note", Res.string.ios_lane_aod_note) {
-            Text(
-                stringResource(Res.string.ios_lane_aod_note),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        }
-    }
 }
 
 /** Settings > Content: the ISO language and country catalogs of the platform locale, as the desktop page offers. */

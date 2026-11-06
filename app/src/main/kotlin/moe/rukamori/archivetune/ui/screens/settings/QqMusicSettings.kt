@@ -72,7 +72,6 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
-import moe.rukamori.archivetune.constants.QqMusicEnabledKey
 import moe.rukamori.archivetune.constants.QqMusicNicknameKey
 import moe.rukamori.archivetune.constants.QqMusicUinKey
 import moe.rukamori.archivetune.qqmusic.QqMusicSession
@@ -83,7 +82,6 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
-import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -114,7 +112,6 @@ fun QqMusicSettings(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val (enabled, onEnabledChange) = rememberPreference(QqMusicEnabledKey, false)
     val (quality, onQualityChange) =
         rememberEnumPreference(QqMusicAudioQualityKey, QqAudioQuality.Default)
     val (uin, onUinChange) = rememberPreference(QqMusicUinKey, "")
@@ -122,8 +119,7 @@ fun QqMusicSettings(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // The toggle flips only its own flag; QQ already sits in the source order (default just
-    // above YouTube) and the user positions it in "Preferred sources".
+    // The source switch lives on Sources; this page owns the account and quality.
 
     val signedInAs = if (uin.isBlank()) null else nickname.ifBlank { uin }
 
@@ -195,17 +191,6 @@ fun QqMusicSettings(
             }
 
             PreferenceGroup(title = stringResource(R.string.source_qq_music)) {
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("qq_music_enabled"),
-                        title = { Text(stringResource(R.string.qq_music_enabled)) },
-                        description = stringResource(R.string.qq_music_enabled_desc),
-                        icon = { Icon(painterResource(R.drawable.ic_music), null) },
-                        checked = enabled,
-                        onCheckedChange = onEnabledChange,
-                    )
-                }
-
                 item {
                     EnumListPreference(
                         modifier = positions.modifierFor("qq_music_quality"),

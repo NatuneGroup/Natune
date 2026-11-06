@@ -46,7 +46,6 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
-import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -57,7 +56,7 @@ fun JioSettings(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val (saavnEnabled, onSaavnEnabledChange) = rememberPreference(JioSaavnEnabledKey, false)
+    val (saavnEnabled) = rememberPreference(JioSaavnEnabledKey, false)
     val (saavnQuality, onSaavnQualityChange) =
         rememberEnumPreference(SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
 
@@ -104,17 +103,6 @@ fun JioSettings(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("jiosaavn_enable"),
-                        title = { Text(stringResource(R.string.jiosaavn_enable)) },
-                        description = stringResource(R.string.jiosaavn_enable_description),
-                        icon = { Icon(painterResource(R.drawable.play), null) },
-                        checked = saavnEnabled,
-                        onCheckedChange = onSaavnEnabledChange,
                     )
                 }
 

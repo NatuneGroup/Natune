@@ -22,11 +22,11 @@ import moe.rukamori.archivetune.constants.AutoDownloadOnLikeKey
 import moe.rukamori.archivetune.constants.DisableScreenshotKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ForceHighRefreshRateKey
+import moe.rukamori.archivetune.constants.HideAiMixKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.LowDataModeKey
-import moe.rukamori.archivetune.constants.NetworkMeteredKey
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
 import moe.rukamori.archivetune.constants.PauseSearchHistoryKey
 import moe.rukamori.archivetune.constants.ProxyEnabledKey
@@ -100,7 +100,7 @@ fun buildSettingsGroups(
             title = context.getString(R.string.content),
             subtitle = context.getString(R.string.settings_content_subtitle),
             accentColor = colorScheme.primary,
-            keywords = listOf("content", "language", "locale", "country", "region", "app language", "explicit", "age restricted", "age", "mature", "video", "progressive", "quick picks"),
+            keywords = listOf("content", "language", "locale", "country", "region", "app language", "explicit", "age restricted", "age", "mature", "video", "progressive"),
             onClick = { navController.navigate("settings/content") },
             children = listOf(
                 SettingsChild("Content language", "content_language", listOf("language", "content language", "locale", "country")),
@@ -108,7 +108,6 @@ fun buildSettingsGroups(
                 SettingsChild("Hide explicit", "hide_explicit", listOf("explicit", "age", "mature", "age restricted", "clean")) { SearchResultSwitch(HideExplicitKey, false) },
                 SettingsChild("Hide video", "hide_video", listOf("video", "hide video", "music video", "mv")) { SearchResultSwitch(HideVideoKey, false) },
                 SettingsChild("Enable video", "enable_video", listOf("video", "music video", "mv", "enable video")),
-                SettingsChild("Quick picks", "quick_picks", listOf("quick picks", "quick mix", "smart mix", "recommendations")),
                 SettingsChild("Progressive playback", "progressive_playback", listOf("progressive", "gapless", "seamless")),
                 SettingsChild("Allow age-restricted content", "allow_age_restricted", listOf("age restricted", "allow age restricted", "mature content", "18+", "restricted")),
                 SettingsChild("Playlist recommendation source", "you_might_like_source", listOf("recommendation source", "you might like", "playlist recommendation", "suggestions source")),
@@ -117,6 +116,7 @@ fun buildSettingsGroups(
                 SettingsChild("Include moderate-confidence channels", "ai_content_filter_moderate", listOf("moderate confidence", "ai filter moderate", "ai channels")),
                 SettingsChild("Update channel lists", "ai_content_filter_update", listOf("update channel lists", "refresh ai list", "aislist update")),
                 SettingsChild("About AiSList", "ai_content_filter_source", listOf("aislist", "about aislist", "ai list source")),
+                SettingsChild("Hide AI mix", "hide_ai_mix", listOf("hide ai", "ai mix", "smart mix", "hide mix")) { SearchResultSwitch(HideAiMixKey, false) },
             ),
         )
     val languagePacks =
@@ -146,7 +146,6 @@ fun buildSettingsGroups(
                 SettingsChild("Sync playback to YouTube history", "sync_yt_history", listOf("youtube history", "sync history", "playback history")) { SearchResultSwitch(SyncPlaybackToYouTubeHistoryKey, moe.rukamori.archivetune.shared.domain.settings.PrivacyPreferenceDefaults.SYNC_YOUTUBE_HISTORY) },
                 SettingsChild("Haptics", "haptics", listOf("haptic", "vibration", "haptic feedback", "vibrate")) { SearchResultSwitch(EnableHapticFeedbackKey, true) },
                 SettingsChild("Disable screenshot", "disable_screenshot", listOf("screenshot", "screen capture", "privacy", "no screenshot")) { SearchResultSwitch(DisableScreenshotKey, false) },
-                SettingsChild("Network metered", "network_metered", listOf("metered", "mobile data", "cellular", "data saver")) { SearchResultSwitch(NetworkMeteredKey, moe.rukamori.archivetune.shared.domain.settings.PrivacyPreferenceDefaults.LOW_DATA_MODE) },
                 SettingsChild("Show tags in library", "show_tags_in_library", listOf("tags", "library tags", "show tags")),
                 SettingsChild("Low data mode", "low_data_mode", listOf("low data", "data saver", "save data", "metered", "data mode")) { SearchResultSwitch(LowDataModeKey, true) },
                 SettingsChild("Force high refresh rate", "force_high_refresh_rate", listOf("refresh rate", "high refresh", "120hz", "90hz", "smooth")) { SearchResultSwitch(ForceHighRefreshRateKey, false) },
@@ -167,7 +166,7 @@ fun buildSettingsGroups(
             title = context.getString(R.string.internet),
             subtitle = context.getString(R.string.settings_internet_subtitle),
             accentColor = colorScheme.tertiary,
-            keywords = listOf("internet", "proxy", "vpn", "network", "wifi", "connection", "traffic", "tor", "dns", "dns over https", "region", "country", "spoof", "geobypass", "geo bypass"),
+            keywords = listOf("internet", "proxy", "vpn", "network", "wifi", "connection", "traffic", "dns", "dns over https", "region", "country", "spoof", "geobypass", "geo bypass"),
             onClick = { navController.navigate("settings/internet") },
             children = listOf(
                 SettingsChild("YouTube Music region", "yt_music_region", listOf("region", "country", "gl", "geo", "location", "spoof", "youtube region", "youtube music country", "geobypass", "geo bypass")),
@@ -183,8 +182,6 @@ fun buildSettingsGroups(
                 SettingsChild("DNS provider", "dns_provider", listOf("dns provider", "dns server", "dns resolver", "dns service")),
                 SettingsChild("DNS custom URL", "dns_custom_url", listOf("dns custom url", "custom dns", "dns endpoint", "dns url")),
                 SettingsChild("IP rotation", "ip_rotation", listOf("ip rotation", "rotate ip", "ip pool", "ip cycling")),
-                SettingsChild("Enable tor", "enable_tor", listOf("tor", "onion", "anonymous", "onion routing", "tor network")),
-                SettingsChild("Download speed limit", "download_speed_limit", listOf("speed", "limit", "throttle", "bandwidth", "download speed", "download limit", "speed cap")),
             ),
         )
     val poToken =
@@ -295,7 +292,6 @@ fun buildSettingsGroups(
                 SettingsChild("YTM sync", "ytm_sync", listOf("ytm sync", "youtube music sync", "sync library")),
                 SettingsChild("Force sync on account switch", "force_sync_account_switch", listOf("force sync", "account switch sync", "sync on switch")),
                 SettingsChild("Show nerd stats", "show_nerd_stats", listOf("nerd stats", "show nerd stats", "debug stats", "playback stats", "technical info")),
-                SettingsChild("Display codec on player", "display_codec_on_player", listOf("display codec", "show codec", "codec on player", "bitrate on player")),
                 SettingsChild("Show Discord debug UI", "show_discord_debug_ui", listOf("discord debug", "show debug ui", "discord debug ui")),
                 SettingsChild("Debug logs", "debug_logs", listOf("debug logs", "verbose logs", "diagnostic logs")),
                 SettingsChild(

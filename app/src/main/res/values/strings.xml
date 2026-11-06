@@ -1537,7 +1537,7 @@
     <string name="navigation_bar_tint_frosted_blur">Tint frosted navigation bar</string>
     <string name="navigation_bar_tint_frosted_blur_desc">Frosted blur tinted with the accent color (turns off the neutral frosted option)</string>
     <string name="navigation_bar_settings_title">Navigation bar</string>
-    <string name="navigation_bar_settings_subtitle">Style, frosted blur, labels, dimensions</string>
+    <string name="navigation_bar_settings_subtitle">Labels and scroll behaviour</string>
     <string name="navigation_bar_dimensions">Dimensions</string>
     <string name="navigation_bar_width">Width</string>
     <string name="navigation_bar_width_desc">Fraction of screen width used by the floating bar</string>
