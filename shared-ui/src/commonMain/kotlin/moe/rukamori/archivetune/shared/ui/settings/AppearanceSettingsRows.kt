@@ -86,34 +86,42 @@ fun appearanceInterfaceSettingsRows(
     navigate: (String) -> Unit,
     arrangeLibraryChips: () -> Unit,
     arrangePlaylistTags: () -> Unit,
-): List<SettingsRow> = listOf(
-    SettingsRow.Choice("home_screen_style", Res.string.m6_home_style, HomeScreenStyleKey, "DEFAULT", listOf(
+    /**
+     * Desktop keeps one fixed shell: the top bar owns search and the rail owns navigation, so the phone navigation
+     * style, search position, tablet switch and back animation are not offered. Their stored keys stay untouched.
+     */
+    desktop: Boolean = false,
+): List<SettingsRow> = buildList {
+    add(SettingsRow.Choice("home_screen_style", Res.string.m6_home_style, HomeScreenStyleKey, "DEFAULT", listOf(
         SettingsRow.Option("DEFAULT", Res.string.m6_default), SettingsRow.Option("RUKAMORI", Res.string.m6_rukamori),
-    )),
-    SettingsRow.Toggle("minimal_home_mode", Res.string.m6_minimal_home, MinimalHomeModeKey, false),
-    SettingsRow.Choice("default_open_tab", Res.string.m6_open_tab, DefaultOpenTabKey, "HOME", listOf(
+    )))
+    add(SettingsRow.Toggle("minimal_home_mode", Res.string.m6_minimal_home, MinimalHomeModeKey, false))
+    add(SettingsRow.Choice("default_open_tab", Res.string.m6_open_tab, DefaultOpenTabKey, "HOME", listOf(
         SettingsRow.Option("HOME", Res.string.m6_home), SettingsRow.Option("SEARCH", Res.string.m6_search),
         SettingsRow.Option("LIBRARY", Res.string.m6_library),
-    )),
-    SettingsRow.Choice("search_bar_position", Res.string.m6_search_position, SearchBarPositionKey, "TOP", listOf(
-        SettingsRow.Option("TOP", Res.string.m6_top), SettingsRow.Option("BOTTOM", Res.string.m6_bottom),
-    )),
-    SettingsRow.Toggle("hide_search_bar_while_scrolling", Res.string.m6_hide_search, HideSearchChromeWhileScrollingKey, false),
-    SettingsRow.Choice("back_animation_style", Res.string.m6_back_animation, BackAnimationStyleKey, "PREDICTIVE", listOf(
-        SettingsRow.Option("ORIGINAL", Res.string.m6_original), SettingsRow.Option("PREDICTIVE", Res.string.m6_predictive),
-    )),
-    SettingsRow.Toggle("tablet_mode", Res.string.m6_tablet, TabletModeEnabledKey, false),
-    SettingsRow.Action("navigation_bar_settings", Res.string.m6_navigation_bar, { navigate("settings/appearance/navigation_bar") }),
-    SettingsRow.Toggle("hide_scrollbar", Res.string.m6_hide_scrollbar, HideScrollbarKey, false),
-    SettingsRow.Choice("default_lib_chips", Res.string.m6_default_chip, ChipSortTypeKey, "LIBRARY", listOf(
+    )))
+    if (!desktop) {
+        add(SettingsRow.Choice("search_bar_position", Res.string.m6_search_position, SearchBarPositionKey, "TOP", listOf(
+            SettingsRow.Option("TOP", Res.string.m6_top), SettingsRow.Option("BOTTOM", Res.string.m6_bottom),
+        )))
+        add(SettingsRow.Toggle("hide_search_bar_while_scrolling", Res.string.m6_hide_search, HideSearchChromeWhileScrollingKey, false))
+        add(SettingsRow.Choice("back_animation_style", Res.string.m6_back_animation, BackAnimationStyleKey, "PREDICTIVE", listOf(
+            SettingsRow.Option("ORIGINAL", Res.string.m6_original), SettingsRow.Option("PREDICTIVE", Res.string.m6_predictive),
+        )))
+        add(SettingsRow.Toggle("tablet_mode", Res.string.m6_tablet, TabletModeEnabledKey, false))
+        add(SettingsRow.Action("navigation_bar_settings", Res.string.m6_navigation_bar,
+            { navigate("settings/appearance/navigation_bar") }))
+    }
+    add(SettingsRow.Toggle("hide_scrollbar", Res.string.m6_hide_scrollbar, HideScrollbarKey, false))
+    add(SettingsRow.Choice("default_lib_chips", Res.string.m6_default_chip, ChipSortTypeKey, "LIBRARY", listOf(
         SettingsRow.Option("LIBRARY", Res.string.m6_library), SettingsRow.Option("PLAYLISTS", Res.string.m6_playlists),
         SettingsRow.Option("SONGS", Res.string.m6_songs), SettingsRow.Option("ALBUMS", Res.string.m6_albums),
         SettingsRow.Option("ARTISTS", Res.string.m6_artists),
-    )),
-    SettingsRow.Action("arrange_library_chips", Res.string.m6_arrange_chips, arrangeLibraryChips),
-    SettingsRow.Action("arrange_playlist_tags", Res.string.m6_arrange_tags, arrangePlaylistTags),
-    SettingsRow.Action("extras", Res.string.m6_extras, { navigate("settings/appearance/extras") }),
-)
+    )))
+    add(SettingsRow.Action("arrange_library_chips", Res.string.m6_arrange_chips, arrangeLibraryChips))
+    add(SettingsRow.Action("arrange_playlist_tags", Res.string.m6_arrange_tags, arrangePlaylistTags))
+    add(SettingsRow.Action("extras", Res.string.m6_extras, { navigate("settings/appearance/extras") }))
+}
 
 fun appearanceExtrasSettingsRows(): List<SettingsRow> = listOf(
     SettingsRow.Toggle("show_home_category_chips", Res.string.m6_home_categories, ShowHomeCategoryChipsKey, false),

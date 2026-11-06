@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
@@ -82,7 +83,21 @@ internal fun ArchiveMiniPlayer(
         // take Space from every focused control inside the strip. The claim is per surface and leaves text fields alone.
         BoxWithConstraints(modifier.fillMaxWidth()) {
             val barWidth = maxWidth
-            if (!isWideTransportBar(barWidth)) {
+            if (LocalDesktopLayout.current && isWideTransportBar(barWidth)) {
+                DesktopMiniPlayerBar(
+                    current = current,
+                    playback = playback,
+                    nativeState = nativeState,
+                    artwork = artwork,
+                    motion = motion,
+                    onExpand = onExpand,
+                    onOpenPanel = onOpenPanel,
+                    onPlayPause = onPlayPause,
+                    onSeekTo = onSeekTo,
+                    onAction = onAction,
+                    onVolumeChange = onVolumeChange,
+                )
+            } else if (!isWideTransportBar(barWidth)) {
                 Row(
                     Modifier
                         .fillMaxWidth()

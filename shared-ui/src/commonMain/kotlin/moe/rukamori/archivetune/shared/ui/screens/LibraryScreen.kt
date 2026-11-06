@@ -10,7 +10,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.library.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -29,8 +31,11 @@ fun LibraryScreen(
     mixHeader: LibraryMixHeaderBinding? = null,
 ) {
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Text(stringResource(Res.string.m4_library), style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(16.dp))
+        // The reference desktop library starts with its filter chips; the selected rail destination names the page.
+        if (!LocalDesktopLayout.current) {
+            Text(stringResource(Res.string.m4_library), style = desktopPageTitle(false),
+                modifier = Modifier.padding(16.dp))
+        }
         sourceSelector()
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(filterOrder.toLibraryFilterPreference().toLibraryFilterOrder(), key = { it.name }) { option ->

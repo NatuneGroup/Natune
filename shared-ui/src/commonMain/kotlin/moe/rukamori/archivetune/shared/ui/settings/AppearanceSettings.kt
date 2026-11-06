@@ -38,6 +38,7 @@ fun appearanceSettingsRows(
     arrangePlaylistTags: () -> Unit,
     customFontPickerSupported: Boolean = true,
     nativeIosInterface: Boolean = false,
+    desktop: Boolean = false,
 ): List<SettingsRow> = buildList {
     add(SettingsRow.Header("appearance_theme", Res.string.m6_appearance_theme))
     addAll(appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
@@ -46,7 +47,7 @@ fun appearanceSettingsRows(
     add(SettingsRow.Header("appearance_player", Res.string.m6_appearance_player))
     addAll(playerAppearanceSettingsRows(preferences, blurSupported, navigate, chooseHomeScreens))
     add(SettingsRow.Header("appearance_interface", Res.string.m6_appearance_interface))
-    addAll(appearanceInterfaceSettingsRows(navigate, arrangeLibraryChips, arrangePlaylistTags))
+    addAll(appearanceInterfaceSettingsRows(navigate, arrangeLibraryChips, arrangePlaylistTags, desktop))
 }
 
 /** settings/appearance: the one Appearance page. Platform effects and the home, chip and tag editors stay host actions. */
@@ -70,9 +71,10 @@ fun AppearanceSettings(
     customFontPickerSupported: Boolean = true,
     nativeIosInterface: Boolean = false,
 ) {
+    val desktop = moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout.current
     ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier, customFontPickerSupported) { preferences, chooseInterface, chooseFont, pickFont ->
         appearanceSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded, blurSupported,
             navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont, chooseHomeScreens,
-            arrangeLibraryChips, arrangePlaylistTags, customFontPickerSupported, nativeIosInterface)
+            arrangeLibraryChips, arrangePlaylistTags, customFontPickerSupported, nativeIosInterface, desktop)
     }
 }
