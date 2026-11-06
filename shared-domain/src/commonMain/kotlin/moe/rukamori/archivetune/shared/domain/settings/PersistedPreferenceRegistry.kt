@@ -539,6 +539,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         JioSaavnEnabledKey,
         SaavnAudioQualityKey,
         WebClientPoTokenEnabledKey,
+        DesktopPoTokenHelperEnabledKey,
         PoTokenGvsKey,
         PoTokenPlayerKey,
         PoTokenSourceUrlKey,

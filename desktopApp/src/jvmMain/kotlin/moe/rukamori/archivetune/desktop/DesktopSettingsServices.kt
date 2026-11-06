@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
 import moe.rukamori.archivetune.shared.ui.settings.JapaneseLanguagePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenGeneration
+import moe.rukamori.archivetune.shared.ui.settings.PoTokenHelperStatus
 import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
 import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
@@ -515,6 +516,12 @@ internal class DesktopSettingsServices(
      */
     suspend fun generatePoTokens(sourceUrl: String): PoTokenGeneration =
         graph.poTokens.generate(sourceUrl, controller.store.snapshots.value)
+
+    /**
+     * Reports the managed helper's lifecycle for the PO token settings row. It reads the current
+     * state only; opening the page never downloads or starts the helper.
+     */
+    suspend fun poTokenProviderStatus(): PoTokenHelperStatus = graph.poTokens.localHelperStatus()
 
     private suspend fun httpGet(url: String, vararg headers: Pair<String, String>): String? =
         runCatching {
