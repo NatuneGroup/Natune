@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.navigation.DesktopSearchFocus
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
 import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.painterResource
@@ -84,6 +84,9 @@ fun DesktopTitleBar(
             .testTag("desktop-title-bar"),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = DesktopShellMetrics.titleBarPadding)) {
+            // Read here, once: the layout scopes below are nested, and a layout-scope member is not reachable
+            // implicitly from inside another one.
+            val titleBarWidth = maxWidth
             Row(
                 Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -106,7 +109,7 @@ fun DesktopTitleBar(
                 }
                 Box(Modifier.weight(2f), contentAlignment = Alignment.Center) {
                     DesktopSearchField(
-                        width = desktopSearchFieldWidth(maxWidth),
+                        width = desktopSearchFieldWidth(titleBarWidth),
                         focus = searchFocus,
                         onSubmit = onSubmitSearch,
                     )

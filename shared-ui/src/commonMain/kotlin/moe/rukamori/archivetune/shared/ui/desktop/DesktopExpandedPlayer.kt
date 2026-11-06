@@ -43,7 +43,7 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.PlayerState
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatTrackDuration
 import moe.rukamori.archivetune.shared.ui.theme.IconSizes
 import moe.rukamori.archivetune.shared.ui.theme.Space
