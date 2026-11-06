@@ -108,7 +108,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import kotlin.math.abs
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -1058,6 +1057,7 @@ fun AppleMusicPlayerContent(
                             currentSongLiked = currentSongLiked,
                             volume = volume,
                             onVolumeChange = onVolumeChange,
+                            availableHeight = maxHeight - contentBottomPadding,
                             titleActions = titleActions,
                             onPlayPauseClick = onPlayPauseClick,
                             onMoreClick = onMoreClick,
@@ -1255,14 +1255,13 @@ fun AppleMusicPlayerContent(
                     enter = fadeIn(tween(400, easing = FastOutSlowInEasing)),
                     exit = fadeOut(tween(300, easing = FastOutSlowInEasing)),
                 ) {
-                    // Lyrics area — poke controls on touch, lyrics scroll. The Column is sized to
-                    // fill the area BELOW the mini header (maxHeight - miniHeaderHeight) and offset
-                    // down by miniHeaderHeight so it doesn't cover the mini header.
+                    // Lyrics area — poke controls on touch, lyrics scroll. The Column fills the
+                    // area BELOW the mini header (offset by its height) so it doesn't cover it.
                     Box(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .height(maxHeight - miniHeaderHeight)
+                                .height((maxHeight - miniHeaderHeight).coerceAtLeast(0.dp))
                                 .offset(y = miniHeaderHeight)
                                 .pointerInput(lyricsOpen, lyricsSwipeDismissThresholdPx) {
                                     if (!lyricsOpen) return@pointerInput
@@ -1304,16 +1303,8 @@ fun AppleMusicPlayerContent(
                 }
                 } // end weighted BoxWithConstraints (SharedTransitionLayout + lyrics overlay)
 
-                // Persistent playback controls — anchored at the bottom.
-                // When the queue or lyrics is open, the title row is hidden (it's in the
-                // mini header above) so only the seekbar + transport + volume + bottom
-                // row render.
-                //
-                // Auto-hide follows the standalone LyricsScreen preference (5s when enabled).
-                // The mini header remains visible, so the user can always return to the player.
-                // Slide requires an extra layout pass on top of the fade; skip it when
-                // animations are reduced so the auto-hide/show cycle doesn't compete with
-                // the karaoke lyrics view for frame budget on lower-end devices.
+                // Persistent playback controls, bottom-anchored: the last child of the stacked
+                // column, so the artwork stage above only gets the height these rows leave over.
                 AnimatedVisibility(
                     // The controls never auto-hide, so this is always visible; kept as an
                     // AnimatedVisibility so the morph in and out stays the same shape.
@@ -1342,6 +1333,7 @@ fun AppleMusicPlayerContent(
                         currentSongLiked = currentSongLiked,
                         volume = volume,
                         onVolumeChange = onVolumeChange,
+                        availableHeight = maxHeight,
                         titleActions = titleActions,
                         onPlayPauseClick = onPlayPauseClick,
                         onMoreClick = onMoreClick,
@@ -1525,12 +1517,14 @@ private fun AppleMusicSharpArtwork(
                     minOf(artworkHeightLimitFromFull, artworkHeightLimitFromMorph)
                 // Landscape gets an explicit size handed down from the player (the
                 // hero-of-the-half arrangement); portrait keeps the fraction-based sizing.
+                // The floor only applies when the stage can pay for it: in a short pop-up window
+                // the old unconditional 200 dp tile was taller than the stage it was drawn in.
                 val artworkSize =
                     landscapeArtworkSize
                         ?: run {
                             (maxWidth - horizontalPadding * 2)
-                                .coerceAtMost(artworkHeightLimit)
-                                .coerceAtLeast(artworkMinSize)
+                                .coerceAtMost(minOf(artworkHeightLimit, maxHeight))
+                                .coerceAtLeast(minOf(artworkMinSize, maxHeight))
                         }
                 // Pause-scale animation (non-canvas songs only), gated on the pause-shrink
                 // preference. When the music is paused, the artwork shrinks slightly (~8%) to
@@ -1629,6 +1623,8 @@ private fun AppleMusicControlsColumn(
     currentSongLiked: Boolean,
     volume: Float,
     onVolumeChange: (Float) -> Unit,
+    // The height this column may occupy — the player's own box, not the device screen.
+    availableHeight: Dp,
     titleActions: PlayerTitleActions,
     onPlayPauseClick: () -> Unit,
     onMoreClick: () -> Unit,
@@ -1667,9 +1663,8 @@ private fun AppleMusicControlsColumn(
     // The controls cluster (title → bottom action row) is bottom-anchored by the caller. Gaps
     // between rows are controlled by explicit Spacers below (not by verticalArrangement) so they
     // stay predictable and compact.
-    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-    val compactHeight = screenHeight < 720.dp
-    val veryCompactHeight = screenHeight < 620.dp
+    val compactHeight = PlayerWindowLayout.isCompact(availableHeight.value)
+    val veryCompactHeight = PlayerWindowLayout.dropsSecondaryRows(availableHeight.value)
     val titleToScrubberGap = if (veryCompactHeight) 8.dp else if (compactHeight) 14.dp else 20.dp
     val scrubberToTransportGap = if (veryCompactHeight) 12.dp else if (compactHeight) 14.dp else 18.dp
     val transportToVolumeGap = if (veryCompactHeight) 8.dp else if (compactHeight) 12.dp else 16.dp
@@ -1900,7 +1895,7 @@ private fun AppleMusicControlsColumn(
     // which has proper drag tracking (dragging state + rememberUpdatedState) so the
     // fill follows the finger during a drag instead of lagging behind the rounded
     // device-volume step.
-    if (LocalPlayerPresentation.current.showVolume) AppleMusicVolumeRow(
+    if (LocalPlayerPresentation.current.showVolume && !veryCompactHeight) AppleMusicVolumeRow(
         volume = volume,
         onVolumeChange = onVolumeChange,
         modifier = Modifier.fillMaxWidth(),

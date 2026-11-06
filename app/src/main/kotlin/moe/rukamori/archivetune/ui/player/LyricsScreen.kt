@@ -10,7 +10,6 @@
 
 package moe.rukamori.archivetune.ui.player
 
-import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
@@ -85,7 +84,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -563,7 +561,6 @@ fun LyricsScreen(
     val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
 
     val isLoading = playbackState == STATE_BUFFERING || sliderPosition != null
-    val orientation = LocalConfiguration.current.orientation
     var controlsVisible by remember { mutableStateOf(true) }
     var controlsInteractionEpoch by remember { mutableIntStateOf(0) }
     val controlsExpanded = true
@@ -620,7 +617,8 @@ fun LyricsScreen(
 
     BackHandler(enabled = backHandlerEnabled, onBack = onBackClick)
 
-    Box(
+    // The sheet's own box decides the arrangement, not Configuration.orientation.
+    BoxWithConstraints(
         modifier =
             modifier
                 .fillMaxSize()
@@ -679,6 +677,7 @@ fun LyricsScreen(
                     .consumeUnhandledPointerInput(),
         )
 
+        val compactHeight = PlayerWindowLayout.isCompact(maxHeight.value)
         CompositionLocalProvider(
             LocalLyricsScrollListener provides { scrolling ->
                 if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
@@ -697,13 +696,14 @@ fun LyricsScreen(
                 AppleMusicTrackHeader(
                     mediaMetadata = mediaMetadata,
                     foregroundColor = foregroundColor,
+                    compact = compactHeight,
                     modifier =
                         Modifier
                             .fillMaxWidth()
                             .padding(horizontal = LyricsSheetSidePadding),
                 )
 
-                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                if (PlayerWindowLayout.usesWideArrangement(maxWidth.value, maxHeight.value)) {
                     // One Row for both controls states: the lyrics pane is composed in a single
                     // slot and the controls only animate their share of the row away. Swapping
                     // whole subtrees per state (the AnimatedContent this replaces) rebuilt the
@@ -750,7 +750,7 @@ fun LyricsScreen(
                                     isPlaying = isPlaying,
                                     isLoading = isLoading,
                                     volumeController = deviceMusicVolumeController,
-                                    showVolume = showVolume,
+                                    showVolume = showVolume && !compactHeight,
                                     onPositionChange = onControlsPositionChange,
                                     onPositionChangeFinished = onControlsPositionChangeFinished,
                                     onVolumeChange = onControlsVolumeChange,
@@ -794,7 +794,7 @@ fun LyricsScreen(
                             isPlaying = isPlaying,
                             isLoading = isLoading,
                             volumeController = deviceMusicVolumeController,
-                            showVolume = showVolume,
+                            showVolume = showVolume && !compactHeight,
                             onPositionChange = onControlsPositionChange,
                             onPositionChangeFinished = onControlsPositionChangeFinished,
                             onVolumeChange = onControlsVolumeChange,
@@ -811,8 +811,8 @@ fun LyricsScreen(
                         )
                     }
                 }
-                // Under the auto-hiding transport rather than inside it: the credit, the lyric actions and the
-                // way out are the sheet's own chrome, and they stay put while the player controls tuck away.
+                // The sheet's own chrome, under the auto-hiding transport: it stays put while the
+                // player controls tuck away, and it is the way out of a short window as well.
                 AppleMusicLyricsFooter(
                     lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
                     hasLyrics = currentLyrics != null,

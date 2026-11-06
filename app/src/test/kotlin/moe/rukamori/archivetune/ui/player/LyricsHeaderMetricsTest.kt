@@ -64,9 +64,13 @@ class LyricsHeaderMetricsTest {
 
     @Test
     fun aDegenerateRowNeverClaimsNegativeRoom() {
-        for (width in listOf(0f, 40f, 120f)) {
+        // The tile's 72 dp floor plus its gap is where the name row runs out: below that the text
+        // column is flat zero rather than negative. 120 dp is past it — the floor leaves 36 dp of
+        // name there, which the partition test above pins down.
+        for (width in listOf(0f, 40f, 80f)) {
             assertEquals(0f, LyricsHeaderMetrics.textWidth(width), 0.001f)
         }
+        assertEquals(36f, LyricsHeaderMetrics.textWidth(120f), 0.001f)
     }
 
     @Test
@@ -74,5 +78,37 @@ class LyricsHeaderMetricsTest {
         // The controls live in the sheet's chrome row (LyricsScreenFooter), which is outside the
         // auto-hiding transport, so this row spends nothing on tap targets.
         assertEquals(LyricsHeaderMetrics.ARTWORK_GAP_DP, LyricsHeaderMetrics.CHROME_DP, 0.001f)
+    }
+
+    @Test
+    fun aShortWindowHeaderShrinksTheTileAndKeepsTheName() {
+        // The same row in a pop-up window: the header must not eat the list's room, but the title
+        // still has to read — so the tile gives way first.
+        val compactTile = LyricsHeaderMetrics.artworkSize(phoneRowDp, compact = true)
+        val fullTile = LyricsHeaderMetrics.artworkSize(phoneRowDp)
+        assertTrue("compact tile was " + compactTile + " dp", compactTile < fullTile)
+        assertTrue("compact tile was " + compactTile + " dp", compactTile >= 48f)
+        assertTrue(
+            "compact text width was " + LyricsHeaderMetrics.textWidth(phoneRowDp, compact = true),
+            LyricsHeaderMetrics.textWidth(phoneRowDp, compact = true) >=
+                LyricsHeaderMetrics.textWidth(phoneRowDp),
+        )
+    }
+
+    @Test
+    fun theCompactRowIsPartitionedExactlyToo() {
+        for (width in listOf(160f, 240f, 328f, 420f, 744f)) {
+            val occupied =
+                LyricsHeaderMetrics.artworkSize(width, compact = true) +
+                    LyricsHeaderMetrics.artworkGapDp(compact = true) +
+                    LyricsHeaderMetrics.textWidth(width, compact = true)
+            assertEquals(width, occupied, 0.001f)
+        }
+        assertEquals(8f, LyricsHeaderMetrics.artworkGapDp(compact = true), 0.001f)
+        assertEquals(
+            LyricsHeaderMetrics.ARTWORK_GAP_DP,
+            LyricsHeaderMetrics.artworkGapDp(compact = false),
+            0.001f,
+        )
     }
 }
