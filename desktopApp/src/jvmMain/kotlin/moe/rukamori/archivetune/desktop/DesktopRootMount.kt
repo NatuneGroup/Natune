@@ -273,6 +273,11 @@ internal fun DesktopMountedRoot(
     LaunchedEffect(window, effectiveDark) { WindowsWindowChrome.apply(window, effectiveDark) }
     // Logs the renderer Skiko settled on and turns blur off when it fell back to CPU rasterisation.
     LaunchedEffect(window) { DesktopRendererDiagnostics.observe(window) }
+    // Poppins covers Latin and Devanagari only; one line records which system font answered for the other scripts, so a
+    // glyph-box report starts from evidence instead of a guess.
+    LaunchedEffect(window) {
+        DesktopDiagnosticLog.host("fonts: system fallback ${SystemFontFallback.report()}", DiagnosticLevel.INFO)
+    }
     // Host actions leave their one-line notices here (the player's Share says what it copied), so no action owns UI.
     val notices = remember { SnackbarHostState() }
     LaunchedEffect(graph) {
