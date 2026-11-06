@@ -118,6 +118,57 @@ class EnhancedInterludeTest {
     }
 
     @Test
+    fun theDotsKeepArchiveTunesSize() {
+        // KaraokeBreathingDotsDefaults: `size = 16.dp`, `margin = 12.dp`, three dots. The previous
+        // 14 dp dots 8 dp apart read as three specks under a 26 sp line, which is what was reported.
+        assertEquals(16, DOT_DIAMETER_DP)
+        assertEquals(12, DOT_GAP_DP)
+        assertEquals(3 * DOT_DIAMETER_DP + 2 * DOT_GAP_DP, DOTS_WIDTH_DP)
+        // Tall enough for the 1.3x end swell, so the dots never clip as they grow into the next line.
+        assertTrue(DOTS_HEIGHT_DP * 1f >= DOT_DIAMETER_DP * EnhancedInterludeMotion.END_SWELL_TO)
+    }
+
+    @Test
+    fun theEndSwellLeavesAndReentersTheBreathWithoutAJump() {
+        val breakWindow = EnhancedInterlude(10_000L, 20_000L)
+        val swellStart = breakWindow.endMs - EnhancedInterludeMotion.END_SWELL_MS
+        // Neutral outside its window: the swell is a factor of 1, not a second scale to take a max of.
+        assertEquals(1f, EnhancedInterludeMotion.endSwell(breakWindow, 9_000L), 0.0001f)
+        assertEquals(1f, EnhancedInterludeMotion.endSwell(breakWindow, swellStart), 0.0001f)
+        // One frame inside the window the change is under a percent — no 5% snap on the first frame.
+        assertTrue(
+            abs(EnhancedInterludeMotion.endSwell(breakWindow, swellStart + 16L) - 1f) < 0.01f,
+        )
+        assertEquals(
+            EnhancedInterludeMotion.END_SWELL_TO,
+            EnhancedInterludeMotion.endSwell(breakWindow, breakWindow.endMs - 1L),
+            0.01f,
+        )
+    }
+
+    @Test
+    fun theDotsNeverJumpAtAnyFrameOfABreak() {
+        // Every frame of a 12 s break, including the frames where the end swell opens and closes.
+        val breakWindow = EnhancedInterlude(8_000L, 20_000L)
+        var previous = EnhancedInterludeMotion.scale(breakWindow, 8_000L, reduceMotion = false)
+        for (position in 8_000L..20_000L step 16L) {
+            val scale = EnhancedInterludeMotion.scale(breakWindow, position, reduceMotion = false)
+            assertTrue("scale jumped at $position: $previous -> $scale", abs(scale - previous) < 0.02f)
+            previous = scale
+        }
+    }
+
+    @Test
+    fun reducedMotionKeepsTheDotsAtTheirSeatedSize() {
+        val breakWindow = EnhancedInterlude(8_000L, 20_000L)
+        assertEquals(
+            1f,
+            EnhancedInterludeMotion.scale(breakWindow, 9_000L, reduceMotion = true),
+            0.0001f,
+        )
+    }
+
+    @Test
     fun reducedMotionLightsOneDotAtATime() {
         val lit = (0 until EnhancedInterludeMotion.DOT_COUNT).map { EnhancedInterludeMotion.dotLight(100L, it, true) }
         assertEquals(1, lit.count { it == 1f })

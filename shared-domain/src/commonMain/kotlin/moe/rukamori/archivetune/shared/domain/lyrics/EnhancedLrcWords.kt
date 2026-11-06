@@ -73,7 +73,35 @@ internal object EnhancedLrcWords {
                 ),
             )
         }
-        return words.takeIf { it.size >= 2 }
+        return words.mapBackgroundRuns().takeIf { it.size >= 2 }
+    }
+
+    /**
+     * Marks the words a line wraps in parentheses as background vocals, the same rule the Android
+     * parser applies: TTML states this with `ttm:role="x-bg"`, and the enhanced-LRC providers that
+     * mirror it write the backing vocal inline in round brackets. Only a run that opens at a word's own
+     * start and closes at a word's own end counts; an unbalanced open bracket marks the rest of the
+     * line, because that is what a truncated provider means.
+     */
+    fun List<LyricsWord>.mapBackgroundRuns(): List<LyricsWord> {
+        if (isEmpty()) return this
+        var depth = 0
+        var changed = false
+        val marked =
+            map { word ->
+                val opens = word.text.trimStart().startsWith('(')
+                val closes = word.text.trimEnd().endsWith(')')
+                val inside = depth > 0 || opens
+                if (opens) depth++
+                if (closes && depth > 0) depth--
+                if (inside && !word.isBackground) {
+                    changed = true
+                    word.copy(isBackground = true)
+                } else {
+                    word
+                }
+            }
+        return if (changed) marked else this
     }
 
     /**
