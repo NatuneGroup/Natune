@@ -82,19 +82,25 @@ is the line-change settle glide and selection/share-card UI. Every surface uses
 separately from the user offset; the iOS host does not add a second route-latency offset.
 
 The renderer draws no top bar, so each host owns its own chrome. Android's lyrics sheet header
-(`ui/player/LyricsTrackHeader.kt`) is the one that carries real chrome: artwork, the title and
-artist, and the close, favourite and overflow buttons on a single row. Its sizes come from the row
-it is given (`LyricsHeaderMetrics`): the artwork takes a clamped 20% share of it (56-84 dp, so a
-phone gets a tile rather than a thumbnail), the three 48 dp tap targets stay 48 dp — the
-accessibility floor — and the buttons sit with no gap so they read as one group. The title and
-artist keep every remaining dp, and the sheet's side inset is 20 dp on both the header and the
-transport. A title that does not fit one line takes a second one (`LyricsHeaderTitle`: measured once
-per title/style/width, marquee when it fits) instead of being clipped at the first, which is what a
-clipped "São Pau" under the close button was.
+(`ui/player/LyricsTrackHeader.kt`) carries the artwork and the track's name, and nothing else. Its
+sizes come from the row it is given (`LyricsHeaderMetrics`): the artwork takes a clamped 28% share of
+it (72-104 dp, so a phone gets a 92 dp tile and not a thumbnail), and the title and artist keep the
+rest — about 224 dp of a 360 dp phone instead of the ~100 dp three fixed 48 dp targets left over. A
+title that does not fit one line takes a second one (`LyricsHeaderTitle`: measured once per
+title/style/width, marquee when it fits) instead of being clipped at the first, which is what a
+clipped "São Pau" under the close button was. The sheet's one side inset is 16 dp on the header, the
+transport, the lyric pane and the chrome row (`LyricsSheetSidePadding`), and the rows carry their own
+12 dp text inset instead of a second 24 dp one on top of it.
 
-The credit row — "Lyrics from <provider>", the overflow menu and the close button
+The chrome row — "Lyrics from <provider>", the favourite, the overflow menu and the close button
 (`ui/player/LyricsScreenFooter.kt`) — is the sheet's chrome, not a player control: it is drawn below
-the auto-hiding transport, so it stays reachable after the transport has tucked itself away.
+the auto-hiding transport, so it stays reachable after the transport has tucked itself away. It is
+also the only place those three controls live: a 48 dp target is the accessibility floor, and three
+of them in the name's row are what left the name no room while the row still read as spaced out.
+
+The lyric list's rhythm is the row's own padding times two plus the list's spacing
+(`BasicSyncedLyricsList`: 4 + 4 + 2 = 10 dp between two lines, down from 16 dp), so the lines read as
+a stanza rather than as separated paragraphs without touching each line's own height.
 
 ## Sync offsets, romanization and frame scheduling
 
@@ -139,6 +145,13 @@ frame therefore paints the position of the instant it is painted at instead of t
 frame before it published, which is one frame of lag a position-driven sweep cannot hide. The loop
 bumps one `frameTick` state per drawn frame, and that tick is the draw-phase subscription, so a
 parked iteration still repaints the frame it published and asks for nothing else.
+
+Nothing on the Enhanced row animates a render effect. `Modifier.blur` builds a `RenderEffect` for
+the radius it is handed, so an animated distance-veil radius rebuilt one effect per row per frame for
+the whole length of a line change — the construct that makes a 60 Hz lyrics sweep read as 30 Hz — and
+it no longer runs: `BasicSyncedLyricsList` reads the veil's radius straight from the row's depth. The
+row's fade, its depth scale and its pop still animate, in the draw phase, where a frame costs a
+`graphicsLayer` update and not a relayout.
 
 The UIKit native pane invalidates its `CADisplayLink`
 and timer when hidden or backgrounded, draws display frames only while advancing without reduced
@@ -225,17 +238,28 @@ them skipped under reduced motion:
   background voice — a whole line of `x-bg` words, or the document's second voice
   (`ttm:agent="v2"`) — is published as its own `AccompanimentKaraokeLine` row and drawn smaller
   under the lead line instead of being promoted to a lead line at full size. The shared renderer
-  does the same for the second voice (`lyricsSecondVoiceStyle`). A rising or emphasized word's cut
+  does the same for the second voice (`lyricsSecondVoiceStyle`). TTML states the backing voice with
+  `ttm:role="x-bg"`, which `TTMLParser` (pinned `lyrics` submodule) and `shared/domain`'s `TtmlParser`
+  both read. The enhanced-LRC providers have no attribute for it and write the backing vocal inline in
+  round brackets, so both enhanced-LRC readers mark a bracketed run as `isBackground` as well
+  (`LyricsUtils.mapBackgroundRuns`, `EnhancedLrcWords.mapBackgroundRuns`): a run that opens at a word's
+  own start and closes at a word's own end, with an unbalanced open bracket marking the rest of the
+  line. The brackets stay in the text — the renderers draw the source text, they never rewrite it. A rising or emphasized word's cut
   and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
   with the word on their own baseline rather than being clipped or drawn twice.
 - The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
   scaling from its aligned edge.
-- An instrumental break of 9 s or more shows three 14 dp dots above the next line
-  (`LyricsInterludes`, `LyricsInterludeDots`, and `EnhancedInterludeDots` on Android). Their light is
-  a travelling pulse on the lyrics timeline — each dot one half of a cosine, a third of a 1.4 s cycle
-  behind the one before it — so the loop is seamless at the wrap and a break of any length keeps the
-  same rhythm instead of a fill that restarts with every break. A 2.8 s breath scales them, and over
-  the last 1.5 s they swell toward the arriving line.
+- An instrumental break of 9 s or more shows three dots above the next line (`LyricsInterludes`,
+  `LyricsInterludeDots`, and `EnhancedInterludeDots` on Android). They are the size ArchiveTune's
+  breathing dots draw at — `KaraokeBreathingDotsDefaults` is `size = 16.dp`, `margin = 12.dp` — so
+  three 16 dp dots 12 dp apart, 72 dp across, in a 22 dp band that holds the swell; the previous 14 dp
+  dots 8 dp apart read as specks under a 26 sp line. Their light is a travelling pulse on the lyrics
+  timeline — each dot one half of a cosine, a third of a 1.4 s cycle behind the one before it — so the
+  loop is seamless at the wrap and a break of any length keeps the same rhythm instead of a fill that
+  restarts with every break. A 2.8 s breath scales them, and over the last 1.5 s an end swell
+  multiplies that breath from 1 to 1.3 (`LyricsInterludeMotion.scale`). It is a product, not a second
+  scale taken with `maxOf`: the swell used to start at 1.05, so the dots snapped 5% larger on the frame
+  its window opened and snapped back when it closed.
 - Depth (scale, fade and a uniform 2 dp blur) applies to every non-sung row while the list
   follows (`LyricsDepth.UNIFORM_BLUR_DP`), and waits `LyricsDepth.staggerMs` per step, so a line
   change ripples outward. Rows stay sharp until the listener's hold ends or a line is tapped,
