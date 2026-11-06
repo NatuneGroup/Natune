@@ -1187,7 +1187,7 @@ object LyricsUtils {
                 ),
             )
         }
-        return words.takeIf { it.size >= 2 }
+        return words.withBackgroundRuns().takeIf { it.size >= 2 }
     }
 
     private fun parseMillisecondsSyncedLine(line: String): List<LyricsEntry>? {
