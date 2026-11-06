@@ -215,4 +215,6 @@
     <string name="content_menu_telegram_share_unsupported">Telegram message-link sharing is not connected on desktop. Share the message from Telegram instead.</string>
     <string name="content_menu_share_unsupported">A share link is not available for this item and provider.</string>
     <string name="content_menu_canvas_export_unsupported">Canvas export is not connected on desktop. Custom artwork can still set or remove a local Canvas.</string>
+    <string name="search_placeholder">Search songs, albums and artists</string>
+    <string name="search_shortcut">Ctrl+K</string>
 </resources>

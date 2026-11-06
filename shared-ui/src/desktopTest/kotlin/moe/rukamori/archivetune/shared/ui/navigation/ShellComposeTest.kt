@@ -139,4 +139,32 @@ class ShellComposeTest {
         ShellTab.entries.forEach { onNodeWithTag("shell-tab-${it.name}").assertIsDisplayed() }
         onAllNodes(hasTestTag("shell-mini-player")).assertCountEquals(1)
     }
+
+    @Test fun desktopSidebarIsNamedAndSurvivesSettings() = runComposeUiTest {
+        val navigation = ShellNavigation()
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalDesktopLayout provides true) {
+                    Box(Modifier.size(1440.dp, 900.dp)) {
+                        ArchiveTuneShell(navigation, PreferenceSnapshot.EMPTY, {},
+                            miniPlayer = { Text("Fixture player") }, content = { Text("Route $it") })
+                    }
+                }
+            }
+        }
+        onNodeWithTag("shell-rail").assertIsDisplayed()
+        onNodeWithText("Home").assertIsDisplayed()
+        onNodeWithText("Library").assertIsDisplayed()
+        // Search lives in the host top bar, not in the sidebar.
+        onNodeWithTag("shell-tab-Search").assertDoesNotExist()
+        onNodeWithTag("shell-tab-Library").performClick()
+        onNodeWithText("Route library").assertIsDisplayed()
+        // Settings keeps the same sidebar and mini player on desktop.
+        runOnIdle { navigation.open("settings") }
+        onNodeWithText("Route settings").assertIsDisplayed()
+        onNodeWithTag("shell-rail").assertIsDisplayed()
+        onNodeWithTag("shell-tab-Home").assertIsDisplayed()
+        onAllNodes(hasTestTag("shell-mini-player")).assertCountEquals(1)
+        onRoot().writeM4Screenshot("desktop-shell-sidebar.png")
+    }
 }
