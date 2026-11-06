@@ -54,6 +54,42 @@ import okhttp3.Credentials
 
 internal const val PROXY_PROBE_URL = "https://music.youtube.com/generate_204"
 
+/** The routing identity of a request that leaves the host itself, with no proxy in the path. */
+internal const val DIRECT_ROUTE_SCOPE = "direct"
+
+/** The endpoint half of a scope whose proxy address the platform never resolved to a host and port. */
+internal const val UNRESOLVED_ROUTE_SCOPE = "unresolved"
+
+/**
+ * The routing identity of [proxy] as `TYPE:host:port`, which is what a route-scoped caller may key a URL on. Proxy
+ * credentials, and any part of the configured proxy URL other than the endpoint, stay out of it: a scope is compared
+ * and logged, and neither may carry a secret.
+ */
+internal fun proxyRouteScope(proxy: Proxy): String {
+    val address = proxy.address() as? InetSocketAddress
+    val endpoint = address?.let { "${it.hostString}:${it.port}" } ?: UNRESOLVED_ROUTE_SCOPE
+    return "${proxy.type()}:$endpoint"
+}
+
+/**
+ * The routing identity a resolved media URL may be keyed on, or null when no single route can be named.
+ *
+ * A googlevideo URL is bound to the address that asked for it, so a caller never reuses one across routes. The direct
+ * route and a saved static proxy each name one endpoint the session keeps for its whole life, so those scopes are
+ * stable. Rotation is the case that cannot be named: its pool hands each request a different egress, so the player
+ * request that mints a URL and the engine's later range requests are not guaranteed to leave from the same address, and
+ * a cached URL would be read over a route that never minted it. Only a pool holding a single route names one; a larger
+ * pool answers null, which tells the caller not to cache at all.
+ */
+internal fun desktopRouteScope(
+    configured: DesktopProxyConfig?,
+    rotating: Boolean,
+    singleRotationRoute: String?,
+): String? {
+    if (rotating) return singleRotationRoute?.let { "rotation:$it" }
+    return configured?.let { proxyRouteScope(it.proxy) } ?: DIRECT_ROUTE_SCOPE
+}
+
 internal fun desktopRotationReady(desktopCount: Int, innerTubeCount: Int): Boolean =
     desktopCount > 0 && innerTubeCount > 0
 
@@ -121,17 +157,11 @@ internal class DesktopNetworkOwner(
     fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
 
     /**
-     * The routing identity a resolved media URL was minted under: the direct route, the configured proxy, or the
-     * rotation that was active. A googlevideo URL is bound to the address that asked for it, so the resolver cache keys
-     * on this and never reuses a stream across routes. Credentials and full proxy URLs stay out of the identity.
+     * The routing identity a resolved media URL was minted under, or null when no single route can be named (see
+     * [desktopRouteScope]). The direct route and a saved static proxy name themselves; rotation names the one route its
+     * pool pins, or nothing when the pool rotates between egresses. Credentials and full proxy URLs stay out of it.
      */
-    fun routeScope(): String {
-        val configured = config ?: return "direct"
-        val address = configured.proxy.address() as? InetSocketAddress
-        val endpoint = address?.let { "${it.hostString}:${it.port}" } ?: "unresolved"
-        val rotationScope = if (rotating) ":rotation-${activeRotationCount()}" else ""
-        return "${configured.proxy.type()}:$endpoint$rotationScope"
-    }
+    fun routeScope(): String? = desktopRouteScope(config, rotating, rotation.singleRoute())
 
     suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -356,6 +386,19 @@ internal class DesktopRotatingProxySelector : ProxySelector() {
         val current = pool.get()
         val now = System.currentTimeMillis()
         return current.proxies.indices.count { current.deadUntil.get(it) <= now }
+    }
+
+    /**
+     * The egress this pool always hands out, as `host:port`, when it holds exactly one route; null when it rotates
+     * between routes. A cooled-down route is still the one [select] answers with, so a single-route pool names the same
+     * address for the life of the pool; a larger pool names none, because its next selection depends on the request
+     * that made it and on which routes have failed since.
+     */
+    fun singleRoute(): String? {
+        val current = pool.get()
+        if (current.proxies.size != 1) return null
+        val address = current.proxies[0].address() as? InetSocketAddress ?: return null
+        return "${address.hostString}:${address.port}"
     }
 
     fun rotate() {

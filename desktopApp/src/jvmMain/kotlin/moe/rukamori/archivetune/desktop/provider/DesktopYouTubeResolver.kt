@@ -1,6 +1,9 @@
 package moe.rukamori.archivetune.desktop.provider
 
 import com.metrolist.innertubex.extraction.ContentHints
+import com.metrolist.innertubex.extraction.strategy.ClientLifecycle
+import com.metrolist.innertubex.extraction.strategy.ClientSelectionMode
+import com.metrolist.innertubex.extraction.strategy.PlaybackClientCatalog
 import io.ktor.client.HttpClient
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -9,6 +12,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.desktop.DIRECT_ROUTE_SCOPE
 import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
@@ -24,8 +28,9 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.AllowAgeRestrictedKey
 import moe.rukamori.archivetune.shared.domain.settings.AudioQualityKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackClientChoice
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.domain.settings.manualPlaybackClient
+import moe.rukamori.archivetune.shared.domain.settings.manualPlaybackClientChoice
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
@@ -68,8 +73,11 @@ internal class DesktopYouTubeResolver(
      * and the route that minted it, and it expires on its own, so the cache is keyed on those and honours the window.
      */
     private val cache: DesktopResolvedStreamCache = DesktopResolvedStreamCache(),
-    /** The routing identity the cache keys on: the direct route, the configured proxy, or the active rotation. */
-    private val networkScope: () -> String = { "direct" },
+    /**
+     * The routing identity the cache keys on: the direct route, the configured proxy, or null when the session cannot
+     * name the egress a cached URL would be read over. A null scope disables caching for the resolution.
+     */
+    private val networkScope: () -> String? = { DIRECT_ROUTE_SCOPE },
     private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
@@ -97,8 +105,12 @@ internal class DesktopYouTubeResolver(
         val started = System.nanoTime()
         val target = targetFor(request) ?: return null
         val key = cacheKey(target.videoId)
-        // A refresh the queue asked for after a rejection must never read the entry it is replacing.
-        if (!request.forceFreshStream) {
+        // A refresh the queue asked for after a rejection must never read the entry it is replacing, and it must not
+        // leave that entry behind either: the retry either answers with a newer URL or with nothing, and a stale URL
+        // surviving a refresh that resolved nothing would come straight back on the next ordinary attempt.
+        if (request.forceFreshStream) {
+            cache.invalidate(target.videoId)
+        } else {
             cache.get(key)?.let { cached ->
                 // The line Android writes for a tier that answered, with `cache` naming why no request was made.
                 logTier("shipped", true, started, "cache")
@@ -160,22 +172,12 @@ internal class DesktopYouTubeResolver(
     }
 
     /**
-     * The hints one request carries: the manual client the settings page pinned, if InnerTubeX knows that id. The
-     * content facts stay null because a resolution only knows the video id here; the walk then treats the content as
-     * ordinary and lets the player response say what it is. An unknown client id is dropped instead of being passed
-     * through, because the library matches it against its own catalog.
+     * The hints one request carries: the manual client the settings page pinned, when InnerTubeX ships a profile that
+     * can honour it (see [innerTubeXOverrideId]). The content facts stay null because a resolution only knows the video
+     * id here; the walk then treats the content as ordinary and lets the player response say what it is.
      */
     private fun contentHints(): ContentHints =
-        defaultContentHints(playbackClientOverrideId = playbackClientOverrideId(preferences()))
-
-    /** The settings client choice in InnerTubeX's own catalog vocabulary; null is the automatic walk. */
-    private fun playbackClientOverrideId(snapshot: PreferenceSnapshot?): String? =
-        when (snapshot?.manualPlaybackClient()?.uppercase(Locale.US)) {
-            "ANDROID_VR" -> "ANDROID_VR_1_65_10"
-            "IOS" -> "IOS"
-            "TVHTML5" -> "TVHTML5"
-            else -> null
-        }
+        defaultContentHints(playbackClientOverrideId = innerTubeXOverrideId(preferences()?.manualPlaybackClientChoice()))
 
     override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? {
         if (tier == YouTubeFallbackTier.ECHO) return null
@@ -236,7 +238,8 @@ internal class DesktopYouTubeResolver(
     /**
      * The cache identity of one resolution: everything a googlevideo URL is bound to. The quality is the ladder the
      * request asked for, the session is the account that minted it, and the network scope is the route it was minted
-     * over. Neither the session id nor a proxy endpoint is secret, and neither is logged.
+     * over — null while no single route can be named, which the cache reads as "do not store this". Neither the session
+     * id nor a proxy endpoint is secret, and neither is logged.
      */
     private fun cacheKey(videoId: String): DesktopResolvedStreamCache.Key =
         DesktopResolvedStreamCache.Key(
@@ -293,8 +296,9 @@ internal class DesktopYouTubeResolver(
         val snapshot = preferences()
         val quality = DesktopYouTubeAudioQuality.fromRequestValue(snapshot?.get(AudioQualityKey))
         val ageGate = snapshot?.get(AllowAgeRestrictedKey) ?: false
-        val preferred = preferredClient(snapshot)
-        val manualClient = snapshot?.manualPlaybackClient() != null
+        val choice = snapshot?.manualPlaybackClientChoice()
+        val preferred = preferredClient(choice)
+        val manualClient = choice != null
         val session = signIn()
         // The account's own visitor identity travels with its cookie; a fetched visitor id belongs to no account.
         val visitorData = session?.visitorData ?: visitor()
@@ -412,15 +416,17 @@ internal class DesktopYouTubeResolver(
         return null
     }
 
-    private fun preferredClient(snapshot: PreferenceSnapshot?): DesktopYouTubeClient {
-        return when (snapshot?.manualPlaybackClient()?.uppercase(Locale.US)) {
-            "ANDROID_VR" -> DesktopYouTubeClients.ANDROID_VR_1_65_10
-            "IOS" -> DesktopYouTubeClients.IOS
-            "TVHTML5" -> DesktopYouTubeClients.TVHTML5
-            "ANDROID_MUSIC" -> DesktopYouTubeClients.ANDROID_MUSIC
-            else -> DesktopYouTubeClients.MAIN_CLIENT
+    /** The client the walk leads with for a hand-pinned choice; the automatic order when nothing is pinned. */
+    private fun preferredClient(choice: PlaybackClientChoice?): DesktopYouTubeClient =
+        when (choice) {
+            PlaybackClientChoice.ANDROID_VR -> DesktopYouTubeClients.ANDROID_VR_1_65_10
+            // Web Remix is the main client, so the pinned choice and the automatic lead are the same request.
+            PlaybackClientChoice.WEB_REMIX -> DesktopYouTubeClients.MAIN_CLIENT
+            PlaybackClientChoice.IOS -> DesktopYouTubeClients.IOS
+            PlaybackClientChoice.TVHTML5 -> DesktopYouTubeClients.TVHTML5
+            PlaybackClientChoice.ANDROID_MUSIC -> DesktopYouTubeClients.ANDROID_MUSIC
+            null -> DesktopYouTubeClients.MAIN_CLIENT
         }
-    }
 
     private companion object {
         /**
@@ -449,6 +455,37 @@ internal class DesktopYouTubeResolver(
         const val INNERTUBEX_TIER = "innertubex-primary"
         const val CLIENT_WALK_TIER = "client-walk"
     }
+}
+
+/**
+ * The InnerTubeX catalog id that stands for one settings client choice. The ids are the library's own profile ids, and
+ * every client the playback-client setting offers has one here, so the mapping is total: [innerTubeXOverrideId] then
+ * asks the library's catalog whether that profile can in fact answer a user's playback.
+ */
+internal fun PlaybackClientChoice.innerTubeXCatalogId(): String = when (this) {
+    PlaybackClientChoice.ANDROID_VR -> "ANDROID_VR_1_65_10"
+    PlaybackClientChoice.WEB_REMIX -> "WEB_REMIX"
+    PlaybackClientChoice.IOS -> "IOS"
+    PlaybackClientChoice.TVHTML5 -> "TVHTML5"
+    PlaybackClientChoice.ANDROID_MUSIC -> "ANDROID_MUSIC"
+}
+
+/**
+ * The client override one request carries, or null for InnerTubeX's automatic walk.
+ *
+ * The library's shipped catalog is the authority on what a pinned client may do, and it is read rather than trusted from
+ * this file: a profile it no longer lists, marks broken, or keeps back for its own probes cannot answer playback, and
+ * pinning one would make the first tier spend its single player request on a client that is known to fail and hide the
+ * walk that would have worked. Every choice the setting offers therefore ends in exactly one of two answers — the id of
+ * a usable profile, or null with the catalog naming why not — and `innerTubeXCatalogId` is the only place an id is
+ * spelled out.
+ */
+internal fun innerTubeXOverrideId(choice: PlaybackClientChoice?): String? {
+    val id = choice?.innerTubeXCatalogId() ?: return null
+    val manifest = PlaybackClientCatalog.find(id)?.manifest ?: return null
+    if (manifest.lifecycle == ClientLifecycle.BROKEN) return null
+    if (manifest.selectionMode == ClientSelectionMode.PROBE_ONLY) return null
+    return id
 }
 
 /**

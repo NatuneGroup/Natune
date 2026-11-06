@@ -240,7 +240,8 @@ internal suspend fun assembleDesktopSessionOwners(
         signIn = { vault.snapshots.value.youTubeSignIn() },
         poTokens = poTokens,
         // A resolved googlevideo URL is reused only for the same video, quality, account and route, and only while its
-        // own `expire` still leaves the engine room to read it.
+        // own `expire` still leaves the engine room to read it. A rotating pool cannot name the route that will read a
+        // cached URL, so it answers null and the resolver caches nothing for the length of that rotation.
         cache = DesktopResolvedStreamCache(),
         networkScope = { network.routeScope() },
     )
