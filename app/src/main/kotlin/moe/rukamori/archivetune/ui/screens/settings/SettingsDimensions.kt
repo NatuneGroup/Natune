@@ -60,6 +60,9 @@ object SettingsDimensions {
     val GlassCornerRadius = 18.dp
     val GlassBorderThickness = 0.5.dp
 
+    /** The radius of a compact tile or badge, as YumaPlayer's Spotify home cells use it. */
+    val BadgeCornerRadius = 8.dp
+
     val BottomSheetHorizontalPadding = 16.dp
     val BottomSheetBottomPadding = 20.dp
     val BottomSheetCornerRadius = 28.dp

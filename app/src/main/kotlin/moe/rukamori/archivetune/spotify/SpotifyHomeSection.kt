@@ -12,25 +12,33 @@
 package moe.rukamori.archivetune.spotify
 
 import androidx.compose.runtime.Immutable
-import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedItem
+import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
+import moe.rukamori.archivetune.spotify.models.SpotifyArtist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 
-/** One shelf on the Spotify home. */
+/**
+ * One shelf of the Spotify home, holding every item Spotify sent and in the order it sent them.
+ *
+ * YumaPlayer's shelf (`spotify/SpotifyHomeSection.kt`) kept the kind the section held most of and
+ * dropped the rest, so a shelf such as "Jump back in" that mixes albums with playlists lost whole
+ * releases. Here each item carries the kind it draws as and the shelf's row dispatches per item, so
+ * a mixed shelf keeps its albums next to its playlists.
+ */
 @Immutable
-sealed interface SpotifyHomeSection {
-    val title: String
+data class SpotifyHomeSection(
+    val title: String,
+    val items: List<SpotifyHomeSectionItem>,
+)
 
-    /** Track shelves come from `topTracks`, which returns one kind, so this list stays typed. */
-    @Immutable
-    data class Tracks(
-        override val title: String,
-        val tracks: List<SpotifyTrack>,
-    ) : SpotifyHomeSection
+/** One item of a home shelf, tagged with the kind its row item draws as. */
+@Immutable
+sealed interface SpotifyHomeSectionItem {
+    data class Track(val track: SpotifyTrack) : SpotifyHomeSectionItem
 
-    /** Playlists, albums and artists, in the order the feed sent them. */
-    @Immutable
-    data class Cards(
-        override val title: String,
-        val items: List<SpotifyHomeFeedItem>,
-    ) : SpotifyHomeSection
+    data class Artist(val artist: SpotifyArtist) : SpotifyHomeSectionItem
+
+    data class Album(val album: SpotifyAlbum) : SpotifyHomeSectionItem
+
+    data class Playlist(val playlist: SpotifyPlaylist) : SpotifyHomeSectionItem
 }
