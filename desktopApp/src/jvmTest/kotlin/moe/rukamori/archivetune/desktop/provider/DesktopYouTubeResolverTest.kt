@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.desktop.provider
 
+import com.metrolist.innertubex.extraction.AudioQuality
+import com.metrolist.innertubex.extraction.ContentHints
+import com.metrolist.innertubex.extraction.ExtractedStream
+import com.metrolist.innertubex.extraction.StreamExtractor
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -64,7 +68,13 @@ class DesktopYouTubeResolverTest {
             this[PlayerStreamClientKey] = "ANDROID_MUSIC"
         }.snapshot()
         try {
-            val resolver = DesktopYouTubeResolver(http, preferences = { preferences }, cipher = cipher)
+            val resolver = DesktopYouTubeResolver(
+                http,
+                preferences = { preferences },
+                cipher = cipher,
+                // The InnerTubeX tier is the resolver's first answer; this test is about the hand-rolled walk behind it.
+                innerTubeX = DesktopInnerTubeXTier(http, extractorOverride = StubStreamExtractor()),
+            )
             val prepared = assertIs<PreparedAudio.Progressive>(resolver.primary(request()))
             assertEquals(TRANSFORMED_URL, prepared.stream.uri)
             assertEquals(1_800_000_000_000L, prepared.stream.expiresAtEpochMs)
@@ -116,7 +126,12 @@ class DesktopYouTubeResolverTest {
             )
         })
         try {
-            val resolver = DesktopYouTubeResolver(http, preferences = { null }, cipher = RecordingCipher())
+            val resolver = DesktopYouTubeResolver(
+                http,
+                preferences = { null },
+                cipher = RecordingCipher(),
+                innerTubeX = DesktopInnerTubeXTier(http, extractorOverride = StubStreamExtractor()),
+            )
             val failure = assertFailsWith<DesktopYouTubeBotDetectionException> { resolver.primary(request()) }
             assertTrue(failure.message.orEmpty().contains("bot check"))
             assertTrue(failure.message.orEmpty().contains("ANDROID_VR"))
@@ -131,6 +146,109 @@ class DesktopYouTubeResolverTest {
         assertEquals(1_800_000_000_000L, youTubeStreamExpiryMs("https://cdn.invalid/v?expire=1800000000&n=x"))
         assertEquals(null, youTubeStreamExpiryMs("https://cdn.invalid/v?n=x"))
         assertEquals(null, youTubeStreamExpiryMs("not a url"))
+    }
+
+    /**
+     * The resolver's order: InnerTubeX answers first, and the hand-rolled client walk runs only when it did not. The
+     * mocked client records every player request, so "the walk did not run" is observable rather than assumed.
+     */
+    @Test
+    fun innerTubeXAnswersBeforeTheClientWalkAndTheWalkIsTheFallback() = runBlocking<Unit> {
+        val playerCalls = mutableListOf<String>()
+        val http = HttpClient(MockEngine { call ->
+            if (!call.url.encodedPath.endsWith("/player")) return@MockEngine respond("{}")
+            playerCalls += call.headers["X-YouTube-Client-Name"].orEmpty()
+            respond(playerBody(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        try {
+            val answered = StubStreamExtractor(answer = extractedStream())
+            val first = DesktopYouTubeResolver(
+                http,
+                preferences = { null },
+                cipher = RecordingCipher(),
+                innerTubeX = DesktopInnerTubeXTier(http, extractorOverride = answered),
+            )
+            val prepared = assertIs<PreparedAudio.Progressive>(first.primary(request()))
+            assertEquals(ITX_URL, prepared.stream.uri)
+            // The library reported no Instant, so the URL's own `expire` window is what the locator carries.
+            assertEquals(1_800_000_000_000L, prepared.stream.expiresAtEpochMs)
+            assertEquals("YouTube InnerTubeX WEB_REMIX 128 kbps", prepared.stream.label)
+            assertEquals(listOf("User-Agent"), prepared.stream.headers.names)
+            assertEquals(1, answered.extractions)
+            assertTrue(playerCalls.isEmpty(), "the client walk must not run once InnerTubeX answered: $playerCalls")
+
+            // No stream from the library: the walk behind it answers, and it is the tier that is logged as failing.
+            val silent = StubStreamExtractor(answer = null)
+            val lines = mutableListOf<String>()
+            val second = DesktopYouTubeResolver(
+                http,
+                preferences = { null },
+                cipher = RecordingCipher(),
+                innerTubeX = DesktopInnerTubeXTier(http, extractorOverride = silent),
+                log = { lines += it },
+            )
+            val walked = assertIs<PreparedAudio.Progressive>(second.primary(request()))
+            assertEquals(TRANSFORMED_URL, walked.stream.uri)
+            assertEquals(1, silent.extractions)
+            assertTrue(playerCalls.isNotEmpty(), "the hand-rolled walk must run when InnerTubeX had no stream")
+            assertTrue(lines.any { it.startsWith("YouTube tier=innertubex-primary resolved=false") }, lines.toString())
+
+            // A refused transport shape is not fatal either: the walk still gets its turn.
+            val refused = StubStreamExtractor(failure = DesktopInnerTubeXException("InnerTubeX returned a SABR stream"))
+            playerCalls.clear()
+            val third = DesktopYouTubeResolver(
+                http,
+                preferences = { null },
+                cipher = RecordingCipher(),
+                innerTubeX = DesktopInnerTubeXTier(http, extractorOverride = refused),
+            )
+            assertIs<PreparedAudio.Progressive>(third.primary(request()))
+            assertEquals(1, refused.extractions)
+            assertTrue(playerCalls.isNotEmpty())
+        } finally {
+            http.close()
+        }
+    }
+
+    /** A stream the InnerTubeX tier would map, with no reported Instant so the URL's `expire` decides the window. */
+    private fun extractedStream(): ExtractedStream = ExtractedStream(
+        videoId = videoId,
+        audioUrl = ITX_URL,
+        headers = mapOf("User-Agent" to "itx-agent"),
+        loudnessDb = null,
+        expiresAt = null,
+        contentLengthBytes = 1_000L,
+        itag = 251,
+        mimeType = "audio/webm; codecs=\"opus\"",
+        codecs = "opus",
+        bitrate = 128_000,
+        sampleRate = 48_000,
+        clientName = "WEB_REMIX",
+        profileId = "web-remix",
+        requireBoundedRange = false,
+        rangeChunkSizeBytes = 1_048_576L,
+    )
+
+    /** The library extractor, stubbed: the order test must not reach a network the suite does not own. */
+    private class StubStreamExtractor(
+        private val answer: ExtractedStream? = null,
+        private val failure: Throwable? = null,
+    ) : StreamExtractor {
+        var extractions = 0
+
+        override suspend fun prewarm() = Unit
+
+        override suspend fun extract(
+            videoId: String,
+            hints: ContentHints,
+            excludedClients: Set<String>,
+            audioQuality: AudioQuality,
+            clientPlaybackNonce: String,
+        ): ExtractedStream? {
+            extractions++
+            failure?.let { throw it }
+            return answer
+        }
     }
 
     @Test
@@ -186,5 +304,6 @@ class DesktopYouTubeResolverTest {
                 "\"signatureCipher\":\"s=abc&sp=sig&url=https%3A%2F%2Fcdn.invalid%2Fstream%3F" +
                 "expire%3D1800000000%26n%3Dabc\"}"
         const val TRANSFORMED_URL = "https://cdn.invalid/stream?expire=1800000000&n=transformed&sig=deciphered"
+        const val ITX_URL = "https://cdn.invalid/itx?expire=1800000000"
     }
 }

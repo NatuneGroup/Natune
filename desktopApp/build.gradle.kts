@@ -32,6 +32,10 @@ kotlin {
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
             // tier can drive the extractor directly, which adds nothing to the package.
             implementation(libs.innertubex.desktop)
+            // InnerTubeX delegates the signature and `n` transforms to QuackJS. Nothing here calls it directly; the
+            // explicit declaration pins the 0.1.4 build that InnerTubeX v0.11.5 is compiled against instead of
+            // leaving the version to whatever the transitive graph resolves.
+            implementation(libs.quackjs)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
             // The Hyprland visibility watcher parses the compositor's IPC replies with it.
