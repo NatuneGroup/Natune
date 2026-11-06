@@ -102,7 +102,7 @@ class BgutilSidecarManagerTest {
                 launcher = launcher,
                 clock = clock,
                 supervise = true,
-                pause = { delay(it).also { clock.advance(it) } },
+                pause = { millis -> delay(millis).also { clock.advance(millis) } },
             )
 
         assertEquals("http://127.0.0.1:4416", manager.ensureRunning())
@@ -155,7 +155,7 @@ class BgutilSidecarManagerTest {
 
     private val currentRoot: Path
         get() {
-            if (roots.isEmpty()) roots += Files.createTempDirectory("potoken-manager-test")
+            if (roots.isEmpty()) roots.add(Files.createTempDirectory("potoken-manager-test"))
             return roots.last()
         }
 

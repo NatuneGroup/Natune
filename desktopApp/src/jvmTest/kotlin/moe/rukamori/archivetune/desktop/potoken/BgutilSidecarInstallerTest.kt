@@ -97,7 +97,8 @@ class BgutilSidecarInstallerTest {
         assertTrue(Files.notExists(root.resolve(spec.binaryFileName)))
     }
 
-    private fun newRoot(): Path = Files.createTempDirectory("potoken-installer-test").also { roots += it }
+    private fun newRoot(): Path =
+        Files.createTempDirectory("potoken-installer-test").also { roots.add(it) }
 
     private fun specFor(payload: ByteArray, digest: String): BgutilSidecarSpec =
         BgutilSidecarSpec(
