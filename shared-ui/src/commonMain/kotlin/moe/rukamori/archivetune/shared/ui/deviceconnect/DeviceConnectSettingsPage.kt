@@ -35,7 +35,7 @@ import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePairingPrompt
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePeerPresence
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePeerState
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceTransferRequest
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 /** All user intents the sheet and settings page need. Hosts launch the corresponding owner call. */

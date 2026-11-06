@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectState
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePeerPresence
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePeerState
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 /**
