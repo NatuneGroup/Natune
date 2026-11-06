@@ -204,11 +204,14 @@ internal fun DesktopAboutPage(
         }
     }
     LaunchedEffect(repository) { loadContributors() }
-    val version = DesktopAboutRepository::class.java.`package`?.implementationVersion?.takeIf(String::isNotBlank)
+    // The jar manifest carries no Implementation-Version, so a released build reported "Development build" here. The
+    // version the build stamps into DesktopBuildIdentity is the one the updater, the feedback report and CI use.
+    val version = DesktopBuildIdentity.VERSION_NAME.takeIf(String::isNotBlank)
+        ?: DesktopAboutRepository::class.java.`package`?.implementationVersion?.takeIf(String::isNotBlank)
         ?: DesktopStrings["about_version_development"]
     AboutSettings(
         controller = controller,
-        isNightlyBuild = false,
+        isNightlyBuild = DesktopBuildIdentity.VERSION_NAME.startsWith("N"),
         updaterAvailable = false,
         appName = DesktopStrings["app_name"],
         versionLine = version,
