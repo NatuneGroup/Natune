@@ -25,6 +25,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
+import moe.rukamori.archivetune.desktop.potoken.desktopLocalPoTokenHelper
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
@@ -95,6 +96,7 @@ import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
+import moe.rukamori.archivetune.shared.domain.settings.DesktopPoTokenHelperEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -211,10 +213,22 @@ internal suspend fun assembleDesktopSessionOwners(
         pool = playbackPool,
     )
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
-    // as Android's BotGuardTokenGenerator object feeds every resolver there.
+    // as Android's BotGuardTokenGenerator object feeds every resolver there. On a build with empty
+    // BotGuard keys the managed helper supplies the tokens; its own switch defaults on so a stock
+    // install is not left untokened by the old web-client preference, which still defaults off.
+    val localPoTokenHelperEnabled: () -> Boolean = {
+        vault.snapshots.value?.get(DesktopPoTokenHelperEnabledKey) ?: true
+    }
     val poTokens = DesktopPoTokenOwner(
         http = http,
         enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+        localHelper = desktopLocalPoTokenHelper(
+            scope = scope,
+            instanceDirectory = directory,
+            enabled = localPoTokenHelperEnabled,
+            log = ::desktopDiagnostic,
+        ),
+        localHelperEnabled = localPoTokenHelperEnabled,
     )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
