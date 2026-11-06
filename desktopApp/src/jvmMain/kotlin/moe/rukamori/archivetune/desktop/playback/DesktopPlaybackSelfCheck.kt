@@ -82,8 +82,7 @@ internal class DesktopPlaybackSelfCheck(
             is DesktopEnginePrewarmState.Failed -> blockers += DesktopPlaybackBlocker.EngineFailed(warmed.detail)
             DesktopEnginePrewarmState.Idle,
             DesktopEnginePrewarmState.Loading,
-            DesktopEnginePrewarmState.Ready,
-            -> Unit
+            DesktopEnginePrewarmState.Ready -> Unit
         }
         // The device probe is only meaningful once the engine loaded: the call is native code.
         if (blockers.isEmpty()) {
