@@ -16,7 +16,7 @@ class AndroidOnlyRowsTest {
             AppleMusicSettingsMigratedKey to true,
         )
         val rows = appearanceThemeSettingsRows(preferences, false, false, false, false, {},
-            {}, {}, {}, {}, {}) +
+            {}, {}, {}, {}) +
             playerAppearanceSettingsRows(preferences, true, {}, {}) +
             appearanceExtrasSettingsRows()
         val visible = rows.withoutUnsupportedRows(AndroidOnlySettingsAnchors.all)
@@ -60,7 +60,7 @@ class AndroidOnlyRowsTest {
             AppleMusicSettingsMigratedKey to true, DynamicThemeKey to false, DarkModeKey to "ON",
         )
         val rows = appearanceThemeSettingsRows(apple, true, false, false, false, {},
-            {}, {}, {}, {}, {}) +
+            {}, {}, {}, {}) +
             playerAppearanceSettingsRows(apple, true, {}, {}) +
             playerAppearanceSettingsRows(PreferenceSnapshot.of(PlayerDesignStyleKey to PlayerDesignStyle.TIKTOK.name), true, {}, {}) +
             playerAppearanceSettingsRows(PreferenceSnapshot.of(PlayerDesignStyleKey to PlayerDesignStyle.METROLIST_KMP.name), true, {}, {}) +
