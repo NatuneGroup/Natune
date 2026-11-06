@@ -53,7 +53,11 @@ internal class BgutilLocalPoTokenHelper(
                 log("PO token helper mint failed: ${failure.javaClass.simpleName}")
                 null
             }
-        if (tokens == null) log("PO token helper returned no token pair")
+        if (tokens == null) {
+            log("PO token helper returned no token pair")
+        } else {
+            log("PO token helper minted a token pair")
+        }
         return tokens
     }
 
