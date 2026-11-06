@@ -217,14 +217,13 @@ fun PlayerMenu(
             librarySong?.song?.isLocal == true || mediaMetadata.id.isLocalMediaId()
         }
     val castPlayerMenuAction = rememberCastPlayerMenuAction()
+    val deviceConnectPlayerMenuAction = rememberDeviceConnectPlayerMenuAction(navController)
     val shareSelectedSong = rememberSongShareAction(mediaMetadata.id, isLocalMedia, librarySong?.format?.mimeType, onDismiss)
-
     // Split artists by configured separators
     data class SplitArtist(
         val name: String,
         val originalArtist: MediaMetadata.Artist?,
     )
-
     val splitArtists =
         remember(artists, artistSeparators) {
             if (artistSeparators.isEmpty()) {
@@ -669,6 +668,7 @@ fun PlayerMenu(
                     actions =
                         buildList {
                             castPlayerMenuAction?.let(::add)
+                            deviceConnectPlayerMenuAction?.let(::add)
                             if (!isLocalMedia) {
                                 add(
                                     NewAction(

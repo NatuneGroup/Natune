@@ -92,6 +92,7 @@ import moe.rukamori.archivetune.ui.screens.settings.HiddenPlaylistsScreen
 import moe.rukamori.archivetune.ui.screens.settings.IconScreen
 import moe.rukamori.archivetune.ui.screens.settings.IntegrationScreen
 import moe.rukamori.archivetune.ui.screens.settings.ListenTogetherSettings
+import moe.rukamori.archivetune.ui.screens.settings.DeviceConnectSettings
 import moe.rukamori.archivetune.ui.screens.settings.InternetSettings
 import moe.rukamori.archivetune.ui.screens.settings.TidalSettings
 import moe.rukamori.archivetune.ui.screens.settings.QobuzSettings
@@ -699,6 +700,9 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable(route = "settings/integrations/listen_together") {
         ListenTogetherSettings(navController, scrollBehavior)
+    }
+    composable(route = "settings/integrations/device_connect") {
+        DeviceConnectSettings(navController)
     }
     composable(
         route = "settings/tidal?scrollTo={scrollTo}",

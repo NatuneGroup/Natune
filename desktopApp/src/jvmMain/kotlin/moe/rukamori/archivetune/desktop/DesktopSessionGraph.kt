@@ -113,6 +113,17 @@ class DesktopSessionGraph internal constructor(
     val player: MusicPlayerController,
     /** The one checkpointed queue facade the root binds to. Every queue command runs inside the owner's lock. */
     val queue: TypedDelegatingQueueController,
+    private var deviceConnectOwner: DesktopDeviceConnect? = null
+
+    /**
+     * Desktop Device Connect, created on first use. The shell's Connected devices hook reads
+     * [DesktopDeviceConnect.sheetVisible]; the redesign only has to bind that flag and call
+     * [DesktopDeviceConnect.openConnectedDevices].
+     */
+    internal val deviceConnect: DesktopDeviceConnect
+        @Synchronized get() = deviceConnectOwner ?: DesktopDeviceConnect(this) { volume ->
+            playback.setVolume(volume.coerceIn(0f, 1f))
+        }.also { deviceConnectOwner = it }
     /** Song-seeded radio over the same queue: seamless for the current song, a fresh watch-next queue otherwise. */
     internal val radio: DesktopRadioOwner,
     /** Lifetime-bound projection of the queue and the player for the OS media controls. Never a second queue. */
@@ -425,6 +436,8 @@ class DesktopSessionGraph internal constructor(
      * and only then are the stores released.
      */
     suspend fun close() = withContext(NonCancellable) {
+        deviceConnectOwner?.close()
+        deviceConnectOwner = null
         listenTogether.close()
         listenDriver.close()
         progressDriver.close()
