@@ -176,7 +176,7 @@ class DeviceConnectStateMachineTest {
         assertFalse(state.onHello("fedcba9876543210"))
         assertFalse(state.allowsPlainText(DeviceMessageType.HELLO))
         assertTrue(state.awaitingPairApproval(1_000))
-        assertFalse(state.awaitingPairCommit())
+        assertTrue(state.awaitingPairCommit())
         assertTrue(state.awaitingPairApproval(0).not())
         state.authenticated()
         assertFalse(state.allowsPlainText(DeviceMessageType.HELLO_COMMIT))
