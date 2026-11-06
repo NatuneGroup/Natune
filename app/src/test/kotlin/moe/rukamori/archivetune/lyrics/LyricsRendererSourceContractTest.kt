@@ -52,25 +52,6 @@ class LyricsRendererSourceContractTest {
         assertTrue(text.contains("onDispose { onLyricsScroll(false) }"))
     }
 
-    @Test fun lyricsBoxesFadeTheirOwnEdgesWithoutAStackedSecondMask() {
-        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt",
-            "ui/player/simpmusic/SimpMusicLyrics.kt").forEach { path ->
-            val text = source(path)
-            assertTrue(path, text.contains(".lyricsViewportFade("))
-            assertFalse(path, text.contains("smoothFadingEdge"))
-        }
-        val karaokePane = source("ui/component/EnhancedKaraokePane.kt")
-        assertTrue(karaokePane.contains(".lyricsViewportFade("))
-        assertTrue(karaokePane.contains(".outsetKaraokeLibraryMask()"))
-        assertTrue(karaokePane.contains("offset = anchorOffset + KaraokeLibraryTopMask"))
-        assertTrue(source("ui/component/LyricsEnhanced.kt").contains("EnhancedKaraokePane("))
-        assertFalse(source("ui/player/simpmusic/SimpMusicPlayer.kt").contains("smoothFadingEdge"))
-        val flamingo = source("ui/player/flamingo/FlamingoPlayer.kt")
-        assertFalse(flamingo.contains("FlamingoLyricsEdgeFadeStopsControlsHidden"))
-        val visibleStops = flamingo.substringAfter("FlamingoLyricsEdgeFadeStopsControlsVisible =").substringBefore(")")
-        assertTrue(visibleStops.trimStart().removePrefix("listOf(").trimStart().startsWith("Color.Black"))
-    }
-
     @Test fun installCancellationRemovalAndForegroundRemainOwnedAndNonblocking() {
         val text = source("lyrics/JapaneseLanguagePackManager.kt")
         assertTrue(text.contains("fun install() = requestInstall(automatic = false)"))

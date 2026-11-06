@@ -90,7 +90,6 @@ import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
-import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
 import moe.rukamori.archivetune.lyrics.timedLyricsPresentation
@@ -107,8 +106,6 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.sleepUntilNext
-import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -127,10 +124,6 @@ private fun pendingWordColor(inactiveColor: Color): Color =
 private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
 private const val VISUAL_TUNING_OFFSET_MS = 150L
-
-/** The slowest the lyrics clock re-checks its feed while idle, and its cadence while paused. */
-private const val IDLE_POLL_MS = 250L
-private const val PAUSED_POLL_MS = 100L
 
 /** How long a drag suspends follow-the-song for, so scrolling back to read is not fought. */
 private const val MANUAL_SCROLL_HOLD_MS = 4_000L
@@ -293,22 +286,12 @@ fun SimpMusicLyrics(
         // changes state a few times a minute and a 50 ms poll is already far finer than it needs.
         val pollMs = if (isTtmlFormat) 16L else 50L
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            // Between word and line boundaries the drawn state is static: while playing, sleep to
-            // the next deadline; while paused or dragging, the coarse poll still catches seeks.
-            val schedule = LyricsDeadlineSchedule.of(entries)
             while (isActive) {
                 val raw = latestSliderPositionProvider.value() ?: player.currentPosition
                 val shifted = (raw + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
                 positionState.longValue = (shifted + leadMs + VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
                 currentLineIndex = findCurrentLineIndex(entries, positionState.longValue, 0L)
-                val dragging = latestSliderPositionProvider.value() != null
-                if (dragging || !player.isPlaying) {
-                    delay(pollMs.coerceAtLeast(PAUSED_POLL_MS))
-                } else if (isTtmlFormat && schedule.isLive(positionState.longValue)) {
-                    delay(pollMs)
-                } else {
-                    schedule.sleepUntilNext(positionState.longValue, playerConnection.playbackParameters.value.speed, pollMs, IDLE_POLL_MS)
-                }
+                delay(pollMs)
             }
         }
     }
@@ -383,7 +366,7 @@ fun SimpMusicLyrics(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(top = topPad, bottom = bottomPad, start = 24.dp, end = 24.dp),
-            modifier = Modifier.fillMaxSize().lyricsViewportFade(),
+            modifier = Modifier.fillMaxSize(),
         ) {
             itemsIndexed(entries) { index, entry ->
                 SimpMusicLyricsLine(

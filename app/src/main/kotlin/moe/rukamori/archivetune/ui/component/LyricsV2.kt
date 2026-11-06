@@ -140,7 +140,6 @@ import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
-import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
@@ -156,11 +155,10 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
-import moe.rukamori.archivetune.lyrics.sleepUntilNext
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
-import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
+import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
@@ -182,10 +180,6 @@ private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
  * short enough not to lag noticeably behind the audio for typical words.
  */
 private const val MIN_SWEEP_MS = 180L
-
-/** The slowest the lyrics clock re-checks its feed while idle, and its cadence while paused. */
-private const val IDLE_POLL_MS = 250L
-private const val PAUSED_POLL_MS = 100L
 
 /**
  * Backward jump in the player's clock that counts as a restart (REPEAT_MODE_ONE
@@ -488,9 +482,6 @@ fun LyricsV2(
         // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
         // the actual frame rate so the two stay in lock-step.
         val useFrameClock = !v2AnimationsDisabled && isTtmlFormat
-        // Between word and line boundaries the drawn state is static: while playing, sleep to the
-        // next deadline; while paused or dragging, the coarse poll is enough to catch seeks.
-        val schedule = LyricsDeadlineSchedule.of(entriesWithWords, MIN_SWEEP_MS)
         var seekCheckPositionMs = -1L
         var seekCheckUptimeMs = 0L
         while (isActive) {
@@ -529,11 +520,10 @@ fun LyricsV2(
             currentPositionMs = (playbackPositionMs + leadMs + LYRIC_VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
 
             currentLineIndex = findCurrentLineIndex(entriesWithWords, currentPositionMs, 0L)
-            when {
-                sliderPos != null -> delay(pollIntervalMs)
-                !player.isPlaying -> delay(PAUSED_POLL_MS)
-                useFrameClock && schedule.isLive(currentPositionMs) -> withFrameNanos { }
-                else -> schedule.sleepUntilNext(currentPositionMs, player.playbackParameters.speed, pollIntervalMs, IDLE_POLL_MS)
+            if (useFrameClock) {
+                withFrameNanos { }
+            } else {
+                delay(pollIntervalMs)
             }
         }
     }
@@ -757,7 +747,10 @@ fun LyricsV2(
                 Modifier
                     .fillMaxSize()
                     .nestedScroll(nestedScrollConnection)
-                    .lyricsViewportFade(),
+                    .smoothFadingEdge(vertical = 80.dp)
+                    .graphicsLayer {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             itemsIndexed(

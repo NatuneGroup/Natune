@@ -42,7 +42,7 @@ class SettingsLyricsRuntime(
                 prefs to Config(
                     prefs.lyricsProviderOrder().map { it.providerName },
                     names.associateWith(prefs::lyricsProviderEnabled),
-                    prefs[PrioritizeWordSyncedLyricsKey, true],
+                    prefs[PrioritizeWordSyncedLyricsKey, false],
                     prefs[QueueLyricsPreloadCountKey, 3].coerceIn(0, 10),
                     prefs[PaxsenixApiKeyKey].orEmpty(), prefs[PaxsenixEndpointKey].orEmpty(), available.toSet(), revision,
                 )
