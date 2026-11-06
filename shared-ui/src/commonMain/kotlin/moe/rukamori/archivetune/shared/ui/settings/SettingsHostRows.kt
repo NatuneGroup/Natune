@@ -19,7 +19,7 @@ object AndroidOnlySettingsAnchors {
         "home_screen_style", "minimal_home_mode", "back_animation_style", "hide_scrollbar",
         // Player-appearance rows with no shared/iOS reader.
         "library_style", "compact_mini_player", "crop_thumbnail_to_square", "album_canvas_enabled",
-        "metrolist_presentation", "tiktok_main_lyrics", "apple_music_animated_artwork",
+        "tiktok_main_lyrics", "apple_music_animated_artwork",
         "apple_music_backdrop_wander", "apple_music_pause_scale", "apple_music_title_marquee",
         "apple_music_seek_grow",
         // Entries for pages that only exist on the Android host.

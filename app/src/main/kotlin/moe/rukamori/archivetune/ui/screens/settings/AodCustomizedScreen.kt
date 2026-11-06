@@ -396,15 +396,17 @@ fun AodCustomizedScreen(
             ) {
                 PreferenceGroup(title = stringResource(R.string.aod_customize_scale_and_spacing)) {
                     item {
-                        AodSliderPreference(
-                            title = stringResource(R.string.aod_customize_thumbnail_size),
-                            icon = { Icon(painterResource(R.drawable.image), null) },
-                            value = thumbnailSize,
-                            valueRange = 160f..340f,
-                            steps = 35,
-                            valueLabel = { stringResource(R.string.aod_customize_dp_value, it.roundToInt()) },
-                            onValueChange = onThumbnailSizeChange,
-                        )
+                        Column(modifier = positions.modifierFor("aod_customize_thumbnail_size")) {
+                            AodSliderPreference(
+                                title = stringResource(R.string.aod_customize_thumbnail_size),
+                                icon = { Icon(painterResource(R.drawable.image), null) },
+                                value = thumbnailSize,
+                                valueRange = 160f..340f,
+                                steps = 35,
+                                valueLabel = { stringResource(R.string.aod_customize_dp_value, it.roundToInt()) },
+                                onValueChange = onThumbnailSizeChange,
+                            )
+                        }
                     }
                 }
             }
@@ -415,21 +417,23 @@ fun AodCustomizedScreen(
             ) {
                 PreferenceGroup(title = stringResource(R.string.aod_customize_lyrics)) {
                     item {
-                        AodIntSliderPreference(
-                            title = stringResource(R.string.aod_customize_auto_timer),
-                            icon = { Icon(painterResource(R.drawable.timer), null) },
-                            value = aodAutoTimerSeconds,
-                            valueRange = 0..180,
-                            steps = 35,
-                            valueLabel = { v ->
-                                if (v == 0) {
-                                    stringResource(R.string.aod_customize_auto_timer_off)
-                                } else {
-                                    stringResource(R.string.aod_customize_auto_timer_seconds, v)
-                                }
-                            },
-                            onValueChange = onAodAutoTimerSecondsChange,
-                        )
+                        Column(modifier = positions.modifierFor("aod_customize_auto_timer")) {
+                            AodIntSliderPreference(
+                                title = stringResource(R.string.aod_customize_auto_timer),
+                                icon = { Icon(painterResource(R.drawable.timer), null) },
+                                value = aodAutoTimerSeconds,
+                                valueRange = 0..180,
+                                steps = 35,
+                                valueLabel = { v ->
+                                    if (v == 0) {
+                                        stringResource(R.string.aod_customize_auto_timer_off)
+                                    } else {
+                                        stringResource(R.string.aod_customize_auto_timer_seconds, v)
+                                    }
+                                },
+                                onValueChange = onAodAutoTimerSecondsChange,
+                            )
+                        }
                     }
                     item {
                         SwitchPreference(

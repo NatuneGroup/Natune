@@ -119,6 +119,8 @@ import moe.rukamori.archivetune.ui.screens.activeHomeSources
 import moe.rukamori.archivetune.ui.screens.homeSourceAvailable
 import moe.rukamori.archivetune.ui.screens.qqHomeSourceAvailable
 import moe.rukamori.archivetune.constants.MinimalHomeModeKey
+import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
+import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
@@ -686,7 +688,11 @@ private fun appearancePlayerRows(
         prefs.enumState(PlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
     val (configuredLyricsBackground, onLyricsBackgroundChange) =
         prefs.enumState(LyricsBackgroundStyleKey, defaultValue = LyricsBackgroundStyle.DEFAULT)
+    val (miniPlayerBackground, onMiniPlayerBackgroundChange) =
+        prefs.enumState(MiniPlayerBackgroundStyleKey, defaultValue = MiniPlayerBackgroundStyle.THEME)
     val (compactMiniPlayer, onCompactMiniPlayerChange) = prefs.state(CompactMiniPlayerKey, defaultValue = false)
+    val (liquidGlassEnabled) = prefs.state(LiquidGlassEnabledKey, defaultValue = false)
+    val (disableBlur) = prefs.state(DisableBlurKey, defaultValue = false)
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
@@ -919,6 +925,12 @@ private fun appearancePlayerRows(
                 icon = { Icon(painterResource(R.drawable.image), null) },
                 onClick = { navController.navigate("customize_background") },
             )
+        }
+
+        item {
+            Column(modifier = positions.modifierFor("mini_player_background_style")) {
+                MiniPlayerMaterialPreference(miniPlayerBackground, onMiniPlayerBackgroundChange, disableBlur, liquidGlassEnabled)
+            }
         }
 
         item {

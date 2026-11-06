@@ -101,10 +101,6 @@ fun ContentSettings(
     val (hideVideo, onHideVideoChange) = rememberPreference(key = HideVideoKey, defaultValue = false)
     val (allowAgeRestricted, onAllowAgeRestrictedChange) = rememberPreference(key = AllowAgeRestrictedKey, defaultValue = false)
     val (lengthTop, onLengthTopChange) = rememberPreference(key = TopSize, defaultValue = "50")
-    // The preference is still read so the underlying DataStore value is preserved
-    // for a possible future UI, but the values are intentionally unused.
-    @Suppress("UNUSED_VARIABLE")
-
     val scrollState = rememberScrollState()
     val positions = rememberPreferencePositions()
 
