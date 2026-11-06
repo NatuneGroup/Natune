@@ -161,7 +161,7 @@ class DeviceConnectConnection(
 
     suspend fun sendSync(message: DeviceSyncMessage) {
         if (!authenticated || closed) throw IllegalStateException("Device Connect is not authenticated")
-        val bytes = DeviceWireJson.json.encodeToString(DeviceSyncMessage.serializer(), message)
+        val bytes = DeviceWireJson.json.encodeToString(DeviceSyncMessage.serializer(), message).encodeToByteArray()
         if (bytes.size > DeviceConnectLimits.MAX_PAYLOAD_BYTES) {
             throw IllegalArgumentException("payload exceeds the Device Connect limit")
         }
