@@ -12,7 +12,7 @@ import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
 
 /** The two Xlib calls JNA's X11 interface does not declare, needed to hand a drag to the window manager. */
 internal interface LinuxWindowMoveX11 : X11 {
-    fun XUngrabPointer(display: Display, time: NativeLong): Int
+    fun XUngrabPointer(display: X11.Display, time: NativeLong): Int
 }
 
 /**
@@ -53,7 +53,9 @@ internal object LinuxWindowDrag {
     fun startResize(window: Window, direction: Int): Boolean = send(window, direction)
 
     private fun send(window: Window, direction: Int): Boolean {
-        if (!isX11Toolkit()) return false
+        // A toolkit that cannot be read (headless, or a JRE without the X11 classes) is not an error the caption
+        // should raise: it simply does not start the move.
+        if (!runCatching { isX11Toolkit() }.getOrDefault(false)) return false
         return try {
             val toolkit = Toolkit.getDefaultToolkit().javaClass
             // AWT's own lock guards the display connection; the call must not run without it.
@@ -73,9 +75,13 @@ internal object LinuxWindowDrag {
                 unlock.invoke(null)
             }
         } catch (failure: Throwable) {
-            // A stripped JRE without the X11 internals or a toolkit that renamed them: the caption still drags by
-            // asking the compositor on the next click, and the window keeps the system frame option.
-            DesktopDiagnosticLog.host("window move: unavailable (${failure.javaClass.simpleName})")
+            // Reflect over `sun.awt` needs the launcher's --add-opens for both sun.awt and sun.awt.X11; a stripped
+            // JRE, a renamed internal or a missing open lands here. The caption stays inert for this drag and every
+            // later one, the window keeps working, and the user still has the system frame option.
+            DesktopDiagnosticLog.host(
+                "window move: unavailable (${failure.javaClass.simpleName}); the caption needs " +
+                    "--add-opens java.desktop/sun.awt=ALL-UNNAMED and java.desktop/sun.awt.X11=ALL-UNNAMED",
+            )
             false
         }
     }
