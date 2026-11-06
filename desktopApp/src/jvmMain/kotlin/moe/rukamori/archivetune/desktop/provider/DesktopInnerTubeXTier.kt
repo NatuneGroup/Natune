@@ -150,5 +150,8 @@ private fun ExtractedStream.toDirectStream(trusted: Boolean): DirectStream {
                 .entries.distinctBy { it.key.lowercase() }
                 .associate { it.key to it.value },
         ),
+        // The library reports the URL's own authorization window, and the `expire` parameter states it again. Without
+        // it the locator would look reusable forever and recovery would replay a dead URL.
+        expiresAtEpochMs = expiresAt?.toEpochMilliseconds() ?: youTubeStreamExpiryMs(audioUrl),
     )
 }

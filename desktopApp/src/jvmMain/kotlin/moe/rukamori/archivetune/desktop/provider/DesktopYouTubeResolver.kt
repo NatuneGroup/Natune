@@ -62,6 +62,13 @@ internal class DesktopYouTubeResolver(
         locale,
         mint = { videoId, visitorData -> poTokens?.mintForPlayback(videoId, signIn(), visitorData) },
     ),
+    /**
+     * Resolutions this process may hand out again. A googlevideo URL is bound to the video, the quality, the account
+     * and the route that minted it, and it expires on its own, so the cache is keyed on those and honours the window.
+     */
+    private val cache: DesktopResolvedStreamCache = DesktopResolvedStreamCache(),
+    /** The routing identity the cache keys on: the direct route, the configured proxy, or the active rotation. */
+    private val networkScope: () -> String = { "direct" },
     private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
@@ -88,11 +95,24 @@ internal class DesktopYouTubeResolver(
     override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
         val started = System.nanoTime()
         val target = targetFor(request) ?: return null
+        val key = cacheKey(target.videoId)
+        // A refresh the queue asked for after a rejection must never read the entry it is replacing.
+        if (!request.forceFreshStream) {
+            cache.get(key)?.let { cached ->
+                // The line Android writes for a tier that answered, with `cache` naming why no request was made.
+                logTier("shipped", true, started, "cache")
+                return cached
+            }
+        }
         return try {
-            resolveVideo(target.videoId, target.trusted)
+            resolveVideo(target.videoId, target.trusted)?.also { resolved ->
+                if (resolved is PreparedAudio.Progressive) cache.put(key, resolved)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
+            // A rejected video keeps none of its old URLs: the next attempt resolves fresh before it trusts anything.
+            cache.invalidate(target.videoId)
             // Android logs the shipped tier only when it failed; a resolved primary writes nothing.
             logTier("shipped", false, started, failure.javaClass.simpleName)
             throw failure
@@ -154,6 +174,26 @@ internal class DesktopYouTubeResolver(
         newPipe.resolveVideo(videoId, maxHeight, visitor())
 
     private fun elapsedMs(startedNanos: Long): Long = (System.nanoTime() - startedNanos) / 1_000_000L
+
+    /**
+     * The cache identity of one resolution: everything a googlevideo URL is bound to. The quality is the ladder the
+     * request asked for, the session is the account that minted it, and the network scope is the route it was minted
+     * over. Neither the session id nor a proxy endpoint is secret, and neither is logged.
+     */
+    private fun cacheKey(videoId: String): DesktopResolvedStreamCache.Key =
+        DesktopResolvedStreamCache.Key(
+            videoId = videoId,
+            quality = DesktopYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey)).name,
+            session = sessionScope(),
+            network = networkScope(),
+        )
+
+    /** The account a resolution belongs to. A visitor request and a signed-in one never share a URL. */
+    private fun sessionScope(): String {
+        val session = signIn() ?: return "anonymous"
+        val account = session.dataSyncId?.takeIf(String::isNotBlank) ?: return "session"
+        return "session:$account"
+    }
 
     private suspend fun targetFor(request: AudioResolveRequest): Target? {
         val direct = request.directIds[AudioSourceType.YOUTUBE] ?: request.mediaId.takeIf { VIDEO_ID.matches(it) }
