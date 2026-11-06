@@ -18,8 +18,6 @@ import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalRoute
 import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalSettings
 import moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings
 import moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettingsRoute
-import moe.rukamori.archivetune.shared.ui.settings.NavigationBarSettingsPage
-import moe.rukamori.archivetune.shared.ui.settings.NavigationBarSettingsRoute
 import moe.rukamori.archivetune.shared.ui.settings.PlaybackSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
@@ -29,11 +27,16 @@ import moe.rukamori.archivetune.shared.ui.settings.appearanceScrollTarget
 import moe.rukamori.archivetune.shared.ui.settings.lyricsAnimationSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.lyricsSettingsRows
 
-/** Settings pages that need nothing from this host beyond the settings owner, navigation and the file chooser. */
+/**
+ * Settings pages that need nothing from this host beyond the settings owner, navigation and the file chooser.
+ *
+ * The phone navigation-style page and the duplicated player page are not mounted here: the window has one fixed rail and
+ * the merged Appearance page already carries the player rows, so neither route has a desktop surface any more.
+ */
 internal val DESKTOP_GENERAL_SETTINGS_ROUTES = setOf(
-    "settings/appearance", "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface",
+    "settings/appearance", "settings/appearance/theme", "settings/appearance/interface",
     "settings/appearance/extras", "settings/appearance/lyrics_animations", "settings/player", "settings/lyrics",
-    NavigationBarSettingsRoute, LiquidGlassSettingsRoute, DiscordExperimentalRoute,
+    LiquidGlassSettingsRoute, DiscordExperimentalRoute,
 )
 
 /**
@@ -72,9 +75,6 @@ internal fun DesktopGeneralSettingsPage(
             onFailure = onFailure,
             scrollTo = appearanceScrollTarget(path, scrollTo),
         )
-        NavigationBarSettingsRoute -> NavigationBarSettingsPage(
-            controller, DesktopOpticalCapabilities.blur, DesktopOpticalCapabilities.refraction, onFailure, scrollTo,
-        )
         LiquidGlassSettingsRoute -> LiquidGlassSettings(
             controller, DesktopOpticalCapabilities.blur, DesktopOpticalCapabilities.refraction, onFailure, scrollTo,
         )
@@ -92,6 +92,7 @@ internal fun DesktopGeneralSettingsPage(
             onFailure = onFailure,
             scrollTo = scrollTo,
             onOpenEqualizer = openEqualizer,
+            desktop = true,
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)
