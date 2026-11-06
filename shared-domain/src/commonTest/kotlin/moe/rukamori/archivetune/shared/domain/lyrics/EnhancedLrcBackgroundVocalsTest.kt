@@ -18,6 +18,8 @@ class EnhancedLrcBackgroundVocalsTest {
 
     private val stampedLeadOnly = "<00:10.000>hold <00:10.500>on"
 
+    private val stampedWholeLineBracketed = "<00:10.000>(I <00:10.500>know)"
+
     private val stampedUnbalanced = "<00:10.000>hold <00:10.500>(gimme <00:11.000>some"
 
     @Test
@@ -41,6 +43,22 @@ class EnhancedLrcBackgroundVocalsTest {
         val words = EnhancedLrcWords.extractWordTimestamps(stampedLeadOnly).orEmpty()
         assertEquals(listOf("hold ", "on"), words.map { it.text })
         assertTrue(words.none { it.isBackground })
+    }
+
+    @Test
+    fun aWholeLineInBracketsStaysLead() {
+        // "(I know)" is a sung lead phrase, not a backing voice: the convention only marks a run with
+        // lead words outside it, so the whole line in brackets is left alone.
+        val words = EnhancedLrcWords.extractWordTimestamps(stampedWholeLineBracketed).orEmpty()
+        assertEquals(listOf("(I ", "know)"), words.map { it.text })
+        assertTrue(words.none { it.isBackground })
+    }
+
+    @Test
+    fun aBracketedRunWithLeadWordsOutsideStaysBackground() {
+        val stampedLeadThenBracketed = "<00:10.000>I <00:10.500>know <00:11.000>(I <00:11.400>know)"
+        val words = EnhancedLrcWords.extractWordTimestamps(stampedLeadThenBracketed).orEmpty()
+        assertEquals(listOf(false, false, true, true), words.map { it.isBackground })
     }
 
     @Test
