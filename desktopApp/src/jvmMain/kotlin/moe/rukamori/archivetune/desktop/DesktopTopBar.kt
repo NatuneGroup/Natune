@@ -48,10 +48,12 @@ import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.navigation.ShellTab
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
+import moe.rukamori.archivetune.shared.ui.theme.RowHeights
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-private val TopBarHeight = 56.dp
+private val TopBarHeight = RowHeights.topBar
 private val SearchPillHeight = 40.dp
 private val SearchFieldMaxWidth = 390.dp
 
@@ -85,7 +87,7 @@ internal fun DesktopTopBar(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier.fillMaxWidth().height(TopBarHeight).testTag("desktop-top-bar"),
     ) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = Space.sm)) {
             Text(
                 DesktopStrings["app_name"],
                 style = MaterialTheme.typography.titleMedium,

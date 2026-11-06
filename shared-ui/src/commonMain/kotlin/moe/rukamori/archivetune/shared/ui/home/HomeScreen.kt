@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.desktopHomeCardWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
 
@@ -72,7 +73,7 @@ fun HomePageHeader(
 ) {
     Column(modifier) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 8.dp else 16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = if (compact) Space.xs else Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
@@ -148,7 +149,7 @@ fun HomeScreen(
         val cardWidth = if (desktop) desktopHomeCardWidth(maxWidth) else HomeShelfCardWidth
         val sectionSpacing = when {
             design == HomeFeedDesign.BitChord -> 26.dp
-            desktop -> 10.dp
+            desktop -> Space.xs
             else -> 18.dp
         }
         CompositionLocalProvider(LocalHomeShelfCardWidth provides cardWidth) {
