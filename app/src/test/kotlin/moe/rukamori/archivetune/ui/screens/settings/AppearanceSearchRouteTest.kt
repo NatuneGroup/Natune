@@ -12,6 +12,10 @@ class AppearanceSearchRouteTest {
             searchableSettingsRoute("appearance", "player_design_style"),
         )
         assertEquals("settings/appearance?scrollTo=tablet_mode", searchableSettingsRoute("appearance", "tablet_mode"))
+        assertEquals(
+            "settings/appearance?scrollTo=lyrics_background_style",
+            searchableSettingsRoute("lyrics", "lyrics_background_style"),
+        )
     }
 
     @Test

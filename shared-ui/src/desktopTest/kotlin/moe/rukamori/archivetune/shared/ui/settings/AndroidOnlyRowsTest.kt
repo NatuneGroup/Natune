@@ -38,8 +38,9 @@ class AndroidOnlyRowsTest {
     }
 
     @Test fun lyricsAndDownloadsKeepTheirSharedRows() {
+        // Lyrics settings stay exactly as on dev for the separate lyrics-screen work.
         val lyrics = lyricsSettingsRows({}).withoutUnsupportedRows(AndroidOnlySettingsAnchors.all)
-        assertFalse(lyrics.any { it.anchor == "lyrics_scroll" })
+        assertTrue(lyrics.any { it.anchor == "lyrics_scroll" })
         assertTrue(lyrics.any { it.anchor == "lyrics_click" })
 
         val downloads = listOf(

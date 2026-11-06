@@ -21,12 +21,13 @@ import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeSettings
 import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeStatus
 import moe.rukamori.archivetune.shared.ui.settings.appearanceExtrasSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.appearanceScrollTarget
+import moe.rukamori.archivetune.shared.ui.settings.lyricsAnimationSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.lyricsSettingsRows
 
 /** Settings pages that need nothing from this host beyond the settings owner and navigation. */
 internal val IOS_GENERAL_SETTINGS_ROUTES = setOf(
     "settings/appearance", "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface",
-    "settings/appearance/extras", "settings/player", "settings/lyrics",
+    "settings/appearance/extras", "settings/appearance/lyrics_animations", "settings/player", "settings/lyrics",
     SettingsRoutes.YTDLP,
 )
 
@@ -70,6 +71,7 @@ internal fun IosGeneralSettingsPage(
             nativeIosInterface = true,
         )
         "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows() }
+        "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }
         "settings/player" -> PlaybackSettings(
             controller = controller,
             bitPerfectSupported = false,

@@ -75,15 +75,15 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (the palette picker, the icon picker, Android Auto, the Android-only AOD, Liquid Glass tuning and lyrics
- * animation pages, and the Discord button editor) mount an honest unavailable page instead of the unbound boundary.
+ * this host (the palette picker, the icon picker, Android Auto, the Android-only AOD and Liquid Glass tuning pages,
+ * and the Discord button editor) mount an honest unavailable page instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/navigation_bar",
     "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/appearance/lyrics_animations", "settings/discord/experimental",
+    "settings/discord/experimental",
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
@@ -95,7 +95,7 @@ private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
     "settings/appearance/palette_picker", "settings/appearance/icon", "settings/android_auto",
     // Pages whose rows are Android-only and which this host does not mount.
     "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/appearance/lyrics_animations", "settings/discord/experimental",
+    "settings/discord/experimental",
 )
 
 /** One mounted lane page; the host, notices and the unavailable snackbar come from [IosSettingsScreen]. */

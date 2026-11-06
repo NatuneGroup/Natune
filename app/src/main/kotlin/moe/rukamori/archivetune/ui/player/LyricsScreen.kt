@@ -276,7 +276,7 @@ fun LyricsScreen(
 
     // Read through the preference rather than inside the effect so that flipping the toggle while
     // the panel is open re-runs the fetch instead of leaving the stored lyrics untouched.
-    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = false)
+    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = true)
 
     LaunchedEffect(
         mediaMetadata.id,
@@ -769,7 +769,7 @@ fun LyricsScreen(
                                     onControlsInteraction = onControlsInteraction,
                                     foregroundColor = foregroundColor,
                                     currentFormat = currentFormat,
-                                    lyricsProviderName = currentLyrics?.providerName.orEmpty(),
+                                    lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
                                     hasLyrics = currentLyrics != null,
                                     onOverflowClick = openLyricsMenuFromControls,
                                     onOverflowPositioned = { controlsMoreBounds = it },
@@ -818,7 +818,7 @@ fun LyricsScreen(
                         onControlsInteraction = onControlsInteraction,
                         foregroundColor = foregroundColor,
                         currentFormat = currentFormat,
-                        lyricsProviderName = currentLyrics?.providerName.orEmpty(),
+                        lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
                         hasLyrics = currentLyrics != null,
                         onOverflowClick = openLyricsMenuFromControls,
                         onOverflowPositioned = { controlsMoreBounds = it },
@@ -1153,6 +1153,8 @@ private fun AppleMusicBackground(
                 .background(AppleMusicFallbackGradient.last()),
     ) {
         val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+        // Held outside the AnimatedContent child, so a new backdrop shows the last loaded one while it loads.
+        val heldBackgroundCover = remember { mutableStateOf<String?>(null) }
         AnimatedContent(
             targetState = mediaMetadata.thumbnailUrl,
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
@@ -1182,9 +1184,9 @@ private fun AppleMusicBackground(
                         )
                     }
                 } else {
-                    AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = null,
+                    HeldPlayerCover(
+                        imageUrl = thumbnailUrl,
+                        held = heldBackgroundCover,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -1215,6 +1217,27 @@ private fun AppleMusicBackground(
                     .background(bottomScrim),
         )
     }
+}
+
+@Composable
+private fun AppleMusicGrabber(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val closeDescription = stringResource(R.string.close)
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .semantics { contentDescription = closeDescription }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+    )
 }
 
 @Composable

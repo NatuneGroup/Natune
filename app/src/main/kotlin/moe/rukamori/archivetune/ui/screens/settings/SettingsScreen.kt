@@ -121,6 +121,7 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
             "lyrics_romanize_hindi", "lyrics_romanize_other",
         )
         own("lyrics_animations", "lyrics", "lyrics_animations")
+        own("appearance_player", "lyrics", "lyrics_background_style")
         // Listen Together lives on its own settings leaf (no scrollTo support).
         own("listen_together", "integration", "listen_together", "listen_together_screen")
 

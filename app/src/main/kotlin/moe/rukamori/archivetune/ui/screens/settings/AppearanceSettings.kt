@@ -119,6 +119,8 @@ import moe.rukamori.archivetune.ui.screens.activeHomeSources
 import moe.rukamori.archivetune.ui.screens.homeSourceAvailable
 import moe.rukamori.archivetune.ui.screens.qqHomeSourceAvailable
 import moe.rukamori.archivetune.constants.MinimalHomeModeKey
+import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
+import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
 import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -682,6 +684,8 @@ private fun appearancePlayerRows(
         prefs.state(ThumbnailCornerRadiusKey, defaultValue = 16f)
     val (playerBackground) =
         prefs.enumState(PlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
+    val (configuredLyricsBackground, onLyricsBackgroundChange) =
+        prefs.enumState(LyricsBackgroundStyleKey, defaultValue = LyricsBackgroundStyle.DEFAULT)
     val (compactMiniPlayer, onCompactMiniPlayerChange) = prefs.state(CompactMiniPlayerKey, defaultValue = false)
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
@@ -698,6 +702,21 @@ private fun appearancePlayerRows(
     val homeScreensSelection = storedHomeSources.ifEmpty { activeHomeSources }
     var homeScreensOpen by remember { mutableStateOf(false) }
 
+    val availableLyricsBackgroundStyles =
+        remember {
+            // MOVING_BLUR uses Modifier.blur on Android 12+ (hardware-accelerated)
+            // and falls back to a CPU pre-blurred bitmap (ImageBlurUtils.blur via
+            // inline produceState, PR #924 approach) on pre-S devices. The drift
+            // animation is applied via Modifier.offset on the pre-blurred bitmap,
+            // so it doesn't require per-frame blurs and works on all SDK levels.
+            buildList {
+                add(LyricsBackgroundStyle.DEFAULT)
+                add(LyricsBackgroundStyle.FOLLOW_THEME)
+                add(LyricsBackgroundStyle.COLORING)
+                add(LyricsBackgroundStyle.MOVING_BLUR)
+            }
+        }
+    val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
     // Same source of truth the player renders from, so the picker can never offer a backdrop the
     // player will discard — or hide one it would have honoured.
     val isPlayerStyleCustomizationEnabled = playerDesignStyle.honors(PlayerStyleSetting.BACKGROUND)
@@ -852,6 +871,44 @@ private fun appearancePlayerRows(
                         }
                     },
                 )
+            }
+        }
+
+        item {
+            Column(modifier = positions.modifierFor("lyrics_background_style")) {
+                ListPreference(
+                    modifier = positions.modifierFor("lyrics_background_style"),
+                    title = { Text(stringResource(R.string.lyrics_background_style)) },
+                    icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                    selectedValue = lyricsBackground,
+                    values = availableLyricsBackgroundStyles,
+                    onValueSelected = onLyricsBackgroundChange,
+                    isEnabled = playerBackground != PlayerBackgroundStyle.CUSTOM,
+                    description = if (playerBackground == PlayerBackgroundStyle.CUSTOM)
+                        stringResource(R.string.settings_custom_lyrics_background) else null,
+                    valueText = {
+                        when (it) {
+                            LyricsBackgroundStyle.DEFAULT -> stringResource(R.string.lyrics_background_default)
+                            LyricsBackgroundStyle.FOLLOW_THEME -> stringResource(R.string.follow_theme)
+                            LyricsBackgroundStyle.COLORING -> stringResource(R.string.coloring)
+                            LyricsBackgroundStyle.MOVING_BLUR -> stringResource(R.string.lyrics_background_moving_blur)
+                            LyricsBackgroundStyle.CUSTOM -> stringResource(R.string.custom)
+                        }
+                    },
+                )
+                // Pre-Android 12 disclaimer: the moving-blur background relies on per-frame
+                // Modifier.blur (RenderEffect, API 31+). On pre-S the fallback renders a
+                // single pre-blurred bitmap with no drift animation, so the blur is static.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+                    lyricsBackground == LyricsBackgroundStyle.MOVING_BLUR
+                ) {
+                    Text(
+                        text = stringResource(R.string.moving_blur_static_disclaimer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
+                    )
+                }
             }
         }
 
