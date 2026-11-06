@@ -140,20 +140,28 @@ private fun PublishWindowsHitTest(windowState: WindowState) {
         if (width <= 0) return@LaunchedEffect
         fun px(value: Dp): Int = (value.value * density).toInt()
         val bar = px(DesktopShellMetrics.titleBarHeight)
+        val padding = px(DesktopShellMetrics.titleBarPadding)
         val searchWidth = px(desktopSearchFieldWidth((width / density).dp))
         val center = width / 2
-        val searchLeft = (center - searchWidth / 2 - px(DesktopShellMetrics.titleBarPadding)).coerceAtLeast(0)
-        val searchRight = (center + searchWidth / 2 + px(DesktopShellMetrics.titleBarPadding)).coerceAtMost(width)
-        val buttonsLeft = (width - px(DesktopShellMetrics.captionButtonWidth * 3)).coerceAtLeast(0)
+        val searchLeft = (center - searchWidth / 2 - padding).coerceAtLeast(0)
+        val searchRight = (center + searchWidth / 2 + padding).coerceAtMost(width)
+        val buttonsLeft = (width - padding - px(DesktopShellMetrics.captionButtonWidth * 3)).coerceAtLeast(0)
+        // The window buttons end the title bar, and the rail toggle sits immediately left of them, inside the caption
+        // strip. It is a client region like the search field: a click on it must reach Compose, not drag the window.
+        val railToggleRight = buttonsLeft
+        val railToggleLeft = (railToggleRight - px(DesktopShellMetrics.titleBarRailToggleWidth)).coerceAtLeast(0)
         val caption = buildList {
             if (searchLeft > 0) add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CAPTION, 0, 0, searchLeft, bar))
-            if (buttonsLeft > searchRight) {
-                add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CAPTION, searchRight, 0, buttonsLeft, bar))
+            if (railToggleLeft > searchRight) {
+                add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CAPTION, searchRight, 0, railToggleLeft, bar))
             }
         }
         WindowsCustomFrame.publish(
             caption = caption,
-            clientHoles = listOf(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, searchLeft, 0, searchRight, bar)),
+            clientHoles = listOf(
+                WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, searchLeft, 0, searchRight, bar),
+                WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, railToggleLeft, 0, railToggleRight, bar),
+            ),
         )
     }
 }
