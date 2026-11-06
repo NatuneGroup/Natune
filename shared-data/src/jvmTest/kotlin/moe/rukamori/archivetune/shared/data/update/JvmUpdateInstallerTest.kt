@@ -118,6 +118,42 @@ class JvmUpdateInstallerTest {
     }
 
     @Test
+    fun prefixedDigestIsNormalizedBeforeComparison() = runBlocking {
+        val dir = tempDir()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val client = HttpClient(MockEngine { respond(artifact) })
+        val installer = JvmUpdateInstaller(client, dir, installedCode = 10, scope = scope, nowMs = { 0L })
+        try {
+            // The contract allows `sha256:<hex>` as well as bare hex, in either case.
+            assertTrue(installer.startDownload(offer("sha256:" + sha256Hex(artifact).uppercase())))
+            val state = awaitTerminal(installer)
+            assertIs<UpdateDownloadState.ReadyToInstall>(state)
+            assertFalse(state.reused)
+            assertTrue(Files.exists(dir.resolve("natune-update.deb")))
+        } finally {
+            scope.cancel()
+            client.close()
+        }
+    }
+
+    @Test
+    fun blankDigestFallsBackToTheLengthOnlyPath() = runBlocking {
+        val dir = tempDir()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val client = HttpClient(MockEngine { respond(artifact) })
+        val installer = JvmUpdateInstaller(client, dir, installedCode = 10, scope = scope, nowMs = { 0L })
+        try {
+            assertTrue(installer.startDownload(offer("   ")))
+            val state = awaitTerminal(installer)
+            assertIs<UpdateDownloadState.ReadyToInstall>(state)
+            assertEquals(artifact.size.toLong(), Files.size(dir.resolve("natune-update.deb")))
+        } finally {
+            scope.cancel()
+            client.close()
+        }
+    }
+
+    @Test
     fun truncatedBodyFailsEvenWithAMatchingDigest() = runBlocking {
         val dir = tempDir()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
