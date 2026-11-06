@@ -56,6 +56,8 @@ sealed class SettingsRow(
     class Action(
         anchor: String, title: StringResource, val run: () -> Unit, enabled: Boolean = true,
         description: StringResource? = null,
+        /** The settings route this row opens, when it is a navigation target. Null for local actions. */
+        val navRoute: String? = null,
     ) : SettingsRow(anchor, title, description, enabled)
 
     /**
