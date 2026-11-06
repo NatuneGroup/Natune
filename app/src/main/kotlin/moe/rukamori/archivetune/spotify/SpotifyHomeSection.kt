@@ -18,24 +18,27 @@ import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 
 /**
- * One shelf of the Spotify home. The shape is YumaPlayer's (`spotify/SpotifyHomeSection.kt`): a shelf
- * carries the one kind its [type] names, and the other three lists stay empty. The home screen picks
- * the row by [type] and never inspects the lists.
+ * One shelf of the Spotify home, holding every item Spotify sent and in the order it sent them.
+ *
+ * YumaPlayer's shelf (`spotify/SpotifyHomeSection.kt`) kept the kind the section held most of and
+ * dropped the rest, so a shelf such as "Jump back in" that mixes albums with playlists lost whole
+ * releases. Here each item carries the kind it draws as and the shelf's row dispatches per item, so
+ * a mixed shelf keeps its albums next to its playlists.
  */
 @Immutable
 data class SpotifyHomeSection(
     val title: String,
-    val type: SectionType,
-    val tracks: List<SpotifyTrack> = emptyList(),
-    val artists: List<SpotifyArtist> = emptyList(),
-    val albums: List<SpotifyAlbum> = emptyList(),
-    val playlists: List<SpotifyPlaylist> = emptyList(),
+    val items: List<SpotifyHomeSectionItem>,
 )
 
-/** The row a shelf draws: two rows of track tiles, or a single rail of cards. */
-enum class SectionType {
-    TRACKS,
-    ARTISTS,
-    ALBUMS,
-    PLAYLISTS,
+/** One item of a home shelf, tagged with the kind its row item draws as. */
+@Immutable
+sealed interface SpotifyHomeSectionItem {
+    data class Track(val track: SpotifyTrack) : SpotifyHomeSectionItem
+
+    data class Artist(val artist: SpotifyArtist) : SpotifyHomeSectionItem
+
+    data class Album(val album: SpotifyAlbum) : SpotifyHomeSectionItem
+
+    data class Playlist(val playlist: SpotifyPlaylist) : SpotifyHomeSectionItem
 }

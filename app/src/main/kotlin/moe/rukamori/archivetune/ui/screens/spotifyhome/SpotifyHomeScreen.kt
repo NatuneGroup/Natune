@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -33,8 +32,8 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.spotify.SPOTIFY_DJ_PLAYLIST_ID
-import moe.rukamori.archivetune.spotify.SectionType
 import moe.rukamori.archivetune.spotify.SpotifyHomeAction
+import moe.rukamori.archivetune.spotify.SpotifyHomeSectionItem
 import moe.rukamori.archivetune.spotify.SpotifyHomeNavigationEvent
 import moe.rukamori.archivetune.spotify.SpotifyHomeScreenState
 import moe.rukamori.archivetune.spotify.SpotifyHomeViewModel
@@ -212,67 +211,50 @@ fun SpotifyHomeScreen(
                                 key = "spotify_section_content_${section.title}_$index",
                                 contentType = "section_content",
                             ) {
-                                when (section.type) {
-                                    SectionType.TRACKS -> {
-                                        val sectionTitle = resolveSpotifySectionTitle(section)
-                                        SpotifyTrackSectionRow(
-                                            tracks = section.tracks,
-                                            horizontalItemWidth = 240.dp,
-                                            onTrackClick = { track ->
-                                                if (mediaMetadata?.spotifyTrackId == track.id) {
-                                                    viewModel.cancelSelection()
-                                                    playerConnection.player.togglePlayPause()
-                                                } else {
-                                                    viewModel.onAction(
-                                                        SpotifyHomeAction.TrackClick(track, section.tracks, sectionTitle),
-                                                    )
-                                                }
-                                            },
-                                            activeTrackId = mediaMetadata?.spotifyTrackId,
-                                            isPlaying = isPlaying,
-                                            resolvingItemKey = resolvingItemKey,
-                                            modifier = Modifier.animateItem(),
-                                        )
+                                val sectionTitle = resolveSpotifySectionTitle(section)
+                                // A track tap queues the shelf's own tracks; a mixed shelf has no
+                                // queue of its own to hand to the player, so it queues what it holds.
+                                val shelfTracks =
+                                    remember(section) {
+                                        section.items.mapNotNull { item ->
+                                            (item as? SpotifyHomeSectionItem.Track)?.track
+                                        }
                                     }
-                                    SectionType.ARTISTS -> {
-                                        SpotifyArtistSectionRow(
-                                            artists = section.artists,
-                                            onArtistClick = { artist ->
-                                                viewModel.onAction(
-                                                    SpotifyHomeAction.ArtistClick(id = artist.id, name = artist.name),
-                                                )
-                                            },
-                                            resolvingItemKey = resolvingItemKey,
-                                            modifier = Modifier.animateItem(),
+                                SpotifySectionRow(
+                                    section = section,
+                                    onTrackClick = { track ->
+                                        if (mediaMetadata?.spotifyTrackId == track.id) {
+                                            viewModel.cancelSelection()
+                                            playerConnection.player.togglePlayPause()
+                                        } else {
+                                            viewModel.onAction(
+                                                SpotifyHomeAction.TrackClick(track, shelfTracks, sectionTitle),
+                                            )
+                                        }
+                                    },
+                                    onArtistClick = { artist ->
+                                        viewModel.onAction(
+                                            SpotifyHomeAction.ArtistClick(id = artist.id, name = artist.name),
                                         )
-                                    }
-                                    SectionType.ALBUMS -> {
-                                        SpotifyAlbumSectionRow(
-                                            albums = section.albums,
-                                            onAlbumClick = { album ->
-                                                viewModel.onAction(
-                                                    SpotifyHomeAction.AlbumClick(
-                                                        id = album.id,
-                                                        name = album.name,
-                                                        artist = album.artists.firstOrNull()?.name,
-                                                    ),
-                                                )
-                                            },
-                                            resolvingItemKey = resolvingItemKey,
-                                            modifier = Modifier.animateItem(),
+                                    },
+                                    onAlbumClick = { album ->
+                                        viewModel.onAction(
+                                            SpotifyHomeAction.AlbumClick(
+                                                id = album.id,
+                                                name = album.name,
+                                                artist = album.artists.firstOrNull()?.name,
+                                            ),
                                         )
-                                    }
-                                    SectionType.PLAYLISTS -> {
-                                        SpotifyPlaylistSectionRow(
-                                            playlists = section.playlists,
-                                            onPlaylistClick = { playlist ->
-                                                viewModel.cancelSelection()
-                                                openSpotifyPlaylist(playlist.id)
-                                            },
-                                            modifier = Modifier.animateItem(),
-                                        )
-                                    }
-                                }
+                                    },
+                                    onPlaylistClick = { playlist ->
+                                        viewModel.cancelSelection()
+                                        openSpotifyPlaylist(playlist.id)
+                                    },
+                                    activeTrackId = mediaMetadata?.spotifyTrackId,
+                                    isPlaying = isPlaying,
+                                    resolvingItemKey = resolvingItemKey,
+                                    modifier = Modifier.animateItem(),
+                                )
                             }
                         }
                     }
