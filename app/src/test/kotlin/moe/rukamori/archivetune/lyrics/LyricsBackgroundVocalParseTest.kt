@@ -34,6 +34,12 @@ class LyricsBackgroundVocalParseTest {
 
     private val lrcLeadOnly = "[00:10.000]<00:10.000>hold <00:10.500>on"
 
+    /**
+     * A whole line in brackets: the source's own phrasing of a sung lead line, not a backing voice. The
+     * bracket convention only marks a run with lead words outside it, so this stays lead.
+     */
+    private val lrcWholeLineBracketed = "[00:10.000]<00:10.000>(I <00:10.500>know)"
+
     private val ttmlWithBackgroundVoice =
         """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -105,6 +111,24 @@ class LyricsBackgroundVocalParseTest {
     fun aLineWithNoBracketsKeepsEveryLeadWord() {
         val words = LyricsUtils.parseLyrics(lrcLeadOnly).single().words.orEmpty()
         assertTrue(words.none { it.isBackground })
+    }
+
+    @Test
+    fun aWholeLineInBracketsStaysLead() {
+        // "(I know)" is a sung lead phrase, not a backing voice: marking it background shrank the row
+        // and moved it under a lead line that does not exist.
+        val words = LyricsUtils.parseLyrics(lrcWholeLineBracketed).single().words.orEmpty()
+        assertEquals(2, words.size)
+        assertTrue(words.none { it.isBackground })
+        assertEquals("(I know)", words.joinToString("") { it.text })
+    }
+
+    @Test
+    fun aBracketedRunWithLeadWordsOutsideStaysBackground() {
+        // The same brackets at the end of a line that has lead words in front are the convention.
+        val lrc = "[00:10.000]<00:10.000>I <00:10.500>know <00:11.000>(I <00:11.400>know)"
+        val words = LyricsUtils.parseLyrics(lrc).single().words.orEmpty()
+        assertEquals(listOf(false, false, true, true), words.map { it.isBackground })
     }
 
     @Test
