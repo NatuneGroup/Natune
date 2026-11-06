@@ -79,6 +79,7 @@ import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.CorruptImageCacheInterceptor
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolDiscovery
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.ProxyUtils
 import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
@@ -353,9 +354,16 @@ class App :
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_START) {
-                    syncSpotifyHistory()
-                    JapaneseLanguagePackManager.onForeground()
+                // Discovery polling stops while the app is backgrounded: the persisted instance list
+                // keeps serving playback and the next foreground session re-asks once.
+                when (event) {
+                    Lifecycle.Event.ON_START -> {
+                        PoolDiscovery.setForeground(true)
+                        syncSpotifyHistory()
+                        JapaneseLanguagePackManager.onForeground()
+                    }
+                    Lifecycle.Event.ON_STOP -> PoolDiscovery.setForeground(false)
+                    else -> Unit
                 }
             },
         )
@@ -506,6 +514,7 @@ class App :
         // resolvers can stream full-quality FLAC directly against the official Tidal/Qobuz APIs — no
         // self-hosted restream instance required. Loads the persisted cache first (instant), then
         // refreshes over the network. Disabled automatically when no Source Pool URL is baked in.
+        PoolDiscovery.install(this)
         applicationScope.launch(Dispatchers.IO) {
             try {
                 if (PoolAccountManager.isEnabled) {
