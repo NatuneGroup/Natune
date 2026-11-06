@@ -502,7 +502,11 @@ class DeviceConnectConnection(
         }
         val secret = storedSecret
         if (secret == null) {
-            // The peer kept a grant we no longer have. Tell it to re-pair; it answers with a pair request.
+            // The peer kept a grant we no longer have, so no proof can be verified here. A responder
+            // tells it to re-pair; an initiator already sent its pair request and simply ignores the
+            // proof, because the responder sends it from its own hello without knowing about the lost
+            // grant. Nothing authenticates from an ignored proof: only a verified stored-secret proof
+            // or the pairing commit may do that.
             if (role == DeviceConnectRole.RESPONDER) {
                 sendControl(
                     DeviceMessageType.ERROR,
@@ -744,14 +748,23 @@ class DeviceConnectConnection(
 
     /**
      * Seals a control frame as soon as the key exchange finished. Only the hello commitment exchange runs
-     * before the keys exist; after that the connection never writes a readable frame.
+     * before the keys exist; after that the connection never writes a readable frame. Before the keys
+     * exist only the hello and its error may travel in the clear, because those are the only frames a
+     * peer accepts unsealed; a bye or a pair rejection is dropped instead of being sent in a form the
+     * peer would refuse, and the local side closes.
      */
     private suspend fun sendControl(type: DeviceMessageType, payload: String) {
         if (keys != null && transcript != null) {
             sendEncryptedBytes(type, payload.encodeToByteArray())
-        } else {
-            sendPlainText(type, payload)
+            return
         }
+        if (!type.travelsInTheClear()) return
+        sendPlainText(type, payload)
+    }
+
+    private fun DeviceMessageType.travelsInTheClear(): Boolean = when (this) {
+        DeviceMessageType.HELLO, DeviceMessageType.HELLO_COMMIT, DeviceMessageType.ERROR -> true
+        else -> false
     }
 
     private fun nextSequence(): Long {
