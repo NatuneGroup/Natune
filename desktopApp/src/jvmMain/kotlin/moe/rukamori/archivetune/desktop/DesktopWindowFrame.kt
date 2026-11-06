@@ -322,19 +322,20 @@ private fun FrameWindowScope.LinuxCaptionBar(
 private fun FrameWindowScope.LinuxResizeEdges() {
     val edge = 6.dp
     Box(Modifier.fillMaxSize()) {
-        ResizeEdge(Alignment.TopStart, LinuxWindowDrag.Direction.TOP_LEFT, edge, edge)
-        ResizeEdge(Alignment.TopEnd, LinuxWindowDrag.Direction.TOP_RIGHT, edge, edge)
-        ResizeEdge(Alignment.BottomStart, LinuxWindowDrag.Direction.BOTTOM_LEFT, edge, edge)
-        ResizeEdge(Alignment.BottomEnd, LinuxWindowDrag.Direction.BOTTOM_RIGHT, edge, edge)
-        ResizeEdge(Alignment.TopCenter, LinuxWindowDrag.Direction.TOP, width = null, height = edge)
-        ResizeEdge(Alignment.BottomCenter, LinuxWindowDrag.Direction.BOTTOM, width = null, height = edge)
-        ResizeEdge(Alignment.CenterStart, LinuxWindowDrag.Direction.LEFT, edge, height = null)
-        ResizeEdge(Alignment.CenterEnd, LinuxWindowDrag.Direction.RIGHT, edge, height = null)
+        ResizeEdge(window, Alignment.TopStart, LinuxWindowDrag.Direction.TOP_LEFT, edge, edge)
+        ResizeEdge(window, Alignment.TopEnd, LinuxWindowDrag.Direction.TOP_RIGHT, edge, edge)
+        ResizeEdge(window, Alignment.BottomStart, LinuxWindowDrag.Direction.BOTTOM_LEFT, edge, edge)
+        ResizeEdge(window, Alignment.BottomEnd, LinuxWindowDrag.Direction.BOTTOM_RIGHT, edge, edge)
+        ResizeEdge(window, Alignment.TopCenter, LinuxWindowDrag.Direction.TOP, width = null, height = edge)
+        ResizeEdge(window, Alignment.BottomCenter, LinuxWindowDrag.Direction.BOTTOM, width = null, height = edge)
+        ResizeEdge(window, Alignment.CenterStart, LinuxWindowDrag.Direction.LEFT, edge, height = null)
+        ResizeEdge(window, Alignment.CenterEnd, LinuxWindowDrag.Direction.RIGHT, edge, height = null)
     }
 }
 
 @Composable
 private fun BoxScope.ResizeEdge(
+    window: Window,
     alignment: Alignment,
     direction: Int,
     width: Dp? = null,
