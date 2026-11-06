@@ -41,9 +41,13 @@ class DeviceConnectKtorTest {
             )
             responder.complete(connection)
             connection.start()
-            connection.awaitClosed()
+            // Bounded: the handler runs on the engine's application job, so an unbounded wait here keeps that
+            // job alive after the test and the engine's own shutdown then never joins it.
+            runCatching { withTimeout(CLOSE_BUDGET_MS) { connection.awaitClosed() } }
         }
         val http = HttpClient(CIO)
+        var initiator: DeviceConnectConnection? = null
+        var responderConnection: DeviceConnectConnection? = null
         try {
             val port = withTimeout(30_000) {
                 println("device-connect: starting loopback server")
@@ -56,8 +60,10 @@ class DeviceConnectKtorTest {
             val a = DeviceConnectConnection(
                 DeviceConnectRole.INITIATOR, identityA, JvmDeviceCrypto(), pairsA, channelA, scope, "Phone", listener = listenerA,
             )
+            initiator = a
             a.start()
             val b = withTimeout(10_000) { responder.await() }
+            responderConnection = b
             val prompt = withTimeout(10_000) {
                 while (true) {
                     listenerB.failures.tryReceive().getOrNull()?.let { throw AssertionError("responder failed: ${it.code} ${it.message}") }
@@ -67,29 +73,33 @@ class DeviceConnectKtorTest {
                 error("unreachable")
             }
             assertEquals(6, prompt.code.length)
-            b.approvePairing()
+            withTimeout(10_000) { b.approvePairing() }
             withTimeout(10_000) {
                 while (listenerA.authenticated == null || listenerB.authenticated == null) delay(10)
             }
             val entry = DeviceQueueEntry("occurrence-1", "youtube", "SONG", "song-1", "A song")
-            a.sendSync(
-                DeviceSyncMessage(
-                    DeviceSyncMessageType.TRANSFER,
-                    sessionId = "session-1",
-                    snapshot = DevicePlaybackSnapshot(
+            // A websocket send suspends while the peer's buffers are full, so it needs the same budget as the
+            // receive below instead of the run's lifetime.
+            withTimeout(10_000) {
+                a.sendSync(
+                    DeviceSyncMessage(
+                        DeviceSyncMessageType.TRANSFER,
                         sessionId = "session-1",
-                        queueRevision = 1,
-                        trackRevision = 1,
-                        entries = listOf(entry),
-                        currentOccurrenceId = entry.occurrenceId,
-                        playOrder = listOf(entry.occurrenceId),
-                        playing = true,
-                        positionMs = 1_000,
-                        anchorEpochMs = 1,
-                        queueHash = "hash",
+                        snapshot = DevicePlaybackSnapshot(
+                            sessionId = "session-1",
+                            queueRevision = 1,
+                            trackRevision = 1,
+                            entries = listOf(entry),
+                            currentOccurrenceId = entry.occurrenceId,
+                            playOrder = listOf(entry.occurrenceId),
+                            playing = true,
+                            positionMs = 1_000,
+                            anchorEpochMs = 1,
+                            queueHash = "hash",
+                        ),
                     ),
-                ),
-            )
+                )
+            }
             val received = withTimeout(10_000) { listenerB.sync.receive() }
             assertEquals(DeviceSyncMessageType.TRANSFER, received.type)
             assertEquals("session-1", received.sessionId)
@@ -98,9 +108,20 @@ class DeviceConnectKtorTest {
             a.close()
             b.close()
         } finally {
+            // Ordered, and every step is individually optional: close both peers before touching the engine, so no
+            // handler is left suspended on a live connection, then drop the scope, then the transport. A failed
+            // assertion above must not leave the engine's application job holding a connection that only the test
+            // body would have closed.
+            runCatching { initiator?.close() }
+            runCatching { responderConnection?.close() }
+            runCatching { scope.cancel() }
             runCatching { http.close() }
             runCatching { server.stop() }
-            scope.cancel()
         }
+    }
+
+    private companion object {
+        /** How long a loopback connection may take to report itself closed. */
+        const val CLOSE_BUDGET_MS = 30_000L
     }
 }

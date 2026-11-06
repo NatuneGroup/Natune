@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
+        timeout-minutes: 5
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -43,22 +44,28 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 21
+        timeout-minutes: 10
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: Set Up Gradle
+        timeout-minutes: 10
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-cleanup: on-success
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Grant execute permission for gradlew
+        timeout-minutes: 2
         run: chmod +x gradlew
 
       - name: Run unit tests
         shell: bash
+        # The job timeout is the outer bound; the step bound keeps a hung Gradle invocation from
+        # consuming the whole job and leaving the reports unuploaded.
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           # Fail if this documented contract variant disappears; never test a different flavor.
@@ -83,30 +90,9 @@ jobs:
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
           SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
 
-      - name: Run shared KMP module tests
-        shell: bash
-        # This step is the verdict: every suite below must pass, so it carries no leniency flag and
-        # no suite is dropped. The live-network YouTube smoke tests are the one opt-in suite
-        # (JvmInnerTubeXSmokeTest), because a network outage or a YouTube rate limit cannot fail an
-        # unrelated change; pass the innertube_smoke input on a manual dispatch to run them.
-        # :desktopApp:jvmTest runs here too. Three of its suites decode the committed audio fixtures
-        # through the native engine, whose FFmpeg/OpenSSL/libxml2 closure this job does not build (it
-        # measured over an hour on an 8-vCPU runner, so it stays on the opt-in desktop app image job).
-        # -PdesktopEngineTests=false excludes exactly those three suites by class name; Build Pull
-        # Request with desktop_app_image=true runs the task untrimmed against the closure, so they do
-        # run in CI rather than being dropped.
-        run: |
-          set -euo pipefail
-          ./gradlew --console=plain --stacktrace --continue \
-            "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
-            -PdesktopEngineTests=false \
-            :shared-domain:jvmTest --rerun :shared-data:jvmTest --rerun :shared-ui:desktopTest --rerun \
-            :desktopApp:jvmTest --rerun
-        env:
-          INNERTUBE_SMOKE: ${{ inputs.innertube_smoke == true && '1' || '0' }}
-
       - name: Upload local test diagnostics
         if: always()
+        timeout-minutes: 10
         uses: actions/upload-artifact@v7
         # Artifact storage is metered per organization and can be exhausted independently of this
         # run (observed on run 40919440710): the upload then fails with the results already in the
@@ -119,15 +105,12 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             app/build/reports/jacoco/
-            shared-*/build/reports/tests/
-            shared-*/build/test-results/
-            desktopApp/build/reports/tests/
-            desktopApp/build/test-results/
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload compact machine-readable test evidence
         if: always()
+        timeout-minutes: 10
         uses: actions/upload-artifact@v7
         # Same quota exposure as the step above; the JUnit XML is a convenience, not the verdict.
         continue-on-error: true
@@ -136,7 +119,102 @@ jobs:
           path: |
             app/build/reports/jacoco/*.xml
             app/build/test-results/**/TEST-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # The shared KMP and desktop suites are their own job: they run on the same exact head as the app
+  # leg, and they own their own timeout so a worker that never exits cannot eat the app leg's budget.
+  # Run 42267860785 lost 32 minutes here — `:shared-data:jvmTest` stopped reporting after the Device
+  # Connect suites while every other module was green — and a job kill left nothing to bisect.
+  shared-tests:
+    name: Shared KMP and desktop suites
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        timeout-minutes: 10
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set Up Gradle
+        timeout-minutes: 10
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Grant execute permission for gradlew
+        timeout-minutes: 2
+        run: chmod +x gradlew
+
+      - name: Run shared KMP module tests
+        shell: bash
+        # This step is the verdict: every suite below must pass, so it carries no leniency flag and
+        # no suite is dropped. The live-network YouTube smoke tests are the one opt-in suite
+        # (JvmInnerTubeXSmokeTest), because a network outage or a YouTube rate limit cannot fail an
+        # unrelated change; pass the innertube_smoke input on a manual dispatch to run them.
+        # :desktopApp:jvmTest runs here too, and it brings :desktopApp:desktopWindowTests with it: the
+        # window, icon and renderer suites own their own JVM so the playback ring starts clean. Both
+        # desktop tasks take the native engine out of the graph, so they exit with the tests.
+        # Three of the desktop suites decode the committed audio fixtures through the native engine,
+        # whose FFmpeg/OpenSSL/libxml2 closure this job does not build (it measured over an hour on an
+        # 8-vCPU runner, so it stays on the opt-in desktop app image job).
+        # -PdesktopEngineTests=false excludes exactly those three suites by class name; Build Pull
+        # Request with desktop_app_image=true runs the task untrimmed against the closure, so they do
+        # run in CI rather than being dropped.
+        #
+        # The step bound is the second line of defence behind the per-task timeout the root build
+        # applies to every suite (sharedTestTimeoutMinutes, 20 minutes by default): a worker that
+        # leaks a thread, a socket or a child process fails its own task instead of the whole job.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          ./gradlew --console=plain --stacktrace --continue \
+            "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            -PdesktopEngineTests=false \
+            :shared-domain:jvmTest --rerun :shared-data:jvmTest --rerun :shared-ui:desktopTest --rerun \
+            :desktopApp:jvmTest --rerun
+        env:
+          INNERTUBE_SMOKE: ${{ inputs.innertube_smoke == true && '1' || '0' }}
+
+      - name: Upload shared KMP test diagnostics
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: shared-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/profile/
+            shared-*/build/reports/tests/
+            shared-*/build/test-results/
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload shared KMP machine-readable test evidence
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: shared-test-machine-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             shared-*/build/test-results/**/TEST-*.xml
             desktopApp/build/test-results/**/TEST-*.xml
+            # Gradle keeps an interrupted suite's partial results here; without them a cancelled
+            # worker shows only the modules that finished, not the one that stopped reporting.
+            shared-*/build/test-results/**/binary/in-progress-*.bin
           if-no-files-found: warn
           retention-days: 7

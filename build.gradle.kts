@@ -47,3 +47,23 @@ subprojects {
         }
     }
 }
+
+// A forked test worker that leaves a non-daemon thread, a listening socket or a child process behind never exits, and
+// the owning Test task then waits for it forever: on run 42267860785 `:shared-data:jvmTest` produced no report and no
+// output for 32 minutes after the Device Connect suites, until the job's 45-minute limit cancelled a run in which no
+// test had failed. A task-level timeout turns that silence into a named failure in minutes, and it is the only guard
+// that survives a worker the tests themselves cannot interrupt.
+//
+// The `:shared-*` suites are model and Compose-through-Skia checks with no display, so their workers are told that
+// explicitly instead of inheriting whatever toolkit detection the runner happens to do.
+val sharedSuiteTimeoutMinutes = providers.gradleProperty("sharedTestTimeoutMinutes").map(String::toLong).orElse(20L)
+val suiteTimeoutMinutes = providers.gradleProperty("testTimeoutMinutes").map(String::toLong).orElse(60L)
+subprojects {
+    tasks.withType<Test>().configureEach {
+        val shared = project.path.startsWith(":shared-")
+        timeout.set(java.time.Duration.ofMinutes((if (shared) sharedSuiteTimeoutMinutes else suiteTimeoutMinutes).get()))
+        if (shared) {
+            systemProperty("java.awt.headless", "true")
+        }
+    }
+}
