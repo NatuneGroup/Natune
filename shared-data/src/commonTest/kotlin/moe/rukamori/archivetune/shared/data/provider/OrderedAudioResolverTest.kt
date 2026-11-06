@@ -110,4 +110,28 @@ class OrderedAudioResolverTest {
             assertEquals(AudioAttemptResult.TIMEOUT, result.attempts.first().result)
         } finally { client.close() }
     }
+    @Test fun providerAnswerForAnotherSourceFailsThatAttemptAndContinuesTheChain() = runTest {
+        val resolver = OrderedAudioResolver(listOf(
+            provider(AudioSourceType.TIDAL) { audio(AudioSourceType.QOBUZ) },
+            provider(AudioSourceType.QOBUZ) { audio(AudioSourceType.QOBUZ) }), youtube())
+        val result = assertIs<AudioResolution.Resolved>(resolver.resolve(request,
+            settings(AudioSourceType.TIDAL, AudioSourceType.QOBUZ)))
+        assertEquals(AudioSourceType.QOBUZ, result.audio.source)
+        assertEquals(listOf(
+            AudioAttempt(AudioSourceType.TIDAL, AudioAttemptResult.FAILED),
+            AudioAttempt(AudioSourceType.QOBUZ, AudioAttemptResult.RESOLVED),
+        ), result.attempts)
+    }
+    @Test fun providerAnswerForAnotherSourceStillFallsBackToYouTube() = runTest {
+        val resolver = OrderedAudioResolver(listOf(
+            provider(AudioSourceType.TIDAL) { audio(AudioSourceType.QOBUZ) }),
+            youtube(primary = { audio(AudioSourceType.YOUTUBE) }))
+        val result = assertIs<AudioResolution.Resolved>(resolver.resolve(request,
+            settings(AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)))
+        assertEquals(AudioSourceType.YOUTUBE, result.audio.source)
+        assertEquals(listOf(
+            AudioAttempt(AudioSourceType.TIDAL, AudioAttemptResult.FAILED),
+            AudioAttempt(AudioSourceType.YOUTUBE, AudioAttemptResult.RESOLVED),
+        ), result.attempts)
+    }
 }

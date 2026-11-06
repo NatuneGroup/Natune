@@ -18,14 +18,14 @@ must preserve the invariants below.
 - **Telegram streaming**: `telegram/` (TDLib wrapper + `TelegramDataSource`), browse/settings/login UI. Playback routed by the `telegram://` branch in `MusicService`'s `SchemeRoutingDataSource`, independent of the multi-source chain. Channels materialise as local playlists (`LPtg<chatId>`); artwork via the Coil `tgart://` fetcher. api_id/hash via `BuildConfig` with public Telegram Desktop fallback.
 - **Pool credentials**: the Playback Pool toggle gates account feeds, Pool discovery, reports and provider-local Pool caches independently of personal credentials. Empty or failed feed attempts remain throttled across restarts. Pool credentials stay in their separate Keystore-encrypted cache and must never overwrite personal sign-in preferences. An APK-delivery key is extractable and must never be reused as a server administrator, session or database secret.
 - **Discord presence**: works the way Metrolist's does (`MetrolistGroup/Metrolist`, `music/discord/`), not through the Social SDK binary and not through a user token. PKCE OAuth (scopes `openid identify sdk.social_layer_presence`, redirect `discord-<APP_ID>:/authorize/callback`, registered on the app in the Developer Portal) yields an OAuth access token. `GatewayClient` sends it as `Bearer <token>` in a minimal IDENTIFY (`intents = 0`, no capabilities, gateway v10, no compression) and then op 3 presence updates. Keep IDENTIFY minimal: user-client intents/capabilities stream DMs and friend presence to the phone for nothing. Never use a raw user token (the old Kizzy/self-bot route) and never embed a confidential client secret. Updates are driven by playback only; do not add background Gateway retry loops.
-- **CI signing**: release/nightly and release-shaped CI builds sign only when all four GitHub Secrets `KEYSTORE`/`KEY_ALIAS`/`KEYSTORE_PASSWORD`/`KEY_PASSWORD` are configured, using the existing (historical) release keystore — same signing identity as all prior builds, so signed updates keep installing in place. Missing or incomplete signing configuration leaves explicitly unsigned APKs that still build, upload and publish, with a release-note warning; unsigned artifacts do not prove update-over-install compatibility. No workflow may fall back to a committed `app/persistent-debug.keystore`; the file was removed from the tree and must not be restored (the key material remains public in git history — accepted residual risk, maintainer decision 2026-08-26; do NOT rotate to a fresh key without an explicit user-facing migration announcement, it force-reinstalls every user). Local debug builds use AGP's default debug keystore.
+- **CI signing**: release/nightly and release-shaped CI builds sign only when all four GitHub Secrets `KEYSTORE`/`KEY_ALIAS`/`KEYSTORE_PASSWORD`/`KEY_PASSWORD` are configured, using the existing (historical) release keystore — same signing identity as all prior builds, so signed updates keep installing in place. Missing or incomplete signing configuration leaves explicitly unsigned APKs that still build, upload and publish, with a release-note warning; unsigned artifacts do not prove update-over-install compatibility. The opt-in artifact-only ARM64 candidate in `Build Pull Request` (`android_release_candidate`, same-repository manual dispatch only) is the one exception: it requires all four secrets and fails before building, because an unsigned or debug-key file must never be labelled a candidate. No workflow may fall back to a committed `app/persistent-debug.keystore`; the file was removed from the tree and must not be restored (the key material remains public in git history — accepted residual risk, maintainer decision 2026-08-26; do NOT rotate to a fresh key without an explicit user-facing migration announcement, it force-reinstalls every user). Local debug builds use AGP's default debug keystore.
 - **Listen Together**: LAN plus exactly the public servers listed in `listentogether/ListenTogetherServers.kt` (vivi's JSON "Hugging Face Sync" at `devilmi-vivi-music-listen-together.hf.space` and Metrolist's protobuf-only The Meowery at `metroserverx.meowery.eu`) — nothing else. The retired `vivimusic-listen-together.onrender.com` is never contacted; it is only accepted as an invite-link host so old links still open. No koiverse REST/WS path and no `*.koiverse.cloud` / `raw.githubusercontent.com/koiverse/*` call anywhere in the tree. The Meowery never takes a JSON frame: the codec is pre-negotiated per host, the app sends no `client_capabilities` frame, `buffer_ready` is the catch-up mechanism, and the host has no chat relay (chat is JSON-server-only). Connection and room-request waits are bounded; stale socket callbacks must not alter a newer connection. Server hosting restrictions must be shown, never bypassed.
 - **Protected files**: `applicationId` (`moe.rukamori.archivetune`) is fork identity — never adopt upstream changes to it. `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`, `DataServer.txt` were removed and must never be restored.
 
 ## Modules & submodules
 
-- Gradle modules: `:app :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :morideobfuscator :lyrics:*`.
-- Submodules: `core` → **vossgraves/core** (NewPipeExtractor-based InnerTube client; a fork of rukamori/core that deliberately carries no `NetworkGatekeeper`, pinned on `feat/podcast-port` for the podcast models), `lyrics` → **4nx3b/lyrics**, `IconPack` → **NatuneGroup/IconPack** (fork of rukamori/IconPack; the icon-switcher pack), `morideobfuscator` → rukamori. Commit + push inside a submodule first, then pin the gitlink; never leave a dirty or unpushed pointer. Never move `core` to a `rukamori/core` revision — its `NetworkGatekeeper` defaults to `connectionBlocked = true` and throws on every request.
+- Gradle modules: `:app :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
+- Submodules: `core` → **vossgraves/core** (NewPipeExtractor-based InnerTube client; a fork of rukamori/core that deliberately carries no `NetworkGatekeeper`, pinned on `feat/podcast-port` for the podcast models), `lyrics` → **4nx3b/lyrics**, `IconPack` → **NatuneGroup/IconPack** (fork of rukamori/IconPack; the icon-switcher pack), `deobfuscator` → **rukamori/morideobfuscator** (the media obfuscator; the upstream repository keeps its own name and the gitlink is unchanged). Commit + push inside a submodule first, then pin the gitlink; never leave a dirty or unpushed pointer. Never move `core` to a `rukamori/core` revision — its `NetworkGatekeeper` defaults to `connectionBlocked = true` and throws on every request.
 
 ## Build & test
 
@@ -45,6 +45,8 @@ must preserve the invariants below.
 - Run `python3 scripts/check_repository.py --worktree` without Gradle/JVM/network
   work. It checks maintained docs/skills, CI command consistency, dependency drift,
   source/module boundaries, file budgets and copyright preservation.
+- Use the bounded [fast-check](.factory/skills/fast-check/SKILL.md) procedure for
+  pre-build feedback; it never substitutes for the final exact-candidate gates.
 - Install the lightweight staged-content hook as documented in
   [quality gates](docs/engineering/quality.md); preserve an existing user hook setup.
 - Kotlin/Java types use PascalCase, functions/properties camelCase, Compose UI
@@ -61,8 +63,8 @@ must preserve the invariants below.
 - Stable/Nightly are explicit choices on every build; build identity supplies only the unset default. Migrate stored Canary once without overriding a later Stable choice. Keep channel-bound candidates and no-downgrade checks.
 - Settings descriptions use finite automatic marquee only for visible/resumed overflowing text with motion enabled. Keep page snapshots and running startup latches; one shared post-commit Restart now/Later modal owns restart actions, not per-row effects or timers.
 - The acoustic graph in Developer (`settings/misc`, `acoustic_quality`) and shared player/song menus runs only after Run. Keep bounded, cancellable, source-bound memory-only results, ordinary seekable file/content and clear current-source support, stale-result rejection and heuristic/unknown language. Never mutate playback resolution, queue or source rejection settings for an audit.
-- Existing DSP maintenance pins are Oboe 1.11.0, Signalsmith Linear 0.6.5 and retained libusb 1.0.30; Stretch remains 1.4.0 and soxr 0.1.3. No new output engine/default/preset policy. libusb/soxr are documented Android subsets; retained licenses/headers and Android build closure matter more than standalone upstream tooling.
-- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes. Keep its MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
+- The remaining DSP pin is Oboe 1.11.0, kept though no native target links it any more. The maintainer approved one dead-code pass (2026-11): it removed the unreachable libusb 1.0.30 USB Audio Class driver (`monochrome_usb`, `usb1.0`), the Signalsmith Linear 0.6.5 / Stretch 1.4.0 pitch shifter (`monochrome_stretch`), the never-enabled sinc-varispeed and pitch stages, `UsbAudioRouter`, `BypassVolumeController`, `BitPerfectGateProcessor` and the orphan USB-pin/wire publishers with the rows that read them. The same approval retired the whole engine layer once the shared chain took the standard route: the Tryptify `tf.monochrome.*` bus and its `monochrome_dsp` target, the LastWave `com.lastwave.*` engine with `lastwave_audio` and its vendored soxr 0.1.3, the float-DSP half of `archivetune_dsp`, and the router that chose between them. `archivetune_dsp` still builds the AAudio exclusive stream. No new output engine/default/preset policy.
+- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes; the same rule kept both USB output routes through the 2026-11 dead-code pass, which touched the unreachable Tryptify USB island, not them. Keep the decent module's MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
 - Unicode/phonetics, SimpMusic parity, AI/cache and lifecycle corrections are locally integrated. Preserve semantic joiners/raw text, conservative script-family exclusions, aligned provider words or honest line fallback, full-settings AI eligibility and changed-target invalidation on every translation surface. DeepL is translation-only; failed/partial AI responses are not success caches. Downloader staging is request-owned, delayed room retries are generation-bound, and Spotify account mutations share the refresh lock.
 - Japanese data uses one persisted best-effort foreground consideration for primary system-device locale region JP. Wi-Fi/cellular are allowed; offline consumes the consideration but manual retry remains. Explicit off/removal prevents automatic reinstall; no IP lookup, continuous watcher or startup wait. Keep pinned data/digest, IO validation and manual install/cancel/remove.
 - The earlier release is complete: PR #198 merged at `643a35fd09888769a4a2d588324398d68f0d6fb5` and published Nightly `N202610151104` / build 6833 after separate green build/tests (835 passed, 0 failed, 0 skipped). Inherited permissive lint was not lint-clean. No device QA is claimed; Canary stays frozen.
@@ -109,6 +111,16 @@ invariants remain unchanged.
   are historical evidence, not validation of the current candidate, Android/iOS,
   signing, upgrades or physical audio. The full KMP port remains incomplete; see
   [baseline provenance](docs/engineering/kmp-baseline.md).
+- **iOS presentation boundary:** one shared Compose UI owns every screen, the shell chrome,
+  the player and the lyrics on Android, iOS and desktop. SwiftUI is only the iOS app/scene
+  shell, the Compose controller representable and URL/user-activity handling; the one UIKit
+  job is the root controller that reports the window's safe area to Compose, which reserves
+  it once inside the app theme. Do not add a second renderer: no SwiftUI-rendered app content,
+  no `UIHostingController`, no parallel UIKit screens, chrome or lyric surface. A future
+  WidgetKit/ActivityKit feature requires an explicit, documented system-only exception, never
+  silent deletion. Keep the shared clock, one-host lifetime, adaptive layouts and MediaPlayer
+  transport; the `native_ios_interface` preference stays stored but inert. See
+  [iOS shell comparison](docs/engineering/ios-swiftui-parity.md).
 - **Remote foundation constraints (merged 2026-10-25):**
   - The foundation's `:shared` module is not in `settings.gradle.kts`. Its files stay
     under `shared/`, and its build script is renamed to `shared/build.gradle.kts.reference`
@@ -128,16 +140,18 @@ invariants remain unchanged.
     merge is a policy conflict for the owner and security reviewer, not a waiver.
   - Foundation rules still in force: no fake clocks, no-op parity or advancing synthetic
     engine stand-ins; native-host builds are not physical audio, peripheral, account,
-    signing or upgrade QA; no dead code is confirmed, and characterization stays distinct
-    from bug fixes; do not suppress Kotlin metadata checks.
+    signing or upgrade QA; dead code is removed only with recorded maintainer sign-off
+    (the 2026-11 DSP pass carries it), and characterization stays distinct from bug
+    fixes; do not suppress Kotlin metadata checks.
   - Superseded foundation settings: its 768 MiB Kotlin daemon ceiling and daemon-off,
     one-worker properties give way to the mission's 1536 MiB caps and the command-line
     `--max-workers=1 --no-daemon` flags. Its product invariants still apply: providers,
     library, downloads, podcasts, Telegram, DSP, USB, bit-perfect, transitions, social
     features, Listen Together, scrobbling, backup and Android system integrations. The
     full foundation text stays in commit `c047a20`.
-  - No source deletion. New Kotlin starts with the package line, without a banner. User-visible strings belong in
-    Compose resource XML.
+  - No source deletion outside a recorded maintainer sign-off (the 2026-11 DSP dead-code
+    pass is one). New Kotlin starts with the package line, without a banner. User-visible
+    strings belong in Compose resource XML.
 - **Branch/CI boundaries:** preserve the adapted active workflows and independent
   exact-head BUILD and TESTS. Do not import source `main` or change protected gates.
   Workflows still parked in `.github/inherited-workflows/` remain inactive; this
@@ -189,8 +203,10 @@ invariants remain unchanged.
   catalog/streaming accounts, source gates, database/schema/legacy readers, storage
   formats, all settings and menus, all 17 saved player-style meanings/order/selections,
   V4 player default, Material 3 Expressive interface default and liquid glass.
-  Licenses and third-party credits remain intact; KMP-module banners are replaced by
-  the lineage in `docs/CREDITS.md`, and banners outside the KMP modules stay.
+  Licenses and third-party credits stay for everything that still ships; when a vendored
+  third-party component is removed with sign-off, its notice, license text and credit go
+  with it in the same change. KMP-module banners are replaced by the lineage in
+  `docs/CREDITS.md`, and banners outside the KMP modules stay.
 - The approved full feature-preserving shared domain/data/UI and native-adapter
   port retains the Android host, adds Metrolist as another style and improves
   Enhanced lyrics. These are future deliverables, not completed setup outcomes.

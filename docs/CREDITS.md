@@ -44,7 +44,7 @@ Portions of the port come from:
 | Project | Author | What this repository takes from it |
 | --- | --- | --- |
 | [rukamori/core](https://github.com/rukamori/core) → [vossgraves/core](https://github.com/vossgraves/core) | Rukamori, forked by vossgraves | The InnerTube client (`core` submodule), a NewPipeExtractor-based fork without `NetworkGatekeeper`. |
-| [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | The icon pack for the icon switcher, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark, and the media obfuscator (submodules). |
+| [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | The icon pack for the icon switcher, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark, and the media obfuscator (the `deobfuscator` submodule; upstream `rukamori/morideobfuscator`). |
 | [4nx3b/lyrics](https://github.com/4nx3b/lyrics) | 4nx3b | The `lyrics` submodule: enhanced and word-synced LRC parsing and the lyrics providers. |
 
 ## Icon artwork licence (CC-BY-SA-4.0)
@@ -81,21 +81,33 @@ media-info glyphs). Each copied file keeps the header comment
 The October 2026 audio-engine ports were compared with the same-named files in the
 candidate upstream (line similarity: 49 of 56 matched at 0.7 or more, 36 of them at
 0.95 or more; 3 between 0.5 and 0.65 and 4 under 0.3, rewritten for this app). Per-file
-lines in those Android sources read `Portions © <author>`.
+lines in those Android sources read `Portions © <author>`. Those engine sources are
+gone as of the 2026-11 unified-DSP pass; the audio a build still ships is the shared
+`:shared-domain` chain in Kotlin, and the parts of that lineage ported into it keep the
+credits below.
 
 | Project | Author | Licence | What this repository carries |
 | --- | --- | --- | --- |
-| [tryptz/Tryptify](https://github.com/tryptz/Tryptify) | tryptz | none published | The `tf.monochrome.*` Kotlin layer (39 files): DSP manager, mix bus, parametric/AutoEq, USB router and driver wrapper, stretch/resample processors, `SpectrumAnalyzerTap`. |
-| [tryptz/tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) | tryptz | GPL-3.0 | The native side under `app/src/main/cpp/tryptify` (`dsp_engine`, snapins, `libusb_uac_driver`, WSOLA stretch). |
-| [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | `com.lastwave.*` Kotlin (9 files) and `app/src/main/cpp/lastwave`. |
-| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt`, `EqModels.kt`. |
+| [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | Studio Master Clarity, adapted stage for stage from `lastwave/DspProcessor.cpp` into `:shared-domain` (`dsp/clarity/ClarityPreset.kt` and `ClarityStage.kt`: the six-section contour, the shelf slope and the named design trims), and `app/src/main/kotlin/com/lastwave/app/playback/UsbDacMonitor.kt`. |
+| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt` and the audio-output inspector (`app/src/main/kotlin/tf/monochrome/`). |
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
-| [libusb](https://libusb.info) · [SoX Resampler](https://sourceforge.net/projects/soxr/) | libusb and soxr authors | LGPL-2.1 (`COPYING`, `COPYING.LGPL`) | Vendored in `third_party/` and built into the native library. |
-| [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) · [linear](https://github.com/Signalsmith-Audio/linear) | Signalsmith Audio | MIT (`LICENSE-*.txt`) | Vendored headers for independent pitch shift. |
+| [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Pinned at 1.11.0 and still declared in the app build; no native target links it since the LastWave engine went. |
+
+The removed native work went with its notices: the LastWave engine library
+(`app/src/main/cpp/lastwave`) and the SoX Resampler 0.1.3 subset it vendored
+(`third_party/soxr`, LGPL-2.1), the Tryptify DSP core
+(`app/src/main/cpp/tryptify/dsp`, GPL-3.0) with its snapins and WSOLA stretch, the
+vendored libusb 1.0.30 subset (`third_party/libusb`, LGPL-2.1) with its USB Audio Class
+driver, the Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers
+(`third_party/signalsmith-stretch`, MIT) with the pitch-shift stage that loaded them,
+their Kotlin DSP layers, and the October 2026 audio-engine ports table. What still
+ships from that lineage is the clarity contour ported into `:shared-domain`, the
+USB-DAC monitor, and the audio-output inspector whose files name 4nx3b themselves; all
+three stay credited above.
 
 Licence status: `tryptz/Tryptify` had no `LICENSE` file when checked in October 2026.
-Its native code is published separately in `tryptify-audio-core` under GPL-3.0; the 39
-`tf.monochrome.*` Kotlin files appear only in the app repository.
+Its native code was published separately in `tryptify-audio-core` under GPL-3.0; no part
+of the Tryptify native layer remains in this tree.
 
 Packaged desktop distributions carry their notice texts from
 `desktopApp/packaging/notices/` (the QuickJS notices and the Apache-2.0 licence text); the iOS
@@ -155,11 +167,12 @@ their approaches were followed.
   written from the live response shape; no source was copied (the repository publishes
   no licence).
 - [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
-  (AGPL-3.0-only): the look the iOS native lyric view (`iosApp/ArchiveTune/SystemLyrics.swift`)
-  and the shared depth and background-vocal rows aim for, distance blur and a separate
-  smaller background line. Only the behaviour was studied; no AGPL source was copied, and
-  the Swift and Kotlin are written fresh on Apple's SwiftUI `TextRenderer` and Liquid
-  Glass APIs.
+  (AGPL-3.0-only): the look the shared lyrics renderer's depth and background-vocal rows
+  aim for, distance blur and a separate smaller background line. Only the behaviour was
+  studied; no AGPL source was copied, and the Kotlin is written fresh. The look is rendered
+  by the one shared Compose lyric surface on every platform; the earlier iOS-only UIKit
+  pane and the UIKit Liquid Glass chrome it sat in were removed, so no Swift renderer of
+  that lineage remains.
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and

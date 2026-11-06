@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
@@ -33,5 +34,36 @@ class DesktopItemSharingTest {
     @Test
     fun idsAreUrlEncoded() {
         assertEquals("https://music.youtube.com/watch?v=a%20b", desktopItemShareUri(ref(ContentProvider.YOUTUBE, ContentKind.SONG, "a b")))
+    }
+
+    @Test
+    fun thePlayerShareCopiesTheCatalogueLinkAndSaysSo() {
+        val notices = mutableListOf<String>()
+        val copied = mutableListOf<String>()
+        shareDesktopSong(ref(ContentProvider.YOUTUBE, ContentKind.SONG, "abc"), notices::add) { uri ->
+            copied += uri
+            true
+        }
+        assertEquals(listOf("https://music.youtube.com/watch?v=abc"), copied)
+        assertEquals(listOf(DesktopStrings["link_copied"]), notices)
+    }
+
+    @Test
+    fun thePlayerShareOfALocalFileCopiesNothingAndSaysWhy() {
+        val notices = mutableListOf<String>()
+        var copies = 0
+        shareDesktopSong(ref(ContentProvider.LOCAL, ContentKind.SONG, "/tmp/a.mp3"), notices::add) {
+            copies++
+            true
+        }
+        assertEquals(0, copies)
+        assertEquals(listOf(DesktopStrings["share_link_unavailable"]), notices)
+    }
+
+    @Test
+    fun aRefusedClipboardIsReportedInsteadOfACopiedLink() {
+        val notices = mutableListOf<String>()
+        shareDesktopSong(ref(ContentProvider.YOUTUBE, ContentKind.SONG, "abc"), notices::add) { false }
+        assertEquals(listOf(DesktopStrings["clipboard_unavailable"]), notices)
     }
 }

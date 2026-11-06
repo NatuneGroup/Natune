@@ -418,10 +418,6 @@ class SplashEngine {
         )
     }
 
-    fun triggerBurst() {
-        setPhase(SplashPhase.Burst)
-    }
-
     fun startGather(newShape: String = SplashSlots.SHAPE_LOGO) {
         shape = newShape
         for (i in particles.indices) {

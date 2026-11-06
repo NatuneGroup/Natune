@@ -424,7 +424,6 @@ fun TopPlaylistScreen(
                         }
                     }
 
-                    // Sort Header (Period Filter)
                     item(key = "sortHeader") {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

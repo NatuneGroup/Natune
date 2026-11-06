@@ -58,8 +58,8 @@ internal fun Preferences.effectiveAudioOffloadEnabled(bitPerfectSinkActive: Bool
     crossfadeEnabled = this[CrossfadeEnabledKey] == true,
     automixEnabled = this[AutomixEnabledKey] == true,
     authenticityRejectionEnabled = this[RejectSuspectedUpscaledAudioKey] == true,
-    processingEnabled = this[TryptifyAudioProcessingKey] == true || this[LastwaveAudioProcessingKey] == true ||
-        this[FloatDspEnabledKey] == true,
+    // The unified chain processes unless its one switch is off, so offload is requested only when it is.
+    processingEnabled = this[AudioProcessingEnabledKey] != false,
     usbOutputEnabled = bitPerfectSinkActive || this[BitPerfectUsbOutputKey] == true || this[UsbExclusiveAudioKey] == true,
 )
 

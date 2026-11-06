@@ -736,7 +736,6 @@ fun LocalPlaylistScreen(
                         }
                     }
 
-                    // Sort Header
                     item(key = "sort_header") {
                         if (!isSearching) {
                             Row(
@@ -777,7 +776,6 @@ fun LocalPlaylistScreen(
                 }
             }
 
-            // Songs List
             if (!selection) {
                 itemsIndexed(
                     items = if (isSearching) filteredSongs else mutableSongs,
@@ -1048,7 +1046,6 @@ fun LocalPlaylistScreen(
                 onBack = { navController.navigateUp() },
                 onBackLongClick = { navController.backToMain() },
             ) {
-                // Search
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -1061,7 +1058,6 @@ fun LocalPlaylistScreen(
                         )
                     }
                 }
-                // More
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -1117,7 +1113,6 @@ fun LocalPlaylistScreen(
         // and not searching, the persistent Liquid Glass buttons above handle
         // navigation and actions, so the TopAppBar is hidden entirely.
         if (!header.liquidGlassActive || selection || isSearching) {
-        // Top App Bar
         val topAppBarColors =
             if (transparentAppBar) {
                 TopAppBarDefaults.topAppBarColors(

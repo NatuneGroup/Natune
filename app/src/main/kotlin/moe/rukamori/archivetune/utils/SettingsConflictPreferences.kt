@@ -21,7 +21,7 @@ internal fun MutablePreferences.setConflictAwareBoolean(key: Preferences.Key<Boo
             DynamicThemeKey -> setDynamicTheme(enabled)
             RandomThemeOnStartupKey -> setRandomThemeOnStartup(enabled)
             RejectSuspectedUpscaledAudioKey -> setAuthenticityRejection(enabled)
-            in audioProcessingPreferenceKeys -> setAudioProcessingPreference(shared, enabled)
+            in audioProcessingPreferenceKeys -> setAudioProcessingPreference(enabled)
             SkipSilenceKey, AudioNormalizationKey -> setPcmProcessingPreference(shared, enabled)
             SmartTrimmerKey -> setSmartTrimmer(enabled)
             else -> this[shared] = enabled

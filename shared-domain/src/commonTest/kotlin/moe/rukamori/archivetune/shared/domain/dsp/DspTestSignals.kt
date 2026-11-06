@@ -15,11 +15,11 @@ internal object DspTestSignals {
         return samples
     }
 
-    /** Root-mean-square of channel 0 between two frame indices. */
-    fun rms(samples: FloatArray, channels: Int, fromFrame: Int, toFrame: Int): Double {
+    /** Root-mean-square of [channel] between two frame indices. */
+    fun rms(samples: FloatArray, channels: Int, fromFrame: Int, toFrame: Int, channel: Int = 0): Double {
         var sum = 0.0
         for (frame in fromFrame until toFrame) {
-            val x = samples[frame * channels].toDouble()
+            val x = samples[frame * channels + channel].toDouble()
             sum += x * x
         }
         return sqrt(sum / (toFrame - fromFrame))

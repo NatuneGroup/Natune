@@ -71,7 +71,8 @@ object AcousticAuditLimits {
 /**
  * The decoder output a host probe hands the analyzer: source-rate interleaved PCM with the facts the
  * verdict needs. [advertisedSampleRate] is what the stream parameters report; [claimedLossless] is a
- * codec-name claim, never a quality-tier guess.
+ * codec-name claim, never a quality-tier guess. [isFloat] is the decoded sample format the probe
+ * actually produced, so the result can report it instead of assuming one.
  */
 class AcousticPcm(
     val samples: FloatArray,
@@ -80,6 +81,7 @@ class AcousticPcm(
     val startUs: Long,
     val frames: Int,
     val truncated: Boolean,
+    val isFloat: Boolean = true,
 )
 
 /** A bounded audit refusal: [code] names the reason for the state message, never a user-facing string itself. */

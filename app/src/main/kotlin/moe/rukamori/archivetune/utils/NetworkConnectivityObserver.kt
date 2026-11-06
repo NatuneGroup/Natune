@@ -55,7 +55,6 @@ class NetworkConnectivityObserver(
             _networkStatus.trySend(true)
         }
 
-        // Send initial state
         val isInitiallyConnected = isCurrentlyConnected()
         _networkStatus.trySend(isInitiallyConnected)
     }
@@ -72,7 +71,6 @@ class NetworkConnectivityObserver(
             val activeNetwork = connectivityManager.activeNetwork
             val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
 
-            // Check if we have internet capability
             val hasInternet = networkCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
 
             // For API 23+, also check if connection is validated

@@ -492,7 +492,6 @@ fun LibraryMixScreen(
                                                 contentScale = ContentScale.Crop,
                                                 modifier = Modifier.fillMaxSize(),
                                             )
-                                            // Play Overlay button
                                             Box(
                                                 modifier =
                                                     Modifier
@@ -650,7 +649,6 @@ fun LibraryMixScreen(
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier.fillMaxSize(),
                                                 )
-                                                // Play Overlay button
                                                 Box(
                                                     modifier =
                                                         Modifier
@@ -714,7 +712,6 @@ fun LibraryMixScreen(
                                     }
                                 }
 
-                                // Ending "More" card
                                 item {
                                     Column(
                                         modifier =
@@ -806,7 +803,6 @@ fun LibraryMixScreen(
                                     }
                                 }
 
-                                // Ending "+" button
                                 item {
                                     Column(
                                         modifier =

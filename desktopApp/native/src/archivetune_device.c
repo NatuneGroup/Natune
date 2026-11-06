@@ -11,15 +11,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 /* Decoding and encoding are unused here, and the resource manager and engine stay out of the build.
-   Only the null backend is ever opened, and Core Audio is Apple's only backend: disabling it keeps
-   AVFoundation's Objective-C headers out of this C translation unit on iOS and macOS. */
+   Core Audio is the only real Apple backend. On iOS it needs AVFoundation's Objective-C headers, which
+   this C translation unit cannot carry, so the mobile build drops it and opens the portable core's own
+   output. macOS keeps it: there it is plain C, and without it ma_device_init(NULL, ...) silently falls
+   through to the null backend and the whole app renders to nowhere. */
 #define MA_NO_DECODING
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_ENGINE
+#if defined(__APPLE__) && TARGET_OS_IPHONE
 #define MA_NO_COREAUDIO
+#endif
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
@@ -69,6 +77,15 @@ ae_device *ae_device_open(uint32_t rate, int null_backend, ae_device_pull pull, 
         char message[256];
         snprintf(message, sizeof message, "could not open the audio output: %s", ma_result_description(result));
         set_error(error, error_len, message);
+        free(d);
+        return NULL;
+    }
+
+    /* The null backend opens without hardware, delivers silence and reports success on init and start alike. A
+       device that fell through to it is a broken output, not a working one, so it is refused instead of started. */
+    if (!null_backend && d->device.pContext && d->device.pContext->backend == ma_backend_null) {
+        set_error(error, error_len, "no audio output backend is available: the silent null backend was refused");
+        ma_device_uninit(&d->device);
         free(d);
         return NULL;
     }

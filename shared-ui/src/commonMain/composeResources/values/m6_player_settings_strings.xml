@@ -87,9 +87,8 @@
     <string name="m6_audio_offload">Audio offload</string>
     <string name="m6_bit_perfect_usb">Bit-perfect USB output</string>
     <string name="m6_usb_exclusive">Exclusive USB audio</string>
-    <string name="m6_tryptify">Tryptify audio processing</string>
-    <string name="m6_lastwave">LastWave audio processing</string>
-    <string name="m6_float_dsp">Float DSP</string>
+    <string name="m6_audio_processing">Audio processing</string>
+    <string name="m6_audio_processing_desc">Natune DSP. Normalization, the equalizer, the clarity preset, the limiter and dither run in one 32-bit float chain. Off renders the stored settings neutral on every host — flat equalizer, unity preamp, no normalization — and keeps them stored for when it is back on. Offload and bit-perfect output need it off.</string>
     <string name="m6_seek_extra">Add extra seek seconds</string>
     <string name="m6_pause_mute">Pause on device mute</string>
     <string name="m6_mute_recovery">Device-mute recovery volume</string>

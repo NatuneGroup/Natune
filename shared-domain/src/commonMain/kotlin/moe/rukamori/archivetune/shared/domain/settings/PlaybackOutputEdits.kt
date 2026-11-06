@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.domain.settings
 
 val playbackOutputPreferenceKeys = setOf(CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey)
-val audioProcessingPreferenceKeys = setOf(TryptifyAudioProcessingKey, LastwaveAudioProcessingKey, FloatDspEnabledKey)
+val audioProcessingPreferenceKeys = setOf(AudioProcessingEnabledKey)
 
 /** Baseline RestartPreferenceActions: output choices and their exclusions commit together. */
 fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enabled: Boolean) {
@@ -23,9 +23,7 @@ fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enab
             this[AutomixEnabledKey] = false
             this[BitPerfectUsbOutputKey] = false
             this[UsbExclusiveAudioKey] = false
-            this[TryptifyAudioProcessingKey] = false
-            this[LastwaveAudioProcessingKey] = false
-            this[FloatDspEnabledKey] = false
+            this[AudioProcessingEnabledKey] = false
         }
         BitPerfectUsbOutputKey, UsbExclusiveAudioKey -> {
             this[AudioOffload] = false
@@ -36,16 +34,15 @@ fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enab
     }
 }
 
-/** Live DSP engines share one atomic owner with direct rows and search. Preset contents are untouched. */
-fun PreferenceEditor.setAudioProcessingPreference(key: BooleanPreferenceKey, enabled: Boolean) {
-    require(key in audioProcessingPreferenceKeys)
+/**
+ * The single audio-processing switch shares one atomic owner with the direct rows and search. Turning it
+ * on excludes offload, because an offloaded stream decodes in hardware and nothing can process it in
+ * software; the preset formats the retired engines stored are untouched either way.
+ */
+fun PreferenceEditor.setAudioProcessingPreference(enabled: Boolean) {
     if (enabled && snapshot().bitPerfectOutputSelected()) return
-    this[key] = enabled
-    if (enabled) {
-        this[AudioOffload] = false
-        if (key == TryptifyAudioProcessingKey) this[LastwaveAudioProcessingKey] = false
-        if (key == LastwaveAudioProcessingKey) this[TryptifyAudioProcessingKey] = false
-    }
+    this[AudioProcessingEnabledKey] = enabled
+    if (enabled) this[AudioOffload] = false
 }
 
 fun PreferenceEditor.setAuthenticityRejection(enabled: Boolean) {

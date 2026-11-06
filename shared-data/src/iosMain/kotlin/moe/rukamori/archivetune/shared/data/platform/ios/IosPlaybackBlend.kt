@@ -45,6 +45,9 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
 
     fun poll(nowNanos: Long): Read {
         val outgoing = graph.poll()
+        // The system owns the session (or an unapproved interruption left it paused): the successor is still a valid
+        // preparation and must survive until the listener resumes, pauses or replaces the track.
+        if (graph.isInterrupted || graph.isHeldAfterInterruption) return Read(outgoing)
         val source = next ?: return Read(outgoing)
         val incoming = graph.incoming ?: return Read(outgoing)
         val incomingState = incoming.observation()
@@ -58,7 +61,7 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
             if (overlapMs == 0L) {
                 val endTime = graph.current.endTime()
                 if (endTime != null || outgoing.isEnded) {
-                    incoming.mixer.outputVolume = 1f
+                    incoming.setGain(1f)
                     incoming.start(endTime)
                 }
             } else if (outgoing.positionUs / 1_000L >= fadeStartMs) {
@@ -76,8 +79,8 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
                 outgoing.positionUs / 1_000L, incomingState.positionUs / 1_000L, incomingState.isAdvancing,
             )
             if (gains != null) {
-                graph.current.mixer.outputVolume = gains.outgoing
-                incoming.mixer.outputVolume = gains.incoming
+                graph.current.setGain(gains.outgoing)
+                incoming.setGain(gains.incoming)
             }
             if (incomingState.isAdvancing) {
                 stalledAtNanos = null
@@ -97,7 +100,10 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
         }
         val finished = outgoing.isEnded || (overlapMs > 0L && progress?.complete == true)
         if (!finished || !incomingState.isAdvancing) return Read(outgoing)
-        graph.promote()
+        if (!graph.promote()) {
+            cancelNext()
+            return Read(graph.current.observation())
+        }
         next = null
         progress = null
         stalledAtNanos = null
@@ -132,10 +138,11 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
     }
 
     /** The same two paths as [setPitch]: the deck units render the fade, the native units survive it. */
-    fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
-        applyIosEqualizer(graph.current.output, bands, enabled)
-        next?.let { applyIosEqualizer(it.output, bands, enabled) }
-        graph.setEqualizer(enabled, bands)
+    /** The same two paths as [setPitch]: the deck units render the fade, the native units survive it. */
+    fun setTone(enabled: Boolean, bands: List<IosEqBand>, preampDb: Float) {
+        applyIosTone(graph.current.output, bands, enabled, preampDb)
+        next?.let { applyIosTone(it.output, bands, enabled, preampDb) }
+        graph.setTone(enabled, bands, preampDb)
     }
 
     fun play(): Boolean = graph.play()

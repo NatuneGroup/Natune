@@ -56,6 +56,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
+import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_acoustic_quality_title
@@ -446,6 +447,7 @@ internal fun IosMenuNotice(key: String, onDismiss: () -> Unit) {
     val resource = when (key) {
         IosItemMenuState.NOTICE_UNAVAILABLE -> Res.string.ios_settings_feature_unavailable
         IosItemMenuState.NOTICE_DOWNLOAD_REFUSED -> Res.string.ios_download_refused
+        IosItemMenuState.NOTICE_SHARE_UNAVAILABLE -> Res.string.ios_share_link_unavailable
         else -> Res.string.ios_menu_action_failed
     }
     AlertDialog(

@@ -80,7 +80,7 @@ data class MediaInfoPipelineFacts(
     val usbExclusive: Boolean = false,
     val usbVendorId: Int = -1,
     val usbProductId: Int = -1,
-    val tryptifyUsbRateHz: Int = 0,
+    val usbExclusiveRateHz: Int = 0,
 )
 
 /**
@@ -103,8 +103,8 @@ data class MediaInfoBitPerfectStatus(
  * is true; the stream-format rows read the stream and pipeline facts whenever they are present,
  * as the baseline did.
  *
- * [usbWireBitDepth] is the host's wire-depth chain (LastWave, then Tryptify stream, then the
- * USB exclusive depth), with null when none is positive; the UI then uses the output depth.
+ * [usbWireBitDepth] is the host's reported wire depth, null when the host has none; the UI then
+ * uses the output depth.
  * [MediaInfoPipelineFacts.usbExclusive] is the single USB-exclusive-active flag for both the
  * signal-path and the pipeline rows.
  */
@@ -114,7 +114,6 @@ data class MediaInfoLiveState(
     val normalizeFactor: Float = 1f,
     val pipeline: MediaInfoPipelineFacts? = null,
     val bitPerfectUsbActive: Boolean = false,
-    val tryptifyUsbPinActive: Boolean = false,
     val bitPerfect: MediaInfoBitPerfectStatus? = null,
     val usbWireBitDepth: Int? = null,
 )

@@ -2,48 +2,34 @@ package moe.rukamori.archivetune.desktop
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import moe.rukamori.archivetune.shared.domain.repository.ContentKind
-import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.lyrics.MAX_LYRICS_SYNC_OFFSET_MS
 
+/**
+ * The per-song offset moved from the desktop session map to the portable store, so what this host still owns is the
+ * value one adjustment writes: the stored offset plus the delta, held inside the shared ±30 s bound.
+ * `PortableSongLyricsOffsetTest` pins the store's own contract (persistence, null means delete, bound refusal), and
+ * nothing here claims the desktop UI's live observation, which needs a session graph.
+ */
 class DesktopLyricsOffsetsTest {
-    private fun ref(id: String) = ContentRef("youtube", ContentKind.SONG, id)
-
     @Test
-    fun adjustmentsClampToTheSessionBound() {
-        val offsets = DesktopLyricsOffsets()
-        repeat(400) { offsets.adjust(ref("a"), 100) }
-        assertEquals(30_000L, offsets.value(ref("a")))
-        repeat(700) { offsets.adjust(ref("a"), -100) }
-        assertEquals(-30_000L, offsets.value(ref("a")))
-        offsets.reset(ref("a"))
-        assertEquals(0L, offsets.value(ref("a")))
+    fun repeatedAdjustmentsStopAtTheSharedBound() {
+        var offset: Long? = null
+        repeat(400) { offset = adjustedLyricsOffset(offset, 100) }
+        assertEquals(MAX_LYRICS_SYNC_OFFSET_MS, offset)
+        repeat(700) { offset = adjustedLyricsOffset(offset, -100) }
+        assertEquals(-MAX_LYRICS_SYNC_OFFSET_MS, offset)
     }
 
     @Test
     fun oneDeltaNeverExceedsTheBound() {
-        val offsets = DesktopLyricsOffsets()
-        offsets.adjust(ref("a"), 60_000)
-        assertEquals(30_000L, offsets.value(ref("a")))
-        offsets.adjust(ref("a"), -60_000)
-        assertEquals(0L, offsets.value(ref("a")))
+        assertEquals(MAX_LYRICS_SYNC_OFFSET_MS, adjustedLyricsOffset(null, 60_000))
+        assertEquals(-MAX_LYRICS_SYNC_OFFSET_MS, adjustedLyricsOffset(MAX_LYRICS_SYNC_OFFSET_MS, -60_000))
     }
 
     @Test
-    fun theOldestSongEvictsAtTheCap() {
-        val offsets = DesktopLyricsOffsets()
-        (1..128).forEach { offsets.adjust(ref("s$it"), 5) }
-        offsets.adjust(ref("overflow"), 5)
-        assertEquals(0L, offsets.value(ref("s1")))
-        assertEquals(5L, offsets.value(ref("s2")))
-        assertEquals(5L, offsets.value(ref("overflow")))
-        // Adjusting a song already tracked never evicts another one.
-        repeat(3) { offsets.adjust(ref("s128"), 1) }
-        assertEquals(8L, offsets.value(ref("s128")))
-        assertEquals(5L, offsets.value(ref("s2")))
-    }
-
-    @Test
-    fun nullReadsAsZero() {
-        assertEquals(0L, DesktopLyricsOffsets().value(null))
+    fun anAbsentOffsetReadsAsZero() {
+        assertEquals(0L, adjustedLyricsOffset(null, 0))
+        assertEquals(250L, adjustedLyricsOffset(null, 250))
+        assertEquals(-250L, adjustedLyricsOffset(null, -250))
     }
 }

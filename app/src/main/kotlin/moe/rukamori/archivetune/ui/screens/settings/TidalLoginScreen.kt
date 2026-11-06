@@ -45,6 +45,7 @@ import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -256,7 +257,9 @@ fun TidalLoginScreen(navController: NavController) {
                 )
                 // Without the PKCE client the sign-in page cannot be opened, so start the web-player capture.
                 val startUrl = pkce?.authUrl ?: WEB_PLAYER_URL
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // The PKCE authorize host and the redirect host both sit on .tidal.com; expiring only
+                // Tidal's cookies keeps this attempt fresh without touching another provider's jar.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.TIDAL) {
                     loadUrl(startUrl)
                 }
                 if (pkce == null) toast(context.getString(R.string.tidal_login_webplayer_fallback))

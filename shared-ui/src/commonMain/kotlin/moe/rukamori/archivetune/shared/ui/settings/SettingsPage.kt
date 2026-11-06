@@ -59,85 +59,90 @@ fun SettingsPage(
         val index = rows.indexOfFirst { it.anchor == scrollTo }
         if (index >= 0) listState.scrollToItem(leadingItemCount + index)
     }
-    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
-        leadingItems()
-        itemsIndexed(rows, key = { _, row -> row.anchor }) { index, row ->
-            if (row is SettingsRow.Custom) {
-                row.content()
-                return@itemsIndexed
-            }
-            if (row is SettingsRow.Header) {
-                Text(
-                    stringResource(row.title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.testTag("setting:${row.anchor}")
-                        .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp),
-                )
-                return@itemsIndexed
-            }
-            val visible by remember(index) { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index == index } } }
-            val enabled = row.enabled
-            ListItem(
-                headlineContent = { Text(stringResource((row as? SettingsRow.Text)?.titleFor?.invoke(preferences) ?: row.title)) },
-                supportingContent = {
-                    // A switch with a state-dependent line (on or paused) shows that line instead of the static one.
-                    val description = (row as? SettingsRow.Toggle)?.let { toggle ->
-                        toggle.descriptionFor?.invoke(toggle.read(preferences))
-                    } ?: row.description
-                    if (row is SettingsRow.Status) {
-                        Text(row.value, maxLines = if (row.fullText) Int.MAX_VALUE else 2)
-                    } else if (row is SettingsRow.Choice) {
-                        val stored = row.read(preferences)
-                        val option = row.options.firstOrNull { it.value == stored }
-                            ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
-                        Column {
-                            Text(stringResource(option.label))
-                            description?.let {
-                                SettingsMarqueeText(
-                                    text = stringResource(it),
-                                    active = visible && resumed && motionEnabled,
-                                    phaseKey = row.anchor,
-                                )
-                            }
-                        }
-                    } else if (description != null) {
-                        SettingsMarqueeText(
-                            text = stringResource(description),
-                            active = visible && resumed && motionEnabled,
-                            phaseKey = row.anchor,
-                        )
-                    } else if (row is SettingsRow.IntChoice) {
-                        val stored = preferences[row.key, row.default]
-                        val option = row.options.firstOrNull { it.value == stored }
-                            ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
-                        Text(stringResource(option.label))
-                    } else if (row is SettingsRow.Number) {
-                        Text(numberValueText(row.read(preferences), row.unit))
-                    } else if (row is SettingsRow.Decimal) {
-                        Text(decimalValueText(preferences[row.key, row.default].let { if (it.isFinite()) it else row.default }, row.unit))
-                    }
-                },
-                trailingContent = {
-                    if (row is SettingsRow.Toggle) Switch(
-                        checked = row.read(preferences),
-                        onCheckedChange = { checked -> commit { row.write(this, checked) } },
-                        enabled = enabled,
-                        modifier = Modifier.testTag("toggle:${row.anchor}"),
+    val back = LocalSettingsBack.current
+    Column(modifier.fillMaxSize()) {
+        // A host with no system back gesture supplies the pop, so one pinned control heads the list.
+        if (back != null) SettingsBackHeader(back)
+        LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
+            leadingItems()
+            itemsIndexed(rows, key = { _, row -> row.anchor }) { index, row ->
+                if (row is SettingsRow.Custom) {
+                    row.content()
+                    return@itemsIndexed
+                }
+                if (row is SettingsRow.Header) {
+                    Text(
+                        stringResource(row.title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("setting:${row.anchor}")
+                            .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp),
                     )
-                },
-                modifier = Modifier.testTag("setting:${row.anchor}")
-                    .clickable(enabled = enabled && (row !is SettingsRow.Status || row.run != null)) {
-                    when (row) {
-                        is SettingsRow.Toggle -> commit { row.write(this, !row.read(snapshot())) }
-                        is SettingsRow.Action -> row.run()
-                        is SettingsRow.Status -> row.run?.invoke()
-                        else -> editing = row.anchor
-                    }
-                },
-            )
+                    return@itemsIndexed
+                }
+                val visible by remember(index) { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index == index } } }
+                val enabled = row.enabled
+                ListItem(
+                    headlineContent = { Text(stringResource((row as? SettingsRow.Text)?.titleFor?.invoke(preferences) ?: row.title)) },
+                    supportingContent = {
+                        // A switch with a state-dependent line (on or paused) shows that line instead of the static one.
+                        val description = (row as? SettingsRow.Toggle)?.let { toggle ->
+                            toggle.descriptionFor?.invoke(toggle.read(preferences))
+                        } ?: row.description
+                        if (row is SettingsRow.Status) {
+                            Text(row.value, maxLines = if (row.fullText) Int.MAX_VALUE else 2)
+                        } else if (row is SettingsRow.Choice) {
+                            val stored = row.read(preferences)
+                            val option = row.options.firstOrNull { it.value == stored }
+                                ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
+                            Column {
+                                Text(stringResource(option.label))
+                                description?.let {
+                                    SettingsMarqueeText(
+                                        text = stringResource(it),
+                                        active = visible && resumed && motionEnabled,
+                                        phaseKey = row.anchor,
+                                    )
+                                }
+                            }
+                        } else if (description != null) {
+                            SettingsMarqueeText(
+                                text = stringResource(description),
+                                active = visible && resumed && motionEnabled,
+                                phaseKey = row.anchor,
+                            )
+                        } else if (row is SettingsRow.IntChoice) {
+                            val stored = preferences[row.key, row.default]
+                            val option = row.options.firstOrNull { it.value == stored }
+                                ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
+                            Text(stringResource(option.label))
+                        } else if (row is SettingsRow.Number) {
+                            Text(numberValueText(row.read(preferences), row.unit))
+                        } else if (row is SettingsRow.Decimal) {
+                            Text(decimalValueText(preferences[row.key, row.default].let { if (it.isFinite()) it else row.default }, row.unit))
+                        }
+                    },
+                    trailingContent = {
+                        if (row is SettingsRow.Toggle) Switch(
+                            checked = row.read(preferences),
+                            onCheckedChange = { checked -> commit { row.write(this, checked) } },
+                            enabled = enabled,
+                            modifier = Modifier.testTag("toggle:${row.anchor}"),
+                        )
+                    },
+                    modifier = Modifier.testTag("setting:${row.anchor}")
+                        .clickable(enabled = enabled && (row !is SettingsRow.Status || row.run != null)) {
+                        when (row) {
+                            is SettingsRow.Toggle -> commit { row.write(this, !row.read(snapshot())) }
+                            is SettingsRow.Action -> row.run()
+                            is SettingsRow.Status -> row.run?.invoke()
+                            else -> editing = row.anchor
+                        }
+                    },
+                )
+            }
+            extraItems()
         }
-        extraItems()
     }
     // Re-resolve the active row so a style/capability change cannot leave a stale enabled dialog.
     val row = rows.firstOrNull { it.anchor == editing && it.enabled }

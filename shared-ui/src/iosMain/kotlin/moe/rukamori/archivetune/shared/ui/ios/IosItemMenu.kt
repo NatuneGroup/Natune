@@ -79,6 +79,11 @@ internal class IosItemMenuState {
         message = null
     }
 
+    /** A player or page action with an outcome the user must read: the notice key says what happened. */
+    fun notice(key: String) {
+        message = key
+    }
+
     /** A failed menu row: the unavailable notice for a row this host does not connect, otherwise the failure. */
     fun failed() {
         message = if (refusedAsUnavailable) NOTICE_UNAVAILABLE else NOTICE_FAILED
@@ -108,6 +113,7 @@ internal class IosItemMenuState {
         const val NOTICE_UNAVAILABLE = "ios_settings_feature_unavailable"
         const val NOTICE_FAILED = "ios_menu_action_failed"
         const val NOTICE_DOWNLOAD_REFUSED = "ios_download_refused"
+        const val NOTICE_SHARE_UNAVAILABLE = "ios_share_link_unavailable"
     }
 }
 

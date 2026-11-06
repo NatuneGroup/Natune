@@ -63,7 +63,7 @@ class PlayerSettingsFamilyTest {
         assertTrue(appearance(after).single { it.anchor == "compact_mini_player" }.enabled)
     }
 
-    @Test fun playbackEnginesHistoryAndSponsorHandlersMatchActualBaselinePolicies() {
+    @Test fun playbackProcessingHistoryAndSponsorHandlersMatchActualBaselinePolicies() {
         var snapshot = PreferenceSnapshot.of(AudioOffload to true, LastwaveAudioProcessingKey to true,
             HISTORY_DURATION_LEGACY_FLOAT_KEY to 12.5f, SponsorBlockEnabledKey to true)
         var rows = playback(snapshot)
@@ -72,22 +72,38 @@ class PlayerSettingsFamilyTest {
         assertEquals(13, history.read(snapshot))
         snapshot = snapshot.toEditor().apply {
             history.write(this, 42)
-            (rows.single { it.anchor == "tryptify_engine" } as SettingsRow.Toggle).write(this, true)
+            (rows.single { it.anchor == "audio_processing" } as SettingsRow.Toggle).write(this, true)
             (rows.single { it.anchor == "sponsor_block_categories" } as SettingsRow.Toggle).write(this, true)
         }.snapshot()
         assertNull(snapshot[HISTORY_DURATION_LEGACY_FLOAT_KEY])
         assertEquals(42, snapshot[HistoryDuration])
         assertEquals(false, snapshot[AudioOffload])
-        assertEquals(false, snapshot[LastwaveAudioProcessingKey])
+        assertEquals(true, snapshot[AudioProcessingEnabledKey])
+        // The retired engine keys are preset-format input, so no row writes them any more.
+        assertEquals(true, snapshot[LastwaveAudioProcessingKey])
         assertEquals(setOf("music_offtopic", "sponsor"), snapshot[SponsorBlockCategoriesKey])
         rows = playback(snapshot, active = true)
-        listOf("tryptify_engine", "lastwave_engine", "float_dsp").forEach {
-            val row = rows.single { row -> row.anchor == it } as SettingsRow.Toggle
-            assertFalse(row.enabled)
-            assertEquals(it == "tryptify_engine", row.read(snapshot))
-        }
-        assertEquals(true, snapshot[TryptifyAudioProcessingKey])
+        val processing = rows.single { it.anchor == "audio_processing" } as SettingsRow.Toggle
+        assertFalse(processing.enabled)
+        assertEquals(true, processing.read(snapshot))
         assertFalse(rows.single { it.anchor == "bit_perfect_usb" }.enabled)
+    }
+
+    @Test fun everyHostRendersTheOneProcessingSwitch() {
+        val stored = PreferenceSnapshot.of(TryptifyAudioProcessingKey to true)
+        listOf(
+            playbackSettingsRows(stored, false, false, false, {}, {}, {}),
+            playbackSettingsRows(stored, true, true, false, {}, {}, {}, deviceMuteSupported = true),
+        ).forEach { rows ->
+            assertEquals(1, rows.count { it.anchor == "audio_processing" })
+            listOf("tryptify_engine", "lastwave_engine", "float_dsp").forEach { anchor ->
+                assertFalse(rows.any { it.anchor == anchor }, anchor)
+            }
+        }
+        // A stored legacy engine flag never switches processing on: the row reads its own key.
+        assertTrue(playbackSettingsRows(stored, false, false, false, {}, {}, {})
+            .single { it.anchor == "audio_processing" }.let { (it as SettingsRow.Toggle).read(stored) })
+        assertEquals(true, stored[TryptifyAudioProcessingKey])
     }
 
     @Test fun realActionsUseActualRoutesAndRequiredEditors() {
@@ -143,10 +159,10 @@ class PlayerSettingsFamilyTest {
         val store = DesktopSettingsStore.open(path)
         var releases = 0
         try {
-            store.edit { this[BitPerfectUsbOutputKey] = true; this[TryptifyAudioProcessingKey] = true }
+            store.edit { this[BitPerfectUsbOutputKey] = true; this[AudioProcessingEnabledKey] = true }
             val controller = SettingsController(store, store.snapshot(), true)
             runComposeUiTest {
-                var anchor by mutableStateOf("tryptify_engine")
+                var anchor by mutableStateOf("audio_processing")
                 var active by mutableStateOf(true)
                 setContent { MaterialTheme {
                     PlaybackSettings(controller, true, active, true, {
@@ -155,7 +171,7 @@ class PlayerSettingsFamilyTest {
                         releases++; active = false
                     }, {}, {}, {}, { error("Unexpected storage failure") }, anchor)
                 } }
-                onNodeWithTag("toggle:tryptify_engine").assertIsNotEnabled().assertIsOn()
+                onNodeWithTag("toggle:audio_processing").assertIsNotEnabled().assertIsOn()
                 runOnIdle { anchor = "crossfade" }
                 onNodeWithTag("toggle:crossfade").performClick()
                 waitUntil { releases == 1 }
@@ -178,9 +194,45 @@ class PlayerSettingsFamilyTest {
             try {
                 assertEquals("PERFORMANCE", reopened.snapshot()[AutomixPerformanceModeKey])
                 assertEquals(false, reopened.snapshot()[BitPerfectUsbOutputKey])
-                assertEquals(true, reopened.snapshot()[TryptifyAudioProcessingKey])
+                assertEquals(true, reopened.snapshot()[AudioProcessingEnabledKey])
             } finally { reopened.close() }
         } finally { directory.toFile().deleteRecursively() }
+    }
+
+    @Test fun desktopPlaybackPageHeadsWithItsTitleTheOneProcessingSwitchAndTheHostEqualizer() = runBlocking {
+        val directory = Files.createTempDirectory("m6-playback-processing-")
+        val store = DesktopSettingsStore.open(directory.resolve("settings.bin"))
+        var equalizerOpened = 0
+        try {
+            val controller = SettingsController(store, store.snapshot(), false)
+            runComposeUiTest {
+                setContent { MaterialTheme {
+                    PlaybackSettings(
+                        controller = controller,
+                        bitPerfectSupported = false,
+                        bitPerfectSinkActive = false,
+                        usbExclusiveSupported = false,
+                        releaseBitPerfectSink = {},
+                        navigate = {},
+                        arrangeArtworkProviders = {},
+                        managePlaylistTags = {},
+                        onFailure = { error("Unexpected settings failure") },
+                        onOpenEqualizer = { equalizerOpened++ },
+                    )
+                } }
+                // The subpage carries the title the other pages do, so the desktop Playback page is identifiable.
+                onNodeWithTag("setting:playback_group").assertExists()
+                onNodeWithTag("setting:audio_processing").assertExists()
+                onNodeWithTag("toggle:audio_processing").assertIsOn()
+                onNodeWithTag("toggle:audio_processing").performClick()
+                waitUntil { store.snapshots.value?.get(AudioProcessingEnabledKey) == false }
+                onNodeWithTag("setting:equalizer").performScrollTo().performClick()
+                assertEquals(1, equalizerOpened)
+            }
+        } finally {
+            store.close()
+            directory.toFile().deleteRecursively()
+        }
     }
 
     private fun appearance(snapshot: PreferenceSnapshot) = playerAppearanceSettingsRows(snapshot, false, {}, {})

@@ -648,7 +648,6 @@ class QobuzInstanceResolver(
 
     private companion object {
         private const val MIN_MATCH_SCORE = 60
-        private const val SEARCH_LIMIT = 10
         private const val SEARCH_CACHE_MS = 10 * 60 * 1000L
         private const val STREAM_CACHE_MS = 30 * 60 * 1000L
         private const val FAILURE_CACHE_MS = 10 * 60 * 1000L
@@ -656,8 +655,6 @@ class QobuzInstanceResolver(
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
         private const val DISCOVERY_CACHE_MS = 30 * 60 * 1000L
         private const val AUDIO_FLAC_MIME_TYPE = "audio/flac"
-        private const val HEALTH_PROBE_TRACK_ID = "5966783"
-        private const val HEALTH_PROBE_FORMAT_ID = 5
         private val STOP_WORDS = setOf("the", "a", "an", "of", "and", "feat", "ft", "featuring", "with")
         private val VERSION_TOKENS =
             setOf("remix", "acoustic", "live", "instrumental", "demo", "edit", "mix", "version")

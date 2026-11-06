@@ -201,7 +201,6 @@ fun AppleMusicSleepTimerSheet(
                     )
                 }
 
-                // End of song chip.
                 FilterChip(
                     selected = isEndOfSong,
                     onClick = {

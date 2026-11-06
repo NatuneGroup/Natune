@@ -41,6 +41,8 @@ import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.playback.CachedAudioMetadata
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.withAppStreamProxy
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticUnavailable
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -66,10 +68,10 @@ internal abstract class AcousticInput(
         }
         if (size == 0) return 0
         if (position >= getSize()) return -1
-        val count = minOf(size.toLong(), AcousticAuditLimits.MAX_READ_CHUNK.toLong(), getSize() - position).toInt()
+        val count = minOf(size.toLong(), AcousticReadLimits.MAX_READ_CHUNK.toLong(), getSize() - position).toInt()
         // Charge requests, not just returned bytes, so repeated short/failed reads are bounded too.
         bytesRead += count
-        if (bytesRead > AcousticAuditLimits.MAX_READ_BYTES) throw AcousticUnavailable("read_budget_exceeded")
+        if (bytesRead > AcousticReadLimits.MAX_READ_BYTES) throw AcousticUnavailable("read_budget_exceeded")
         val read = readBounded(position, buffer, offset, count)
         work.check()
         return read
@@ -296,9 +298,9 @@ private class RangeInput(
         // interceptors, redirects or disk cache are attached to independent audit reads.
         private val client = OkHttpClient.Builder()
             .withAppStreamProxy()
-            .callTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
-            .connectTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(AcousticReadLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
+            .connectTimeout(AcousticReadLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(AcousticReadLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(false)
@@ -309,7 +311,7 @@ private class RangeInput(
         it.scheme == "https" && it.username.isEmpty() && it.password.isEmpty()
     } ?: throw AcousticUnavailable("remote_unsupported")
     private var length = identity.contentLength?.takeIf { it > 0 } ?: -1L
-    private val block = ByteArray(AcousticAuditLimits.MAX_READ_CHUNK)
+    private val block = ByteArray(AcousticReadLimits.MAX_READ_CHUNK)
     private var blockStart = -1L
     private var blockSize = 0
     private var networkBytes = 0L
@@ -362,7 +364,7 @@ private class RangeInput(
         if (System.currentTimeMillis() >= identity.expiresAtMs) throw AcousticUnavailable("source_expired")
         val size = minOf(block.size.toLong(), length - position).toInt()
         networkBytes += size
-        if (networkBytes > AcousticAuditLimits.MAX_READ_BYTES) throw AcousticUnavailable("network_budget_exceeded")
+        if (networkBytes > AcousticReadLimits.MAX_READ_BYTES) throw AcousticUnavailable("network_budget_exceeded")
         val end = position + size - 1
         val request = Request.Builder().url(url)
             .header("Range", "bytes=$position-$end").header("Accept-Encoding", "identity").build()

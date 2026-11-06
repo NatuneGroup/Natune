@@ -83,6 +83,9 @@ private sealed interface PlayerQueuePresetNameEdit {
  * and [initialPitch] seed the local edit state once, so later host updates do not override a dialog in progress. Reset
  * returns both to 1, and OK only closes the dialog. [presets] are the host-decoded saved pairs, and [remembered]
  * mirrors the persisted opt-in flag; both round-trip through [PlayerQueueMenuActions].
+ *
+ * A host whose engine has no pitch stage passes [pitchSupported] false: the pitch controls are hidden and every applied
+ * pair carries unity pitch, so the setting never shows a change the host cannot make.
  */
 @Composable
 fun PlayerQueueTempoPitchDialog(
@@ -93,6 +96,7 @@ fun PlayerQueueTempoPitchDialog(
     actions: PlayerQueueMenuActions,
     icon: PlayerQueueMenuIconSlot,
     onDismiss: () -> Unit,
+    pitchSupported: Boolean = true,
 ) {
     var nameEdit by remember { mutableStateOf<PlayerQueuePresetNameEdit?>(null) }
     var tempo by remember {
@@ -110,7 +114,8 @@ fun PlayerQueueTempoPitchDialog(
     fun applyPlayback() {
         actions.applyPlaybackParameters(
             speed = tempo.coerceIn(PLAYER_QUEUE_TEMPO_MIN, PLAYER_QUEUE_TEMPO_MAX),
-            pitch = pitch.coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX),
+            // A host without a pitch stage is sent unity, so a restored or preset pair never reports a shift it ignores.
+            pitch = if (!pitchSupported) 1f else pitch.coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX),
         )
     }
 
@@ -226,68 +231,31 @@ fun PlayerQueueTempoPitchDialog(
                     }
                 }
 
-                HorizontalDivider()
+                if (pitchSupported) {
+                    HorizontalDivider()
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    icon(PlayerQueueMenuIcon.DISCOVER_TUNE, LocalContentColor.current, Modifier.size(28.dp))
-                    Text(
-                        text = stringResource(Res.string.m5pq_pitch),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text =
-                            if (pitchMode == PlayerQueuePitchMode.Multiplier) {
-                                multiplierLabel(pitch)
-                            } else {
-                                semitoneLabel(pitchToSemitones(pitch))
-                            },
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.End,
-                    )
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                ) {
-                    FilterChip(
-                        selected = pitchMode == PlayerQueuePitchMode.Semitones,
-                        onClick = { pitchMode = PlayerQueuePitchMode.Semitones },
-                        label = { Text(stringResource(Res.string.m5pq_pitch_mode_semitones_short)) },
-                    )
-                    FilterChip(
-                        selected = pitchMode == PlayerQueuePitchMode.Multiplier,
-                        onClick = { pitchMode = PlayerQueuePitchMode.Multiplier },
-                        label = { Text(stringResource(Res.string.m5pq_pitch_mode_multiplier_short)) },
-                    )
-                }
-
-                if (pitchMode == PlayerQueuePitchMode.Semitones) {
-                    val currentSemitones = pitchToSemitones(pitch)
-                    Slider(
-                        value = currentSemitones.toFloat(),
-                        onValueChange = { slider ->
-                            val semitones = slider.roundToInt().coerceIn(-PLAYER_QUEUE_SEMITONE_LIMIT, PLAYER_QUEUE_SEMITONE_LIMIT)
-                            val updated = semitonesToPitch(semitones)
-                            if (abs(updated - pitch) >= 0.0005f) {
-                                pitch = updated
-                                applyPlayback()
-                            }
-                        },
-                        valueRange = -12f..12f,
-                        steps = 23,
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(),
-                    )
+                    ) {
+                        icon(PlayerQueueMenuIcon.DISCOVER_TUNE, LocalContentColor.current, Modifier.size(28.dp))
+                        Text(
+                            text = stringResource(Res.string.m5pq_pitch),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text =
+                                if (pitchMode == PlayerQueuePitchMode.Multiplier) {
+                                    multiplierLabel(pitch)
+                                } else {
+                                    semitoneLabel(pitchToSemitones(pitch))
+                                },
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.End,
+                        )
+                    }
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -297,75 +265,114 @@ fun PlayerQueueTempoPitchDialog(
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState()),
                     ) {
-                        PLAYER_QUEUE_SEMITONE_PRESETS.forEach { preset ->
-                            FilterChip(
-                                selected = currentSemitones == preset,
-                                onClick = {
-                                    pitch = semitonesToPitch(preset)
-                                    applyPlayback()
-                                },
-                                label = { Text(semitoneLabel(preset)) },
-                            )
-                        }
+                        FilterChip(
+                            selected = pitchMode == PlayerQueuePitchMode.Semitones,
+                            onClick = { pitchMode = PlayerQueuePitchMode.Semitones },
+                            label = { Text(stringResource(Res.string.m5pq_pitch_mode_semitones_short)) },
+                        )
+                        FilterChip(
+                            selected = pitchMode == PlayerQueuePitchMode.Multiplier,
+                            onClick = { pitchMode = PlayerQueuePitchMode.Multiplier },
+                            label = { Text(stringResource(Res.string.m5pq_pitch_mode_multiplier_short)) },
+                        )
                     }
-                } else {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        IconButton(
-                            enabled = pitch > PLAYER_QUEUE_PITCH_MIN,
-                            onClick = {
-                                pitch = (pitch - 0.01f).coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX).quantizeTo(0.01f)
-                                applyPlayback()
-                            },
-                        ) {
-                            icon(PlayerQueueMenuIcon.REMOVE, LocalContentColor.current, Modifier)
-                        }
 
+                    if (pitchMode == PlayerQueuePitchMode.Semitones) {
+                        val currentSemitones = pitchToSemitones(pitch)
                         Slider(
-                            value = multiplierToSlider(pitch),
+                            value = currentSemitones.toFloat(),
                             onValueChange = { slider ->
-                                val updated = sliderToMultiplier(slider).quantizeTo(0.01f)
-                                if (abs(updated - pitch) >= 0.005f) {
+                                val semitones = slider.roundToInt().coerceIn(-PLAYER_QUEUE_SEMITONE_LIMIT, PLAYER_QUEUE_SEMITONE_LIMIT)
+                                val updated = semitonesToPitch(semitones)
+                                if (abs(updated - pitch) >= 0.0005f) {
                                     pitch = updated
                                     applyPlayback()
                                 }
                             },
-                            valueRange = 0f..1f,
-                            modifier = Modifier.weight(1f),
+                            valueRange = -12f..12f,
+                            steps = 23,
+                            modifier = Modifier.fillMaxWidth(),
                             colors = SliderDefaults.colors(),
                         )
 
-                        IconButton(
-                            enabled = pitch < PLAYER_QUEUE_PITCH_MAX,
-                            onClick = {
-                                pitch = (pitch + 0.01f).coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX).quantizeTo(0.01f)
-                                applyPlayback()
-                            },
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                         ) {
-                            icon(PlayerQueueMenuIcon.ADD, LocalContentColor.current, Modifier)
+                            PLAYER_QUEUE_SEMITONE_PRESETS.forEach { preset ->
+                                FilterChip(
+                                    selected = currentSemitones == preset,
+                                    onClick = {
+                                        pitch = semitonesToPitch(preset)
+                                        applyPlayback()
+                                    },
+                                    label = { Text(semitoneLabel(preset)) },
+                                )
+                            }
                         }
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                    ) {
-                        PLAYER_QUEUE_MULTIPLIER_PRESETS.forEach { preset ->
-                            FilterChip(
-                                selected = abs(pitch - preset) < 0.005f,
+                    } else {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            IconButton(
+                                enabled = pitch > PLAYER_QUEUE_PITCH_MIN,
                                 onClick = {
-                                    pitch = preset
+                                    pitch = (pitch - 0.01f).coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX).quantizeTo(0.01f)
                                     applyPlayback()
                                 },
-                                label = { Text(multiplierLabel(preset)) },
+                            ) {
+                                icon(PlayerQueueMenuIcon.REMOVE, LocalContentColor.current, Modifier)
+                            }
+
+                            Slider(
+                                value = multiplierToSlider(pitch),
+                                onValueChange = { slider ->
+                                    val updated = sliderToMultiplier(slider).quantizeTo(0.01f)
+                                    if (abs(updated - pitch) >= 0.005f) {
+                                        pitch = updated
+                                        applyPlayback()
+                                    }
+                                },
+                                valueRange = 0f..1f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(),
                             )
+
+                            IconButton(
+                                enabled = pitch < PLAYER_QUEUE_PITCH_MAX,
+                                onClick = {
+                                    pitch = (pitch + 0.01f).coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX).quantizeTo(0.01f)
+                                    applyPlayback()
+                                },
+                            ) {
+                                icon(PlayerQueueMenuIcon.ADD, LocalContentColor.current, Modifier)
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                        ) {
+                            PLAYER_QUEUE_MULTIPLIER_PRESETS.forEach { preset ->
+                                FilterChip(
+                                    selected = abs(pitch - preset) < 0.005f,
+                                    onClick = {
+                                        pitch = preset
+                                        applyPlayback()
+                                    },
+                                    label = { Text(multiplierLabel(preset)) },
+                                )
+                            }
                         }
                     }
                 }

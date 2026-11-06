@@ -4,7 +4,7 @@
 
     <!--
         The app floor is API 24, below the minSdk these libraries declare (lyrics-ui 29,
-        morideobfuscator 26). The override lets the manifest merge; their behaviour on API 24-28
+        deobfuscator 26). The override lets the manifest merge; their behaviour on API 24-28
         is not verified and needs a device check before release.
     -->
     <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui,moe.rukamori.archivetune.morideobfuscator" />

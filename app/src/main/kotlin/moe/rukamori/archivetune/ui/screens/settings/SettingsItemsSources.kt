@@ -5,8 +5,10 @@ import androidx.compose.material3.ColorScheme
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.SpotifyCanvasKey
+import moe.rukamori.archivetune.constants.AUDIO_PROCESSING_ENABLED_DEFAULT
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.AudioOffload
+import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
@@ -53,9 +55,9 @@ internal fun playbackSettingsItem(
             SettingsChild("Audio normalization", "audio_normalization", listOf("normalization", "loudness", "normalize", "volume level")) { SearchResultSwitch(AudioNormalizationKey, true) },
             SettingsChild("Audio offload", "audio_offload", listOf("offload", "audio offload", "hardware decoder")) { SearchResultSwitch(AudioOffload, false) },
             SettingsChild("USB exclusive output", "usb_exclusive_audio", listOf("usb", "exclusive", "usb exclusive", "dac", "usb dac", "aaudio", "direct", "bypass mixer", "experimental audio")),
-            SettingsChild("Tryptify DSP engine", "tryptify_engine", listOf("tryptify", "dsp", "dsp engine", "audio engine", "mix bus", "autoeq", "parametric eq", "experimental audio")),
-            SettingsChild("LastWave DSP engine", "lastwave_engine", listOf("lastwave", "last wave", "dsp", "dsp engine", "audio engine", "clarity", "experimental audio")),
-            SettingsChild("Float DSP stage", "float_dsp", listOf("float dsp", "32-bit float", "dither", "dsp", "experimental audio")),
+            SettingsChild("Audio processing", "audio_processing",
+                listOf("audio processing", "dsp", "dsp engine", "audio engine", "equalizer", "equaliser",
+                    "offload", "audio offload", "normalization")) { SearchResultSwitch(AudioProcessingEnabledKey, AUDIO_PROCESSING_ENABLED_DEFAULT) },
             SettingsChild("Seek seconds add-up", "seek_seconds", listOf("seek", "skip", "forward", "rewind", "seconds")) { SearchResultSwitch(SeekExtraSeconds, false) },
             SettingsChild("Pause on device mute", "pause_mute", listOf("mute", "pause mute", "headphone", "silence detect")) { SearchResultSwitch(PauseOnDeviceMuteKey, false) },
             SettingsChild("Device mute recovery volume", "device_mute_recovery_volume", listOf("recovery volume", "mute recovery", "volume restore")),

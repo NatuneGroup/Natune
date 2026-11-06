@@ -24,13 +24,13 @@ import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
 import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.stream.NativeRouteOutcome
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.BitPerfectGate
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.BitPerfectRouteFacts
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStageRequest
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.normalization.NormalizationGain
-import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.MonotonicClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -120,6 +120,9 @@ class DesktopPlaybackPort(
 
     /** Confined to [executor]. The listener's output volume, applied on top of each deck's normalization gain. */
     private var outputVolume = 1f
+
+    /** Confined to [executor]. The user preamp of the stored DSP document, as the shared [DspSettings.preampGain]. */
+    private var preampGain = 1f
 
     /** Confined to [executor]. The host output mute: silence applied as gain zero on every live deck. */
     private var outputEnabled = true
@@ -287,16 +290,25 @@ class DesktopPlaybackPort(
     }
 
     /**
-     * Turns the equalizer on or off and sets its bands, for the playing occurrence and every later one. The other
-     * software stages and the route facts stay as [configureSoftwareStages] left them. A live drag calls this once per
-     * move: the band count stays fixed, so the mixer keeps its filter history and a drag through 0 dB does not click.
+     * Applies the one stored [DspSettings] to the playing occurrence and every later one: its equalizer switch and
+     * bands, its normalization switch and its preamp. The mixer receives coefficients designed by the shared
+     * [moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadDesign] only; tempo stays with the transport, and the route
+     * facts stay as [configureSoftwareStages] left them. A live drag calls this once per move: the band count stays
+     * fixed, so the mixer keeps its filter history and a drag through 0 dB does not click.
      */
-    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
-        require(bands.size <= NativeTwoDeckMixer.MAX_BANDS) {
-            "the equalizer has ${bands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
+    fun applyDspSettings(settings: DspSettings) {
+        require(settings.equalizerBands.size <= NativeTwoDeckMixer.MAX_BANDS) {
+            "the equalizer has ${settings.equalizerBands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
         }
         submitTask {
-            stages = stages.copy(request = stages.request.copy(equalizerEnabled = enabled), bands = bands)
+            preampGain = settings.preampGain
+            stages = stages.copy(
+                request = stages.request.copy(
+                    normalizationEnabled = settings.normalizationEnabled,
+                    equalizerEnabled = settings.equalizerEnabled,
+                ),
+                bands = settings.equalizerBands,
+            )
             applyStages()
         }
     }
@@ -415,11 +427,9 @@ class DesktopPlaybackPort(
                 applyStages()
             }
             is PlaybackCommand.SetPitch -> {
-                stages = stages.copy(
-                    request = stages.request.copy(
-                        pitchSemitones = PitchConversion.multiplierToSemitones(command.pitch.toDouble())
-                    )
-                )
+                // The engine graph has no pitch stage, so the request stays neutral: the host hides the pitch control,
+                // and a stored or remote value must not claim a sample change this host cannot make.
+                stages = stages.copy(request = stages.request.copy(pitchSemitones = 0.0))
                 applyStages()
             }
             PlaybackCommand.Stop -> {
@@ -636,30 +646,14 @@ class DesktopPlaybackPort(
     private fun applySession(mix: NativeTwoDeckMixer, index: Int, plan: SoftwareStagePlan) {
         val session = sessions[index] ?: return
         mix.setDeckGain(index, gainFor(plan, session.trackGainDb, session.trackPeak))
-        mix.deck(index).setSpeed(effectiveSpeed(plan))
+        mix.deck(index).setSpeed(desktopEffectiveSpeed(plan, stages.request))
     }
 
-    /**
-     * The stages that run now. The bit-perfect gate is given what this port actually does to samples, so a
-     * request cannot bypass the software chain while an equalizer or normalization is engaged.
-     */
-    private fun currentPlan(): SoftwareStagePlan {
-        val config = stages
-        val equalizerEngaged = config.request.equalizerEnabled && config.bands.any { it.gainDb != 0.0 }
-        val samplesAltered = equalizerEngaged ||
-            config.request.normalizationEnabled ||
-            config.request.speed != 1.0 ||
-            config.request.pitchSemitones != 0.0
-        val decision = BitPerfectGate.evaluate(config.routeFacts.copy(softwareDspEngaged = samplesAltered))
-        return SoftwareStagePlan.resolve(decision, config.request)
-    }
-
-    /** The engine's tempo is the playback speed, and the shared plan keeps tempo off whenever the route is requested. */
-    private fun effectiveSpeed(plan: SoftwareStagePlan): Float =
-        if (plan.tempoPitch) stages.request.speed.toFloat() else 1f
+    /** The stages that run now: what this host can honour, narrowed by the shared bit-perfect gate. */
+    private fun currentPlan(): SoftwareStagePlan = desktopStagePlan(stages)
 
     private fun gainFor(plan: SoftwareStagePlan, trackGainDb: Double?, trackPeak: Double?): Float =
-        outputVolume * (if (outputEnabled) 1f else 0f) *
+        outputVolume * (if (outputEnabled) 1f else 0f) * preampGain *
             if (plan.normalization) NormalizationGain.linearGain(trackGainDb, trackPeak) else 1f
 
     private fun activeIndex(): Int = scheduler.activeDeck.ordinal

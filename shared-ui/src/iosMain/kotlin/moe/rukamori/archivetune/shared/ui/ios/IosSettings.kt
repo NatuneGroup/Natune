@@ -9,6 +9,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -99,6 +100,7 @@ import moe.rukamori.archivetune.shared.ui.settings.DeveloperSettings
 import moe.rukamori.archivetune.shared.ui.settings.HostDiscordDebugSection
 import moe.rukamori.archivetune.shared.ui.settings.HostNerdStatsSection
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.LocalSettingsBack
 import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
@@ -416,6 +418,20 @@ private val IOS_SETTINGS_ROUTES = setOf(
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
 @Composable
 internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: ArchiveRoute, navigation: ShellNavigation) {
+    // This shell draws its own navigation chrome, so no system back gesture exists: the host supplies the pop.
+    val back: () -> Unit = { navigation.back() }
+    CompositionLocalProvider(LocalSettingsBack provides back) {
+        IosSettingsRouteBody(host, owners, route, navigation)
+    }
+}
+
+@Composable
+private fun IosSettingsRouteBody(
+    host: IosHost,
+    owners: IosSettingsOwners,
+    route: ArchiveRoute,
+    navigation: ShellNavigation,
+) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showCrossServiceImport by remember { mutableStateOf(false) }

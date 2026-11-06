@@ -9,6 +9,8 @@ package moe.rukamori.archivetune.acoustics
 
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditLimits
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticUnavailable
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -54,7 +56,7 @@ class AcousticWorkTest {
     @Test
     fun monotonicDeadlineExpiresAtExactBoundAndCancelStillWins() {
         var now = 10_000L
-        AcousticWork { now }.use { work ->
+        AcousticWork(clock = { now }).use { work ->
             now += AcousticAuditLimits.DEADLINE_MS * 1_000_000 - 1
             work.check()
             now++

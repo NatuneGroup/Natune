@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.acoustics
 
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAssessment
 import kotlin.math.log10
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

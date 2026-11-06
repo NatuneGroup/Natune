@@ -23,11 +23,17 @@ fun PreferenceEditor.normalizeSettingsConflicts() {
         this[BitPerfectUsbOutputKey] == true -> clearEnabled(UsbExclusiveAudioKey, AudioOffload)
         this[UsbExclusiveAudioKey] == true -> clearEnabled(AudioOffload)
     }
-    // Rejection already requires decoded PCM at runtime, so a restored offload flag cannot win.
+    // Rejection already requires decoded PCM at runtime, so a restored offload flag cannot win. The
+    // processing switch follows the *stored* offload choice even when another rule clears the flag here,
+    // so the exclusion is read before the rule below can drop it.
+    val storedOffload = this[AudioOffload] == true
     if (this[RejectSuspectedUpscaledAudioKey] == true) clearEnabled(AudioOffload)
-    if (this[AudioOffload] == true)
-        clearEnabled(SkipSilenceKey, TryptifyAudioProcessingKey, LastwaveAudioProcessingKey, FloatDspEnabledKey)
-    if (this[TryptifyAudioProcessingKey] == true) clearEnabled(LastwaveAudioProcessingKey)
+    // Offload decodes in hardware, so a stored offload choice also stores processing off instead of leaving
+    // the switch's on default to contradict it on every start.
+    if (storedOffload) {
+        clearEnabled(SkipSilenceKey)
+        this[AudioProcessingEnabledKey] = false
+    }
     if (this[LyricsBackgroundStyleKey] == "CUSTOM" && this[PlayerBackgroundStyleKey] != "CUSTOM")
         this[LyricsBackgroundStyleKey] = "DEFAULT"
     if (!snapshot().smartTrimmerAvailable()) clearEnabled(SmartTrimmerKey)

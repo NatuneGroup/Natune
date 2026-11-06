@@ -7,6 +7,8 @@
 
 package moe.rukamori.archivetune.acoustics
 
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAssessment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers

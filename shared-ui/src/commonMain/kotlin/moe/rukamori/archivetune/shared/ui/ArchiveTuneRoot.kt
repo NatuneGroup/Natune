@@ -8,14 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isAltPressed
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isMetaPressed
-import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +25,9 @@ import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcutsDialog
+import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
+import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
@@ -74,8 +69,6 @@ class ArchiveTuneHostBindings(
     val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
     /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
     val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
-    /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
-    val nativeChrome: NativeShellChrome? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
     val toggleWindowFullscreen: (() -> Unit)? = null,
     /** False when the build has no news feed, which hides the News entry. */
@@ -94,6 +87,13 @@ fun ArchiveTuneRoot(
     television: Boolean = false,
     /** The OS light/dark answer as the host observes it; the default asks Compose, which may not see OS changes. */
     systemDark: Boolean = isSystemInDarkTheme(),
+    /** The host's measured safe area; reserved once inside the theme so its own background paints the strips. */
+    safeArea: SafeAreaPadding = SafeAreaPadding.None,
+    /**
+     * Desktop opts in: that window has no system back gesture, so the root takes key focus to receive its keymap.
+     * Android and iOS leave it off and keep their platform back.
+     */
+    rootKeyFocus: Boolean = false,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -139,7 +139,9 @@ fun ArchiveTuneRoot(
                 moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
                 moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
-                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television, systemDark)
+                ArchiveTuneLoadedRoot(
+                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea, rootKeyFocus,
+                )
             }
         }
     }
@@ -154,11 +156,19 @@ private fun ArchiveTuneLoadedRoot(
     opticalCapabilities: OpticalCapabilities,
     television: Boolean,
     systemDark: Boolean,
+    safeArea: SafeAreaPadding,
+    rootKeyFocus: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
+        var shortcutsVisible by remember { mutableStateOf(false) }
+        // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
+        // consumed, so returning to the tab later does not take focus from the user.
+        var searchFocusRequested by remember { mutableStateOf(false) }
+        // Handed to the page content, so a focused search field silences the unmodified shortcuts while typing.
+        val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
         val sheetControls = remember(host.playerControls, interaction) {
             CollapsingPlayerControls(host.playerControls) { if (!interaction.back()) expanded = false }
@@ -171,11 +181,6 @@ private fun ArchiveTuneLoadedRoot(
             host.routes.collect { route ->
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
             }
-        }
-        host.nativeChrome?.let { chrome ->
-            NativeChromeLink(chrome, navigation, current, playback?.playWhenReady == true, expanded,
-                expand = { expanded = true },
-                togglePlayback = { playing -> if (playing) host.queue.player.pause() else host.queue.player.play() })
         }
         val goBack = {
             when {
@@ -228,6 +233,7 @@ private fun ArchiveTuneLoadedRoot(
                 KeymapAction.Previous -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.PREVIOUS)
                 KeymapAction.Shuffle -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SHUFFLE)
                 KeymapAction.Repeat -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.REPEAT)
+                KeymapAction.Like -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.LIKE)
                 KeymapAction.VolumeUp, KeymapAction.VolumeDown -> {
                     val level = nativeState.volume ?: return false
                     val delta = if (action == KeymapAction.VolumeUp) KEYMAP_VOLUME_STEP else -KEYMAP_VOLUME_STEP
@@ -245,10 +251,29 @@ private fun ArchiveTuneLoadedRoot(
                     player.seekTo(target)
                 }
                 KeymapAction.Back -> goBack()
-                KeymapAction.Search -> navigation.select(ShellTab.Search, toRoot = true)
-                KeymapAction.ExpandPlayer -> expanded = !expanded
+                KeymapAction.Search -> {
+                    navigation.select(ShellTab.Search, toRoot = true)
+                    searchFocusRequested = true
+                }
+                KeymapAction.Home -> navigation.select(ShellTab.Home, toRoot = true)
+                KeymapAction.Library -> navigation.select(ShellTab.Library, toRoot = true)
+                KeymapAction.Playlists -> {
+                    navigation.select(ShellTab.Library, toRoot = true)
+                    navigation.open("library/playlists")
+                }
+                KeymapAction.Podcasts -> navigation.open("podcasts")
+                KeymapAction.NewReleases -> navigation.open("new_release")
+                KeymapAction.Charts -> navigation.open("charts_screen")
+                KeymapAction.Settings -> navigation.open("settings")
+                KeymapAction.NowPlaying -> expanded = true
+                KeymapAction.Queue -> {
+                    expanded = true
+                    interaction.panel = PlayerPanel.QUEUE
+                }
+                KeymapAction.TogglePlayer -> expanded = !expanded
                 KeymapAction.FullscreenLyrics -> { expanded = true; interaction.fullscreenLyrics = !interaction.fullscreenLyrics }
                 KeymapAction.ToggleFullscreen -> host.toggleWindowFullscreen?.invoke() ?: return false
+                KeymapAction.Help -> shortcutsVisible = true
             }
             return true
         }
@@ -271,17 +296,15 @@ private fun ArchiveTuneLoadedRoot(
             fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
             ProvideBackdropSources(policy) { pageSource ->
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                    val action = keymapActionOf(event.key,
-                        ctrlOrMeta = event.isCtrlPressed || event.isMetaPressed,
-                        alt = event.isAltPressed, shift = event.isShiftPressed) ?: return@onKeyEvent false
-                    handleKeymap(action)
-                }) {
+                // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
+                // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                    .safeAreaPadding(safeArea)
+                    .rootKeyTarget(rootKeyFocus, navigation.route)
+                    .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
-                        nativeChrome = host.nativeChrome,
                         miniPlayer = {
                             if (current != null) ArchiveMiniPlayer(
                                 current = current,
@@ -300,9 +323,13 @@ private fun ArchiveTuneLoadedRoot(
                             )
                         },
                     ) {
-                        ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
-                            host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
+                        CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                            ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
+                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
+                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
+                                searchFocusRequested = searchFocusRequested,
+                                onSearchFocusConsumed = { searchFocusRequested = false })
+                        }
                     }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
@@ -321,54 +348,10 @@ private fun ArchiveTuneLoadedRoot(
                         modifier = Modifier.fillMaxSize(),
                         interaction = interaction,
                     )
+                    if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
                 }
             }
         }
-}
-
-/**
- * Mirrors the root's tab, song and player state to the platform chrome and applies its requests here, so
- * [ShellNavigation] and the root's expanded state keep their single owners. The chrome hides while the player is open.
- */
-@Composable
-private fun NativeChromeLink(
-    chrome: NativeShellChrome,
-    navigation: ShellNavigation,
-    current: ContentOccurrence?,
-    playing: Boolean,
-    expanded: Boolean,
-    expand: () -> Unit,
-    togglePlayback: (playing: Boolean) -> Unit,
-) {
-    val labels = NativeShellLabels(
-        home = stringResource(Res.string.m4_home),
-        search = stringResource(Res.string.m4_search),
-        library = stringResource(Res.string.m4_library),
-        play = stringResource(Res.string.integration_play),
-        pause = stringResource(Res.string.integration_pause),
-        expand = stringResource(Res.string.native_chrome_open_player),
-    )
-    val nowPlaying = current?.let {
-        NativeNowPlaying(it.occurrenceId, it.item.title, it.item.subtitle, it.item.artworkUri, playing)
-    }
-    // Settings pages draw no shell chrome, so the platform tab bar and mini player step aside there as well.
-    val state = NativeShellState(visible = !expanded && !isSettingsRoute(navigation.route),
-        selectedTab = navigation.selectedTab, nowPlaying = nowPlaying, labels = labels)
-    SideEffect { chrome.publish(state) }
-    DisposableEffect(chrome) { onDispose { chrome.publish(NativeShellState()) } }
-    val latestCurrent by rememberUpdatedState(current)
-    val latestPlaying by rememberUpdatedState(playing)
-    val latestExpand by rememberUpdatedState(expand)
-    val latestToggle by rememberUpdatedState(togglePlayback)
-    LaunchedEffect(chrome, navigation) {
-        chrome.commands.collect { command ->
-            when (command) {
-                is NativeShellCommand.SelectTab -> navigation.select(command.tab)
-                NativeShellCommand.ExpandPlayer -> if (latestCurrent != null) latestExpand()
-                NativeShellCommand.TogglePlayback -> if (latestCurrent != null) latestToggle(latestPlaying)
-            }
-        }
-    }
 }
 
 /**

@@ -151,22 +151,93 @@ introduce a REST/WS path to koiverse domains.
 
 ## iOS native interface (local source; validation pending)
 
-On iOS 26 and later the Swift app draws the system Liquid Glass tab bar and mini player
-(`iosApp/ArchiveTune/NativeChrome.swift`) in a SwiftUI layer above the single
-`ComposeUIViewController`, rather than splitting the app into per-tab controllers. The glass
-then samples the real Compose pages beneath it, only the bar and mini player take touches, and
-the safe areas stay with the one Compose root. Kotlin keeps ownership: `NativeShellChrome`
-(shared-ui `navigation/`) publishes tab, song and play state and receives tab, expand and
-play/pause requests, which the root applies through `ShellNavigation` and the queue player.
-While it is active the shell skips its own bottom bar and mini player in the bottom layouts and
-reserves the inset Swift reports; rail layouts keep the shared chrome. The same releases host a
-SwiftUI lyric view for the Enhanced look through `UIKitViewController`
-(`ios/IosNativeLyricsSurface.kt`): rows come from `LyricsRenderRows` and the position from the
-shared `LyricsClock` (`NativeLyricsTimeline`, read by Swift once per frame), including one
-output-latency subtraction, so neither a parser nor a clock exists in Swift. The "Native iOS interface" setting (`NativeIosInterfaceKey`,
-default on, iOS appearance page only) turns both off; iOS 16 to 25 keep the Compose shell and
-renderer unchanged. The bridges are plain Kotlin callbacks with a cancel handle
-(`IosSubscription`), without SKIE. No device QA is claimed.
+SwiftUI is limited to `App`/`WindowGroup`, a `UIViewControllerRepresentable`, safe-area handling
+and URL/browsing-activity forwarding in `iosApp/ArchiveTune/ArchiveTuneApp.swift`. The UIKit
+`ArchiveTuneSession.swift` owns one `IosHost` and re-presents the same controller; detach,
+backgrounding and SwiftUI reconstruction do not close services.
+
+The shared Compose tree is the only app UI on every platform: screens, navigation shell,
+tab bar, mini player, player sheet and all three lyric looks. `ArchiveTuneSession.swift`
+hosts one `ComposeUIViewController` full-bleed through `IosRootController`, which exists only
+to report `view.safeAreaInsets`. `IosHost.safeArea` carries those points and
+`IosMountedRoot` pads the whole mounted app with them once; the shell reserves its own
+measured chrome height beneath the pages (`LocalShellContentPadding`), so the status bar and
+home indicator are reserved in exactly one place. Instants outside that padding are painted
+by the host window.
+
+The `NativeIosInterfaceKey` toggle and the UIKit chrome/lyric copies it switched to are
+removed; a stored value simply has no surface left to gate. No app content uses SwiftUI or
+`UIHostingController`. There is no WidgetKit/ActivityKit target or lock-screen lyric renderer:
+existing MediaPlayer Now Playing metadata and transport remain independent and unchanged.
+See [the binary comparison and boundary](../engineering/ios-swiftui-parity.md). No device QA
+is claimed.
+
+## Keyboard shortcuts (local source; validation pending)
+
+One table owns every shortcut: `shared-ui/.../ui/shortcuts/KeyboardShortcuts.kt`. A `ShortcutEntry` pairs a
+`KeymapAction` with a help group, a resource label and its chords, and the root OS key handler, the help overlay and
+the settings row all read that same list, so a binding cannot exist in one surface and be missing from another. The
+matcher is pure (`KeyboardShortcuts.actionFor`) and the overlay is only rendering, so both are testable without a
+window.
+
+`primary` is the platform's shortcut modifier — Cmd on Apple hardware (`ShortcutPlatform.MAC`, from
+`currentShortcutPlatform`: iOS actual is always MAC, the JVM actual reads `os.name`) and Ctrl everywhere else
+(`WINDOWS_LINUX`: Android, Windows, Linux). Display follows the same split: `⌘K` on Mac, `Ctrl + K` elsewhere.
+
+| Action | Chord |
+|---|---|
+| Play or pause | Space |
+| Next / previous song | Shift+N / Shift+P, Ctrl/Cmd + → / ← |
+| Seek back / forward | ← / → |
+| Volume up / down | ↑, =, + (and Shift+= where + needs Shift); ↓, - and numpad -; Ctrl/Cmd + ↑ / ↓ |
+| Mute | M |
+| Shuffle / repeat | S, Alt+S, Ctrl/Cmd+S; R, Alt+R, Ctrl/Cmd+R |
+| Like | Alt+Shift+B |
+| Seek to a part | 0-9 and numpad 0-9, to tenths of the duration |
+| Search | Ctrl/Cmd+K, +F, +L, +Shift+L |
+| Home / Library | Alt+Shift+H; Alt+Shift+0 |
+| Playlists / podcasts / new releases / charts | Alt+Shift+1 / 2 / N / C |
+| Settings | Ctrl/Cmd+, |
+| Back | Esc |
+| Now playing / queue | Alt+Shift+J / Alt+Shift+Q |
+| Show or hide the player | T, Alt+Shift+R |
+| Fullscreen lyrics / window fullscreen | L; F |
+| This shortcut list | Ctrl/Cmd+/ and Ctrl/Cmd+? |
+
+Modifiers must match exactly: an Alt+Shift chord never answers a press that also holds Ctrl, and Shift alone is not a
+modifier for this purpose, so typing a capital letter never fires a transport action. While a tracked text field holds
+focus (`Modifier.shortcutTextInput()` into `ShortcutTextInputState` through `LocalShortcutTextInput`) every chord
+without Ctrl/Cmd/Alt is dropped — Space, letters, arrows and digits reach the field — and Escape and the modifier
+chords stay live. Today the shared search field is the instrumented input; other fields still let an unmodified
+letter shortcut through, which the shortcut table must not be extended into until they report focus too.
+
+The window root only handles presses the focused control did not consume (`Modifier.playerShortcuts` is a bubbling
+`onKeyEvent`); it never claims a key in the preview pass, so a text field receives its space. A field that does not
+report focus still leaves the table live — the key reaches the field's text-input session, which does not consume the
+key-down — which is the limitation above; registering the field is what takes Space out of the table. The mini player's
+clickable expansion surfaces are the one place where a pressable would otherwise take Space as its activation:
+`Modifier.spaceTogglesPlayback` sits on the compact strip and the wide title row, reads that surface's own
+`onFocusChanged` state, and claims a bare Space in the preview pass only while that surface holds focus. It consumes
+both edges (a clickable activates on the key-up) and runs play/pause on the press, so after Escape returns focus to the
+strip Space pauses instead of re-opening the sheet. A control focused inside the strip — the transport icons, the wide
+bar's queue and lyrics, the seek bar — leaves the gate false and keeps its own Space activation, Enter is never claimed,
+so the focused surface stays activatable for accessibility, and a text field never carries the modifier, so a typed
+space is unaffected.
+
+Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
+window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
+evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
+
+## Player action support (local source; validation pending)
+
+`PlayerActionSupport` is the set of player actions a host has an owner for, carried on `PlayerNativeState` and copied
+onto `PlayerState` by `withNativeState`. The shared player renders a control only for an action in that set: the title
+and artist stay plain text where the host has no song or artist route, the output picker is drawn only where the host
+supplies one or answers `OUTPUT`, and a style's share/like/more/sleep/collapse button disappears where the action is
+not answered. The desktop host derives its set from `desktopPlayerAction`, the same function that dispatches
+`PlayerNativeControls.onAction`, so an offered action always has a handler and a removed branch stops being offered.
+Title, artist and output stay out of the desktop set; the `else` branch of `onAction` still reports anything that
+reaches it, which is now a defect signal rather than the normal path.
 
 ## Performance
 
@@ -193,13 +264,25 @@ remains essential.
 
 ## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
 
-`acoustics/` owns read-only input resolution, bounded decoding/FFT and memory-only results.
-`AcousticQualitySection` and `AcousticQualityDialog` share the Developer and player/song-menu
-surfaces. Opening is idle; Run/Cancel/Retry owns work. Ordinary seekable file/content and
-supported clear current-source snapshots or complete contiguous source-bound cache are usable;
-unsupported/nonseekable/DRM inputs remain honestly unavailable. Cancellation releases owned
-resources; target/generation checks reject stale results. No playback resolver, queue,
-source-rejection setting or persistent quality badge is mutated.
+`shared-domain/.../dsp/acoustic/` owns the audit state machine (`AcousticAuditOwner`), the FFT
+analyzer, the heat scale/palette and raster, and the verdict vocabulary; each host supplies only
+its reads. Android's `acoustics/` keeps source resolution, bounded decoding and memory-only
+results over that owner. `AcousticQualitySection` and `AcousticQualityDialog` share the Developer
+and player/song-menu surfaces; iOS mounts the same owner from `IosSessionGraph`.
+
+Opening is idle; Run/Cancel/Retry owns work. Ordinary seekable file/content and supported clear
+current-source snapshots or complete contiguous source-bound cache are usable;
+unsupported/nonseekable/DRM inputs remain honestly unavailable. Each run carries a monotonic
+deadline: the host closes its owned input at that bound so a read parked in a provider or socket
+unblocks, and the run reports `deadline_exceeded` rather than hanging. Two reads run at once
+across every surface; a third start is refused as `analysis_busy` instead of queueing behind a
+slow provider. Decoding publishes its fraction, so the surface shows progress while it waits.
+
+Results stay bound twice: the request/queue key rejects a result produced for another target,
+and the host re-checks the live source after analysis, so a rendition replaced mid-run reports
+`source_changed` instead of passing as the cached one. Platform read failures keep their own
+codes (`input_unreadable`, `local_unreadable`, `input_permission_denied`) instead of collapsing
+into one generic failure.
 
 Heat, cutoff and decoded format describe the sampled rendition, not studio provenance or
 physical DAC output. Silence/short/uncertain samples remain inconclusive. The graph adds no
@@ -207,11 +290,19 @@ Oboe route or native engine.
 
 ## DSP and retained native source
 
-Maintenance pins: Oboe 1.11.0, Signalsmith Linear 0.6.5, libusb 1.0.30; Stretch 1.4.0
-and soxr 0.1.3 remain. Existing Media3/AAudio/LastWave/Tryptify/float-DSP switches,
-defaults, presets, source policy and bit-perfect bypass remain separate. libusb/soxr retain
-Android runtime/header/build/license closure, not complete standalone upstream tooling/tests:
-see [libusb subset](../../third_party/libusb/README) and [soxr subset](../../third_party/soxr/README).
+Maintenance pin: Oboe 1.11.0 remains declared. The vendored libusb USB Audio Class
+driver, its libusb subset, the Signalsmith/Stretch pitch shifter, the vendored soxr
+0.1.3 subset, and the Tryptify and LastWave engine trees with their `monochrome_dsp`
+and `lastwave_audio` targets were removed in the 2026-11 DSP passes, so no native
+pitch-shift, libusb or resampling target ships. Two native libraries build now:
+`archivetune_analysis` and `archivetune_dsp`, the second holding only the AAudio
+exclusive stream whose `FloatDsp.available` flag decides whether that route can run.
+One Audio processing switch owns processing: on, the shared chain runs as described in
+[the shared chain](../engineering/dsp.md); off, the plan bypasses and the decoder's own
+samples reach the sink. Bit-perfect USB output is built without a processor chain, so that sink alone
+plays the decoder's output; the AAudio-exclusive route is the standard sink's output provider, so the
+shared chain and the switch still apply there. The stored `lw_*`, `eq_bands_json` and
+`param_eq_bands_json` formats stay readable as chain input.
 The removed unreachable decent USB island is not the active USB output; its
 [MIT license](../../audio/decent-usb-audio-driver/LICENSE), credit and app optional USB-host
 feature remain. Persisted preset/state formats are not dead with an unused builder.

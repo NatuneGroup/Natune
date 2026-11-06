@@ -41,7 +41,7 @@ jobs:
           persist-credentials: false
 
       - name: Check release scripts with fake tools
-        run: python3 -m unittest scripts.test_release_workflow scripts.test_native_release_packaging
+        run: python3 -m unittest scripts.test_release_workflow scripts.test_native_release_packaging scripts.test_native_dependency_cache
 
       - name: Decide whether to build
         id: version

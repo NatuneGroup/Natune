@@ -4,7 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.HttpStatusCode
 import kotlin.test.*
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.domain.source.*
@@ -12,7 +12,7 @@ import moe.rukamori.archivetune.shared.domain.source.*
 class DesktopPersonalSourcesTest {
     private val request = AudioResolveRequest("song", TrackMatching.Target("Song", listOf("Artist"), null, 180_000))
 
-    @Test fun absentAndExpiredAmazonAuthorizationNeverMakesAnAnonymousResolverRequest() = runTest {
+    @Test fun absentAndExpiredAmazonAuthorizationNeverMakesAnAnonymousResolverRequest() = runBlocking<Unit> {
         val http = HttpClient(MockEngine { error("unconfigured source must not contact the instance") })
         try {
             var prefs = PreferenceSnapshot.of(AmazonInstancesKey to "https://first.invalid")
@@ -28,7 +28,7 @@ class DesktopPersonalSourcesTest {
         } finally { http.close() }
     }
 
-    @Test fun jwtStaysOnPrimaryInstanceWhileOperatorCanFallThroughToTheNextConfiguredHost() = runTest {
+    @Test fun jwtStaysOnPrimaryInstanceWhileOperatorCanFallThroughToTheNextConfiguredHost() = runBlocking<Unit> {
         val seen = mutableListOf<Pair<String, String?>>()
         val http = HttpClient(MockEngine { call ->
             seen += call.url.host to call.headers["X-Turnstile-JWT"]
@@ -43,7 +43,7 @@ class DesktopPersonalSourcesTest {
                 AmazonTurnstileJwtKey to "primary-jwt", AmazonTurnstileJwtExpiryMsKey to 100_000L)
             val source = DesktopAmazonSource(http, { prefs }, { 1000 })
             assertFailsWith<Exception> { source.resolve(request) }
-            assertEquals(listOf("first.invalid" to "primary-jwt"), seen)
+            assertEquals(listOf<Pair<String, String?>>("first.invalid" to "primary-jwt"), seen)
             seen.clear()
             prefs = prefs.toEditor().apply { this[AmazonBypassTokenKey] = "fixture-operator" }.snapshot()
             val audio = assertIs<PreparedAudio.Progressive>(source.resolve(request))
@@ -53,7 +53,7 @@ class DesktopPersonalSourcesTest {
         } finally { http.close() }
     }
 
-    @Test fun appleEncryptedHlsIsUnavailableAndNeverAnOrdinaryProgressiveUrl() = runTest {
+    @Test fun appleEncryptedHlsIsUnavailableAndNeverAnOrdinaryProgressiveUrl() = runBlocking<Unit> {
         val seen = mutableListOf<String>()
         val http = HttpClient(MockEngine { call ->
             seen += call.url.encodedPath

@@ -14,6 +14,9 @@ import android.media.MediaFormat
 import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.ceil
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditLimits
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticPcm
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticUnavailable
 
 internal object AcousticAuditDecoder {
     private const val DEQUEUE_US = 10_000L
@@ -60,7 +63,7 @@ internal object AcousticAuditDecoder {
             var truncated = false
             while (!outputDone) {
                 work.check()
-                if (System.nanoTime() - lastAdvance > AcousticAuditLimits.STALL_MS * 1_000_000) {
+                if (System.nanoTime() - lastAdvance > AcousticReadLimits.STALL_MS * 1_000_000) {
                     throw AcousticUnavailable("decoder_stalled")
                 }
                 if (!inputDone) {

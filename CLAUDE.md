@@ -26,7 +26,10 @@ prerelease and the `nightly.json` update-feed manifest the in-app updater reads,
 workflow (`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK
 jobs assemble releases and never compile `app/src/test`, so start it by hand after
 integration and before promoting `dev`. `Build Pull Request` / `build` assembles
-GMS/mobile/universal Debug plus lint on a GitHub-hosted runner. Run that workflow and
+GMS/mobile/universal Debug plus lint on a GitHub-hosted runner. The same workflow has an
+opt-in, same-repository manual `android_release_candidate` job: one signed ARM64 Release
+APK artifact with a reserved versionCode, fail-closed signing, no publication and a
+30-minute bound (see [docs/releasing.md](docs/releasing.md)). Run that workflow and
 `Unit tests` / `Compile and run unit tests` concurrently on the exact candidate head.
 Tests invoke the documented task directly; both workflows retain local Gradle profiles
 and reports, without external build scans. PR caches remain read-only. Debug checks
@@ -56,7 +59,7 @@ history, and the app migrates a stored Canary channel to Nightly — see
 | [docs/telegram-native.md](docs/telegram-native.md) | The TDLight engine: why the native library is downloaded, the digest pinning, schema drift from 1.8.56 |
 | [docs/spotify-native-playback.md](docs/spotify-native-playback.md) | Playing Spotify tracks with no YouTube release: shipped ISRC resolution, and the unshipped native-id design |
 | [docs/spotify-streaming.md](docs/spotify-streaming.md) | The experimental Spotify audio source: the separate streaming account, the two resolve methods, DRM and cache routing |
-| [docs/REMOVED_RUKAMORI_COMPONENTS.md](docs/REMOVED_RUKAMORI_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
+| [docs/REMOVED_UPSTREAM_COMPONENTS.md](docs/REMOVED_UPSTREAM_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
 
 ## Task state
 
@@ -66,6 +69,17 @@ automation, settings/target-bound AI results and downloader/room/account lifecyc
 Those changes shipped through PR #198 at `643a35fd09888769a4a2d588324398d68f0d6fb5`:
 Nightly `N202610151104` / build 6833, with separate green build/tests and 835 passed,
 0 failed, 0 skipped. Inherited permissive lint was not lint-clean; no device QA is claimed.
+
+The 2026-11 DSP dead-code passes (maintainer-approved) are local source, uncompiled and
+unreleased: the unreachable libusb UAC driver, the Signalsmith/Stretch pitch shifter, the
+never-enabled varispeed stage, `UsbAudioRouter`, `BypassVolumeController`,
+`BitPerfectGateProcessor` and the orphan USB-pin publishers are gone, and so is the whole
+engine layer the shared chain replaced — the Tryptify bus and its `monochrome_dsp` target,
+the LastWave engine with `lastwave_audio` and its vendored soxr, the float-DSP half of
+`archivetune_dsp`, and the router that chose between them. The three Android-only engine
+switches became one Audio processing switch. The active bit-perfect USB sink, the
+AAudio-exclusive USB route and the AAC/Media3 path are untouched, and no build or device run
+has validated the result yet.
 
 The current YouTube follow-up is integrated local source, uncompiled and unreleased.
 Finite browse queues preserve occurrences and paging; unknown legacy recovery is conservative.
@@ -104,5 +118,5 @@ uninitialized/unchanged here and never publish another Canary.
   permissions are in `.claude/settings.json`, personal overrides go in the ignored
   `.claude/settings.local.json`); do not create competing copies of maintained docs.
 - User-facing strings go in `strings.xml`/`archivetune_strings.xml`, never inline.
-- Never restore anything in `docs/REMOVED_RUKAMORI_COMPONENTS.md` without reading
+- Never restore anything in `docs/REMOVED_UPSTREAM_COMPONENTS.md` without reading
   why it went.

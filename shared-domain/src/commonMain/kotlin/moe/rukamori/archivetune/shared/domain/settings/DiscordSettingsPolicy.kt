@@ -77,12 +77,6 @@ fun PreferenceSnapshot.discordTokenPresent(): Boolean = this[DiscordTokenKey, ""
 /** Expiry in epoch milliseconds, or 0 when none is stored. */
 fun PreferenceSnapshot.discordTokenExpiresAt(): Long = this[DiscordTokenExpiresAtKey, 0L]
 
-/** A stored token past its expiry is never treated as a connected account. */
-fun PreferenceSnapshot.discordAccessExpired(nowMillis: Long): Boolean {
-    val expiresAt = discordTokenExpiresAt()
-    return discordTokenPresent() && expiresAt > 0L && nowMillis >= expiresAt
-}
-
 /** Stored profile, trimmed. Blank fields mean no profile has been verified yet. */
 fun PreferenceSnapshot.discordAccount(): DiscordAccountFacts = DiscordAccountFacts(
     username = this[DiscordUsernameKey, ""].trim(),

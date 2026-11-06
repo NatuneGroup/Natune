@@ -17,7 +17,12 @@ Prioritize word-synced lyrics first tries BetterLyrics, YouLyPlus and Unison in 
 order, regardless of their user switches. Provider switches and priority still control the
 ordinary fallback and manual provider search; they remain editable while word-sync priority
 is on. The shared helper follows this Android policy, with actual host/provider availability
-checked separately from the user toggle. Portato is not part of the fixed sweep.
+checked separately from the user toggle. Portato is not part of the fixed sweep. In-memory
+cached answers are revalidated on every read with the same eligibility as that lookup mode:
+an ordinary lookup treats a result from a now-disabled, unavailable or media-id-incompatible
+provider as a miss, while an available sweep provider's cached word-synced answer stays valid
+even when its fallback switch is off, exactly as the sweep itself ignores the switch. Skipping
+an entry leaves other providers' entries intact.
 
 `LyricsModeKey` is the canonical renderer selection; the old `use_lyrics_v2` search anchor
 navigates to that selector rather than editing an ignored boolean. Android's tuning page
@@ -63,22 +68,27 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 | `ui/component/LyricsV2.kt` | Alternate full-screen renderer |
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 
-In the shared modules `LyricsFullscreenRenderer` draws every look. On iOS 26 and later, with
-the "Native iOS interface" setting on, the Enhanced look is drawn by the SwiftUI view in
-`iosApp/ArchiveTune/SystemLyrics.swift` instead. It reads the same render rows and the same
-lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seeking, sync offset
-and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
-same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
-the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
+In the shared modules `LyricsFullscreenRenderer` draws every look, on every platform:
+there is one lyric renderer, and iOS mounts no second one. Its Enhanced refinements are the
+same everywhere: emphasis letters for held words, the interlude break each row owns, the saved
+text size, the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
 `LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. The sweep share, the
 emphasis wave and the completion lift are the shared `LyricsSweepGeometry.progressAt`,
 `LyricsEmphasis.bumpAt` and `LyricsSweepGeometry.dropAt` math
 rather than a port, so reduced motion and word completion behave identically, and readings slide in
-when their text publishes to a row, not when the row starts singing. The saved size also rides
-Dynamic Type through `UIFontMetrics`. What stays Compose-only there is the line-change settle glide
-and selection/share-card UI. Both use
+when their text publishes to a row, not when the row starts singing. What stays Compose-only there
+is the line-change settle glide and selection/share-card UI. Every surface uses
 `LyricsClock`, which subtracts the snapshot's output-latency estimate once at the playback speed,
 separately from the user offset; the iOS host does not add a second route-latency offset.
+
+The renderer draws no top bar, so each host owns its own chrome. Android's lyrics sheet header
+(`ui/player/LyricsTrackHeader.kt`) is the one that carries real chrome: artwork, the title and
+artist, and the close, favourite and overflow buttons on a single row. Its sizes come from the row
+it is given (`LyricsHeaderMetrics`): the artwork takes a clamped share of it, the three 48 dp tap
+targets stay 48 dp, and the title and artist keep every remaining dp, so the marquee viewport is
+the row's remainder and the text can never extend under the buttons. Fixed artwork and targets on a
+360 dp phone leave about six characters for the title, which is what a clipped "São Pau" under the
+close button was.
 
 ## Sync offsets, romanization and frame scheduling
 
@@ -113,8 +123,9 @@ otherwise, and re-checks at most every 250 ms so a seek still lands promptly. Ev
 shared `rememberLyricsClock`, and Lyrics, V2, SimpMusic and Enhanced on Android) publishes the
 position and line before it parks, and divides the media-time gap by the playback speed
 (`lyricsIdleParkMs` in shared-ui; the app's `sleepUntilNext` wraps it), so a 2× track never sleeps
-through a sweep; paused surfaces poll at 100 ms. The SwiftUI view already pauses its `TimelineView`
-when hidden and polls a held position at 250 ms, matching the same budget. A word's live span runs
+through a sweep; paused surfaces poll at 100 ms. The UIKit native pane invalidates its `CADisplayLink`
+and timer when hidden or backgrounded, draws display frames only while advancing without reduced
+motion, and polls a held position at 250 ms. Neither callback advances its Kotlin clock. A word's live span runs
 through its completion lift (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the
 word is seated, and each row's `SINK_MS` before its first word is live too. The Android Enhanced
 loop also steps every frame inside an interlude break its dots draw over (`enhancedInterludes`),
@@ -146,11 +157,13 @@ screen to read as anything but flicker). The style's own fullscreen lyrics sheet
 
 `SweptLyricLine` draws a line in two layers: the whole line dim, then the sung part bright,
 clipped to however much has been sung. The clip is recomputed in the draw phase, so a frame
-costs a clip and a redraw rather than a recomposition. The glow is a tinted rounded box behind
-the word being sung, not a blurred copy of the text. Each word fills over exactly its provider
-span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about one frame) only keeps a zero or negative
-span from dividing by zero, so a quick word is never stretched past the next one. The V2 profile
-keeps its own 180 ms `minSweepMs`.
+costs a clip and a redraw rather than a recomposition. The glow is the sung word's own ink drawn
+again, a little larger and tinted, inside a layer masked to that ink's box (`drawGlyphGlow`): the
+light keeps the letter shapes, so a word never shows as a filled tile on the background, and a held
+last word — including one the row wrapped onto its own line — never as a box behind each grapheme.
+Each word fills over exactly its provider span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about
+one frame) only keeps a zero or negative span from dividing by zero, so a quick word is never
+stretched past the next one. The V2 profile keeps its own 180 ms `minSweepMs`.
 
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
@@ -167,9 +180,10 @@ them skipped under reduced motion:
   a `DstIn` mask on a layer limited to the line's band (`LyricsSweepGeometry.sweepFeatherPx`).
 - A word earns emphasis only when it is held at least 1 s, is at most 7 grapheme clusters and is
   written in an unjoined safe script (`LyricsEmphasis`). Its letters ripple a couple of dp and a
-  few percent of scale one at a time as the sweep crosses them, and its glow — scaled by how long
-  it is held (`LyricsSweepGeometry.emphasisGain`) — rises and falls. Every other word keeps the
-  plain feathered sweep, no letter ripple and no emphasis glow.
+  few percent of scale one at a time as the sweep crosses them, each riding the same glyph bloom
+  as the word, and its glow — scaled by how long it is held (`LyricsSweepGeometry.emphasisGain`) —
+  rises and falls. Every other word keeps the plain feathered sweep, no letter ripple and no
+  emphasis glow.
 - Every unsung word sits `LyricsSweepGeometry.WORD_LIFT_DP` (2 dp) below its seat and eases up
   through the last half of its own span — clamped to 120–300 ms, shortened near a tight hand-off and
   never longer than the word itself (`liftDurationMs`/`liftStartMs`/`liftEndMs`) — so it is seated
@@ -220,10 +234,11 @@ ripple, the width-share feather, the uniform blur, the
 Line-synced rows light at their own start with no activation lead — the timing the library view
 kept — and descenders keep their band overshoot.
 
-The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
-takes the idle alpha and the depth values from the shared profile and the completion lift from
-`LyricsSweepGeometry.dropAt` (sink and lift, emphasized letters included), but not the feather
-tuning, glow gating, dots, stagger or glide.
+iOS previously drew its own Enhanced pane in UIKit — a UIKit table, TextKit glyph caches and
+Core Graphics bright masks, with a separate 35% anchor, 350 ms follow and its own dots. That
+second renderer is removed: it duplicated the sweep, hold, seek and share policy and carried
+its own cell-reuse and interlude invalidation defects. The shared Compose renderer is the only
+Enhanced pane now.
 
 It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.

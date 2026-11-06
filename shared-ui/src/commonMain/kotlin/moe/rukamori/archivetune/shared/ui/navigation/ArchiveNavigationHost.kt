@@ -16,7 +16,7 @@ import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.home.HomeWelcomeHeader
 import moe.rukamori.archivetune.shared.ui.home.QqHomeScreen
 import moe.rukamori.archivetune.shared.ui.home.variants.BitChordHomeVariant
-import moe.rukamori.archivetune.shared.ui.home.variants.RukamoriHomeVariant
+import moe.rukamori.archivetune.shared.ui.home.variants.NatuneClassicHomeVariant
 import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeVariant
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
@@ -48,6 +48,9 @@ fun ArchiveNavigationHost(
     modifier: Modifier = Modifier,
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
     newsEntry: NewsEntry = NewsEntry(),
+    /** A search shortcut asked for the field; the Search screen takes focus once and reports it consumed. */
+    searchFocusRequested: Boolean = false,
+    onSearchFocusConsumed: () -> Unit = {},
 ) {
     NavigationEntryContent(navigation, modifier) {
         val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
@@ -79,10 +82,10 @@ fun ArchiveNavigationHost(
                     chips = binding.chips, selectedChipKey = binding.selectedChipKey,
                     selectChip = binding.selectChip, showChips = binding.showChips)
             }
-            is ArchiveGraphPage.HomeRukamori -> {
+            is ArchiveGraphPage.HomeNatuneClassic -> {
                 require(route.destination == ArchiveDestination.HOME)
                 HomeVariantFrame(navigation, newsEntry, binding.source) { contentPadding ->
-                    RukamoriHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.image,
+                    NatuneClassicHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.image,
                         contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
                 }
             }
@@ -115,7 +118,8 @@ fun ArchiveNavigationHost(
                         if (binding.scope == SearchScope.Local) ContentProvider.LOCAL else binding.provider, binding.filter)) },
                     binding.voice, binding.recognition, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    preferences = preferences)
+                    preferences = preferences,
+                    focusRequested = searchFocusRequested, onFocusConsumed = onSearchFocusConsumed)
             }
             is ArchiveGraphPage.Library -> {
                 require(route.destination == ArchiveDestination.LIBRARY)

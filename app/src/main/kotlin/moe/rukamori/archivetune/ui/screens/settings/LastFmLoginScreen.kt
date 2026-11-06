@@ -41,6 +41,7 @@ import moe.rukamori.archivetune.scrobbling.lastFmSignInKeys
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
@@ -169,7 +170,9 @@ fun LastFmLoginScreen(navController: NavController) {
                             url: String?,
                         ): Boolean = handleRedirect(url)
                     }
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // The approval page sets its session on .last.fm; expiring those cookies keeps a
+                // second account from reusing the first one's browser session, nothing more.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.LAST_FM) {
                     loadUrl(LastFmAppCredentials.authUrl(apiKey = signInPair.first))
                 }
             }

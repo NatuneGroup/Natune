@@ -247,26 +247,20 @@ class DownloadUtil
                 }.build()
         }
 
+        private val connectionPrewarmer by lazy {
+            DownloadConnectionPrewarmer(mediaOkHttpClient, PREWARM_HOSTS)
+        }
+
         /**
          * Pre-warms DNS + TLS connections to the most common download hosts so
          * the first download of a session doesn't pay the ~300-800ms
          * DNS+TCP+TLS handshake cost. Safe to call on a background coroutine
          * at app start; failures are silently swallowed (it's only an
-         * optimization, not a hard requirement).
+         * optimization, not a hard requirement). Probes run in the one owned
+         * scope and overlapping calls are ignored instead of starting another pass.
          */
         fun prewarmDownloadConnections() {
-            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            scope.launch {
-                for (host in PREWARM_HOSTS) {
-                    runCatching {
-                        val request = Request.Builder()
-                            .url("https://$host/")
-                            .head()
-                            .build()
-                        mediaOkHttpClient.newCall(request).execute().use { /* discard */ }
-                    }
-                }
-            }
+            connectionPrewarmer.prewarm()
         }
 
         val downloads = MutableStateFlow<Map<String, Download>>(emptyMap())
@@ -631,7 +625,6 @@ class DownloadUtil
                     val contentLength = knownContentLength
                         ?: response.header("Content-Length")?.toLongOrNull()
                         ?: -1L
-                    // Build a DataSpec that CacheDataSink can write under.
                     val dataSpec = DataSpec.Builder()
                         .setUri(url.toUri())
                         .setKey(cacheKey)

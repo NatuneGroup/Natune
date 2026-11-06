@@ -4,11 +4,13 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <jni.h>
 
 #include "archivetune_video.h"
+#include "archivetune_jni_utf8.h"
 
 #define VIDEO_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_VideoArtworkNative_##name
 
@@ -26,16 +28,18 @@ JNIEXPORT jlong JNICALL VIDEO_BINDING(open)(JNIEnv *env, jclass type, jstring ur
     if (!url) {
         return 0;
     }
-    const char *native_url = (*env)->GetStringUTFChars(env, url, NULL);
+    char *native_url = jni_utf8_from_string(env, url);
     if (!native_url) {
         return 0;
     }
-    const char *native_agent = user_agent ? (*env)->GetStringUTFChars(env, user_agent, NULL) : NULL;
-    ae_video *video = ae_video_open(native_url, native_agent, (int32_t)max_height);
-    if (native_agent) {
-        (*env)->ReleaseStringUTFChars(env, user_agent, native_agent);
+    char *native_agent = user_agent ? jni_utf8_from_string(env, user_agent) : NULL;
+    if (user_agent && !native_agent) {
+        free(native_url);
+        return 0;
     }
-    (*env)->ReleaseStringUTFChars(env, url, native_url);
+    ae_video *video = ae_video_open(native_url, native_agent, (int32_t)max_height);
+    free(native_agent);
+    free(native_url);
     return (jlong)(uintptr_t)video;
 }
 
@@ -78,7 +82,7 @@ JNIEXPORT jstring JNICALL VIDEO_BINDING(lastError)(JNIEnv *env, jclass type, jlo
     char message[VIDEO_ERROR_CAPACITY];
     message[0] = '\0';
     (void)ae_video_last_error(video_of(handle), message, sizeof message);
-    return (*env)->NewStringUTF(env, message);
+    return jni_string_from_utf8(env, message);
 }
 
 JNIEXPORT void JNICALL VIDEO_BINDING(close)(JNIEnv *env, jclass type, jlong handle) {

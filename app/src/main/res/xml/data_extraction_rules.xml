@@ -21,6 +21,15 @@
         <exclude
             domain="file"
             path="./datastore/listener_presence.preferences_pb" />
+        <exclude
+            domain="database"
+            path="restore-pending" />
+        <exclude
+            domain="file"
+            path="./custom_fonts/restore-pending" />
+        <exclude
+            domain="file"
+            path="./datastore/restore-pending" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="kmp_secure_credentials.xml" />
@@ -39,5 +48,14 @@
         <exclude
             domain="file"
             path="./datastore/listener_presence.preferences_pb" />
+        <exclude
+            domain="database"
+            path="restore-pending" />
+        <exclude
+            domain="file"
+            path="./custom_fonts/restore-pending" />
+        <exclude
+            domain="file"
+            path="./datastore/restore-pending" />
     </device-transfer>
 </data-extraction-rules>

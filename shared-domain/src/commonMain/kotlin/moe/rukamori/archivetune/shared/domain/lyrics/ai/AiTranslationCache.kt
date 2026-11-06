@@ -126,9 +126,4 @@ object AiTranslationCachePolicy {
         } else {
             AiCacheInvalidation.INVALIDATE_TARGET_CHANGED
         }
-
-    fun successEntryOrNull(
-        key: AiTranslationCacheKey,
-        attempt: AiTranslationAttempt,
-    ): AiTranslationCacheEntry? = AiTranslationCacheEntry.successOrNull(key, attempt)
 }

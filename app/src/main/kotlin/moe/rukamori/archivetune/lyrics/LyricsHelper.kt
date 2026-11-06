@@ -167,22 +167,32 @@ class LyricsHelper
                 invalidateCache(cacheKey)
             } else {
                 singleLyricsCache.get(cacheKey)?.let { cached ->
+                    val cachedIsSelectable = cachedProviderIsSelectable(cached, mediaMetadata, prioritizeWordSynced)
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
                     // When prioritizing word-synced lyrics, only honor the cache if the
-                    // cached lyrics are themselves word-synced. Otherwise skip the cache
-                    // so the word-synced lookup gets a chance to find better lyrics.
-                    if (!prioritizeWordSynced || cachedIsWordSynced) {
+                    // cached lyrics are themselves word-synced. Eligibility follows the same
+                    // lookup mode as the fetch path: an ordinary lookup requires the provider
+                    // switch, while an available sweep provider's cached word-synced answer
+                    // stays reusable because the sweep itself ignores those switches.
+                    if (cachedIsSelectable && (!prioritizeWordSynced || cachedIsWordSynced)) {
                         GlobalLog.append(Log.DEBUG, "LyricsHelper", "Found lyrics in cache for ${mediaMetadata.title}")
                         return cached
                     }
                     GlobalLog.append(
                         Log.DEBUG,
                         "LyricsHelper",
-                        "Skipping cache for ${mediaMetadata.title}: prioritizeWordSynced=true, cached lyrics not word-synced",
+                        if (!cachedIsSelectable) {
+                            "Skipping cache for ${mediaMetadata.title}: provider ${cached.providerName} is disabled or unsupported"
+                        } else {
+                            "Skipping cache for ${mediaMetadata.title}: prioritizeWordSynced=true, cached lyrics not word-synced"
+                        },
                     )
                 }
 
-                val cached = cache.get(cacheKey)?.firstOrNull()
+                val cached =
+                    cache.get(cacheKey)?.firstOrNull {
+                        cachedProviderIsSelectable(it, mediaMetadata, prioritizeWordSynced)
+                    }
                 if (cached != null) {
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
                     if (!prioritizeWordSynced || cachedIsWordSynced) {
@@ -240,8 +250,7 @@ class LyricsHelper
 
             val ordered =
                 orderedProviders()
-                    .filter { it.isEnabled(context) }
-                    .filter { supportsMediaId(it, mediaMetadata.id) }
+                    .filter { isLookupEligible(it, mediaMetadata, sweepActive = false) }
             val providers = if (preferredProviderOnly) ordered.take(1) else ordered
 
             val result = fetchPriorityLyricsResult(providers, mediaMetadata)
@@ -263,11 +272,9 @@ class LyricsHelper
             // Fixed canonical order. This is independent of the user's provider
             // priority order so the behaviour is predictable when the toggle is ON.
             val wordSyncCapable: List<LyricsProvider> =
-                listOf(
-                    BetterLyricsProvider,
-                    YouLyPlusLyricsProvider,
-                    UnisonLyricsProvider,
-                )
+                WORD_SYNC_PROVIDER_NAMES
+                    .mapNotNull { name -> baseProviders.firstOrNull { it.name == name } }
+                    .filter { isLookupEligible(it, mediaMetadata, sweepActive = true) }
 
             val artist = mediaMetadata.artists.joinToString { it.name }
             val results =
@@ -324,8 +331,15 @@ class LyricsHelper
                 invalidateCache(cacheKey)
             } else {
                 cache.get(cacheKey)?.let { results ->
-                    results.forEach(callback)
-                    return
+                    if (results.isEmpty()) return
+                    // A stored list from a provider the user has since switched off must not reappear
+                    // in manual search. Replay only the enabled providers; if none survive, the
+                    // lookup falls through to the current provider set.
+                    val enabledResults = results.filter { cachedProviderIsEnabled(it) }
+                    if (enabledResults.isNotEmpty()) {
+                        enabledResults.forEach(callback)
+                        return
+                    }
                 }
             }
 
@@ -488,6 +502,34 @@ class LyricsHelper
 
         private fun isMeaningfulLyrics(lyrics: String): Boolean = LyricsUtils.hasMeaningfulLyricsContent(lyrics)
 
+        private fun cachedProviderIsSelectable(
+            cached: LyricsResult,
+            mediaMetadata: MediaMetadata,
+            sweepActive: Boolean,
+        ): Boolean {
+            val provider = baseProviders.firstOrNull { it.name == cached.providerName } ?: return false
+            return isLookupEligible(provider, mediaMetadata, sweepActive)
+        }
+
+        /**
+         * One eligibility authority for the fetch path and its cache. [sweepActive] preserves the
+         * documented word-sync exception: the fixed sweep queries its three providers regardless of
+         * their fallback switches, so their answers must remain reusable in that lookup mode. Every
+         * other mode accepts only enabled providers, and a provider that cannot serve this media id
+         * is never eligible.
+         */
+        private fun isLookupEligible(
+            provider: LyricsProvider,
+            mediaMetadata: MediaMetadata,
+            sweepActive: Boolean,
+        ): Boolean {
+            if (!supportsMediaId(provider, mediaMetadata.id)) return false
+            return (sweepActive && provider.name in WORD_SYNC_PROVIDER_NAMES) || provider.isEnabled(context)
+        }
+
+        private fun cachedProviderIsEnabled(cached: LyricsResult): Boolean =
+            baseProviders.firstOrNull { it.name == cached.providerName }?.isEnabled(context) == true
+
         private fun supportsMediaId(
             provider: LyricsProvider,
             mediaId: String,
@@ -539,6 +581,10 @@ class LyricsHelper
             // against, so a session that plays through a large library cannot grow this map
             // without bound.
             private const val MAX_WORD_SYNCED_UPGRADE_ATTEMPTS = 64
+
+            // The fixed sweep order. The sweep deliberately ignores these providers' fallback
+            // switches, so cache revalidation must accept their answers in the same lookup mode.
+            private val WORD_SYNC_PROVIDER_NAMES = listOf("BetterLyrics", "YouLyPlus", "Unison")
 
             // Per-provider hard timeout for the normal priority flow. Provider calls
             // that exceed this are cancelled and dropped from ranking. Tuned to be

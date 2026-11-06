@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroupScope
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 
 private val SpotifyAccountIconSize = 44.dp
@@ -296,8 +297,11 @@ internal fun SpotifyLoginSheet(
                     ).apply {
                         val profileCookieManager = selectedProfileCookies
                         // A second account must never meet the first one's cookies, and its own
-                        // cookies must not be left behind for the next sign-in to pick up.
-                        val forgetAfterCapture = isolatedProfile != null
+                        // cookies must not be left behind for the next sign-in to pick up. Only a
+                        // profile's own jar may be swept: without MULTI_PROFILE the WebView falls
+                        // back to the shared default profile, and removing all of its cookies would
+                        // sign every other provider out.
+                        val forgetAfterCapture = profileCookieManager != null
                         val cookieManager = profileCookieManager ?: CookieManager.getInstance()
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
@@ -373,13 +377,15 @@ internal fun SpotifyLoginSheet(
                         if (profileCookieManager != null) {
                             // The profile has its own jar and storage; the default profile, and
                             // with it every other provider's sign-in, is left untouched.
-                            resetAuthWebViewSession(context, this, clearCookies = false) {
+                            resetAuthWebViewSession(this, scope = null) {
                                 profileCookieManager.removeAllCookies {
                                     loadUrl(SpotifyAuth.LOGIN_URL)
                                 }
                             }
                         } else {
-                            resetAuthWebViewSession(context, this) {
+                            // No profile support: the shared jar is the only one there is, so expire
+                            // Spotify's own cookies instead of removing every provider's.
+                            resetAuthWebViewSession(this, WebAuthCookieScopes.SPOTIFY) {
                                 loadUrl(SpotifyAuth.LOGIN_URL)
                             }
                         }

@@ -2,8 +2,10 @@ package moe.rukamori.archivetune.shared.data.download
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.download.DownloadSourceResolver
 import moe.rukamori.archivetune.shared.domain.download.DownloadTask
 import moe.rukamori.archivetune.shared.domain.download.DownloadTaskStore
@@ -64,8 +67,8 @@ class DownloadQueueOwner(
             }
         }
         ownerScope.launch(dispatcher) {
-            store.observeTasks().collect { rows ->
-                queueGate.withLock { snapshot = rows.associateBy { it.id } }
+            store.observeTasks().collect {
+                queueGate.withLock { syncSnapshotLocked() }
             }
         }
     }
@@ -100,7 +103,7 @@ class DownloadQueueOwner(
     override suspend fun stop(id: String) = queueGate.withLock {
         val task = snapshot[id] ?: queued[id] ?: return@withLock
         queued.remove(id)
-        workers.remove(id)?.cancel()
+        workers[id]?.cancel()
         val stopped = task.copy(phase = DownloadPhase.STOPPED, updateTimeMs = timeMs())
         putLocked(stopped)
     }
@@ -115,7 +118,7 @@ class DownloadQueueOwner(
     override suspend fun remove(id: String) = queueGate.withLock {
         val task = snapshot[id] ?: queued[id] ?: return@withLock
         queued.remove(id)
-        workers.remove(id)?.cancel()
+        workers[id]?.cancel()
         val removing = task.copy(phase = DownloadPhase.REMOVING, updateTimeMs = timeMs())
         putLocked(removing)
         try {
@@ -127,20 +130,28 @@ class DownloadQueueOwner(
     }
 
     private fun enqueue(task: DownloadTask) {
-        if (workers.containsKey(task.id) || queued.containsKey(task.id)) return
+        if (workers[task.id]?.isActive == true || queued.containsKey(task.id)) return
         queued[task.id] = task
         pump()
     }
 
-    /** Moves queued rows into free worker slots; serialized callers keep exactly [maxParallel] in flight. */
+    /**
+     * Moves queued rows into free worker slots; serialized callers keep exactly [maxParallel] in flight. A
+     * cancelled worker keeps its slot until `runTask`'s finally drops the entry: freeing it in [stop]/[remove]
+     * let a following start run [maxParallel] + 1 transfers until the cancelled coroutine unwound.
+     */
     private fun pump() {
         val free = maxParallel - workers.size
         if (free <= 0) return
-        val batch = queued.values.filter { it.phase == DownloadPhase.QUEUED || it.phase == DownloadPhase.REMOVING }
+        val batch = queued.values
+            .filter { (it.phase == DownloadPhase.QUEUED || it.phase == DownloadPhase.REMOVING) && !workers.containsKey(it.id) }
             .take(free)
         for (task in batch) {
             queued.remove(task.id)
-            workers[task.id] = ownerScope.launch(dispatcher) { runTask(task) }
+            // LAZY so the slot is recorded before a worker can finish and remove itself.
+            val job = ownerScope.launch(dispatcher, start = CoroutineStart.LAZY) { runTask(task) }
+            workers[task.id] = job
+            job.start()
         }
     }
 
@@ -149,43 +160,79 @@ class DownloadQueueOwner(
             if (task.phase == DownloadPhase.REMOVING) {
                 removeCommitted(task); store.remove(task.id); return
             }
-            val downloading = task.copy(phase = DownloadPhase.DOWNLOADING, updateTimeMs = timeMs())
-            put(downloading)
+            val downloading = claimDownloading(task) ?: return
             val prepared = resolver.resolve(downloading)
             val stream = (prepared as? PreparedAudio.Progressive)?.stream
                 ?: error("Source did not resolve to a progressive stream")
             // The committed file is keyed by the resolved source, so the task records it before the transfer.
-            put(downloading.copy(source = stream.source))
+            if (!updateWhileDownloading(downloading.id) { it.copy(source = stream.source) }) return
             val size = transfer.transfer(downloading, stream, downloading.resumeBytes, itemOf(downloading.ref)) { done, total ->
-                val live = snapshot[downloading.id] ?: downloading
-                put(live.copy(phase = DownloadPhase.DOWNLOADING, bytesDownloaded = done,
-                    totalBytes = total ?: live.totalBytes, resumeBytes = done, updateTimeMs = timeMs()))
+                updateWhileDownloading(downloading.id) {
+                    it.copy(bytesDownloaded = done, totalBytes = total ?: it.totalBytes,
+                        resumeBytes = done, updateTimeMs = timeMs())
+                }
             }
-            put((snapshot[downloading.id] ?: downloading).copy(phase = DownloadPhase.COMPLETED,
-                bytesDownloaded = size, totalBytes = size, updateTimeMs = timeMs()))
+            updateWhileDownloading(downloading.id) {
+                it.copy(phase = DownloadPhase.COMPLETED, bytesDownloaded = size, totalBytes = size,
+                    updateTimeMs = timeMs())
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
-            val live = snapshot[task.id] ?: task
-            // A row the user paused or removed while the transfer unwound keeps its terminal phase.
-            if (live.phase != DownloadPhase.STOPPED && live.phase != DownloadPhase.REMOVING) {
-                put(live.copy(phase = DownloadPhase.FAILED, failReason = failure.message ?: "download failed",
-                    updateTimeMs = timeMs()))
+            updateWhileDownloading(task.id) {
+                it.copy(phase = DownloadPhase.FAILED, failReason = failure.message ?: "download failed",
+                    updateTimeMs = timeMs())
             }
         } finally {
-            queueGate.withLock {
-                workers.remove(task.id)
-                snapshot = store.tasks().associateBy { it.id }
-                pump()
+            // A cancelled worker still has to release its slot: stop()/remove() hold this gate while
+            // they cancel, and a plain withLock in a cancelled coroutine would throw before removing
+            // the entry, leaving every later resume queued behind a worker that no longer exists.
+            withContext(NonCancellable) {
+                queueGate.withLock {
+                    workers.remove(task.id)
+                    syncSnapshotLocked()
+                    pump()
+                }
             }
         }
     }
 
-    /** Persists [task] and updates the snapshot for callers that do not already hold [queueGate]. */
-    private suspend fun put(task: DownloadTask) {
-        store.put(task)
-        queueGate.withLock { snapshot = snapshot + (task.id to task) }
+    /**
+     * Refreshes [snapshot] from [DownloadTaskStore] without discarding a live worker's entry. A store
+     * emission can have been read before the worker's latest progress/completion write, and the
+     * worker's writes are gated on its DOWNLOADING phase, so a stale collector copy must not win.
+     */
+    private suspend fun syncSnapshotLocked() {
+        val activeIds = workers.keys
+        snapshot = store.tasks().associateBy { it.id } + snapshot.filterKeys { it in activeIds }
     }
+
+    /** Persists the DOWNLOADING row for a queued task, unless a stop or remove already made the phase terminal. */
+    private suspend fun claimDownloading(task: DownloadTask): DownloadTask? = queueGate.withLock {
+        val live = snapshot[task.id] ?: return@withLock null
+        // A re-armed row can still carry the DOWNLOADING phase a killed process persisted.
+        if (live.phase != DownloadPhase.QUEUED && live.phase != DownloadPhase.DOWNLOADING) return@withLock null
+        val next = live.copy(phase = DownloadPhase.DOWNLOADING, updateTimeMs = timeMs())
+        store.put(next)
+        snapshot = snapshot + (task.id to next)
+        next
+    }
+
+    /**
+     * A worker write only lands while the row is still this worker's DOWNLOADING entry. The progress and
+     * completion callbacks run in the transfer coroutine, so a [stop] or [remove] can win the gate between the
+     * transfer's last suspension and this write; writing anyway would resurrect a stopped download as
+     * DOWNLOADING with no worker behind it, or re-create a removed row whose file is already gone.
+     */
+    private suspend fun updateWhileDownloading(id: String, update: (DownloadTask) -> DownloadTask): Boolean =
+        queueGate.withLock {
+            val live = snapshot[id] ?: return@withLock false
+            if (live.phase != DownloadPhase.DOWNLOADING) return@withLock false
+            val next = update(live)
+            store.put(next)
+            snapshot = snapshot + (id to next)
+            true
+        }
 
     /** The same write for callers serialized inside [queueGate]; the mutex is not reentrant. */
     private suspend fun putLocked(task: DownloadTask) {

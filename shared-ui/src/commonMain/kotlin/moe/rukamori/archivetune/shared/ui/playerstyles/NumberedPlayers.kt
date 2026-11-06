@@ -201,6 +201,8 @@ private fun TopActionBox(
     shape: androidx.compose.ui.graphics.Shape,
     selected: Boolean? = null,
 ) {
+    // Only an action the host answers gets a control; an unsupported one would be a tap with no effect.
+    if (action !in c.state.actionSupport) return
     PlayerIcon(
         symbol = action.symbol2(),
         label = stringResource(actionLabel(action)),

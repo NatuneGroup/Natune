@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.shared.data.recommend.QueueTailRecommendation
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistPhase
 import moe.rukamori.archivetune.shared.domain.queue.InfiniteQueueLoadGate
 import moe.rukamori.archivetune.shared.domain.queue.InfiniteQueuePolicy
@@ -25,7 +26,10 @@ internal fun queueMonotonicClock(): () -> Long {
     return { origin.elapsedNow().inWholeMilliseconds }
 }
 
-/** Recommendation work for PortableQueueOwner, always committed under that owner's existing queue lock. */
+/**
+ * Recommendation work for PortableQueueOwner, always committed under that owner's existing queue lock. Watchers
+ * and playback snapshots reach the bookkeeping through [decide], so it never races an in-flight append.
+ */
 internal class PortableInfiniteQueue(
     private val scope: CoroutineScope,
     private val access: suspend (suspend () -> Unit) -> Unit,
@@ -37,22 +41,37 @@ internal class PortableInfiniteQueue(
     private val repeatOff: () -> Boolean,
     private val nowMs: () -> Long,
     private val report: (Throwable) -> Unit,
+    /** Absent keeps the provider-order tail, which is what existing hosts and their fixtures expect. */
+    private val recommendation: QueueTailRecommendation? = null,
 ) {
     private val gate = InfiniteQueueLoadGate()
     private var job: Job? = null
-    private var generation = 0L
     private var knownStaticQueue = false
     private var radioLineage = false
+
+    /**
+     * Occurrence ids the planner appended, so the next page accounts only for the automatic tail still ahead of the
+     * listener. Manual and already-played entries never consume the automatic budget.
+     */
+    private val automaticOccurrences = HashSet<String>()
     val loading = MutableStateFlow(false)
+
+    /**
+     * Runs [block] under the owner's queue lock. Watchers fire outside a queue command, so they decide here; the
+     * bookkeeping below then never races [replenish]'s gate and lineage writes.
+     */
+    suspend fun decide(block: () -> Unit) = access { block() }
 
     fun reset(staticQueue: Boolean = false, radio: Boolean = false) {
         cancel(newQueue = true)
         knownStaticQueue = staticQueue
         radioLineage = radio
+        // A restored checkpoint has no persisted recommendation origin, so it can never be guessed back into the count.
+        automaticOccurrences.clear()
     }
 
+    /** Assumes the owner's queue lock is held, like every other queue command and [decide]. */
     fun cancel(newQueue: Boolean = false) {
-        generation++
         gate.invalidate(newQueue)
         job?.cancel()
         job = null
@@ -66,14 +85,10 @@ internal class PortableInfiniteQueue(
             return
         }
         if (job?.isActive == true || !eligible(state.value)) return
-        val epoch = generation
-        job = scope.launch(start = CoroutineStart.LAZY) {
-            try {
-                access { replenish() }
-            } finally {
-                if (epoch == generation) job = null
-            }
-        }.also { it.start() }
+        // LAZY so `job` is published before the queued access starts; the started fetch waits for the same lock.
+        val next = scope.launch(start = CoroutineStart.LAZY) { access { replenish() } }
+        job = next
+        next.start()
     }
 
     private fun eligible(queue: QueueState): Boolean {
@@ -128,17 +143,37 @@ internal class PortableInfiniteQueue(
 
                 // Settings can change while IO suspends, even though structural queue edits share this lock.
                 if (!gate.isCurrent(ticket) || !enabled() || !repeatOff()) return@withTimeoutOrNull
-                if (fresh.isEmpty() && token == null && !continuation) return@withTimeoutOrNull
+                val planner = recommendation
+                val planned =
+                    if (planner != null && fresh.isNotEmpty()) {
+                        pruneAutomaticOccurrences(queue)
+                        val plan =
+                            planner.planTail(
+                                candidates = fresh,
+                                queue = queue,
+                                pendingAutomaticIds = automaticOccurrences.toSet(),
+                            )
+                        // The hide/block readers can move while scoring suspends; a structural edit cannot.
+                        filter(plan.items)
+                    } else {
+                        null
+                    }
+                if (!gate.isCurrent(ticket) || !enabled() || !repeatOff()) return@withTimeoutOrNull
+                val appended = planned ?: fresh
+                // An empty plan is normal: keep the page's continuation so the next attempt can leave a rejected page,
+                // and finish with `added = 0` so the existing backoff applies instead of retrying immediately.
+                if (appended.isEmpty() && token == null && !continuation) return@withTimeoutOrNull
                 commit(queue.copy(
                     revision = queue.revision + 1,
-                    entries = queue.entries + fresh,
-                    playOrder = queue.playOrder + fresh.map { it.occurrenceId },
+                    entries = queue.entries + appended,
+                    playOrder = queue.playOrder + appended.map { it.occurrenceId },
                     phase = FinitePlaylistPhase.UNKNOWN,
                     // The existing nullable-token descriptor preserves proven radio lineage across checkpoints.
                     tail = QueueTail(collection, token, consumed, QueueCollectionKind.RADIO),
                 ))
+                if (planned != null) automaticOccurrences.addAll(appended.map { it.occurrenceId })
                 radioLineage = true
-                added = fresh.size
+                added = appended.size
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -147,5 +182,21 @@ internal class PortableInfiniteQueue(
         } finally {
             if (gate.finish(ticket, added, nowMs())) loading.value = false
         }
+    }
+
+    /**
+     * Keeps the in-memory marker bounded to ids that can still consume this queue's automatic budget. Consumed,
+     * removed and hand-queued ids can never affect a later page, so retaining them would only grow a long-lived
+     * radio queue's memory. Assumes the owner's queue lock is held.
+     */
+    private fun pruneAutomaticOccurrences(queue: QueueState) {
+        if (automaticOccurrences.isEmpty()) return
+        val current = queue.playOrder.indexOf(queue.currentOccurrenceId)
+        if (current < 0) {
+            automaticOccurrences.clear()
+            return
+        }
+        val pending = queue.playOrder.drop(current + 1).filterTo(HashSet()) { it !in queue.manualKinds }
+        automaticOccurrences.retainAll { it in pending }
     }
 }
