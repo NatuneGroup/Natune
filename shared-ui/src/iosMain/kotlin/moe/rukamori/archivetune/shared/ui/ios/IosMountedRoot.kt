@@ -45,6 +45,7 @@ internal fun IosMountedRoot(host: IosHost) {
     // UIKit is the only inset source: the ready root reserves the window's safe area inside its own theme, and the
     // boundary states reserve it the same physical way, so no screen sits under the status bar or home indicator.
     IosMountedState(host, session, active, measured)
+    (session as? IosSessionState.Ready)?.let { IosDeviceConnectHost(it.graph) }
     IosCrashOverlay(host, measured)
 }
 

@@ -44,6 +44,7 @@ internal fun integrationSettingsItem(
             SettingsChild("ListenBrainz token", "listenbrainz_token", listOf("listenbrainz token", "listenbrainz api key", "listenbrainz credential")),
             SettingsChild("Listen Together", "listen_together", listOf("listen together", "listen together settings", "room", "shared playback", "sync playback", "listen party", "group listening", "chat", "together")) { SearchResultSwitch(ListenTogetherSyncVolumeKey, false) },
             SettingsChild("Listen Together screen", "listen_together_screen", listOf("listen together screen", "create room", "join room", "room code", "share room", "invite friends")),
+            SettingsChild("Device Connect", "device_connect", listOf("device connect", "connected devices", "pair device", "local network", "remote playback", "transfer playback")),
             SettingsChild("Spotify", "spotify", listOf("spotify", "spotify connect", "spotify playlists")) { SearchResultSwitch(ShowSpotifyPlaylistsKey, false) },
             SettingsChild("Use pool accounts", "use_pool_accounts", listOf("pool", "source pool", "pool accounts", "shared accounts", "community accounts")) { SearchResultSwitch(UsePoolAccountsKey, true) },
             SettingsChild("Tidal", "tidal", listOf("tidal", "hifi", "master", "mqa", "lossless", "flac")) { SearchResultSwitch(TidalEnabledKey, false) },

@@ -71,6 +71,11 @@ fun IntegrationSettings(
             "ai_integration", Res.string.m6_integration_ai, run = { navigate("settings/ai_integration") },
             description = Res.string.m6_integration_ai_desc,
         ),
+        SettingsRow.Action(
+            "device_connect", Res.string.m9_device_connect_title,
+            run = { navigate("settings/integrations/device_connect") },
+            description = Res.string.m9_device_connect_summary,
+        ),
         SettingsRow.Header("discord_presence", Res.string.m6_integration_general),
         SettingsRow.Action("discord_account", Res.string.m6_integration_discord, run = { navigate("settings/discord") }),
         SettingsRow.Header("music_sources", Res.string.m6_integration_music_sources),

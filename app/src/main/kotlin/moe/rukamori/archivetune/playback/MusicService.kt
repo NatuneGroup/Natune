@@ -137,6 +137,7 @@ import moe.rukamori.archivetune.cast.CastMediaItemResolver
 import moe.rukamori.archivetune.cast.CastPlaybackRepository
 import moe.rukamori.archivetune.cast.CastPlaybackRepositoryLocator
 import moe.rukamori.archivetune.cast.CastScreenState
+import moe.rukamori.archivetune.deviceconnect.AndroidDeviceConnect
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
@@ -486,13 +487,12 @@ class MusicService :
 
     @Inject
     lateinit var listenTogetherManager: moe.rukamori.archivetune.listentogether.ListenTogetherManager
-
+    private var deviceConnectOwner: AndroidDeviceConnect? = null
+    @get:Synchronized val deviceConnect: AndroidDeviceConnect get() = deviceConnectOwner ?: AndroidDeviceConnect(this, scope).also { deviceConnectOwner = it }
     @Inject
     lateinit var playbackSessionObservers: PlaybackSessionObservers
-
     @Inject
     lateinit var audioEngineHost: moe.rukamori.archivetune.playback.dsp.AudioEngineHost
-
     @Inject
     lateinit var audioPipelineMonitor: tf.monochrome.android.audio.pipeline.AudioPipelineMonitor
 
