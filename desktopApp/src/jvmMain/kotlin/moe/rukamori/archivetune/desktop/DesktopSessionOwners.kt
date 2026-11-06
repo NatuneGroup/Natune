@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImport
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackSelfCheck
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.potoken.desktopLocalPoTokenHelper
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
@@ -649,6 +650,12 @@ internal suspend fun assembleDesktopSessionOwners(
         }
     }
     network.start(scope)
+    // The startup playback self-check. The engine warm answers whether the library loaded; this adds the output device
+    // and the attestation path, so a host that cannot make a sound names which of the three failed in the window
+    // instead of playing nothing on the first press of play.
+    scope.launch {
+        DesktopPlaybackSelfCheck(attestation = { poTokens.attestationStatus() }, report = graph::notify).run()
+    }
     lastFm.start()
     lyrics.start()
     listenerPresence.start()

@@ -150,9 +150,9 @@ internal fun DesktopSessionWindowRoot(
     // The engine's dlopen, and its Windows closure preload, costs the first play 50-300 ms. Starting the
     // warm from this effect keeps that off the first frame: the effect runs after composition, and the
     // load itself runs on the prewarm's own IO dispatcher. A host without the library skips the load and
-    // playback reports its existing failure when it asks.
-    val enginePrewarm = remember { DesktopEnginePrewarm() }
-    LaunchedEffect(enginePrewarm) { enginePrewarm.start() }
+    // playback reports its existing failure when it asks. The instance is the process's one warm, so the
+    // startup playback self-check reads the same state this effect starts.
+    LaunchedEffect(Unit) { DesktopEnginePrewarm.process.start() }
     val session by sessions.state.collectAsState()
     when (val current = session) {
         is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit, windowState)
