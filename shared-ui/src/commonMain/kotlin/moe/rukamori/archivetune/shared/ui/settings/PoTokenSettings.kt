@@ -45,6 +45,16 @@ private sealed interface PoTokenNotice {
 }
 
 /**
+ * Host-reported state of the optional local token helper. It never carries a token or cookie value: [detail] is a
+ * sanitized technical hint (a loopback address or a failure class), and [toString] keeps it out of logs entirely.
+ */
+enum class PoTokenHelperState { DISABLED, IDLE, STARTING, READY, FAILED, UNSUPPORTED }
+
+data class PoTokenHelperStatus(val state: PoTokenHelperState, val detail: String? = null) {
+    override fun toString(): String = "PoTokenHelperStatus($state)"
+}
+
+/**
  * The web-client switch and, while it is on, the stored GVS, player and visitor values with copy and a
  * regenerate dialog. Extraction is a host callback. The source URL is persisted on every edit as an
  * ordinary preference. Only a complete token result is persisted, in one atomic edit, and a success
@@ -58,6 +68,7 @@ fun PoTokenSettings(
     onFailure: () -> Unit,
     modifier: Modifier = Modifier,
     defaultSourceUrl: String = PoTokenDefaultSourceUrl,
+    localHelperStatus: (suspend () -> PoTokenHelperStatus)? = null,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -124,20 +135,41 @@ fun PoTokenSettings(
     }
 
     SettingsPage(
-        rows = listOf(
-            SettingsRow.Toggle(
-                anchor = "web_client_po_token",
-                title = Res.string.m6_po_token_web_client,
-                key = WebClientPoTokenEnabledKey,
-                default = false,
-                description = Res.string.m6_po_token_web_client_desc,
-            ),
-        ),
+        rows = buildList {
+            add(
+                SettingsRow.Toggle(
+                    anchor = "web_client_po_token",
+                    title = Res.string.m6_po_token_web_client,
+                    key = WebClientPoTokenEnabledKey,
+                    default = false,
+                    description = Res.string.m6_po_token_web_client_desc,
+                ),
+            )
+            if (localHelperStatus != null) {
+                add(
+                    SettingsRow.Toggle(
+                        anchor = "desktop_local_po_token_helper",
+                        title = Res.string.m6_po_token_helper,
+                        key = DesktopPoTokenHelperEnabledKey,
+                        default = true,
+                        description = Res.string.m6_po_token_helper_desc,
+                    ),
+                )
+            }
+        },
         preferences = preferences,
         controller = controller,
         onFailure = onFailure,
         modifier = modifier,
         extraItems = {
+            if (localHelperStatus != null) {
+                item(key = "po_token_helper_status") {
+                    PoTokenHelperStatusRow(
+                        enabled = preferences[DesktopPoTokenHelperEnabledKey, true],
+                        load = localHelperStatus,
+                    )
+                }
+            }
             if (preferences[WebClientPoTokenEnabledKey, false]) {
                 item(key = "po_token_generated_title") {
                     Text(
@@ -223,6 +255,47 @@ private fun PoTokenValueRow(label: String, token: String, onCopy: (String) -> Un
         },
         modifier = Modifier.clickable(enabled = token.isNotBlank()) { onCopy(token) },
     )
+}
+
+@Composable
+private fun PoTokenHelperStatusRow(enabled: Boolean, load: suspend () -> PoTokenHelperStatus) {
+    var refresh by remember(enabled) { mutableStateOf(0) }
+    var status by remember(enabled) { mutableStateOf<PoTokenHelperStatus?>(null) }
+    LaunchedEffect(enabled, refresh) {
+        status =
+            try {
+                load()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                PoTokenHelperStatus(PoTokenHelperState.FAILED)
+            }
+    }
+    ListItem(
+        overlineContent = { Text(stringResource(Res.string.m6_po_token_helper_status), color = MaterialTheme.colorScheme.primary) },
+        headlineContent = { Text(PoTokenHelperStatusText(status)) },
+        trailingContent = {
+            if (enabled) {
+                TextButton(onClick = { refresh += 1 }) { Text(stringResource(Res.string.m6_po_token_helper_refresh)) }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PoTokenHelperStatusText(status: PoTokenHelperStatus?): String {
+    if (status == null) return stringResource(Res.string.m6_po_token_helper_checking)
+    val label =
+        when (status.state) {
+            PoTokenHelperState.DISABLED -> stringResource(Res.string.m6_po_token_helper_disabled)
+            PoTokenHelperState.IDLE -> stringResource(Res.string.m6_po_token_helper_idle)
+            PoTokenHelperState.STARTING -> stringResource(Res.string.m6_po_token_helper_starting)
+            PoTokenHelperState.READY -> stringResource(Res.string.m6_po_token_helper_ready)
+            PoTokenHelperState.FAILED -> stringResource(Res.string.m6_po_token_helper_failed)
+            PoTokenHelperState.UNSUPPORTED -> stringResource(Res.string.m6_po_token_helper_unsupported)
+        }
+    val detail = status.detail?.takeIf(String::isNotBlank) ?: return label
+    return "$label · $detail"
 }
 
 @Composable

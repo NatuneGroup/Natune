@@ -713,6 +713,7 @@ private fun DesktopSettingsRouteBody(
                 generateTokens = owners.services::generatePoTokens,
                 copyToClipboard = ::copyToDesktopClipboard,
                 onFailure = onFailure,
+                localHelperStatus = owners.services::poTokenProviderStatus,
             )
             "settings/sources" -> {
                 val snapshot by graph.settings.snapshots.collectAsState()
