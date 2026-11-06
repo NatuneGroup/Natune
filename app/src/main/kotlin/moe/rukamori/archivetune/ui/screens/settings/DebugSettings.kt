@@ -95,7 +95,6 @@ import moe.rukamori.archivetune.scaleAwareSpring
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.ui.utils.AcousticQualitySection
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
-import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -140,12 +139,6 @@ fun DebugSettings(navController: NavController, scrollTo: String? = null) {
         rememberPreference(
             key = booleanPreferencesKey("dev_show_nerd_stats"),
             defaultValue = false,
-        )
-
-    val (showCodecOnPlayer, onShowCodecOnPlayerChange) =
-        rememberPreference(
-            key = ShowCodecOnPlayerKey,
-            defaultValue = true,
         )
 
     val playerConnection = LocalPlayerConnection.current
@@ -213,16 +206,6 @@ fun DebugSettings(navController: NavController, scrollTo: String? = null) {
                         icon = { Icon(painterResource(R.drawable.stats), null) },
                         checked = showNerdStats,
                         onCheckedChange = onShowNerdStatsChange,
-                    )
-                }
-
-                item {
-                    SwitchPreference(
-                        title = { Text(stringResource(R.string.display_codec_on_player)) },
-                        description = stringResource(R.string.description_display_codec_on_player),
-                        icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                        checked = showCodecOnPlayer,
-                        onCheckedChange = onShowCodecOnPlayerChange,
                     )
                 }
 

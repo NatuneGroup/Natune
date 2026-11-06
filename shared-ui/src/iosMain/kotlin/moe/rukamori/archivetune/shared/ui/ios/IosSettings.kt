@@ -119,6 +119,8 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
+import moe.rukamori.archivetune.shared.ui.settings.AndroidOnlySettingsAnchors
+import moe.rukamori.archivetune.shared.ui.settings.LocalUnsupportedSettingsAnchors
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
@@ -420,7 +422,11 @@ private val IOS_SETTINGS_ROUTES = setOf(
 internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: ArchiveRoute, navigation: ShellNavigation) {
     // This shell draws its own navigation chrome, so no system back gesture exists: the host supplies the pop.
     val back: () -> Unit = { navigation.back() }
-    CompositionLocalProvider(LocalSettingsBack provides back) {
+    CompositionLocalProvider(
+        LocalSettingsBack provides back,
+        // The shared pages stay mounted; only rows whose readers are Android-only are omitted here.
+        LocalUnsupportedSettingsAnchors provides AndroidOnlySettingsAnchors.all,
+    ) {
         IosSettingsRouteBody(host, owners, route, navigation)
     }
 }
@@ -857,6 +863,7 @@ private fun IosDeveloperSettingsPage(
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
+        androidDebugSections = false,
     )
 }
 

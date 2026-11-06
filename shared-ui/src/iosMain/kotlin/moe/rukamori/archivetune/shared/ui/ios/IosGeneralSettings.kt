@@ -12,8 +12,6 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceRoute
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceSectionRoutes
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceSettings
-import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalRoute
-import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalSettings
 import moe.rukamori.archivetune.shared.ui.settings.PlaybackSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
@@ -30,7 +28,6 @@ import moe.rukamori.archivetune.shared.ui.settings.lyricsSettingsRows
 internal val IOS_GENERAL_SETTINGS_ROUTES = setOf(
     "settings/appearance", "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface",
     "settings/appearance/extras", "settings/appearance/lyrics_animations", "settings/player", "settings/lyrics",
-    DiscordExperimentalRoute,
     SettingsRoutes.YTDLP,
 )
 
@@ -90,7 +87,6 @@ internal fun IosGeneralSettingsPage(
             onOpenEqualizer = { graph.equalizer.openSheet() },
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
-        DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)
         // This host ships no Python or yt-dlp runtime, so both checks report absent rather than probing a missing binary.
         SettingsRoutes.YTDLP -> YtDlpRuntimeSettings(
             readRuntime = { YtDlpRuntimeStatus(pythonAvailable = false, scriptAvailable = false) },

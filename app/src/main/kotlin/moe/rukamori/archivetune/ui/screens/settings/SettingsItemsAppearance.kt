@@ -21,11 +21,7 @@ import moe.rukamori.archivetune.constants.HideScrollbarKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
-import moe.rukamori.archivetune.constants.TikTokMainLyricsEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
-import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
-import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
 import moe.rukamori.archivetune.constants.ShowHomeCategoryChipsKey
@@ -68,29 +64,22 @@ internal fun appearanceSettingsItem(
             SettingsChild("Library style", "library_style", listOf("library style", "apple music library", "library layout")),
             SettingsChild("Player design style", "player_design_style", listOf("player design", "player layout", "player style")),
             SettingsChild("Player menu style", "player_menu_style", listOf("player menu", "menu style", "three dot menu", "lyrics menu", "material 3 list", "apple music menus")),
-            SettingsChild("Show lyrics on main player (TikTok)", "tiktok_main_lyrics", listOf("tiktok lyrics", "main player lyrics", "current line lyrics", "karaoke line", "tiktok player")) { SearchResultSwitch(TikTokMainLyricsEnabledKey, false) },
-            SettingsChild(context.getString(R.string.metrolist_presentation), "metrolist_presentation", listOf("metrolist", "metrolist presentation", "modern", "vintage", "player style")),
             SettingsChild("Player background style", "player_background_style", listOf("player background", "player bg", "background style")),
-            SettingsChild("Lyrics background style", "lyrics_background_style", listOf("lyrics background", "lyrics bg")),
-            SettingsChild("Mini player background style", "mini_player_background_style", listOf("mini player", "mini player background")),
             SettingsChild("Mini player layout", "compact_mini_player", listOf("compact mini player", "small mini player", "mini player layout")),
-            SettingsChild("Player buttons style", "player_buttons_style", listOf("player buttons", "button style", "controls style")),
             SettingsChild("Player slider style", "player_slider_style", listOf("player slider", "slider style", "progress bar")),
             SettingsChild("Show player volume bar", "show_player_volume_bar", listOf("volume bar", "player volume", "volume slider")) { SearchPlayerVolumeVisibilitySwitch() },
             SettingsChild("Hide player thumbnail", "hide_player_thumbnail", listOf("hide thumbnail", "player thumbnail", "hide artwork")) { SearchResultSwitch(HidePlayerThumbnailKey, false) },
+            SettingsChild("Mini player background style", "mini_player_background_style", listOf("mini player", "mini player background")),
             SettingsChild("Swipe to song", "swipe_to_song", listOf("swipe to song", "swipe add to queue", "queue insertion")) { SearchResultSwitch(SwipeToSongKey, true) },
             SettingsChild("Mini player swipe sensitivity", "swipe_sensitivity", listOf("mini player", "gesture", "sensitivity")),
             SettingsChild("Disable animations", "disable_animations", listOf("animation", "disable animations", "no animations", "performance")) { SearchResultSwitch(DisableAnimationsKey, false) },
             SettingsChild("Splash screen animation", "splash_overlay_enabled", listOf("splash", "splash screen", "opening animation", "launch animation", "startup animation", "particles")) { SearchResultSwitch(SplashOverlayEnabledKey, true) },
             SettingsChild("Hide status bar", "hide_status_bar", listOf("status bar", "hide status", "immersive", "fullscreen", "hide bar")) { SearchResultSwitch(HideStatusBarKey, false) },
             SettingsChild("Force high refresh rate", "force_high_refresh_rate", listOf("refresh rate", "high refresh", "120hz", "90hz", "smooth")) { SearchResultSwitch(ForceHighRefreshRateKey, false) },
-            SettingsChild("Navigation bar style", "navigation_bar_style", listOf("navigation bar", "nav bar", "bottom bar", "sukisu", "liquid glass bar")),
-            SettingsChild("Frosted navigation bar", "frosted_nav_bar", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(NavigationBarFrostedBlurKey, false, blurOverridden = true) },
-            SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass", "glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false, blurOverridden = true) },
             SettingsChild("Liquid Glass effects", "liquid_glass_effects", listOf("liquid glass", "glass effects", "liquid glass effects", "header glass", "mini player glass"), restartPending = { it.liquidGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassEnabledKey, false, blurOverridden = true) },
             SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },
             SettingsChild("Hide navigation bar while scrolling", "navigation_bar_hide_on_scroll", listOf("hide navigation bar", "hide nav bar", "scroll to hide", "auto hide bar")) { SearchResultSwitch(NavigationBarHideOnScrollKey, false) },
-            SettingsChild("Navigation bar customization", "navigation_bar_settings", listOf("navigation bar", "nav bar dimensions", "nav bar opacity", "nav bar width", "nav bar height", "nav bar corner radius", "nav bar label spacing")),
+            SettingsChild("Navigation bar customization", "navigation_bar_settings", listOf("navigation bar", "nav bar labels", "hide labels", "hide on scroll")),
             SettingsChild("Hide scrollbar", "hide_scrollbar", listOf("scrollbar", "scroll bar", "hide scroll", "no scrollbar")) { SearchResultSwitch(HideScrollbarKey, false) },
             SettingsChild("Default open tab", "default_open_tab", listOf("default tab", "home tab", "start page", "open tab")),
             SettingsChild("Search bar position", "search_bar_position", listOf("search bar", "bottom search", "search at bottom", "search position")),
@@ -105,7 +94,6 @@ internal fun appearanceSettingsItem(
             SettingsChild("Customized background", "customized_background", listOf("customized background", "custom background", "background image", "wallpaper")),
             SettingsChild("Tablet mode", "tablet_mode", listOf("tablet mode", "tablet", "large screen", "landscape layout")),
             SettingsChild("Minimal mode", "minimal_home_mode", listOf("minimal mode", "minimal home", "simple home", "clean home")),
-            SettingsChild("Home screen style", "home_screen_style", listOf("home style", "home screen", "youtube home", "home layout")),
             SettingsChild("Change default library chip", "default_lib_chips", listOf("library chip", "default chip", "library filter", "default library tab")),
             SettingsChild("Liquid Glass effects", "liquid_glass_effects", listOf("liquid glass", "glass effects", "header glass", "mini player glass")),
             SettingsChild("Theme creator", "theme_creator", listOf("theme creator", "create theme", "custom theme", "make theme")),
@@ -150,7 +138,7 @@ internal fun aodCustomizationSettingsItem(
         key = "aod",
         icon = R.drawable.palette,
         title = "AOD customization",
-        subtitle = "Always-on display layout and style",
+        subtitle = "Visibility, artwork size and timing",
         accentColor = colorScheme.secondary,
         keywords = listOf("aod", "always on display", "always-on display", "lockscreen", "screensaver", "idle screen", "ambient display"),
         onClick = { navController.navigate("settings/appearance/aod_customized") },
@@ -164,13 +152,8 @@ internal fun aodCustomizationSettingsItem(
             SettingsChild("Show controls", "aod_customize_show_controls", listOf("aod controls", "aod buttons", "always on display controls")),
             SettingsChild("Show exit button", "aod_customize_show_exit_button", listOf("aod exit", "aod close button", "leave aod")),
             SettingsChild("Show lyrics", "aod_customize_show_lyrics", listOf("aod lyrics", "always on display lyrics", "aod show lyrics")),
-            SettingsChild("Background style", "aod_customize_background_style", listOf("aod background", "aod background style", "always on display background")),
-            SettingsChild("Accent style", "aod_customize_accent_style", listOf("aod accent", "aod accent style", "aod color")),
-            SettingsChild("Content position", "aod_customize_content_position", listOf("aod position", "aod content position", "aod layout")),
-            SettingsChild("Text alignment", "aod_customize_text_alignment", listOf("aod text alignment", "aod align", "aod centre", "aod center")),
-            SettingsChild("Slider style", "aod_customize_slider_style", listOf("aod slider", "aod slider style", "aod progress style")),
-            SettingsChild("Artwork glow", "aod_customize_artwork_glow", listOf("aod glow", "artwork glow", "aod artwork glow", "ambient glow")),
-            SettingsChild("Control style", "aod_customize_control_style", listOf("aod control style", "aod button style")),
+            SettingsChild("Artwork size", "aod_customize_thumbnail_size", listOf("aod size", "artwork size", "aod artwork size")),
+            SettingsChild("Automatic timer", "aod_customize_auto_timer", listOf("aod timer", "aod auto timer", "aod timeout")),
             SettingsChild("Enter AOD when screen dims", "aod_customize_auto_on_screen_dim", listOf("auto aod", "aod on dim", "automatic aod", "screen dim aod")),
         ),
     )
@@ -184,23 +167,14 @@ internal fun navigationBarSettingsItem(
         key = "navigation_bar",
         icon = R.drawable.palette,
         title = "Navigation bar",
-        subtitle = "Navigation bar style and dimensions",
+        subtitle = "Navigation labels and scroll behaviour",
         accentColor = colorScheme.secondary,
         keywords = listOf("navigation bar", "nav bar", "bottom bar", "tab bar", "navbar"),
         onClick = { navController.navigate("settings/appearance/navigation_bar") },
         hidden = true,
         children = listOf(
-            SettingsChild("Navigation bar style", "navigation_bar_style", listOf("navigation bar style", "nav bar style", "bottom bar style", "sukisu", "liquid glass bar")),
-            SettingsChild("Bottom pills layout", "compact_bottom_pills", listOf("compact pills", "compact navigation", "compact bottom bar", "bottom pills layout")),
-            SettingsChild("Mini player and bar behavior", "navigation_bar_compact_behavior", listOf("compact", "mini player", "collapse", "adaptive", "scroll", "always expanded", "always compact")),
-            SettingsChild("Frosted navigation bar", "navigation_bar_frosted_blur", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(NavigationBarFrostedBlurKey, false, blurOverridden = true) },
-            SettingsChild("Tint frosted navigation bar", "navigation_bar_tint_frosted_blur", listOf("tint frosted", "tint nav bar", "frosted tint", "coloured nav bar")),
-            SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false, blurOverridden = true) },
-            SettingsChild("Glass glow", "navigation_bar_glass_glow", listOf("glow", "rim light", "sheen", "glass glow", "glow intensity")),
-            SettingsChild("Stock colours instead of Liquid Glass", "compact_controls_stock_color", listOf("stock color", "stock colour", "solid pills", "glass pills", "compact buttons", "bottom buttons", "solid", "no glass", "replace liquid glass", "liquid glass alternative")) { SearchResultSwitch(CompactControlsStockColorKey, false) },
             SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },
             SettingsChild("Hide navigation bar while scrolling", "navigation_bar_hide_on_scroll", listOf("hide navigation bar", "hide nav bar", "scroll to hide", "auto hide bar")) { SearchResultSwitch(NavigationBarHideOnScrollKey, false) },
-            SettingsChild("Navigation bar dimensions", "navigation_bar_dimensions", listOf("nav bar height", "nav bar width", "nav bar opacity", "nav bar corner radius", "nav bar label spacing", "nav bar size")),
         ),
     )
 
