@@ -72,23 +72,32 @@ fun HomePageHeader(
     welcome: String? = null,
 ) {
     Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = if (compact) Space.xs else Space.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
-            Spacer(Modifier.weight(1f))
-            if (!welcome.isNullOrBlank()) {
-                Text(
-                    welcome,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(12.dp))
+        // The desktop Home has no page title: the selected rail destination names the page and the search lives in the
+        // top bar, exactly as the reference layout does. Phone hosts keep the title row.
+        if (!LocalDesktopLayout.current) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = if (compact) Space.xs else Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
+                Spacer(Modifier.weight(1f))
+                if (!welcome.isNullOrBlank()) {
+                    Text(
+                        welcome,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                }
+                headerActions()
             }
-            headerActions()
+        } else {
+            // No page title on desktop, but the host's destination menu must stay reachable.
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xxs), horizontalArrangement = Arrangement.End) {
+                headerActions()
+            }
         }
         HomeSourceSwitcher(source, availableSources, onSource)
     }
