@@ -108,6 +108,8 @@ class AndroidDevicePlaybackPort(private val service: MusicService) : DevicePlayb
             when (intent) {
                 DeviceCommandIntent.Play -> player.play()
                 DeviceCommandIntent.Pause -> player.pause()
+                DeviceCommandIntent.Next, DeviceCommandIntent.Previous ->
+                    return notAllowed("The queue does not expose a resolved successor")
                 is DeviceCommandIntent.Seek -> player.seekTo(intent.positionMs)
                 is DeviceCommandIntent.Select -> {
                     val index = snapshot.entries.indexOfFirst { it.occurrenceId == intent.occurrenceId }
@@ -167,18 +169,19 @@ class AndroidDevicePlaybackPort(private val service: MusicService) : DevicePlayb
     }
 
     private fun MediaItem.toEntry(index: Int): DeviceQueueEntry {
-        val tag = tag as? MediaMetadata
+        val tag = localConfiguration?.tag as? MediaMetadata
         val metadata = mediaMetadata
+        val itemId = mediaId.orEmpty()
         val provider = when {
-            isLocalMediaId(mediaId) -> "local"
-            isTelegramMediaId(mediaId) -> "telegram"
+            itemId.isLocalMediaId() -> "local"
+            itemId.isTelegramMediaId() -> "telegram"
             else -> "youtube"
         }
         return DeviceQueueEntry(
-            occurrenceId = "$mediaId#$index",
+            occurrenceId = "$itemId#$index",
             provider = provider,
             kind = "SONG",
-            id = mediaId,
+            id = itemId,
             title = tag?.title ?: metadata.title?.toString().orEmpty(),
             subtitle = tag?.artists?.joinToString { it.name } ?: metadata.artist?.toString().orEmpty(),
             artworkUri = tag?.thumbnailUrl ?: metadata.artworkUri?.toString(),
