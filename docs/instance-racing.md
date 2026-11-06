@@ -17,15 +17,20 @@ through to the next audio source. When the active list is empty, `resolve()` thr
 |---|---|---|
 | The user's own entries | `TidalInstancesKey` (newline-separated), edited in Settings → Tidal | Always, and merged first |
 | Health-verified discoveries | `TidalVerifiedInstancesKey`, written by `TidalInstanceHealthManager` | After the user's entries, as `healthyUrls()` |
-| The pool's discovery feed | `$SOURCE_PROVIDER_URL/api/discovery/tidal` when `BuildConfig.SOURCE_PROVIDER_URL` is non-blank | During a scan that asks for discovery |
+| The pool's discovery feed | `<deployment>/api/discovery/tidal`, the build's `ARCHIVEPOOL_BASE_URL` else `SOURCE_PROVIDER_URL` | During a scan that asks for discovery |
 
 The callers do the merge (`MusicService`, and `LosslessStreamResolver` for the download path):
 configured entries first, then every instance the last scan found healthy, deduplicated, into
 `TidalAudioProvider.setInstances()`. Discovery only ever adds — a scan never removes a user entry.
 
-There used to be a second discovery feed (`monochrome.tf`'s uptime list). It is left unset in
-`INSTANCE_DISCOVERY_SOURCES`: the host is gone, and a fixed candidate list only cost startup time
-and made installs look as if they were fetching instances from a site the user never asked for.
+The discovery read itself is `utils/PoolDiscovery` on Android and the shared `PoolDiscoveryFeed`
+on desktop/iOS: one request per six hours (±20% jitter), a single-flight guard so concurrent
+startup callers share it, the last list persisted so a relaunch inside that window costs nothing,
+`If-None-Match`/`ETag` so a revalidation can answer `304` with the stored list, and a refusal
+backoff (`401`/`403` quiet for hours, `429`/`503` for the server's `Retry-After`). No discovery
+request is made while a host reports itself backgrounded. The retired `monochrome.tf` uptime feed
+stays out of the mix: the host is gone, and a fixed candidate list only cost startup time.
+
 
 ## The race
 

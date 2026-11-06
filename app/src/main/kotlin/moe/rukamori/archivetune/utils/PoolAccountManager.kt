@@ -394,7 +394,7 @@ object PoolAccountManager {
      * without the user having to hunt for the manual refresh button.
      */
     private fun refreshIntervalMs(): Long =
-        PoolRefreshPolicy.intervalMs(hasEveryService())
+        PoolRefreshPolicy.jitteredIntervalMs(hasEveryService(), lastRefreshAtMillis)
 
     /**
      * Loads the persisted account cache into memory (cheap, no network). Safe to call repeatedly;
@@ -525,14 +525,14 @@ object PoolAccountManager {
                                 )
                                 "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
                             }
-                            result.code == 401 ->
+                            result.code == 401 || result.code == 403 ->
                                 "Pool rejected the API key (HTTP 401) — SOURCE_PROVIDER_KEY is missing, revoked, " +
                                     "or issued by a different deployment."
                             result.code == 0 -> "Could not reach $poolBaseUrl — network error."
                             else -> "Pool feed returned HTTP ${result.code}."
                         }
                     if (result.succeeded) authBackoff.reset()
-                    else if (result.code == 401) authBackoff.onAuthRejected(attemptAt, authKeyHash)
+                    else authBackoff.onRefusal(attemptAt, authKeyHash, result.code, result.retryAfterMs)
                     context.dataStore.edit { prefs ->
                         prefs[CACHE_AUTH_FAIL_KEY] = authBackoff.failedAtMs
                         prefs[CACHE_AUTH_BACKOFF_KEY] = authBackoff.windowMs
@@ -552,8 +552,9 @@ object PoolAccountManager {
     private class FeedFetch(
         val json: JSONObject?,
         val code: Int,
+        val retryAfterMs: Long? = null,
     ) {
-        val succeeded: Boolean get() = code == 200 && json != null
+        val succeeded: Boolean get() = (code == 200 && json != null) || code == 304
     }
 
     /**
@@ -570,22 +571,24 @@ object PoolAccountManager {
         val reply = PoolEndpoints.get(client, path, readKey)
         return try {
             reply.let {
-                if (reply == null || reply.first != 200) {
+                // A revalidated feed is a success: the persisted accounts are current.
+                if (reply?.notModified == true) return@let FeedFetch(null, 304)
+                if (reply == null || reply.status != 200) {
                     // HTTP 401 specifically means the pool's read-key enforcement rejected the
                     // presented key (revoked, deleted, or from an older pool database). Surface
                     // that explicitly so the failure mode is obvious in logs instead of looking
                     // like an empty pool.
-                    if (reply?.first == 401) {
+                    if (reply?.status == 401 || reply?.status == 403) {
                         Timber.tag(TAG).w(
                             "Pool account feed rejected the presented key (HTTP 401) — " +
                                 "it is revoked, deleted, or predates the pool's current database.",
                         )
                     } else {
-                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.first ?: 0)
+                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.status ?: 0)
                     }
-                    return@let FeedFetch(null, reply?.first ?: 0)
+                    return@let FeedFetch(null, reply?.status ?: 0, reply?.retryAfterMs)
                 }
-                val root = JSONObject(reply.second)
+                val root = JSONObject(reply.body)
                 val decryptor = decryptorFor(root, readKey)
                 val tidal = parseTidal(accountsArray(root, "tidal"), decryptor)
                 val qobuz = parseQobuz(accountsArray(root, "qobuz"), decryptor)
@@ -757,11 +760,11 @@ object PoolAccountManager {
                         .toString()
                 val readKey = poolApiKey?.takeIf { it.isNotBlank() } ?: BuildConfig.SOURCE_PROVIDER_KEY
                 val reply = PoolEndpoints.postReport(client, "/api/report", readKey, body)
-                if (reply == null || reply.first !in 200..299) {
-                    Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, reply?.first ?: 0)
+                if (reply == null || reply.status !in 200..299) {
+                    Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, reply?.status ?: 0)
                     return@runCatching
                 }
-                val responseBody = reply.second
+                val responseBody = reply.body
                 if (responseBody.isNotBlank()) {
                     val root = JSONObject(responseBody)
                     if (root.optBoolean("ok", false) && kind == "account" && readKey.isNotBlank()) {

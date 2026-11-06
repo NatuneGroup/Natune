@@ -109,6 +109,28 @@ class PoolReportGate(
     }
 }
 
+/**
+ * A rolling cap on report posts per host, kept under the server's own 20-per-5-minutes report
+ * bucket. A report is a best-effort observation, so the excess is dropped rather than queued; the
+ * per-account dedupe already stops one dead credential from repeating.
+ */
+class PoolReportBudget(
+    private val nowMs: () -> Long,
+    private val maxPerWindow: Int = 10,
+    private val windowMs: Long = 5L * 60L * 1000L,
+) {
+    private val lock = Mutex()
+    private val sentAt = ArrayDeque<Long>()
+
+    suspend fun allow(): Boolean = lock.withLock {
+        val now = nowMs()
+        while (sentAt.isNotEmpty() && now - sentAt.first() >= windowMs) sentAt.removeFirst()
+        if (sentAt.size >= maxPerWindow) return@withLock false
+        sentAt.addLast(now)
+        true
+    }
+}
+
 /** What one retried resolve settled on after a recovered credential. */
 sealed interface PoolRetryOutcome<out R> {
     /** The retry resolved; [value] is handed back to the caller's caller. */
