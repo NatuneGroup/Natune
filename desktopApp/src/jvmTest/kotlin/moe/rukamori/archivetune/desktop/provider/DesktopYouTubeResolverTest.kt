@@ -80,10 +80,10 @@ class DesktopYouTubeResolverTest {
     }
 
     @Test
-    fun withoutAPoTokenTheWalkLeadsWithTheTokenFreeClients() {
+    fun withoutAPoTokenTheWalkLeadsWithTheRangeCapableTokenFreeClient() {
         val anonymous = streamClientOrder(DesktopYouTubeClients.MAIN_CLIENT, null, ageGateAllowed = false)
         assertEquals(
-            listOf("ANDROID_VR", "VISIONOS", "IOS"),
+            listOf("VISIONOS", "ANDROID_VR", "IOS"),
             anonymous.take(3).map { it.clientName },
         )
         assertTrue(anonymous.indexOf(DesktopYouTubeClients.MAIN_CLIENT) > 2)

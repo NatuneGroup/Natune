@@ -232,12 +232,14 @@ internal object DesktopYouTubeClients {
         )
 
     /**
-     * Clients tried after the preferred one. The order leads with the clients that need no PoToken and no sign-in
-     * (ANDROID_VR, VISIONOS, IOS), because YouTube bot-checks the token-hungry web clients first on a fresh network;
-     * WEB_REMIX follows for metadata continuity and for a signed-in or tokened session.
+     * Clients tried after the preferred one. The order leads with the clients that need no PoToken and no sign-in.
+     * VISIONOS leads that set because its googlevideo URLs accept arbitrary bounded ranges, which the host lease
+     * needs for its 4 MiB chunked reads; ANDROID_VR 1.65.10 returns playable URLs here whose later range requests are
+     * rejected with HTTP 403, so it stays a fallback rather than the first attempt. WEB_REMIX follows for metadata
+     * continuity and for a signed-in or tokened session.
      */
     val STREAM_FALLBACK_CLIENTS: List<DesktopYouTubeClient> =
-        listOf(ANDROID_VR_1_65_10, VISIONOS, IOS, MAIN_CLIENT, WEB, MWEB, WEB_CREATOR)
+        listOf(VISIONOS, ANDROID_VR_1_65_10, IOS, MAIN_CLIENT, WEB, MWEB, WEB_CREATOR)
 
     val AGE_GATE_BYPASS_CLIENTS: List<DesktopYouTubeClient> =
         listOf(TVHTML5_SIMPLY_EMBEDDED_PLAYER_ANONYMOUS, WEB_EMBEDDED_ANONYMOUS)
