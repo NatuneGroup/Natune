@@ -148,11 +148,12 @@ fun HomeShelfSkeleton(index: Int = 0) {
             userScrollEnabled = false,
         ) {
             items(3) { card ->
-                Column(Modifier.width(HomeShelfCardWidth)) {
+                val cardWidth = LocalHomeShelfCardWidth.current
+                Column(Modifier.width(cardWidth)) {
                     HomeShimmerBox(
                         modifier =
                             Modifier
-                                .width(HomeShelfCardWidth)
+                                .width(cardWidth)
                                 .aspectRatio(1f),
                         shape = RoundedCornerShape(HomeShelfCardCorner),
                     )
