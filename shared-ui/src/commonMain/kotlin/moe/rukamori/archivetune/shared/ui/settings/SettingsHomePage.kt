@@ -40,6 +40,7 @@ fun SettingsHomePage(
         androidAuto = androidAuto,
         hideToTrayKey = hideToTrayKey,
         openShortcuts = { shortcutsVisible = true },
+        desktop = moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout.current,
     )
     SettingsPage(
         rows = rows,

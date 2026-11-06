@@ -54,7 +54,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 private val TopBarHeight = RowHeights.topBar
-private val SearchPillHeight = 40.dp
+private val SearchPillHeight = 36.dp
 private val SearchFieldMaxWidth = 390.dp
 
 /**

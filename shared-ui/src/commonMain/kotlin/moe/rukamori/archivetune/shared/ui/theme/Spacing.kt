@@ -20,7 +20,7 @@ object RowHeights {
     val list = 56.dp
     val setting = 56.dp
     val topBar = 56.dp
-    val playerBar = 72.dp
+    val playerBar = 132.dp
 }
 
 /** The three icon sizes the desktop chrome draws; text-adjacent glyphs never fall below the 18 dp compact size. */
