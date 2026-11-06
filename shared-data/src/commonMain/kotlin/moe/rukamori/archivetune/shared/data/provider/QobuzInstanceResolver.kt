@@ -7,12 +7,9 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
@@ -32,6 +29,7 @@ class QobuzInstanceResolver(
     private val poolEnabled: () -> Boolean = { false },
     private val sourceProviderUrl: () -> String = { "" },
     private val sourceProviderKey: () -> String = { "" },
+    discoveryStore: PoolDiscoveryStore = NoPoolDiscoveryStore,
 ) {
     /** Lookup metadata for a track, matching Tidal's Query shape. */
     data class Query(
@@ -76,8 +74,17 @@ class QobuzInstanceResolver(
     private val failureCache = StreamUrlCache<String, Long>()
     private val instanceCooldownUntilMs = mutableMapOf<String, Long>()
 
-    private var discoveryCache: List<String> = emptyList()
-    private var discoveryCacheExpiresAt = 0L
+    /** Six-hour jittered cadence, persisted list, ETag revalidation and refusal backoff. */
+    private val discoveryFeed =
+        PoolDiscoveryFeed(
+            service = "qobuz",
+            nowMs = nowMs,
+            candidateFeeds = ::poolFeedUrls,
+            request = { url, headers -> http.exchange(url, headers = headers).toPoolResponse() },
+            enabled = poolEnabled,
+            readKey = sourceProviderKey,
+            store = discoveryStore,
+        )
 
     /** The last Qobuz track id that resolved successfully, usable as a health-probe track. */
     @Volatile
@@ -105,16 +112,14 @@ class QobuzInstanceResolver(
         instances = manualInstances + poolInstances
     }
 
-    fun clearPoolDiscovery() {
+    suspend fun clearPoolDiscovery() {
         poolInstances = emptyList()
         rebuildInstances()
-        discoveryCache = emptyList()
-        discoveryCacheExpiresAt = 0L
+        discoveryFeed.forget()
     }
 
     fun hasInstances(): Boolean =
-        manualInstances.isNotEmpty() ||
-            (poolEnabled() && (poolInstances.isNotEmpty() || discoveryCacheExpiresAt == 0L) && poolFeedUrls().isNotEmpty())
+        manualInstances.isNotEmpty() || (poolEnabled() && poolFeedUrls().isNotEmpty())
 
     fun normalizeInstanceUrl(raw: String): String? {
         val trimmed = raw.trim().trimEnd('/')
@@ -323,69 +328,17 @@ class QobuzInstanceResolver(
 
     /**
      * Best-effort discovery of community Qobuz proxy instances from the Source Pool website.
-     * Returns newly discovered valid base URLs (may be empty). Never throws.
+     * Answers the persisted list while its six-hour window is open, or the previous list after a
+     * refusal; only a revalidated/changed feed costs a request. Never throws.
      */
     suspend fun discoverInstances(): List<String> {
         if (!poolEnabled()) return emptyList()
-        val now = nowMs()
-        if (now < discoveryCacheExpiresAt) return discoveryCache
-        val discovered = LinkedHashSet<String>()
-        val result =
-            try {
-                val headers =
-                    sourceProviderKey().takeIf { it.isNotBlank() }
-                        ?.let { mapOf("Authorization" to "Bearer $it") }
-                        ?: emptyMap()
-                var root: JsonObject? = null
-                for (url in poolFeedUrls()) {
-                    val reply =
-                        try {
-                            http.exchange(url, headers = headers)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: Exception) {
-                            continue
-                        }
-                    if (ArchivePoolEndpoints.isFailoverStatus(reply.status)) continue
-                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
-                    if (reply.status == 200) {
-                        // The status is classified before decoding: a 200 with an unusable
-                        // payload is definitive (a payload failure), not a failover.
-                        root = runCatching { Json.parseToJsonElement(reply.body).jsonObject }.getOrNull()
-                    }
-                    break
-                }
-                if (!poolEnabled() || root == null) {
-                    emptyList()
-                } else {
-                    for (key in listOf("streaming", "instances", "api")) {
-                        val arr = root[key] as? JsonArray ?: continue
-                        for (item in arr) {
-                            when (item) {
-                                is JsonObject ->
-                                    (item["url"] ?: item["baseUrl"])
-                                        ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                                        ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
-                                else ->
-                                    item.jsonPrimitive.content.takeIf { it.isNotBlank() && it != "null" }
-                                        ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
-                            }
-                        }
-                    }
-                    discovered.toList()
-                }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: Exception) {
-                emptyList()
-            }
+        val result = discoveryFeed.instances().mapNotNull(::normalizeInstanceUrl).distinct()
+        if (!poolEnabled()) return emptyList()
         if (result.isNotEmpty()) {
-            discoveryCache = result
             poolInstances = result.map { normalized -> Instance(instanceLabel(normalized), normalized) }
             rebuildInstances()
         }
-        // The quiet period covers empty and failed answers too, as the Deezer resolver's does.
-        discoveryCacheExpiresAt = nowMs() + DISCOVERY_CACHE_MS
         return result
     }
     // endregion
@@ -653,7 +606,6 @@ class QobuzInstanceResolver(
         private const val FAILURE_CACHE_MS = 10 * 60 * 1000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
-        private const val DISCOVERY_CACHE_MS = 30 * 60 * 1000L
         private const val AUDIO_FLAC_MIME_TYPE = "audio/flac"
         private val STOP_WORDS = setOf("the", "a", "an", "of", "and", "feat", "ft", "featuring", "with")
         private val VERSION_TOKENS =

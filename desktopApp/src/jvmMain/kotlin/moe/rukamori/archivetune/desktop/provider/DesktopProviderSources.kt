@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.desktop.DesktopCredentials
+import moe.rukamori.archivetune.shared.data.provider.NoPoolDiscoveryStore
 import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
 import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.JvmJioSaavnUrlDecoder
@@ -267,6 +268,7 @@ internal class DesktopDeezerSource(
         poolEnabled = { pool?.enabled() == true },
         sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
         sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+        discoveryStore = pool?.discoveryStore(DesktopPlaybackPool.DEEZER) ?: NoPoolDiscoveryStore,
     )
     private val instanceRepository = KtorDeezerRepository(
         http,
