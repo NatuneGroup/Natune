@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clipToBounds
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
@@ -102,14 +103,13 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FO
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
-import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.player.blurBackdropFootprint
 import moe.rukamori.archivetune.ui.player.movingBlurWanderMaxDriftDp
 import moe.rukamori.archivetune.ui.player.rememberBlurWanderDrift
+import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
@@ -405,7 +405,6 @@ internal fun SpatialFlowLyricsOverlay(
                             modifier =
                                 Modifier
                                     .fillMaxSize()
-                                    .lyricsViewportFade()
                                     .verticalScroll(rememberScrollState())
                                     .padding(horizontal = 16.dp, vertical = 28.dp),
                         ) {
@@ -564,9 +563,12 @@ private fun SpatialFlowLyricsMovingBlur(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    PlayerCoverImage(
-                        // Cached like the player's other backdrops: raw strings render empty for offline-only tracks.
-                        imageUrl = artUrl,
+                    AsyncImage(
+                        // Offline-artwork request builder for parity with the
+                        // player's other backdrops (raw strings render empty
+                        // for offline-only tracks).
+                        model = rememberOfflineArtworkImageRequest(artUrl),
+                        contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
