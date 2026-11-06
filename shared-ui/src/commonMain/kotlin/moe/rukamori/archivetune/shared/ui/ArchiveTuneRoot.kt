@@ -19,6 +19,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.desktop.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
 import moe.rukamori.archivetune.shared.ui.player.*
@@ -97,15 +98,10 @@ fun ArchiveTuneRoot(
      */
     rootKeyFocus: Boolean = false,
     /**
-     * Desktop opts in: the shell draws the desktop chrome (labelled rail, wider pages) and the root reserves space for
-     * [desktopTopBar]. Android and iOS leave it off and keep their current shell geometry.
+     * Desktop opts in: the shell draws the desktop chrome (window title bar, labelled rail, docked panes, player bar)
+     * around the same pages. Android and iOS leave it off and keep their current shell geometry.
      */
     desktopShell: Boolean = false,
-    /**
-     * The desktop host's own persistent top bar, placed above the shell on every page. It receives the live navigation
-     * and the Ctrl+K focus state; a host without one keeps the shell's own search entry point.
-     */
-    desktopTopBar: (@Composable (ShellNavigation, DesktopSearchFocus) -> Unit)? = null,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -153,7 +149,7 @@ fun ArchiveTuneRoot(
             ) {
                 ArchiveTuneLoadedRoot(
                     host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea,
-                    rootKeyFocus, desktopShell, desktopTopBar,
+                    rootKeyFocus, desktopShell,
                 )
             }
         }
@@ -172,11 +168,12 @@ private fun ArchiveTuneLoadedRoot(
     safeArea: SafeAreaPadding,
     rootKeyFocus: Boolean,
     desktopShell: Boolean,
-    desktopTopBar: (@Composable (ShellNavigation, DesktopSearchFocus) -> Unit)?,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
+        // The desktop columns: rail labels, the two docked panes and the expanded player. Phone hosts never read it.
+        val desktopShellState = remember { DesktopShellState() }
         var expanded by remember { mutableStateOf(false) }
         var shortcutsVisible by remember { mutableStateOf(false) }
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
@@ -275,9 +272,13 @@ private fun ArchiveTuneLoadedRoot(
                     val target = fractionSeekTargetMs(snapshot.durationMs ?: return false, action.fraction) ?: return false
                     player.seekTo(target)
                 }
-                KeymapAction.Back -> goBack()
+                KeymapAction.Back -> when {
+                    desktopShell && desktopShellState.expandedPlayer -> desktopShellState.expandedPlayer = false
+                    desktopShell && (desktopShellState.queueOpen || desktopShellState.lyricsOpen) -> desktopShellState.closePanes()
+                    else -> goBack()
+                }
                 KeymapAction.Search -> {
-                    if (desktopTopBar != null) {
+                    if (desktopShell) {
                         desktopSearchFocus.requestFocus()
                     } else {
                         navigation.select(ShellTab.Search, toRoot = true)
@@ -294,13 +295,28 @@ private fun ArchiveTuneLoadedRoot(
                 KeymapAction.NewReleases -> navigation.open("new_release")
                 KeymapAction.Charts -> navigation.open("charts_screen")
                 KeymapAction.Settings -> navigation.open("settings")
-                KeymapAction.NowPlaying -> expanded = true
-                KeymapAction.Queue -> {
+                KeymapAction.NowPlaying -> if (desktopShell) {
+                    desktopShellState.expandedPlayer = true
+                } else {
+                    expanded = true
+                }
+                KeymapAction.Queue -> if (desktopShell) {
+                    desktopShellState.toggle(DesktopPane.Queue)
+                } else {
                     expanded = true
                     interaction.panel = PlayerPanel.QUEUE
                 }
-                KeymapAction.TogglePlayer -> expanded = !expanded
-                KeymapAction.FullscreenLyrics -> { expanded = true; interaction.fullscreenLyrics = !interaction.fullscreenLyrics }
+                KeymapAction.TogglePlayer -> if (desktopShell) {
+                    desktopShellState.expandedPlayer = !desktopShellState.expandedPlayer
+                } else {
+                    expanded = !expanded
+                }
+                KeymapAction.FullscreenLyrics -> if (desktopShell) {
+                    desktopShellState.toggle(DesktopPane.Lyrics)
+                } else {
+                    expanded = true
+                    interaction.fullscreenLyrics = !interaction.fullscreenLyrics
+                }
                 KeymapAction.ToggleFullscreen -> host.toggleWindowFullscreen?.invoke() ?: return false
                 KeymapAction.Help -> shortcutsVisible = true
             }
@@ -326,68 +342,124 @@ private fun ArchiveTuneLoadedRoot(
             colorScheme = colorScheme) {
             CompositionLocalProvider(LocalDesktopLayout provides desktopShell) {
             ProvideBackdropSources(policy) { pageSource ->
+                // One page host for both shells: only the columns around the page differ. Lyrics and queue surfaces
+                // stay mounted while a desktop pane or the expanded player shows them, so their scroll owner survives
+                // opening and closing the pane.
+                val surfaceOpen = expanded || (desktopShell && (desktopShellState.expandedPlayer || desktopShellState.lyricsOpen))
+                val slots = host.playerSlots(surfaceOpen, active, interaction)
+                val page: @Composable (Modifier) -> Unit = { pageModifier ->
+                    CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                        ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
+                            host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
+                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
+                            searchFocusRequested = searchFocusRequested,
+                            onSearchFocusConsumed = { searchFocusRequested = false },
+                            modifier = pageModifier)
+                    }
+                }
+                fun playPause() {
+                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
+                }
+                fun desktopPlayerAction(action: PlayerAction) =
+                    dispatchNativePlayerAction(host.queue.player, host.playerControls, action)
+                fun seekTo(targetMs: Long) = host.queue.player.seekTo(targetMs)
+                fun setVolume(volume: Float) = host.playerControls.setVolume(volume.coerceIn(0f, 1f))
                 // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
                 // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                     .safeAreaPadding(safeArea)
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
-                    Column(Modifier.fillMaxSize()) {
-                        // The top bar is host chrome above the shell, so it survives every route including Settings.
-                        if (desktopTopBar != null) {
-                            CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
-                                desktopTopBar.invoke(navigation, desktopSearchFocus)
+                    if (desktopShell) {
+                        DesktopShell(
+                            navigation = navigation,
+                            state = desktopShellState,
+                            titleBar = {
+                                DesktopTitleBar(
+                                    title = stringResource(Res.string.app_name),
+                                    searchFocus = desktopSearchFocus,
+                                    railExpanded = desktopShellState.railExpanded,
+                                    onToggleRail = { desktopShellState.toggleRail() },
+                                    onSubmitSearch = { query ->
+                                        navigation.select(ShellTab.Search, toRoot = true)
+                                        navigation.open(ArchiveRoutes.search(query, ContentProvider.YOUTUBE))
+                                    },
+                                )
+                            },
+                            playerBar = {
+                                if (current != null) {
+                                    DesktopPlayerBar(
+                                        current = current,
+                                        playback = playback,
+                                        nativeState = nativeState,
+                                        artwork = host.artwork,
+                                        motion = policy.motion,
+                                        panes = desktopShellState,
+                                        onExpand = { desktopShellState.expandedPlayer = true },
+                                        onPlayPause = ::playPause,
+                                        onSeekTo = ::seekTo,
+                                        onAction = ::desktopPlayerAction,
+                                        onVolumeChange = ::setVolume,
+                                    )
+                                } else {
+                                    // An empty queue keeps the bar's slot, so the page never jumps when a track starts.
+                                    Spacer(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight))
+                                }
+                            },
+                            queuePane = { paneModifier -> slots.queue(paneModifier) },
+                            lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
+                            content = { pageModifier -> page(pageSource.then(pageModifier)) },
+                        )
+                        if (desktopShellState.expandedPlayer && current != null) {
+                            DesktopExpandedPlayer(
+                                state = desktopPlayerState(current, playback, nativeState, policy.motion),
+                                slots = slots,
+                                onClose = { desktopShellState.expandedPlayer = false },
+                                onPlayPause = ::playPause,
+                                onSeekTo = ::seekTo,
+                                onAction = ::desktopPlayerAction,
+                                onVolumeChange = ::setVolume,
+                            )
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                ArchiveTuneShell(navigation, preferences,
+                                onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
+                                television = television, contentModifier = pageSource,
+                                miniPlayer = {
+                                    if (current != null) ArchiveMiniPlayer(
+                                        current = current,
+                                        playback = playback,
+                                        nativeState = nativeState,
+                                        artwork = host.artwork,
+                                        motion = policy.motion,
+                                        onExpand = { expanded = true },
+                                        onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
+                                        onPlayPause = ::playPause,
+                                        onSeekTo = ::seekTo,
+                                        onAction = ::desktopPlayerAction,
+                                        onVolumeChange = ::setVolume,
+                                    )
+                                    },
+                                ) { page(Modifier) }
                             }
                         }
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
-                    ArchiveTuneShell(navigation, preferences,
-                        onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
-                        television = television, contentModifier = pageSource,
-                        miniPlayer = {
-                            if (current != null) ArchiveMiniPlayer(
-                                current = current,
-                                playback = playback,
-                                nativeState = nativeState,
-                                artwork = host.artwork,
-                                motion = policy.motion,
-                                onExpand = { expanded = true },
-                                onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
-                                onPlayPause = {
-                                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                                },
-                                onSeekTo = { targetMs -> host.queue.player.seekTo(targetMs) },
-                                onAction = { action -> dispatchNativePlayerAction(host.queue.player, host.playerControls, action) },
-                                onVolumeChange = { volume -> host.playerControls.setVolume(volume.coerceIn(0f, 1f)) },
-                            )
-                        },
-                    ) {
-                        CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
-                            ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
-                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
-                                searchFocusRequested = searchFocusRequested,
-                                onSearchFocusConsumed = { searchFocusRequested = false })
-                        }
+                        if (expanded && current != null) BoundBottomSheetPlayer(
+                            queue = host.queue,
+                            settings = host.settings,
+                            actionScope = host.actionScope,
+                            controls = sheetControls,
+                            slots = { _, _ -> slots },
+                            blurSupported = opticalCapabilities.blur,
+                            visible = visible,
+                            resumed = resumed,
+                            reducedMotion = preferences[DisableAnimationsKey, false],
+                            onLyricsVisibility = { interaction.fullscreenLyrics = it },
+                            modifier = Modifier.fillMaxSize(),
+                            interaction = interaction,
+                        )
                     }
-                        }
-                    }
-                    // Keep the interaction owner above style dispatch; a saved style edit cannot reset
-                    // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
-                    val slots = host.playerSlots(expanded, active, interaction)
-                    if (expanded && current != null) BoundBottomSheetPlayer(
-                        queue = host.queue,
-                        settings = host.settings,
-                        actionScope = host.actionScope,
-                        controls = sheetControls,
-                        slots = { _, _ -> slots },
-                        blurSupported = opticalCapabilities.blur,
-                        visible = visible,
-                        resumed = resumed,
-                        reducedMotion = preferences[DisableAnimationsKey, false],
-                        onLyricsVisibility = { interaction.fullscreenLyrics = it },
-                        modifier = Modifier.fillMaxSize(),
-                        interaction = interaction,
-                    )
                     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
                 }
             }
