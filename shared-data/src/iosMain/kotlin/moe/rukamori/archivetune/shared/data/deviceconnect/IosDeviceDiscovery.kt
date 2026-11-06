@@ -82,12 +82,15 @@ class IosDeviceDiscovery : DeviceDiscovery {
         if (id == advertisement?.deviceId) return
         val name = (dictionary["name"] as? NSData)?.toByteArray()?.decodeToString().orEmpty().ifBlank { service.name }
         val platform = DevicePlatform.fromWire((dictionary["platform"] as? NSData)?.toByteArray()?.decodeToString())
+        // NSNetService.port is an NSInteger (Long on iOS); DeviceEndpoint takes an Int and requires 1..65535.
+        val port = service.port.toInt()
+        if (port !in 1..65_535) return
         listener?.onFound(
             DiscoveredDevice(
                 deviceId = id,
                 name = name,
                 platform = platform,
-                endpoint = DeviceEndpoint(host, service.port),
+                endpoint = DeviceEndpoint(host, port),
                 lastSeenEpochMs = (NSDate().timeIntervalSince1970 * 1000.0).toLong(),
             ),
         )
