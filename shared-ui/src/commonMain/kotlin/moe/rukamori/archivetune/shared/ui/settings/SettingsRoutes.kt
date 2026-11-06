@@ -11,8 +11,8 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
     if (owner == "ytdlp") return SettingsRoutes.YTDLP
     if (owner == "developer_options" && scrollKey == "acoustic_quality") return "$route?scrollTo=acoustic_quality"
     val supportsScroll = owner !in setOf(
-        "developer_options", "about", "po_token", "account", "logcat", "listen_together", "canvas", "android_auto",
-        "crash_logs",
+        "developer_options", "about", "po_token", "account", "logcat", "listen_together", "device_connect", "canvas",
+        "android_auto", "crash_logs",
     )
     val target = if (owner == "lyrics" && scrollKey == "use_lyrics_v2") "lyrics_mode" else scrollKey
     return if (!supportsScroll || target.isNullOrBlank()) route else "$route?scrollTo=$target"
@@ -31,7 +31,8 @@ private val routes = mapOf(
     "lyrics" to "settings/lyrics", "lyrics_providers" to "settings/lyrics/providers",
     "lyrics_romanisation" to "settings/lyrics/romanisation", "content" to "settings/content",
     "behavior" to "settings/privacy", "integration" to "settings/integration",
-    "listen_together" to "settings/integrations/listen_together", "internet" to "settings/internet",
+    "listen_together" to "settings/integrations/listen_together",
+    "device_connect" to "settings/integrations/device_connect", "internet" to "settings/internet",
     "storage" to "settings/storage", "downloads" to "settings/downloads",
     "backup_restore" to "settings/backup_restore", "developer_options" to "settings/misc",
     "logcat" to "settings/logcat", "about" to "settings/about", "discord" to "settings/discord",
@@ -67,6 +68,7 @@ private val crossPageOwners = buildMap {
     own("lyrics_animations", "lyrics", "lyrics_animations")
     own("appearance_player", "lyrics", "lyrics_background_style")
     own("listen_together", "integration", "listen_together", "listen_together_screen")
+    own("device_connect", "integration", "device_connect")
     own("discord_experimental", "lyrics", "translate_lyrics", "enable_translator")
     own("sources", "playback",
         "preferred_sources", "auto_choose_playback_client", "player_stream_client", "check_source", "spotify_catalog_source",

@@ -207,6 +207,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
             "behavior" -> "settings/privacy"
             "integration" -> "settings/integration"
             "listen_together" -> "settings/integrations/listen_together"
+            "device_connect" -> "settings/integrations/device_connect"
             "internet" -> "settings/internet"
             "storage" -> "settings/storage"
             "downloads" -> "settings/downloads"

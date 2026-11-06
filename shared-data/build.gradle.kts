@@ -49,6 +49,11 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             // Provider clients take an injected HttpClient; the host supplies the engine.
             implementation(libs.ktor.client.core)
+            // Device Connect hosts one local WebSocket server and dials the peer over the same route.
+            implementation(libs.ktor.client.websockets)
+            implementation(libs.ktor.server.core)
+            implementation(libs.ktor.server.cio)
+            implementation(libs.ktor.server.websockets)
             implementation(libs.kotlinx.serialization.json)
             // Public database/builder types expose Room to host adapters.
             api(libs.room.runtime)
@@ -65,6 +70,8 @@ kotlin {
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
             // TidalDns ports the original's OkHttp bootstrap-resolver + DoH client verbatim.
             implementation(libs.okhttp)
+            // Device Connect discovery on the desktop uses JmDNS (Apache-2.0); see docs/CREDITS.md.
+            implementation(libs.jmdns)
             // The desktop BotGuard runtime shares the pinned quickjs-kt artifact iosMain already uses.
             implementation(libs.quickjs.kt)
         }

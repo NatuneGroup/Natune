@@ -722,3 +722,12 @@ val DisableAnimatedArtworkOnMobileDataKey = BooleanPreferenceKey("disableAnimate
 // Metrolist 14.0.0-rc6 port. The palette style by enum name. Unset or unknown reads as the default palette, which is
 // today's look.
 val ThemePaletteStyleKey = StringPreferenceKey("themePaletteStyle")
+
+// Device Connect: live LAN playback only. The paired-device index holds public metadata; every pair secret
+// lives in SecureCredentialStore under the "deviceconnect" provider and never enters a backup or sync document.
+val DeviceConnectEnabledKey = BooleanPreferenceKey("deviceConnectEnabled")
+val DeviceConnectDeviceIdKey = StringPreferenceKey("deviceConnectDeviceId")
+val DeviceConnectDeviceNameKey = StringPreferenceKey("deviceConnectDeviceName")
+val DeviceConnectAllowVpnKey = BooleanPreferenceKey("deviceConnectAllowVpn")
+val DeviceConnectDefaultDeviceKey = StringPreferenceKey("deviceConnectDefaultDeviceId")
+val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevices")
