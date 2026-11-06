@@ -9,6 +9,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectHosts
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectLimits
@@ -19,7 +20,7 @@ class DeviceConnectServer(
 ) {
     private var server: EmbeddedServer<*, *>? = null
 
-    suspend fun start(): Int = withContext(Dispatchers.Default) {
+    suspend fun start(): Int = withContext(Dispatchers.Default + Job()) {
         check(server == null) { "Device Connect server already started" }
         println("dc-server build")
         val started = embeddedServer(CIO, port = 0, host = "0.0.0.0") {
