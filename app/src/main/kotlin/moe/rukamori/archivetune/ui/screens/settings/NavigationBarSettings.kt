@@ -79,6 +79,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         val topPadding = innerPadding.calculateTopPadding()
         val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
+        val generalTitle = stringResource(R.string.general)
 
         LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
 
@@ -91,7 +92,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                     .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
                     .then(positions.containerModifier()),
         ) {
-            preferenceGroup(title = stringResource(R.string.general)) {
+            preferenceGroup(title = generalTitle) {
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("hide_navigation_bar_labels"),
