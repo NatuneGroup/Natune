@@ -98,7 +98,13 @@ fun ArchiveTuneShell(
                 }
             }
         val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
-            navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route))
+            navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route),
+            desktop = LocalDesktopLayout.current)
+        val desktop = LocalDesktopLayout.current
+        // Search is the top bar's job on desktop, so the sidebar carries only the two library destinations.
+        val tabs = remember(desktop) {
+            if (desktop) ShellTab.entries.filter { it != ShellTab.Search } else ShellTab.entries
+        }
         val hiddenByScroll =
             layout == ShellLayout.MiniPlayerOnly && effectiveScrolledDown && hideOnScroll &&
                 compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED
@@ -125,16 +131,20 @@ fun ArchiveTuneShell(
         val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
             if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
-                NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
-                    containerColor = Color.Transparent) {
-                    ShellTab.entries.forEach { tab ->
-                        NavigationRailItem(
-                            selected = navigation.selectedTab == tab,
-                            onClick = { navigation.select(tab, toRoot = false) },
-                            icon = { TabMark(tab) },
-                            label = { Text(stringResource(tab.label)) },
-                            modifier = Modifier.testTag("shell-tab-${tab.name}"),
-                        )
+                if (desktop && layout == ShellLayout.Rail && maxWidth >= 1100.dp) {
+                    DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
+                } else {
+                    NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
+                        containerColor = Color.Transparent) {
+                        tabs.forEach { tab ->
+                            NavigationRailItem(
+                                selected = navigation.selectedTab == tab,
+                                onClick = { navigation.select(tab, toRoot = false) },
+                                icon = { TabMark(tab) },
+                                label = { Text(stringResource(tab.label)) },
+                                modifier = Modifier.testTag("shell-tab-${tab.name}"),
+                            )
+                        }
                     }
                 }
             }
@@ -287,7 +297,7 @@ private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
 
 /** Resource labels remain accessible even when a compact circle has no visible caption. */
 @Composable
-private fun TabMark(tab: ShellTab) {
+internal fun TabMark(tab: ShellTab) {
     val color = LocalContentColor.current
     androidx.compose.foundation.Canvas(
         Modifier.size(24.dp),

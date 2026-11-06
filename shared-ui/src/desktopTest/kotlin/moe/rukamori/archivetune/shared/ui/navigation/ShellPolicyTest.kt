@@ -38,6 +38,18 @@ class ShellPolicyTest {
         val compact = PreferenceSnapshot.of(NavigationBarCompactBehaviorKey to "ALWAYS_COMPACT")
         assertEquals(ShellLayout.CompactRow, shellLayout(400f, false, compact, topLevel = false))
     }
+    @Test fun desktopKeepsOneSidebarOnEveryRouteIncludingSettings() {
+        // Phone hosts keep the settings page chrome-free; the desktop keeps the rail and the mini player beside it.
+        assertEquals(ShellLayout.Hidden, shellLayout(1440f, false, PreferenceSnapshot.EMPTY, settingsRoute = true))
+        assertEquals(ShellLayout.Rail, shellLayout(1440f, false, PreferenceSnapshot.EMPTY, settingsRoute = true, desktop = true))
+        assertEquals(ShellLayout.Rail, shellLayout(1024f, false, PreferenceSnapshot.EMPTY, settingsRoute = true, desktop = true))
+        // Desktop keeps the sidebar whichever phone pill style is stored.
+        val apple = PreferenceSnapshot.of(AppleMusicExperienceKey to true)
+        assertEquals(ShellLayout.CompactRow, shellLayout(1440f, false, apple))
+        assertEquals(ShellLayout.Rail, shellLayout(1440f, false, apple, desktop = true))
+        // A full-screen search still steps aside on desktop.
+        assertEquals(ShellLayout.Hidden, shellLayout(1440f, false, PreferenceSnapshot.EMPTY, searchActive = true, desktop = true))
+    }
     @Test fun navigatingBackRestoresTheExactDestinationAndTab() {
         val nav = ShellNavigation(ShellTab.Home)
         nav.open("online_playlist/PL1")
