@@ -25,7 +25,9 @@ import moe.rukamori.archivetune.innertube.models.PodcastItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedItem
+import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
+import moe.rukamori.archivetune.spotify.models.SpotifyArtist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import timber.log.Timber
 import javax.inject.Inject
@@ -130,17 +132,22 @@ class FilterAiContentByCreatorNameUseCase
             policy: AiContentFilterPolicy,
         ): List<SpotifyTrack> = tracks.filterByCreatorNames(policy) { track -> track.artists.asSequence().map { it.name } }
 
-        fun spotifyFeedItems(
-            items: List<SpotifyHomeFeedItem>,
+        /** The typed home shelves, filtered on the creator names their feed counterparts carried. */
+        fun spotifyAlbums(
+            albums: List<SpotifyAlbum>,
             policy: AiContentFilterPolicy,
-        ): List<SpotifyHomeFeedItem> =
-            items.filterByCreatorNames(policy) { item ->
-                when (item) {
-                    is SpotifyHomeFeedItem.Album -> item.artists.asSequence().map { it.name }
-                    is SpotifyHomeFeedItem.Artist -> sequenceOf(item.name)
-                    is SpotifyHomeFeedItem.Playlist -> sequenceOf(item.ownerName)
-                }
-            }
+        ): List<SpotifyAlbum> = albums.filterByCreatorNames(policy) { album -> album.artists.asSequence().map { it.name } }
+
+        fun spotifyArtists(
+            artists: List<SpotifyArtist>,
+            policy: AiContentFilterPolicy,
+        ): List<SpotifyArtist> = artists.filterByCreatorNames(policy) { artist -> sequenceOf(artist.name) }
+
+        fun spotifyPlaylists(
+            playlists: List<SpotifyPlaylist>,
+            policy: AiContentFilterPolicy,
+        ): List<SpotifyPlaylist> =
+            playlists.filterByCreatorNames(policy) { playlist -> sequenceOf(playlist.owner?.displayName) }
 
         /**
          * QQ hands its artists over as one ", "-joined string, so each part is tried as well as

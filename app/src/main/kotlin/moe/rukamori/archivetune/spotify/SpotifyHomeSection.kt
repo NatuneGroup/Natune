@@ -12,25 +12,30 @@
 package moe.rukamori.archivetune.spotify
 
 import androidx.compose.runtime.Immutable
-import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedItem
+import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
+import moe.rukamori.archivetune.spotify.models.SpotifyArtist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 
-/** One shelf on the Spotify home. */
+/**
+ * One shelf of the Spotify home. The shape is YumaPlayer's (`spotify/SpotifyHomeSection.kt`): a shelf
+ * carries the one kind its [type] names, and the other three lists stay empty. The home screen picks
+ * the row by [type] and never inspects the lists.
+ */
 @Immutable
-sealed interface SpotifyHomeSection {
-    val title: String
+data class SpotifyHomeSection(
+    val title: String,
+    val type: SectionType,
+    val tracks: List<SpotifyTrack> = emptyList(),
+    val artists: List<SpotifyArtist> = emptyList(),
+    val albums: List<SpotifyAlbum> = emptyList(),
+    val playlists: List<SpotifyPlaylist> = emptyList(),
+)
 
-    /** Track shelves come from `topTracks`, which returns one kind, so this list stays typed. */
-    @Immutable
-    data class Tracks(
-        override val title: String,
-        val tracks: List<SpotifyTrack>,
-    ) : SpotifyHomeSection
-
-    /** Playlists, albums and artists, in the order the feed sent them. */
-    @Immutable
-    data class Cards(
-        override val title: String,
-        val items: List<SpotifyHomeFeedItem>,
-    ) : SpotifyHomeSection
+/** The row a shelf draws: two rows of track tiles, or a single rail of cards. */
+enum class SectionType {
+    TRACKS,
+    ARTISTS,
+    ALBUMS,
+    PLAYLISTS,
 }

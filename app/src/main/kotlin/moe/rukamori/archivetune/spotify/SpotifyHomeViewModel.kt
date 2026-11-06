@@ -43,14 +43,8 @@ import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import kotlinx.serialization.Serializable
 import moe.rukamori.archivetune.utils.reportException
-import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
 import moe.rukamori.archivetune.spotify.models.SpotifyArtist
 import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedItem
-import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedSection
-import moe.rukamori.archivetune.spotify.models.SpotifyImage
-import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
-import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistOwner
-import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
 import javax.inject.Inject
 
 @Serializable
@@ -261,8 +255,9 @@ class SpotifyHomeViewModel @Inject constructor(
                     SpotifyHomeScreenState.Success(
                         sections = cached.topTracks.takeIf { it.isNotEmpty() }?.let { tracks ->
                             listOf(
-                                SpotifyHomeSection.Tracks(
+                                SpotifyHomeSection(
                                     title = "spotify_top_tracks",
+                                    type = SectionType.TRACKS,
                                     tracks = tracks,
                                 ),
                             )
@@ -300,8 +295,9 @@ class SpotifyHomeViewModel @Inject constructor(
                     if (topTracks.items.isNotEmpty()) {
                         topTracksList = topTracks.items
                         sections.add(
-                            SpotifyHomeSection.Tracks(
+                            SpotifyHomeSection(
                                 title = "spotify_top_tracks",
+                                type = SectionType.TRACKS,
                                 tracks = topTracks.items,
                             )
                         )
@@ -311,8 +307,9 @@ class SpotifyHomeViewModel @Inject constructor(
                 // populated rather than dropping it for one failed call.
                 if (topTracksList.isEmpty() && cached.topTracks.isNotEmpty()) {
                     sections.add(
-                        SpotifyHomeSection.Tracks(
+                        SpotifyHomeSection(
                             title = "spotify_top_tracks",
+                            type = SectionType.TRACKS,
                             tracks = cached.topTracks,
                         )
                     )
@@ -322,18 +319,10 @@ class SpotifyHomeViewModel @Inject constructor(
                     val albums = newReleases.albums?.items.orEmpty()
                     if (albums.isNotEmpty()) {
                         sections.add(
-                            SpotifyHomeSection.Cards(
+                            SpotifyHomeSection(
                                 title = "spotify_new_releases",
-                                items = albums.map { album ->
-                                    SpotifyHomeFeedItem.Album(
-                                        uri = album.uri.orEmpty(),
-                                        id = album.id,
-                                        name = album.name,
-                                        albumType = album.albumType,
-                                        artists = album.artists,
-                                        imageUrl = album.images.maxByOrNull { it.width ?: 0 }?.url,
-                                    )
-                                },
+                                type = SectionType.ALBUMS,
+                                albums = albums,
                             )
                         )
                     }
@@ -421,32 +410,29 @@ class SpotifyHomeViewModel @Inject constructor(
     }
 
     /**
-     * A feed shelf, kept whole. Every item stays, in the order Spotify sent it, carrying its own
-     * kind — so a shelf mixing albums with playlists renders both and each tile opens its own
-     * thing. The previous version kept only the majority kind and dropped the rest.
-     */
-    private fun convertHomeSection(feedSection: SpotifyHomeFeedSection): SpotifyHomeSection? {
-        val title = feedSection.title ?: return null
-        if (feedSection.items.isEmpty()) return null
-        return SpotifyHomeSection.Cards(title = title, items = feedSection.items)
-    }
-
-    /**
      * Recents and frequent artists are left alone: they are the account's own listening, which the
-     * YouTube home does not filter either.
+     * YouTube home does not filter either. A shelf is filtered on the list its type names.
      */
     private fun SpotifyHomeScreenState.withoutAiContent(policy: AiContentFilterPolicy): SpotifyHomeScreenState {
         if (this !is SpotifyHomeScreenState.Success || !policy.enabled) return this
         val filtered = sections.mapNotNull { section ->
-            when (section) {
-                is SpotifyHomeSection.Tracks ->
+            when (section.type) {
+                SectionType.TRACKS ->
                     filterAiContent.spotifyTracks(section.tracks, policy)
                         .takeIf { it.isNotEmpty() }
                         ?.let { section.copy(tracks = it) }
-                is SpotifyHomeSection.Cards ->
-                    filterAiContent.spotifyFeedItems(section.items, policy)
+                SectionType.ARTISTS ->
+                    filterAiContent.spotifyArtists(section.artists, policy)
                         .takeIf { it.isNotEmpty() }
-                        ?.let { section.copy(items = it) }
+                        ?.let { section.copy(artists = it) }
+                SectionType.ALBUMS ->
+                    filterAiContent.spotifyAlbums(section.albums, policy)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { section.copy(albums = it) }
+                SectionType.PLAYLISTS ->
+                    filterAiContent.spotifyPlaylists(section.playlists, policy)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { section.copy(playlists = it) }
             }
         }
         return if (filtered.isEmpty() && recentItems.isEmpty() && frequentArtists.isEmpty()) {
