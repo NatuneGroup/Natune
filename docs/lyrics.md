@@ -242,9 +242,14 @@ them skipped under reduced motion:
   `ttm:role="x-bg"`, which `TTMLParser` (pinned `lyrics` submodule) and `shared/domain`'s `TtmlParser`
   both read. The enhanced-LRC providers have no attribute for it and write the backing vocal inline in
   round brackets, so both enhanced-LRC readers mark a bracketed run as `isBackground` as well
-  (`lyrics/BackgroundVocalRuns.withBackgroundRuns`, `EnhancedLrcWords.mapBackgroundRuns`): a run that opens at a word's
-  own start and closes at a word's own end, with an unbalanced open bracket marking the rest of the
-  line. The brackets stay in the text — the renderers draw the source text, they never rewrite it. A rising or emphasized word's cut
+  (`lyrics/BackgroundVocalRuns.withBackgroundRuns`, `EnhancedLrcWords.mapBackgroundRuns`): a run that
+  opens at a word's own start and closes at a word's own end, with an unbalanced open bracket marking
+  the rest of the line. The convention is only read on the enhanced-LRC word-stamp shape those
+  providers emit, and only for a run with lead words outside it — a line that is nothing but brackets
+  ("(I know)") is the source's own phrasing of a sung lead line and stays lead. An explicit role is
+  read before the convention runs (TTML's `x-bg`); the LRC text channel carries no per-word flag, so a
+  bracket is the only word-level signal there. The brackets stay in the text — the renderers draw the
+  source text, they never rewrite it. A rising or emphasized word's cut
   and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
   with the word on their own baseline rather than being clipped or drawn twice.
 - The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
@@ -259,7 +264,9 @@ them skipped under reduced motion:
   restarts with every break. A 2.8 s breath scales them, and over the last 1.5 s an end swell
   multiplies that breath from 1 to 1.3 (`LyricsInterludeMotion.scale`). It is a product, not a second
   scale taken with `maxOf`: the swell used to start at 1.05, so the dots snapped 5% larger on the frame
-  its window opened and snapped back when it closed.
+  its window opened and snapped back when it closed. Both factors are motion, so reduced motion scales
+  the dots by a neutral 1 throughout the break — it used to hold only the breath still and still swell
+  them 30% into the arriving line.
 - Depth (scale, fade and a uniform 2 dp blur) applies to every non-sung row while the list
   follows (`LyricsDepth.UNIFORM_BLUR_DP`), and waits `LyricsDepth.staggerMs` per step, so a line
   change ripples outward. Rows stay sharp until the listener's hold ends or a line is tapped,
