@@ -19,6 +19,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 /** What [JvmUpdateInstaller.install] did with a staged artifact. */
 enum class UpdateInstallOutcome { OPENED, REVEALED }
@@ -26,12 +27,39 @@ enum class UpdateInstallOutcome { OPENED, REVEALED }
 /** Artifacts the OS can launch directly; everything else is revealed in its folder for manual install. */
 private val LAUNCHABLE_EXTENSIONS = setOf("msi", "exe", "dmg", "pkg", "appimage")
 
+/** Feed digests arrive as bare hex or `sha256:<hex>`; blank or absent means the feed published none. */
+private fun normalizeSha256(value: String?): String? {
+    val trimmed = value?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    // `sha256:<hex>` keeps only the digest; a bare digest has no separator and is used as-is.
+    val hex = trimmed.substringAfter(':', trimmed).trim().lowercase()
+    return hex.ifEmpty { null }
+}
+
+private fun ByteArray.toHexString(): String = joinToString(separator = "") { "%02x".format(it) }
+
+/** SHA-256 of a file already on disk, or null when it cannot be read. */
+private fun sha256HexOf(path: Path): String? = runCatching {
+    val digest = MessageDigest.getInstance("SHA-256")
+    Files.newInputStream(path).use { input ->
+        val buffer = ByteArray(256 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    digest.digest().toHexString()
+}.getOrNull()
+
 /**
  * Desktop port of `AppUpdateInstaller`: one artifact download at a time through [UpdateAttemptOwner],
  * staging under `<updateDir>` (`artifact.download` in flight, `artifact.<ext>` when complete, plus
  * `.source`/`.code` sidecars recording provenance), reuse when the sidecar matches a still-newer offer,
  * 256KB streaming with a length check, and a platform-native install action — the OS handler opens
  * launchable packages (msi/exe/dmg/pkg/AppImage); other archives are revealed for the user to install.
+ * When the offer carries the feed's `sha256` the stream is hashed as it is written and a mismatch throws
+ * for the existing Failed state; a feed without a digest keeps the length-only behaviour and says so.
  */
 class JvmUpdateInstaller(
     private val client: HttpClient,
@@ -84,7 +112,16 @@ class JvmUpdateInstaller(
                     .findFirst().orElse(null)
             }
         }.getOrNull() ?: return@withContext null
-        if (archiveMatchesOffer(offer.versionCode, code, installedCode, source == offer.downloadUrl)) artifact else null
+        if (!archiveMatchesOffer(offer.versionCode, code, installedCode, source == offer.downloadUrl)) {
+            return@withContext null
+        }
+        val expectedDigest = normalizeSha256(offer.sha256) ?: return@withContext artifact
+        if (sha256HexOf(artifact) == expectedDigest) return@withContext artifact
+        // A reused artifact has to prove the digest too; an unprovable one is discarded, never installed.
+        runCatching { Files.deleteIfExists(artifact) }
+        runCatching { Files.deleteIfExists(sourcePath) }
+        runCatching { Files.deleteIfExists(codePath) }
+        null
     }
 
     private suspend fun download(offer: UpdateOffer) {
@@ -93,6 +130,8 @@ class JvmUpdateInstaller(
             val expected = response.contentLength() ?: -1L
             val channel = response.bodyAsChannel()
             val buffer = ByteArray(256 * 1024)
+            val digest = MessageDigest.getInstance("SHA-256")
+            val expectedDigest = normalizeSha256(offer.sha256)
             var received = 0L
             var lastPublish = 0L
             Files.createDirectories(updateDir)
@@ -102,6 +141,7 @@ class JvmUpdateInstaller(
                     if (read == -1) break
                     if (read == 0) continue
                     out.write(buffer, 0, read)
+                    digest.update(buffer, 0, read)
                     received += read
                     val now = nowMs()
                     if (now - lastPublish >= 200L) {
@@ -117,6 +157,16 @@ class JvmUpdateInstaller(
             if (expected > 0 && received != expected) {
                 runCatching { Files.deleteIfExists(downloadPath) }
                 throw IllegalStateException("Truncated update download: expected $expected bytes, got $received")
+            }
+            val actualDigest = digest.digest().toHexString()
+            if (expectedDigest == null) {
+                // The releases-API fallback publishes no per-asset digest; length stays the only check.
+                System.err.println("natune-update: feed published no sha256; verified length only ($received bytes)")
+            } else if (expectedDigest != actualDigest) {
+                runCatching { Files.deleteIfExists(downloadPath) }
+                throw IllegalStateException(
+                    "Update digest mismatch: expected sha256:$expectedDigest, got sha256:$actualDigest",
+                )
             }
             val extension = offer.downloadUrl.substringAfterLast('.', "bin").substringBefore('?').lowercase()
             val target = stagedPath(extension)
