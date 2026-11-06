@@ -36,11 +36,11 @@ fun lyricsProviderSettingsRows(
     val enabled = true
     // With the word-synced sweep on, sync quality picks the providers — the order row greys out and
     // says so rather than suggesting a choice nothing reads.
-    val prioritize = preferences[PrioritizeWordSyncedLyricsKey, false]
+    val prioritize = preferences[PrioritizeWordSyncedLyricsKey, true]
     add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder,
         enabled = enabled && !prioritize,
         description = Res.string.m6_provider_order_word_sync.takeIf { prioritize }))
-    add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false,
+    add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, true,
         description = Res.string.m6_word_sync_fallback))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
         provider.key?.let { key ->

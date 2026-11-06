@@ -109,7 +109,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import coil3.compose.AsyncImage
 import kotlin.math.cos
 import kotlin.math.sin
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -117,6 +116,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
+import moe.rukamori.archivetune.ui.player.rememberLyricsSyncOffset
 import moe.rukamori.archivetune.constants.LyricsMode
 import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
@@ -128,13 +128,14 @@ import moe.rukamori.archivetune.utils.rememberPreference
 import androidx.hilt.navigation.compose.hiltViewModel
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.ui.utils.highRes
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.SelectedLyrics
-import moe.rukamori.archivetune.ui.player.rememberLyricsSyncOffset
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
@@ -271,8 +272,10 @@ internal fun SimpMusicFullscreenLyricsSheet(
     val midColor1 by animateColorAsState(color.copy(alpha = 0.95f), tween(1200, easing = FastOutSlowInEasing))
     val midColor2 by animateColorAsState(color.copy(alpha = 0.85f), tween(1200, easing = FastOutSlowInEasing))
     val endColor by animateColorAsState(Color.Black, tween(1200, easing = FastOutSlowInEasing))
-    val gradientTransition = rememberInfiniteTransition(label = "lyricsGradient")
-    val animatedAngle by gradientTransition.animateFloat(
+    // The gradient drifts only while the app is STARTED; in the background it holds its first frame and runs no frame loop.
+    val gradientStarted by rememberLifecycleStarted()
+    val gradientTransition = if (gradientStarted) rememberInfiniteTransition(label = "lyricsGradient") else null
+    val animatedAngle = gradientTransition?.animateFloat(
         initialValue = -45f,
         targetValue = 45f,
         animationSpec =
@@ -283,7 +286,7 @@ internal fun SimpMusicFullscreenLyricsSheet(
             ),
         label = "lyricsGradientAngle",
     )
-    val animatedOffsetX by gradientTransition.animateFloat(
+    val animatedOffsetX = gradientTransition?.animateFloat(
         initialValue = -1500f,
         targetValue = 1500f,
         animationSpec =
@@ -294,7 +297,7 @@ internal fun SimpMusicFullscreenLyricsSheet(
             ),
         label = "lyricsGradientOffsetX",
     )
-    val animatedOffsetY by gradientTransition.animateFloat(
+    val animatedOffsetY = gradientTransition?.animateFloat(
         initialValue = -1000f,
         targetValue = 1000f,
         animationSpec =
@@ -363,6 +366,10 @@ internal fun SimpMusicFullscreenLyricsSheet(
                         // Drawn rather than set with background(): the three infinite animations
                         // are read here, in the draw phase, so they never recompose the sheet.
                         .drawBehind {
+                            // A stopped transition rests at its first frame, the value it starts from.
+                            val angle = animatedAngle?.value ?: -45f
+                            val offsetX = animatedOffsetX?.value ?: -1500f
+                            val offsetY = animatedOffsetY?.value ?: -1000f
                             drawRect(
                                 Brush.linearGradient(
                                     colors =
@@ -375,13 +382,13 @@ internal fun SimpMusicFullscreenLyricsSheet(
                                         ),
                                     start =
                                         Offset(
-                                            x = animatedOffsetX + (cos(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
-                                            y = animatedOffsetY + (sin(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
+                                            x = offsetX + (cos(angle * Math.PI.toFloat() / 180f) * 800f),
+                                            y = offsetY + (sin(angle * Math.PI.toFloat() / 180f) * 800f),
                                         ),
                                     end =
                                         Offset(
-                                            x = animatedOffsetX + 2500f + (cos((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
-                                            y = animatedOffsetY + 2500f + (sin((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                            x = offsetX + 2500f + (cos((angle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                            y = offsetY + 2500f + (sin((angle + 180f) * Math.PI.toFloat() / 180f) * 800f),
                                         ),
                                 ),
                             )
@@ -406,9 +413,8 @@ internal fun SimpMusicFullscreenLyricsSheet(
                             .padding(horizontal = 36.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AsyncImage(
-                        model = mediaMetadata.thumbnailUrl?.highRes(),
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = mediaMetadata.thumbnailUrl?.highRes(),
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier

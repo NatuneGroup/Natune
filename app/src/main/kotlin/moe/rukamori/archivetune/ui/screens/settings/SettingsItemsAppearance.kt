@@ -192,9 +192,10 @@ internal fun lyricsAnimationsSettingsItem(
         onClick = { navController.navigate("settings/appearance/lyrics_animations") },
         hidden = true,
         children = listOf(
-            SettingsChild("Line bounce effect", "lyrics_animation_style", listOf("line bounce", "bounce animation", "lrc bounce", "lyrics motion")),
-            SettingsChild("Soft word reveal", "lyrics_soft_word_reveal", listOf("soft word reveal", "word reveal", "feather edge", "lyrics gradient")),
-            SettingsChild("Interlude dots", "lyrics_interlude_dots", listOf("interlude dots", "breathing dots", "instrumental break", "lyrics dots")),
+            SettingsChild("Lyrics animation style", "lyrics_animation_style", listOf("lyrics animation style", "lyrics motion", "lyrics transition")),
+            SettingsChild("Lyrics scale animation", "lyrics_scale_animation", listOf("lyrics scale", "lyrics zoom", "lyrics grow")),
+            SettingsChild("Lyrics glow animation", "lyrics_glow_animation", listOf("lyrics glow", "lyrics shine", "lyrics highlight")),
+            SettingsChild("Lyrics fade animation", "lyrics_fade_animation", listOf("lyrics fade", "lyrics opacity animation")),
         ),
     )
 

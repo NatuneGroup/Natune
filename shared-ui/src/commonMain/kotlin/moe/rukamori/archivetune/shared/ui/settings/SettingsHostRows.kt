@@ -21,9 +21,9 @@ object AndroidOnlySettingsAnchors {
         "library_style", "compact_mini_player", "crop_thumbnail_to_square", "album_canvas_enabled",
         "metrolist_presentation", "tiktok_main_lyrics", "apple_music_animated_artwork",
         "apple_music_backdrop_wander", "apple_music_pause_scale", "apple_music_title_marquee",
-        "apple_music_seek_grow", "lyrics_background_style",
+        "apple_music_seek_grow",
         // Entries for pages that only exist on the Android host.
-        "aod_customize", "aod", "lyrics_animations", "discord_experimental",
+        "aod_customize", "aod", "discord_experimental",
         // Extras row read only by the Android library.
         "show_tags_in_library",
     )
@@ -34,7 +34,7 @@ object AndroidOnlySettingsAnchors {
         "permanent_shuffle", "swipe_up_queue", "swipe_to_song", "stop_task_clear", "wakelock",
     )
 
-    val lyrics: Set<String> = setOf("lyrics_scroll")
+    val lyrics: Set<String> = emptySet()
 
     val integration: Set<String> = setOf(
         "listenbrainz", "listenbrainz_token",
