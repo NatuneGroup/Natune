@@ -64,7 +64,7 @@ internal fun HomeVariantChipRow(
                 .fillMaxWidth()
                 .heightIn(min = if (compact) 44.dp else 68.dp)
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = HomeFeedGutter)
+                .padding(start = HomeFeedGutter, end = if (compact) HomeFeedGutter + 8.dp else HomeFeedGutter)
                 .padding(vertical = if (compact) 4.dp else 10.dp),
     ) {
         chips.forEach { chip ->

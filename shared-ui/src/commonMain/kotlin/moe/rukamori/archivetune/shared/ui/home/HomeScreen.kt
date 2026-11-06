@@ -22,6 +22,7 @@ import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChipRow
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.navigation.desktopHomeCardWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
@@ -144,12 +145,7 @@ fun HomeScreen(
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // The desktop feed reads denser than the phone carousel: larger sleeves and a tighter section rhythm, while the
         // phone composition below is byte-for-byte the same arrangement it had before.
-        val cardWidth = when {
-            !desktop -> HomeShelfCardWidth
-            maxWidth >= 1180.dp -> 160.dp
-            maxWidth >= 980.dp -> 154.dp
-            else -> HomeShelfCardWidth
-        }
+        val cardWidth = if (desktop) desktopHomeCardWidth(maxWidth) else HomeShelfCardWidth
         val sectionSpacing = when {
             design == HomeFeedDesign.BitChord -> 26.dp
             desktop -> 10.dp
