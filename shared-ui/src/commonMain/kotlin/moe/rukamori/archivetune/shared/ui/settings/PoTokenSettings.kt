@@ -162,11 +162,11 @@ fun PoTokenSettings(
         onFailure = onFailure,
         modifier = modifier,
         extraItems = {
-            if (localHelperStatus != null) {
+            localHelperStatus?.let { loader ->
                 item(key = "po_token_helper_status") {
                     PoTokenHelperStatusRow(
                         enabled = preferences[DesktopPoTokenHelperEnabledKey, true],
-                        load = localHelperStatus,
+                        load = loader,
                     )
                 }
             }

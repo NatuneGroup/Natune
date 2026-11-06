@@ -7,6 +7,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -17,6 +18,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Lifecycle of the optional local helper. Technical details are sanitized: no token or cookie ever reaches it. */
@@ -122,11 +124,12 @@ internal class BgutilSidecarManager(
     }
 
     /** Stops a running helper after the user turns the switch off; the next mint stays untokened. */
-    suspend fun disable() {
-        lifecycle.withLock { stopProcessLocked() }
-        baseUrl = null
-        mutableStatus.value = BgutilSidecarStatus.Disabled
-    }
+    suspend fun disable() =
+        withContext(Dispatchers.IO) {
+            lifecycle.withLock { stopProcessLocked() }
+            baseUrl = null
+            mutableStatus.value = BgutilSidecarStatus.Disabled
+        }
 
     /** Stops the process and cancels supervision; called by the session graph's close before the scope is cancelled. */
     suspend fun close() {
@@ -166,6 +169,11 @@ internal class BgutilSidecarManager(
 
         val binary = installer.resolve(assetSpec) ?: return fail(DOWNLOAD_REASON)
         if (closed) return false
+        // The switch can change while the download is in flight; the helper must not start after it was disabled.
+        if (!enabled()) {
+            disable()
+            return false
+        }
         val port = nextPort()
         val url = "http://${BgutilSidecarRelease.HOST}:$port"
         val handle =
@@ -192,6 +200,11 @@ internal class BgutilSidecarManager(
 
         val deadline = nowMs() + HEALTH_TIMEOUT_MS
         while (!closed && nowMs() <= deadline) {
+            if (!enabled()) {
+                stopProcessLocked()
+                disable()
+                return false
+            }
             if (!handle.isAlive) {
                 stopProcessLocked()
                 return fail("helper exited during startup")
