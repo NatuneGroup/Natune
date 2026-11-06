@@ -4,10 +4,14 @@ import com.sun.jna.CallbackReference
 import com.sun.jna.Memory
 import com.sun.jna.Native
 import com.sun.jna.Pointer
+import com.sun.jna.Structure
 import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.BaseTSD
 import com.sun.jna.platform.win32.WinDef
 import com.sun.jna.platform.win32.WinReg
 import com.sun.jna.platform.win32.WinUser
+import com.sun.jna.win32.StdCallLibrary
+import com.sun.jna.win32.W32APIOptions
 import java.awt.Window
 import java.util.concurrent.atomic.AtomicReference
 import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
@@ -71,8 +75,63 @@ internal object WindowsCustomFrame {
         fun DwmSetWindowAttribute(window: Pointer, attribute: Int, value: Pointer, size: Int): Int
     }
 
+    /**
+     * The `user32` entry points this frame needs, declared here instead of taken from JNA's `User32` interface: the
+     * four calls a maximized or per-monitor-DPI window makes (`IsZoomed`, `ScreenToClient`, `GetDpiForWindow`,
+     * `GetSystemMetricsForDpi`) are not declared there, and the window-procedure handles stay [Pointer] because that
+     * is what the 64-bit entry points take and return. JNA's `User32.SetWindowLongPtr` already returns `Pointer`; a
+     * `LONG_PTR` there is a 5.6-era signature and truncates the procedure address on 64-bit Windows.
+     *
+     * The plain Win32 names are deliberate: `W32APIOptions.DEFAULT_OPTIONS` maps each one to its `W` (Unicode) form and
+     * falls back to the undecorated export, which is how the four calls without an `A`/`W` pair are found.
+     */
+    private interface NatuneUser32 : StdCallLibrary {
+        fun GetWindowLongPtr(hwnd: WinDef.HWND, index: Int): BaseTSD.LONG_PTR
+        fun SetWindowLongPtr(hwnd: WinDef.HWND, index: Int, value: Pointer): Pointer?
+
+        fun CallWindowProc(
+            previous: Pointer,
+            hwnd: WinDef.HWND,
+            message: Int,
+            wParam: WinDef.WPARAM,
+            lParam: WinDef.LPARAM,
+        ): WinDef.LRESULT
+
+        fun DefWindowProc(
+            hwnd: WinDef.HWND,
+            message: Int,
+            wParam: WinDef.WPARAM,
+            lParam: WinDef.LPARAM,
+        ): WinDef.LRESULT
+
+        fun SetWindowPos(
+            hwnd: WinDef.HWND,
+            after: WinDef.HWND?,
+            x: Int,
+            y: Int,
+            width: Int,
+            height: Int,
+            flags: Int,
+        ): Int
+
+        fun PostMessage(hwnd: WinDef.HWND, message: Int, wParam: WinDef.WPARAM, lParam: WinDef.LPARAM): Int
+        fun GetClientRect(hwnd: WinDef.HWND, rect: WinDef.RECT): Int
+        fun ScreenToClient(hwnd: WinDef.HWND, point: WinDef.POINT): Int
+        fun IsZoomed(hwnd: WinDef.HWND): Int
+        fun GetDpiForWindow(hwnd: WinDef.HWND): Int
+        fun GetSystemMetricsForDpi(index: Int, dpi: Int): Int
+    }
+
     private val dwm: DwmApi? by lazy {
         if (!isSupported()) null else runCatching { Native.load("dwmapi", DwmApi::class.java) }.getOrNull()
+    }
+
+    private val user32: NatuneUser32? by lazy {
+        if (!isSupported()) {
+            null
+        } else {
+            runCatching { Native.load("user32", NatuneUser32::class.java, W32APIOptions.DEFAULT_OPTIONS) }.getOrNull()
+        }
     }
 
     /** One caption control the Compose side drew, in client pixels. */
@@ -92,9 +151,14 @@ internal object WindowsCustomFrame {
     private val buttons = AtomicReference<List<CaptionArea>>(emptyList())
     private val installed = AtomicReference<Installed?>(null)
 
+    /**
+     * The installation of one window. [procedure] is the strong reference JNA requires: the callback is a Java object
+     * whose function pointer is only valid while the object is reachable, so it is held here for as long as the
+     * window procedure is installed and released with it.
+     */
     private class Installed(
         val hwnd: WinDef.HWND,
-        val previous: WinDef.LONG_PTR,
+        val previous: Pointer?,
         val procedure: WinUser.WindowProc,
     )
 
@@ -115,7 +179,7 @@ internal object WindowsCustomFrame {
 
     /** One caption button, published from its own layout; the newest rectangle of a kind replaces the previous one. */
     fun publishButton(area: CaptionArea) {
-        buttons.update { current -> current.filter { it.hitTest != area.hitTest } + area }
+        buttons.updateAndGet { current -> current.filter { it.hitTest != area.hitTest } + area }
     }
 
     /**
@@ -125,19 +189,19 @@ internal object WindowsCustomFrame {
     fun install(window: Window): Boolean {
         if (!isSupported()) return false
         if (installed.get() != null) return true
+        val api = user32 ?: return false
         val hwnd = runCatching { WinDef.HWND(Native.getComponentPointer(window)) }.getOrNull() ?: return false
         return runCatching {
-            val user32 = com.sun.jna.platform.win32.User32.INSTANCE
-            val previous = user32.GetWindowLongPtr(hwnd, GWL_WNDPROC)
-            val procedure = Procedure(previous)
+            val previous = api.GetWindowLongPtr(hwnd, GWL_WNDPROC).toPointer()
+            val procedure = Procedure(api, previous)
             val pointer = CallbackReference.getFunctionPointer(procedure)
-            val replaced = user32.SetWindowLongPtr(hwnd, GWL_WNDPROC, WinDef.LONG_PTR(Pointer.nativeValue(pointer)))
+            val replaced = api.SetWindowLongPtr(hwnd, GWL_WNDPROC, pointer)
             if (replaced == null) {
                 false
             } else {
                 installed.set(Installed(hwnd, previous, procedure))
                 // The client area changed from frame to app-drawn: a window-position change makes Windows re-query it.
-                user32.SetWindowPos(hwnd, null, 0, 0, 0, 0, WinUser.SWP_NOMOVE or WinUser.SWP_NOSIZE or
+                api.SetWindowPos(hwnd, null, 0, 0, 0, 0, WinUser.SWP_NOMOVE or WinUser.SWP_NOSIZE or
                     WinUser.SWP_NOZORDER or WinUser.SWP_FRAMECHANGED)
                 DesktopDiagnosticLog.host("window frame: Windows procedure installed", DiagnosticLevel.INFO)
                 true
@@ -151,10 +215,10 @@ internal object WindowsCustomFrame {
     /** Restores the original procedure, so a window that switches back to the system frame hit-tests normally. */
     fun uninstall() {
         val current = installed.getAndSet(null) ?: return
+        val api = user32 ?: return
         runCatching {
-            val user32 = com.sun.jna.platform.win32.User32.INSTANCE
-            user32.SetWindowLongPtr(current.hwnd, GWL_WNDPROC, current.previous)
-            user32.SetWindowPos(current.hwnd, null, 0, 0, 0, 0, WinUser.SWP_NOMOVE or WinUser.SWP_NOSIZE or
+            current.previous?.let { api.SetWindowLongPtr(current.hwnd, GWL_WNDPROC, it) }
+            api.SetWindowPos(current.hwnd, null, 0, 0, 0, 0, WinUser.SWP_NOMOVE or WinUser.SWP_NOSIZE or
                 WinUser.SWP_NOZORDER or WinUser.SWP_FRAMECHANGED)
         }
     }
@@ -196,8 +260,13 @@ internal object WindowsCustomFrame {
         abgr and 0x00FFFFFF
     }.getOrNull()
 
-    /** `NCCALCSIZE_PARAMS`: the three candidate client rectangles and the window position the message carries. */
-    internal class NcCalcSizeParams(pointer: Pointer) : com.sun.jna.Structure(pointer) {
+    /**
+     * `NCCALCSIZE_PARAMS`: the three candidate client rectangles and the window position the message carries. JNA needs
+     * the field order declared because the native layout is `rgrc[3]` followed by `lppos` (56 bytes on 64-bit), while
+     * JNA's implicit order would sort `lppos` before `rgrc` and read every rectangle from the wrong offset.
+     */
+    @Structure.FieldOrder("rgrc", "lppos")
+    internal class NcCalcSizeParams(pointer: Pointer) : Structure(pointer) {
         @JvmField
         var rgrc: Array<WinDef.RECT> = arrayOf(WinDef.RECT(), WinDef.RECT(), WinDef.RECT())
 
@@ -210,18 +279,20 @@ internal object WindowsCustomFrame {
     }
 
     /** The procedure itself: it calls the previous one for every message it does not own. */
-    private class Procedure(private val previous: WinDef.LONG_PTR) : WinUser.WindowProc {
-        private val user32 = com.sun.jna.platform.win32.User32.INSTANCE
+    private class Procedure(
+        private val api: NatuneUser32,
+        private val previous: Pointer?,
+    ) : WinUser.WindowProc {
 
         override fun callback(hwnd: WinDef.HWND, uMsg: Int, wParam: WinDef.WPARAM, lParam: WinDef.LPARAM): WinDef.LRESULT {
             return when (uMsg) {
                 WM_NCCALCSIZE -> if (wParam.toInt() == 1) {
                     // The client area becomes the whole window. A maximized window would then cover the taskbar, so
                     // its bounds are inset by the frame the window manager keeps.
-                    val zoomed = runCatching { user32.IsZoomed(hwnd) }.getOrDefault(false)
+                    val zoomed = runCatching { api.IsZoomed(hwnd) != 0 }.getOrDefault(false)
                     if (zoomed) {
                         runCatching {
-                            val params = NcCalcSizeParams(Pointer(lParam.longValue()))
+                            val params = NcCalcSizeParams(Pointer(lParam.toLong()))
                             val edge = frameEdge(hwnd)
                             params.rgrc[0].left += edge
                             params.rgrc[0].top += edge
@@ -234,7 +305,7 @@ internal object WindowsCustomFrame {
                 } else {
                     pass(hwnd, uMsg, wParam, lParam)
                 }
-                WM_NCHITTEST -> WinDef.LRESULT(hitTest(hwnd, lParam.longValue()).toLong())
+                WM_NCHITTEST -> WinDef.LRESULT(hitTest(hwnd, lParam.toLong()).toLong())
                 WM_GETMINMAXINFO -> pass(hwnd, uMsg, wParam, lParam)
                 WM_NCACTIVATE -> pass(hwnd, uMsg, wParam, lParam)
                 WM_SETTINGCHANGE, WM_DWMCOMPOSITIONCHANGED -> {
@@ -245,7 +316,7 @@ internal object WindowsCustomFrame {
                 WM_NCRBUTTONUP -> {
                     // A right click on the app's caption opens the system menu where Windows would.
                     if (wParam.toInt() == HTCAPTION) {
-                        user32.PostMessage(hwnd, 0x0112, WinDef.WPARAM(SC_KEYMENU.toLong()), WinDef.LPARAM(0L))
+                        api.PostMessage(hwnd, 0x0112, WinDef.WPARAM(SC_KEYMENU.toLong()), WinDef.LPARAM(0L))
                     }
                     WinDef.LRESULT(0L)
                 }
@@ -255,9 +326,9 @@ internal object WindowsCustomFrame {
 
         private fun pass(hwnd: WinDef.HWND, uMsg: Int, wParam: WinDef.WPARAM, lParam: WinDef.LPARAM): WinDef.LRESULT =
             if (previous == null) {
-                user32.DefWindowProc(hwnd, uMsg, wParam, lParam)
+                api.DefWindowProc(hwnd, uMsg, wParam, lParam)
             } else {
-                user32.CallWindowProc(previous, hwnd, uMsg, wParam, lParam)
+                api.CallWindowProc(previous, hwnd, uMsg, wParam, lParam)
             }
 
         private fun hitTest(hwnd: WinDef.HWND, packed: Long): Int {
@@ -265,14 +336,14 @@ internal object WindowsCustomFrame {
             val screenX = (packed and 0xFFFF).toShort().toInt()
             val screenY = ((packed shr 16) and 0xFFFF).toShort().toInt()
             val point = WinDef.POINT(screenX, screenY)
-            if (!user32.ScreenToClient(hwnd, point)) return HTCLIENT
+            if (api.ScreenToClient(hwnd, point) == 0) return HTCLIENT
             val x = point.x
             val y = point.y
             buttons.get().firstOrNull { it.contains(x, y) }?.let { return it.hitTest }
             clientHoles.get().firstOrNull { it.contains(x, y) }?.let { return HTCLIENT }
             captionAreas.get().firstOrNull { it.contains(x, y) }?.let { return HTCAPTION }
             val client = WinDef.RECT()
-            if (!user32.GetClientRect(hwnd, client)) return HTCLIENT
+            if (api.GetClientRect(hwnd, client) == 0) return HTCLIENT
             val edge = resizeEdge(hwnd)
             val atLeft = x < edge
             val atRight = x >= client.right - edge
@@ -294,17 +365,16 @@ internal object WindowsCustomFrame {
 
         /** The frame width Windows would have drawn: the resize border plus its padding, at this window's DPI. */
         private fun frameEdge(hwnd: WinDef.HWND): Int {
-            val dpi = runCatching { user32.GetDpiForWindow(hwnd) }.getOrDefault(96)
+            val dpi = runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96)
             return runCatching {
-                user32.GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + user32.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+                api.GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + api.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
             }.getOrDefault(8)
         }
 
         private fun resizeEdge(hwnd: WinDef.HWND): Int {
-            val dpi = runCatching { user32.GetDpiForWindow(hwnd) }.getOrDefault(96)
+            val dpi = runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96)
             val frame = runCatching {
-                user32.GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
-                    user32.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+                api.GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + api.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
             }.getOrDefault(8)
             // One edge in device pixels, never zero, never wider than a quarter of a small window.
             return frame.coerceAtLeast((RESIZE_EDGE_DP * dpi) / 96).coerceAtMost(24)
