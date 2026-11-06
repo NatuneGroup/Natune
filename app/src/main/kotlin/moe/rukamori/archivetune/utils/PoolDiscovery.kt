@@ -22,7 +22,7 @@ import timber.log.Timber
 /**
  * The Android host's blocking side of the shared pool discovery policy: the six-hour jittered
  * re-ask window, the `If-None-Match`/`ETag` revalidation, the single-flight guard the providers
- * lacked (concurrent startup resolves each asked `/api/discovery/*` on their own), the refusal
+ * lacked (concurrent startup resolves each asked a discovery route on their own), the refusal
  * backoff (`401`/`403` for hours, `429`/`503` for the server's `Retry-After`) and the rule that a
  * backgrounded app does not poll at all.
  *
