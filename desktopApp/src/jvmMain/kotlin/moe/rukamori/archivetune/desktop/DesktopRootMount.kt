@@ -51,11 +51,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopHostServices
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChrome
 import moe.rukamori.archivetune.desktop.playback.DesktopEnginePrewarm
+import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
+import moe.rukamori.archivetune.shared.ui.theme.SystemFontFallback
 
 /**
  * Opens the one session graph for this process. A failure is logged by class name only and returns null, so the
@@ -141,6 +144,9 @@ internal fun DesktopSessionWindowRoot(
     quit: () -> Unit,
 ) {
     LaunchedEffect(sessions) { sessions.start() }
+    // The window is branded before its first visible frame: AWT otherwise shows the JDK's default window icon in the
+    // title bar, the taskbar and Alt-Tab while the packaged launcher carries the app's own icon.
+    LaunchedEffect(window) { DesktopWindowIcon.applyTo(window) }
     // The engine's dlopen, and its Windows closure preload, costs the first play 50-300 ms. Starting the
     // warm from this effect keeps that off the first frame: the effect runs after composition, and the
     // load itself runs on the prewarm's own IO dispatcher. A host without the library skips the load and
@@ -263,6 +269,15 @@ internal fun DesktopMountedRoot(
     val platformDark by services.systemDark.collectAsState()
     // The platform watcher wins where it reports; everywhere else Compose's own reading answers.
     val effectiveDark = platformDark ?: isSystemInDarkTheme()
+    // The Windows frame belongs to DWM, not to the client area: without this the dark app sits under a light title bar.
+    LaunchedEffect(window, effectiveDark) { WindowsWindowChrome.apply(window, effectiveDark) }
+    // Logs the renderer Skiko settled on and turns blur off when it fell back to CPU rasterisation.
+    LaunchedEffect(window) { DesktopRendererDiagnostics.observe(window) }
+    // Poppins covers Latin and Devanagari only; one line records which system font answered for the other scripts, so a
+    // glyph-box report starts from evidence instead of a guess.
+    LaunchedEffect(window) {
+        DesktopDiagnosticLog.host("fonts: system fallback ${SystemFontFallback.report()}", DiagnosticLevel.INFO)
+    }
     // Host actions leave their one-line notices here (the player's Share says what it copied), so no action owns UI.
     val notices = remember { SnackbarHostState() }
     LaunchedEffect(graph) {
@@ -278,7 +293,7 @@ internal fun DesktopMountedRoot(
                 // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
                 visible = activity.visible && !activity.minimized && !activity.occluded,
                 resumed = activity.resumed,
-                opticalCapabilities = DesktopOpticalCapabilities,
+                opticalCapabilities = rememberDesktopOpticalCapabilities(),
                 systemDark = effectiveDark,
                 // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
                 rootKeyFocus = true,
