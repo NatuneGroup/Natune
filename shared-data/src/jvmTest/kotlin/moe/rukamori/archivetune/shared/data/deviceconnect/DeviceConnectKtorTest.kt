@@ -14,7 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectConnection
+import moe.rukamori.archivetune.shared.data.deviceconnect.DeviceConnectConnection
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectRole
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceEndpoint
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceIdentity
