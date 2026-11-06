@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,6 +29,7 @@ import moe.rukamori.archivetune.shared.ui.screens.DetailScreen
 import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import moe.rukamori.archivetune.shared.ui.screens.isWideDetailHero
 import moe.rukamori.archivetune.shared.ui.screens.playlistGridColumns
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -110,6 +112,55 @@ class ArchiveMiniPlayerTest {
         assertEquals(listOf(PlayerAction.NEXT), actions)
         assertEquals(listOf(PlayerPanel.LYRICS, PlayerPanel.QUEUE), panels)
         assertEquals(1, expanded)
+    }
+
+    @Test
+    fun desktopHostDrawsTheIntegratedBarWithTopEdgeSeekLine() = runComposeUiTest {
+        val actions = mutableListOf<PlayerAction>()
+        var playPause = 0
+        val playback = playerFixture().playback
+        val nativeState = PlayerNativeState(
+            occurrenceId = "track@1",
+            playbackGeneration = 1L,
+            canPrevious = true,
+            canNext = true,
+            canSeek = true,
+            shuffle = false,
+            repeat = PlayerRepeat.OFF,
+            liked = true,
+            volume = 0.75f,
+            canvasAvailable = false,
+            palette = emptyList(),
+        )
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalDesktopLayout provides true) {
+                    Box(Modifier.requiredSize(1024.dp, 96.dp)) {
+                        ArchiveMiniPlayer(
+                            current = occurrence,
+                            playback = playback,
+                            nativeState = nativeState,
+                            artwork = { _, modifier -> Box(modifier.background(Color.Cyan)) },
+                            motion = false,
+                            onExpand = {},
+                            onOpenPanel = {},
+                            onPlayPause = { playPause++ },
+                            onSeekTo = {},
+                            onAction = { actions += it },
+                            onVolumeChange = {},
+                        )
+                    }
+                }
+            }
+        }
+        onNodeWithTag("desktop-player-bar").assertExists()
+        onNodeWithTag("desktop-player-seek-line").assertExists()
+        onNodeWithTag("desktop-player-seek").assertExists()
+        onNodeWithTag("desktop-player-volume").assertExists()
+        onNodeWithText("Pause").performClick()
+        assertEquals(1, playPause)
+        onNodeWithContentDescription("Next track").performClick()
+        assertEquals(listOf(PlayerAction.NEXT), actions)
     }
 
     @Test
