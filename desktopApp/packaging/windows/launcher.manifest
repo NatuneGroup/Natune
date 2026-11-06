@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Launcher manifest for the packaged Windows build.
+
+  jpackage writes the JDK launcher manifest, which declares system DPI awareness: the process gets one scale for every
+  monitor, so on a 100 % + 150 % desktop the window is either too small on one screen or too large on the other and does
+  not re-lay out when it is dragged across. This manifest declares PerMonitorV2 (with PerMonitor for older Windows) and is
+  embedded by `:desktopApp:stampWindowsLauncherManifest` into the app image's Natune.exe before the MSI/EXE installers are
+  built. AWT's per-monitor relayout and Compose's density change still have to be confirmed on real mixed-DPI hardware,
+  which is why the task only runs when -PdesktopWindowsLauncherManifest=per-monitor-v2 is passed.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="Natune.Desktop" version="1.0.0.0" processorArchitecture="amd64"/>
+  <description>Natune music player</description>
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!--
+        dpiAwareness is read on Windows 10 1607+; dpiAware is the fallback for older systems, where "true/pm" means
+        per-monitor v1. The pair is the documented Microsoft pattern for a per-monitor-v2 process.
+      -->
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

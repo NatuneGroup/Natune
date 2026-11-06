@@ -35,7 +35,9 @@ import org.jetbrains.compose.resources.stringResource
 fun KeyboardShortcutsDialog(onDismiss: () -> Unit, platform: ShortcutPlatform = currentShortcutPlatform) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            modifier = Modifier.fillMaxWidth(0.94f).widthIn(max = 900.dp).heightIn(max = 720.dp)
+            // The cap has to constrain the fill, not follow it: fillMaxWidth first made the 900 dp maximum inert and
+            // the overlay 94 % of a 1440 px window (1350 px) instead of the intended dialog width.
+            modifier = Modifier.widthIn(max = 900.dp).fillMaxWidth(0.94f).heightIn(max = 720.dp)
                 .testTag("shortcut-overlay"),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,

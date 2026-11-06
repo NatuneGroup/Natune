@@ -214,7 +214,9 @@ fun AboutSettings(
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     val channel = preferences.selectedUpdateChannel(isNightlyBuild)
-    Box(modifier = modifier, contentAlignment = Alignment.TopCenter) {
+    // The column is capped at 840 dp, so the Box has to take the whole page and centre it: a wrapping Box left the
+    // About content pinned to the left edge on every wider window (840 dp of a 1440 px page).
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(modifier = Modifier.widthIn(max = 840.dp).fillMaxSize()) {
             item(key = "about_header") {
                 AboutHeader(appName, versionLine, channel, distributionLabel, debugOrAbiLabel, appLogo)

@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.AppFontPreference
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -30,7 +31,15 @@ fun ArchiveTuneTheme(
     colorScheme: ColorScheme = archiveTuneDefaultColorScheme(darkTheme),
     content: @Composable () -> Unit,
 ) {
-    val appFamily = FontFamily(Font(Res.font.m4_poppins))
+    // The one bundled family carries real 400/500/600/700 faces. A single Regular file made every Material 3
+    // Medium/SemiBold/Bold style either flat or a synthesised weight, so the type hierarchy had one voice.
+    // Scripts outside Latin/Devanagari come from the platform's own font stack (see SystemFontFallback).
+    val appFamily = FontFamily(
+        Font(Res.font.m4_poppins, FontWeight.Normal),
+        Font(Res.font.m4_poppins_medium, FontWeight.Medium),
+        Font(Res.font.m4_poppins_semibold, FontWeight.SemiBold),
+        Font(Res.font.m4_poppins_bold, FontWeight.Bold),
+    )
     val family = when (fontPreference) {
         AppFontPreference.DEFAULT -> appFamily
         AppFontPreference.SYSTEM -> FontFamily.Default
