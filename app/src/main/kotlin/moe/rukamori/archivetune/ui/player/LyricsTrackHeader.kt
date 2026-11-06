@@ -59,33 +59,62 @@ internal object LyricsHeaderMetrics {
     /** This row's end-to-end chrome, in dp, with the title and artist column left out. */
     const val CHROME_DP = ARTWORK_GAP_DP
 
+    /**
+     * The short-window header keeps a tile — the title needs the width — but a tile of a few
+     * hundred dp of sheet height cannot afford 72-104 dp of it. 48-64 dp is still recognisably
+     * artwork, and the gap tightens with it.
+     */
+    const val COMPACT_ARTWORK_SHARE = 0.2f
+    const val COMPACT_ARTWORK_MIN_DP = 48f
+    const val COMPACT_ARTWORK_MAX_DP = 64f
+    const val COMPACT_ARTWORK_GAP_DP = 8f
+
     /** The artwork tile's edge for a row [rowWidthDp] wide. */
-    fun artworkSize(rowWidthDp: Float): Float =
-        (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
+    fun artworkSize(
+        rowWidthDp: Float,
+        compact: Boolean = false,
+    ): Float =
+        if (compact) {
+            (rowWidthDp * COMPACT_ARTWORK_SHARE).coerceIn(
+                COMPACT_ARTWORK_MIN_DP,
+                COMPACT_ARTWORK_MAX_DP,
+            )
+        } else {
+            (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
+        }
+
+    /** The gap that follows the artwork in a row [compact] tall or not. */
+    fun artworkGapDp(compact: Boolean): Float =
+        if (compact) COMPACT_ARTWORK_GAP_DP else ARTWORK_GAP_DP
 
     /** The width the title and artist keep once the artwork and its gap are taken out. */
-    fun textWidth(rowWidthDp: Float): Float =
-        (rowWidthDp - artworkSize(rowWidthDp) - CHROME_DP).coerceAtLeast(0f)
+    fun textWidth(
+        rowWidthDp: Float,
+        compact: Boolean = false,
+    ): Float =
+        (rowWidthDp - artworkSize(rowWidthDp, compact) - artworkGapDp(compact)).coerceAtLeast(0f)
 }
 
 /**
  * The lyrics sheet's header: the track's artwork, its title and artist. The sizes come from
  * [LyricsHeaderMetrics] so the text column is measured against the row's real width. The sheet's
- * controls are not drawn here — see `LyricsScreenFooter`.
+ * controls are not drawn here — see `LyricsScreenFooter`. [compact] is the short-window variant:
+ * a smaller tile and a tighter gap, so the list below keeps the room the header would have taken.
  */
 @Composable
 internal fun AppleMusicTrackHeader(
     mediaMetadata: MediaMetadata,
     foregroundColor: Color,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val artistText =
         remember(mediaMetadata.id, mediaMetadata.artists) {
             mediaMetadata.artists.joinToString { it.name }
         }
 
-    BoxWithConstraints(modifier.heightIn(min = 72.dp)) {
-        val artworkSize = LyricsHeaderMetrics.artworkSize(maxWidth.value).dp
+    BoxWithConstraints(modifier.heightIn(min = if (compact) 48.dp else 72.dp)) {
+        val artworkSize = LyricsHeaderMetrics.artworkSize(maxWidth.value, compact).dp
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier =
@@ -110,7 +139,7 @@ internal fun AppleMusicTrackHeader(
                 }
             }
 
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.ARTWORK_GAP_DP.dp))
+            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.artworkGapDp(compact).dp))
 
             Column(
                 modifier = Modifier.weight(1f),
