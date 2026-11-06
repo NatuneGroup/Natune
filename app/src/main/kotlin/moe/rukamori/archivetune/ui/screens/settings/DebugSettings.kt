@@ -92,7 +92,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.scaleAwareSpring
-import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.ui.utils.AcousticQualitySection
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey

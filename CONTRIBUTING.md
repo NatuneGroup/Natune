@@ -124,5 +124,5 @@ compilation alone is not UI, language, physical USB/DAC or listening validation.
 ---
 
 <div align="center">
-<sub>ArchiveTune: Engineering audio freedom. Part of the <strong>Koiverse</strong> ecosystem.</sub>
+<sub>ArchiveTune: Engineering audio freedom. Part of the <strong>Natune</strong> project.</sub>
 </div>

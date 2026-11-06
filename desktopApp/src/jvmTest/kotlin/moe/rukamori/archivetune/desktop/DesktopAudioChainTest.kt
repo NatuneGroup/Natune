@@ -63,12 +63,20 @@ class DesktopAudioChainTest {
         assertEquals(AudioProviderUnavailableReason.PLATFORM_DECRYPTION_REQUIRED, apple.unavailableReason)
     }
 
-    @Test fun configuredOrderDoesNotMoveYouTubeAheadOfOtherTiers() = runTest {
+    @Test fun theStoredOrderIsHonouredAboveYouTubeAndTheChainIsCutThere() = runTest {
         val seen = mutableListOf<AudioSourceType>()
-        val reordered = expected.reversed()
-        val prefs = allEnabled().apply { this[AudioSourceOrderKey] = reordered.joinToString(",") { it.name } }.snapshot()
-        resolver(seen).resolve(request, desktopSourceSnapshot(prefs))
-        assertEquals(reordered.filter { it != AudioSourceType.YOUTUBE } + AudioSourceType.YOUTUBE, seen)
+        val aboveYouTube = expected.filter { it != AudioSourceType.YOUTUBE }.reversed()
+        val stored = (aboveYouTube + AudioSourceType.YOUTUBE).joinToString(",") { it.name }
+        resolver(seen).resolve(request, desktopSourceSnapshot(allEnabled().apply { this[AudioSourceOrderKey] = stored }.snapshot()))
+        assertEquals(aboveYouTube + AudioSourceType.YOUTUBE, seen)
+
+        // PlaybackSourceChain cuts the chain at YouTube, so a stored order that puts the terminal tier first
+        // never reaches the tiers the user listed below it. The settings UI cannot write that order; this pins
+        // the shared rule the host relies on rather than pretending YouTube moves back to the end.
+        seen.clear()
+        val cutAtYouTube = (listOf(AudioSourceType.YOUTUBE) + aboveYouTube).joinToString(",") { it.name }
+        resolver(seen).resolve(request, desktopSourceSnapshot(allEnabled().apply { this[AudioSourceOrderKey] = cutAtYouTube }.snapshot()))
+        assertEquals(listOf(AudioSourceType.YOUTUBE), seen)
     }
 
     @Test fun pinCannotEnableASourceAndRejectedOrDownloadSpotifyIsNotRetried() = runTest {

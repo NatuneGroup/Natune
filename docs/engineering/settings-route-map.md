@@ -37,7 +37,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/canvas` | ✓ | ✓ | ✓ | iOS: connectivity + provider probes and a real canvas store (bytes, cache limit, clear) |
 | `settings/sources` | ✓ | ✓ | ✓ | iOS: per-source reachability probes; Spotify reports unreachable because the host has no streaming transport |
 | `settings/android_auto` | ✓ | — | — | Android-only surface; the iOS route resolves to the honest unavailable page |
-| `settings/storage` | ✓ | ✓ | ✓ | iOS: image-cache bytes and clear over the shared URL cache plus the decoded-image holder, and the image-cache limit applies at open and on commit; the song/canvas/lyrics kinds report unavailable and storage move reports unavailable (the app container is fixed) |
+| `settings/storage` | ✓ | ✓ | ✓ | desktop: a folder move only records a staged marker; the next start copies the closed database and the rest of the instance under the source lock and writes the pointer atomically; iOS: image-cache bytes and clear over the shared URL cache plus the decoded-image holder, and the image-cache limit applies at open and on commit; the song/canvas/lyrics kinds report unavailable and storage move reports unavailable (the app container is fixed) |
 | `settings/storage/export_songs` | ✓ | ✓ | ✓ | desktop: search, select, export downloads to a folder, delete; iOS: exports the stored downloads to a Files-shared location |
 | `settings/downloads` | ✓ | ✓ | ✓ | iOS: clear drops files, rows and staged bytes through the downloads owner |
 | `settings/privacy` | ✓ | ✓ | ✓ | BUG-005 defaults hold via shared rows; desktop adds pause listen/search history and clear listen history |

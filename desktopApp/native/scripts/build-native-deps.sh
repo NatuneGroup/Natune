@@ -37,7 +37,8 @@ case "$(uname -s)-$(uname -m)" in
     *) printf '[native-deps] unsupported host %s-%s\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
 esac
 # Apple's linker has no -rpath-link; the install names already point inside the prefix there.
-# Windows DLL resolution needs no rpath at all: the staged closure sits beside the engine.
+# Windows has no rpath of any kind: sitting beside the engine is not enough, because the loader never
+# searches a library's own directory, so the packaged loader preloads native-dependencies.txt instead.
 if [ "$(uname -s)" = "Linux" ]; then
     FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib -Wl,-rpath-link,$PREFIX/lib"
 else
@@ -96,12 +97,32 @@ fail_log() {
 }
 
 fetch() {
-    local url="$1" dest="$2" sha="$3"
+    local url="$1" dest="$2" sha="$3" attempt status
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl --fail --silent --show-error --location \
-            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
-            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
+        # ffmpeg.org has stalled mid-transfer on CI runners for minutes at a time, and curl's own --retry
+        # restarts from byte zero. Each attempt resumes the partial file instead, and a transfer that drops
+        # below 1 KiB/s for 30 s is cut so the next attempt can reconnect.
+        for attempt in 1 2 3 4 5 6 7 8; do
+            status=0
+            curl --fail --silent --show-error --location \
+                --connect-timeout 30 --speed-limit 1024 --speed-time 30 --max-time 600 \
+                --continue-at - -o "$dest.part" "$url" || status=$?
+            [ "$status" -eq 0 ] && break
+            # 33: the server refused the byte range, so the partial file cannot be resumed.
+            [ "$status" -eq 33 ] && rm -f "$dest.part"
+            if [ "$attempt" -eq 8 ]; then
+                log "giving up on $(basename "$dest") after $attempt attempts (curl exit $status)"
+                exit 1
+            fi
+            log "attempt $attempt for $(basename "$dest") failed (curl exit $status); resuming"
+            sleep $((attempt * 5))
+        done
+        if ! sha256_check "$sha" "$dest.part"; then
+            rm -f "$dest.part"
+            log "checksum mismatch for the partial $(basename "$dest"); removed the partial download"
+            exit 1
+        fi
         mv "$dest.part" "$dest"
     fi
     if ! sha256_check "$sha" "$dest"; then
@@ -235,7 +256,9 @@ main() {
         "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz.asc" "$FFMPEG_ASC_SHA256"
     fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
         "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz" "$FFMPEG_SHA256"
-    fetch "https://zlib.net/zlib-$ZLIB_VERSION.tar.gz" "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "$ZLIB_SHA256"
+    # zlib.net serves the release tarballs from /fossils/; the bare /zlib-<version>.tar.gz path answers 404, and
+    # the pin below is that fossil tarball's digest (verified 2026-11-05: bb329a0a…).
+    fetch "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz" "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "$ZLIB_SHA256"
     fetch "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" \
         "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" "$OPENSSL_SHA256"
     fetch "https://download.gnome.org/sources/libxml2/2.15/libxml2-$LIBXML2_VERSION.tar.xz" \

@@ -625,7 +625,6 @@ fun SpotifyPlaylistScreen(
                         .align(Alignment.TopEnd)
                         .padding(end = 12.dp, top = systemBarsTopPadding + 12.dp),
             ) {
-                // Search
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,

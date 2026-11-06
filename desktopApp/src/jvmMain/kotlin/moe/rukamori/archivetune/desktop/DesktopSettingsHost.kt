@@ -7,6 +7,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +68,7 @@ import moe.rukamori.archivetune.shared.ui.settings.ChangelogState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.LocalSettingsBack
 import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
@@ -290,9 +292,25 @@ private val DESKTOP_SETTINGS_ROUTES = setOf(
 /**
  * One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and
  * announced.
+ *
+ * This window has no system back gesture, so [LocalSettingsBack] hands every plain settings page the same pop the
+ * shell's own back action takes.
  */
 @Composable
 internal fun DesktopSettingsScreen(
+    owners: DesktopSettingsOwners,
+    graph: DesktopSessionGraph,
+    route: ArchiveRoute,
+    navigation: ShellNavigation,
+) {
+    val back: () -> Unit = { navigation.back() }
+    CompositionLocalProvider(LocalSettingsBack provides back) {
+        DesktopSettingsRouteBody(owners, graph, route, navigation)
+    }
+}
+
+@Composable
+private fun DesktopSettingsRouteBody(
     owners: DesktopSettingsOwners,
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
@@ -320,6 +338,7 @@ internal fun DesktopSettingsScreen(
                 onFailure = onFailure,
                 scrollTo = scrollTo,
                 playlistTags = graph.playlistTags,
+                openEqualizer = { graph.equalizer.openSheet() },
             )
             in DESKTOP_EXTRA_SETTINGS_ROUTES ->
                 DesktopExtraSettingsPage(path, graph, owners.controller, navigation, ::show, onFailure)

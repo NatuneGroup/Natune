@@ -77,6 +77,9 @@ internal fun ArchiveMiniPlayer(
     CompositionLocalProvider(
         LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motion, nativeState.repeat),
     ) {
+        // Space stays the player's key on each clickable expansion surface, not on this container: a focused bar would
+        // otherwise click itself and re-open the sheet after Escape returns focus here, while an ancestor handler would
+        // take Space from every focused control inside the strip. The claim is per surface and leaves text fields alone.
         BoxWithConstraints(modifier.fillMaxWidth()) {
             val barWidth = maxWidth
             if (!isWideTransportBar(barWidth)) {
@@ -84,6 +87,7 @@ internal fun ArchiveMiniPlayer(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = 56.dp)
+                        .spaceTogglesPlayback(onPlayPause)
                         .clickable(onClick = onExpand)
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .testTag("compact-mini-player"),
@@ -135,7 +139,9 @@ internal fun ArchiveMiniPlayer(
                             Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable(onClick = onExpand),
+                                .spaceTogglesPlayback(onPlayPause)
+                                .clickable(onClick = onExpand)
+                                .testTag("wide-mini-player-title"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {

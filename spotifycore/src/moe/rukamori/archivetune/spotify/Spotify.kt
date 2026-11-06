@@ -273,12 +273,14 @@ object Spotify {
             }
 
         log("D", "GQL POST $operationName -> ${response.status.value}")
+        // Ktor completes the engine call only when the body is read, so read it once before any branch.
+        val bodyText = response.bodyAsText()
 
         if (response.status == HttpStatusCode.Unauthorized) {
             throw SpotifyException(401, "Token expired or invalid")
         }
         if (response.status == HttpStatusCode.TooManyRequests) {
-            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val quotaExceeded = isSpotifyQuotaExceededResponse(bodyText)
             val retryAfter = graphQlCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
             log("W", "GQL $operationName -> 429, GraphQL calls are blocked for ${retryAfter}s")
             throw SpotifyException(
@@ -292,12 +294,11 @@ object Spotify {
             return GqlResult(json = null, isPersistedQueryNotFound = true)
         }
         if (response.status.value !in 200..299) {
-            val bodyText = response.bodyAsText()
             log("E", "GQL $operationName FAILED: ${response.status.value} — ${bodyText.take(200)}")
             throw SpotifyException(response.status.value, "GraphQL error ${response.status.value}: $bodyText")
         }
 
-        val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+        val responseJson = json.parseToJsonElement(bodyText).jsonObject
 
         val errors = responseJson.arr("errors")
         if (errors != null && errors.isNotEmpty()) {
@@ -360,9 +361,7 @@ object Spotify {
             }
         log("D", "REST GET $endpoint -> ${response.status.value}")
 
-        if (response.status == HttpStatusCode.Unauthorized) {
-            throw SpotifyException(401, "Token expired or invalid")
-        }
+        if (response.status == HttpStatusCode.Unauthorized) { response.bodyAsText(); throw SpotifyException(401, "Token expired or invalid") }
         if (response.status == HttpStatusCode.TooManyRequests) {
             val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
             val remainingSec = restCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
@@ -1351,10 +1350,11 @@ object Spotify {
                 parameter("filter", "default,collection-new-episodes")
             }
         log("D", "history GET play contexts -> ${response.status.value}")
+        val bodyText = response.bodyAsText()
         when {
             response.status == HttpStatusCode.Unauthorized -> throw SpotifyException(401, "Token expired or invalid")
             response.status == HttpStatusCode.TooManyRequests -> {
-                val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+                val quotaExceeded = isSpotifyQuotaExceededResponse(bodyText)
                 val retryAfter = historyCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
                 throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter, quotaExceeded = quotaExceeded)
             }
@@ -1363,7 +1363,7 @@ object Spotify {
         }
 
         val plays =
-            parseRecentPlayContexts(response.bodyAsText())
+            parseRecentPlayContexts(bodyText)
                 .filter { afterMillis == null || it.playedAtMillis > afterMillis }
         if (plays.isEmpty()) return SpotifyPaging(limit = limit)
 
@@ -2028,86 +2028,6 @@ object Spotify {
             )
         }
 
-    suspend fun artistTopTracks(
-        artistId: String,
-        market: String = "US",
-    ): Result<ArtistTopTracksResponse> =
-        runCatching {
-            val vars =
-                buildJsonObject {
-                    put("uri", "spotify:artist:$artistId")
-                    put("locale", "")
-                }
-
-            val response =
-                graphqlPost(
-                    operationName = "queryArtistOverview",
-                    variables = vars,
-                )
-
-            val artistData =
-                response.obj("data")?.obj("artistUnion")
-                    ?: throw SpotifyException(500, "Invalid queryArtistOverview response")
-
-            val topTracksItems =
-                artistData
-                    .obj("discography")
-                    ?.obj("topTracks")
-                    ?.arr("items") ?: JsonArray(emptyList())
-
-            val tracks =
-                topTracksItems.mapNotNull { elem ->
-                    val trackObj = elem.jsonObject.obj("track") ?: return@mapNotNull null
-                    parseGqlTrack(trackObj)
-                }
-
-            ArtistTopTracksResponse(tracks = tracks)
-        }
-
-    /**
-     * Extracts related artists from the GQL queryArtistOverview endpoint.
-     * This avoids the rate-limited REST /related-artists endpoint entirely.
-     */
-    suspend fun artistRelatedArtists(artistId: String): Result<List<SpotifyArtist>> =
-        runCatching {
-            val vars =
-                buildJsonObject {
-                    put("uri", "spotify:artist:$artistId")
-                    put("locale", "")
-                }
-
-            val response =
-                graphqlPost(
-                    operationName = "queryArtistOverview",
-                    variables = vars,
-                )
-
-            val artistData =
-                response.obj("data")?.obj("artistUnion")
-                    ?: throw SpotifyException(500, "Invalid queryArtistOverview response")
-
-            val relatedItems =
-                artistData
-                    .obj("relatedContent")
-                    ?.obj("relatedArtists")
-                    ?.arr("items")
-                    ?: JsonArray(emptyList())
-
-            relatedItems.mapNotNull { elem ->
-                val uri = elem.jsonObject.str("uri") ?: return@mapNotNull null
-                val id = uri.substringAfterLast(":")
-                val name = elem.jsonObject.obj("profile")?.str("name") ?: return@mapNotNull null
-                val images =
-                    parseGqlImages(
-                        elem.jsonObject
-                            .obj("visuals")
-                            ?.obj("avatarImage")
-                            ?.arr("sources"),
-                    )
-                SpotifyArtist(id = id, name = name, images = images, uri = uri)
-            }
-        }
-
     // ── Related Artists (REST fallback) ─────────────────────────────────
 
     suspend fun relatedArtists(artistId: String): Result<RelatedArtistsResponse> =
@@ -2117,11 +2037,6 @@ object Spotify {
 
     fun isAuthenticated(): Boolean = accessToken != null
 }
-
-@kotlinx.serialization.Serializable
-data class ArtistTopTracksResponse(
-    val tracks: List<SpotifyTrack> = emptyList(),
-)
 
 @kotlinx.serialization.Serializable
 data class RelatedArtistsResponse(

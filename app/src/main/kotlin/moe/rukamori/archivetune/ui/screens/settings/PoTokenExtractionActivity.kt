@@ -149,7 +149,10 @@ class PoTokenExtractionActivity : ComponentActivity() {
             if (!hasStartedSession || initialPageLoaded) return@LaunchedEffect
 
             initialPageLoaded = true
-            resetAuthWebViewSession(context, currentWebView) {
+            // The page mints a token bound to the signed-in YouTube session, so it must reuse the
+            // jar rather than expire it: the YouTube Music login and this extraction share one
+            // default WebView profile, and a wipe here would log every other provider out too.
+            resetAuthWebViewSession(currentWebView, scope = null) {
                 currentWebView.loadUrl(targetUrl)
             }
         }

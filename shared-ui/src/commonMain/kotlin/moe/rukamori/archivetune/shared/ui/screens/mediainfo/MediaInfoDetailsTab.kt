@@ -103,7 +103,6 @@ import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_ti_worked_prov
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_timer
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_unknown
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_usb_exclusive_direct
-import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_usb_framework_pinned
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_usb_out
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_volume
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_graphic_eq
@@ -341,7 +340,6 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     val signalPathLabel = stringResource(Res.string.m9_media_info_ti_signal_path)
     val usbExclusiveText = stringResource(Res.string.m9_media_info_usb_exclusive_direct)
     val bitPerfectUsbTitle = stringResource(Res.string.m9_media_info_bit_perfect_usb_title)
-    val usbFrameworkText = stringResource(Res.string.m9_media_info_usb_framework_pinned)
     val mixerText = stringResource(Res.string.m9_media_info_default_mixer)
     val hardwareClockLabel = stringResource(Res.string.m9_media_info_ti_hardware_clock)
     val usbIdLabel = stringResource(Res.string.m9_media_info_ti_usb_id)
@@ -353,14 +351,13 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
         when {
             pipeline?.usbExclusive == true -> usbExclusiveText
             live?.bitPerfectUsbActive == true -> bitPerfectUsbTitle
-            live?.tryptifyUsbPinActive == true -> usbFrameworkText
             else -> mixerText
         }
     val liveSampleRateHz: Int? =
         live?.stream?.sampleRateHz?.takeIf { it > 0 }
             ?: state.format?.sampleRateHz?.takeIf { it > 0 }
     val hardwareClockHz: Int? =
-        pipeline?.tryptifyUsbRateHz?.takeIf { it > 0 }
+        pipeline?.usbExclusiveRateHz?.takeIf { it > 0 }
             ?: pipeline?.halSampleRateHz
             ?: liveSampleRateHz
     val hardwareClockValue = if (hardwareClockHz != null) formatHz(hardwareClockHz) else unknownText

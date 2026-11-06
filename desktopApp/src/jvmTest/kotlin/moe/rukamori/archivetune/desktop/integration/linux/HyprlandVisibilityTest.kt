@@ -29,7 +29,10 @@ class HyprlandVisibilityTest {
         assertTrue(hyprlandWindowVisible(pid, "Natune", clients(pid = pid, workspace = 2, pinned = true), monitors(active = 1)))
         // A window the compositor has not listed is never reported hidden.
         assertTrue(hyprlandWindowVisible(pid, "Natune", "[]", monitors(active = 1)))
-        assertTrue(hyprlandWindowVisible(pid, "Natune", clients(pid = 1, workspace = 2), monitors(active = 1)))
+        // Someone else's window matches neither our pid nor our title, so it says nothing about us.
+        assertTrue(hyprlandWindowVisible(pid, "Natune", clients(pid = 1, title = "Other", workspace = 2), monitors(active = 1)))
+        // A helper's pid carrying our title is our window, so the unseen workspace still hides it.
+        assertFalse(hyprlandWindowVisible(pid, "Natune", clients(pid = 1, workspace = 2), monitors(active = 1)))
     }
 
     @Test fun theTitleSelectsTheWindowWhenThePidDoesNotMatch() {

@@ -124,13 +124,12 @@ private data class ThumbnailPage(
 fun Thumbnail(
     sliderPositionProvider: () -> Long?,
     modifier: Modifier = Modifier,
-    isPlayerExpanded: Boolean = true, // Add parameter to control swipe based on player state
+    isPlayerExpanded: Boolean = true,
     onOpenLyrics: (() -> Unit)? = null,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
 
-    // States
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val queueTitle by playerConnection.queueTitle.collectAsStateWithLifecycle()
@@ -187,10 +186,8 @@ fun Thumbnail(
         CanvasArtworkPlaybackCache.setMaxSize(maxCanvasCacheSize)
     }
 
-    // Grid state
     val thumbnailLazyGridState = rememberLazyGridState()
 
-    // Create a playlist using correct shuffle-aware logic
     val timeline = playerConnection.player.currentTimeline
     val currentIndex = playerConnection.player.currentMediaItemIndex
     val shuffleModeEnabled = playerConnection.player.shuffleModeEnabled
@@ -299,7 +296,6 @@ fun Thumbnail(
         }
     }
 
-    // Update position when song changes
     LaunchedEffect(mediaMetadata, currentMediaItem?.mediaId, canSkipPrevious, canSkipNext) {
         val index = maxOf(0, currentMediaIndex)
         if (index >= 0 && index < thumbnailPages.size) {
@@ -341,7 +337,6 @@ fun Thumbnail(
                     style = MaterialTheme.typography.titleMedium,
                     color = textBackgroundColor,
                 )
-                // Show album title or queue title
                 val playingFrom = queueTitle ?: mediaMetadata?.album?.title
                 if (!playingFrom.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -604,7 +599,6 @@ fun Thumbnail(
             }
         }
 
-        // Seek effect
         LaunchedEffect(showSeekEffect) {
             if (showSeekEffect) {
                 delay(1000)
@@ -704,7 +698,6 @@ private fun ThumbnailBgBlurApi30(
  * Custom SnapLayoutInfoProvider idea belongs to OuterTune
  */
 
-// SnapLayoutInfoProvider
 @ExperimentalFoundationApi
 fun SnapLayoutInfoProvider(
     lazyGridState: LazyGridState,

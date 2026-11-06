@@ -125,7 +125,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -225,7 +224,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.aod.ACTION_AOD_MODE
 import moe.rukamori.archivetune.constants.AodAutoOnScreenDimKey
 import moe.rukamori.archivetune.constants.AodAutoTimerSecondsKey
@@ -290,7 +288,6 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.musicrecognition.ACTION_MUSIC_RECOGNITION
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionRoute
 import moe.rukamori.archivetune.musicrecognition.openMusicRecognition
-import moe.rukamori.archivetune.onboarding.OnboardingScreenState
 import moe.rukamori.archivetune.onboarding.OnboardingViewModel
 import moe.rukamori.archivetune.playback.DownloadUtil
 import moe.rukamori.archivetune.playback.MusicService
@@ -301,6 +298,8 @@ import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.songmetadata.observeSongMetadataOverrideMap
+import moe.rukamori.archivetune.startup.LaunchSplashGate
+import moe.rukamori.archivetune.startup.opensOnboardingRoute
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
@@ -436,11 +435,12 @@ class MainActivity : ComponentActivity() {
     private var isMusicServiceBound = false
     private var immersiveStatusBarsHidden = false
 
-    // Held by [onCreate]'s splash screen until the composition knows what the launch is going to
-    // draw — the onboarding state resolved and the preference store read. Releasing earlier is
-    // what put a bare window (and with it a second logo) between the system splash and the
-    // opening animation.
+    // Held by [onCreate]'s splash screen until the launch has composed the content it will draw.
+    // That first composition already contains a drawable branch — onboarding's loading indicator
+    // while its state is unresolved — so the hand-over is not tied to preference or database reads.
     private var isReady by mutableStateOf(false)
+
+    private val launchSplashGate = LaunchSplashGate()
 
     private val serviceConnection =
         object : ServiceConnection {
@@ -685,12 +685,18 @@ class MainActivity : ComponentActivity() {
         // after it is this launch's opening animation rather than a bare window. This is the
         // library db79d42ac dropped as broken: it returns because that attempt's theme switch and
         // unbounded hold are both gone — the base theme is kept, no exit listener is registered,
-        // and the hold is capped at two seconds by the release effect inside setContent.
+        // and the hold ends at the first committed composition, with LaunchSplashGate's finite
+        // budget only as the fallback for a launch that never composes.
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         splashScreen.setKeepOnScreenCondition { !isReady }
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        lifecycleScope.launch {
+            launchSplashGate.awaitRelease()
+            isReady = true
+        }
 
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { downloadUtil.prewarmDownloadConnections() }
@@ -1131,33 +1137,15 @@ class MainActivity : ComponentActivity() {
                 val onboardingViewModel: OnboardingViewModel = hiltViewModel()
                 val onboardingState by onboardingViewModel.screenState.collectAsStateWithLifecycle()
                 var showOnboardingLogin by rememberSaveable { mutableStateOf(false) }
-                val shouldShowOnboarding =
-                    when (val state = onboardingState) {
-                        OnboardingScreenState.Loading -> true
-                        OnboardingScreenState.Empty -> true
-                        is OnboardingScreenState.Error -> false
-                        is OnboardingScreenState.Success -> state.uiState.shouldShowOnboarding
-                    }
+                val shouldShowOnboarding = onboardingState.opensOnboardingRoute()
 
-                // Let the system splash go only when this launch knows what it is about to draw:
-                // onboarding out of Loading and the preference store's first disk read landed, so
-                // the curtain cannot lift on values the store has yet to load. It sits above the
-                // branch below so a first run — which shows onboarding rather than the animation
-                // — releases the splash too. The wait is bounded because this is now the only
-                // thing between the splash screen and the app: a launch that never reports its
-                // state must still not be able to strand the reader, the same reason the overlay
-                // caps itself. Two seconds is far beyond an honest settle (both reads are local),
-                // and the read's runCatching absorbs the cancellation this file would normally
-                // rethrow — the release below is unconditional, so either path still runs it and
-                // neither mechanism may be dropped as redundant. The hold vetoes drawing, not
-                // composition, so this launch's opening animation is already burning its timers
-                // while held: only its tail is guaranteed on screen once the curtain lifts.
+                // This effect runs only once the launch content has committed, so the branch the
+                // reader will see — the onboarding loading indicator while the decision is still
+                // Loading, or the resolved screen — already exists and can draw. That composition
+                // is the splash release signal: it waits for no preference or database read, and
+                // it sits above the branch below so a first run releases too.
                 LaunchedEffect(Unit) {
-                    withTimeoutOrNull(2_000L) {
-                        snapshotFlow { onboardingState != OnboardingScreenState.Loading }.first { it }
-                        runCatching { dataStore.data.first() }
-                    }
-                    isReady = true
+                    launchSplashGate.contentComposed()
                 }
 
                 if (shouldShowOnboarding) {

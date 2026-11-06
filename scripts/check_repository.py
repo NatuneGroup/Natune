@@ -35,6 +35,33 @@ def git(*args: str) -> bytes:
     return result.stdout
 
 
+def parse_rename_origins(output: bytes) -> dict[str, str]:
+    """The old path of every true Git rename in NUL-separated `--name-status -z` output.
+
+    Copies are not origins: a retained source cannot excuse a new file's banner. Only an R
+    status from the same diff establishes inherited provenance.
+    """
+    fields = output.split(b"\0")
+    origins: dict[str, str] = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if not status:
+            index += 1
+        elif status.startswith(b"R"):
+            if index + 2 >= len(fields):
+                raise ValueError("Git rename output is truncated")
+            origins[fields[index + 2].decode()] = fields[index + 1].decode()
+            index += 3
+        elif status.startswith(b"C"):
+            if index + 2 >= len(fields):
+                raise ValueError("Git copy output is truncated")
+            index += 3
+        else:
+            index += 2
+    return origins
+
+
 class GitObjects:
     """One lazy object reader avoids hundreds of Git startups in a staged hook."""
 
@@ -105,6 +132,7 @@ class Snapshot:
             self.base = git("merge-base", resolved.decode().strip(), "HEAD").decode().strip()
         self.committed = bool(base)
         self.cache: dict[str, str] = {}
+        self.renames: dict[str, str] | None = None
         self.objects = GitObjects(ROOT)
         self.files = self._files()
 
@@ -143,6 +171,24 @@ class Snapshot:
             ) - {""}
         return changed
 
+    def rename_origin(self, path: str) -> str | None:
+        """The old path when this diff recorded [path] as a true Git rename destination.
+
+        Copies cannot become origins: a retained source cannot excuse a new file's banner. This is
+        deliberately a separate diff from budget checks, so a renamed path keeps its new-path
+        byte/line baseline.
+        """
+        if self.renames is None:
+            args = ["diff", "--name-status", "-z", "--find-renames"]
+            if self.staged:
+                args += ["--cached", "HEAD"]
+            elif self.committed:
+                args += [self.base, "HEAD"]
+            else:
+                args += ["HEAD"]
+            self.renames = parse_rename_origins(git(*args, "--"))
+        return self.renames.get(path)
+
     def ref(self, path: str, old: bool = False) -> str:
         if old:
             return f"{self.base}:{path}"
@@ -180,6 +226,20 @@ def copyright_lines(text: str) -> set[str]:
         for line in header.splitlines()
         if re.search(r"(?:©|\bcopyright\b)", line, re.IGNORECASE)
     }
+
+
+def header_origin(snapshot: Snapshot, path: str, previous: str, previous_size: int | None) -> tuple[str, bool]:
+    """The header rule's prior text and newness, separate from the same-path budget baseline.
+
+    A true Git rename inherits the banner and copyright of its old path. A copy, a retained source
+    or a genuine addition has no origin, so its banner is still treated as new.
+    """
+    if previous_size is not None:
+        return previous, False
+    origin = snapshot.rename_origin(path)
+    if origin is None:
+        return "", True
+    return snapshot.text(origin, old=True), False
 
 
 def header_problems(path: str, current: str, previous: str, new: bool) -> list[str]:
@@ -408,7 +468,8 @@ def check(snapshot: Snapshot, headers_only: bool = False) -> list[tuple[str, str
         previous_size = snapshot.size(path, old=True)
         text = snapshot.text(path)
         previous = snapshot.text(path, old=True)
-        for problem in header_problems(path, text, previous, previous_size is None):
+        header_previous, header_new = header_origin(snapshot, path, previous, previous_size)
+        for problem in header_problems(path, text, header_previous, header_new):
             problems.append((path, problem))
         if headers_only:
             continue

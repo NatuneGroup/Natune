@@ -97,6 +97,79 @@ still name `NatuneGroup/ArchiveTune`; whether this repository's own feed should
 serve app updates is a separate product decision, so those endpoints stay
 unchanged until it is resolved.
 
+## Manual ARM64 release candidate (artifact only)
+
+`Build Pull Request` has one opt-in, same-repository manual mode that builds a
+signed ARM64 Release APK for storage and update-over-install testing without
+publishing anything:
+
+```sh
+gh workflow run build_pull_request.yml \
+  --ref <reviewed-branch> \
+  -f android_release_candidate=true \
+  -f candidate_version_code=<reserved code>
+```
+
+- `candidate_version_code` is mandatory. It must be an absolute code allocated
+  above the source `trustedUpgradeVersionCodeFloor`, above the measured
+  N20261103 ARM64 baseline `1793753723`, and above the newest `at-build:` marker
+  in this repository's published release bodies read at dispatch. A
+  blank/default value or an unreadable marker fails closed after checkout but
+  before any build or signing. The release list must be read completely (a
+  failed page aborts before parsing), every present declaration must be the
+  complete
+  `<!-- at-build:<positive Int> -->` line, at least one valid declaration must
+  exist, and any malformed or out-of-range declaration fails closed. The
+  dispatcher must also confirm that the reserved code exceeds any newer target
+  installed on the test device but not yet published, which CI cannot observe.
+- The mode requires all four historical signing secrets. Unlike the release and
+  nightly paths, a missing or incomplete set fails the job before the build
+  rather than leaving an unsigned APK that could be mistaken for a candidate.
+  The keystore is decoded to a runner-temporary file inside the signing step and
+  removed on every exit; no key, password or certificate subject is printed or
+  uploaded.
+- The job checks out the dispatched `github.sha` with recursive pinned
+  submodules, credential persistence off and an exact-HEAD assertion, then
+  builds only `:app:assembleGmsMobileArm64Release` with JDK 21, compileSdk 37,
+  NDK `30.0.16248370`, `-Pautomix=false -PslimTdlib=true` and the standard
+  Nightly build identity (`IS_NIGHTLY_BUILD=true`,
+  `NIGHTLY_BUILD_HASH=<sha>`, `PULL_REQUEST=false`). It supplies the same
+  provider/client BuildConfig mappings as the release Android leg.
+- Signing follows the release leg: zipalign, the historical keystore with v1
+  signing disabled, `apksigner verify`, and a v2/v3 certificate match. Before
+  the pin is trusted, the job downloads the public N20261103 baseline into
+  `RUNNER_TEMP`, verifies its exact bytes and SHA-256
+  (`287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc`,
+  20,306,627 bytes) and versionCode `1793753723`, and lets
+  `apksigner verify --print-certs` confirm its certificate SHA-256
+  `6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9`.
+  The candidate must present the same certificate. That pin was derived from
+  the pinned APK's legacy v2/v3 certificate block; the local parse is not a
+  signature verification, so the in-CI `apksigner` check is what validates it.
+  The baseline is never uploaded. If the pinned release asset is no longer
+  available, the job fails closed; re-pin from an archived, verified copy rather
+  than skipping the comparison.
+- The final signed file is re-checked for package
+  `moe.rukamori.archivetune`, non-debug, minSdk 24, only `arm64-v8a` and the
+  reserved version; `scripts/apk_size_report.py` measures it. The artifact
+  contains exactly one APK plus `SHA256SUMS`, `candidate-metadata.json` and
+  `apk-size.json`, is named as a candidate, is retained three days, and is not a
+  published Nightly or Stable release.
+- The whole job has a 30-minute timeout. One reservation costs at most 30 wall
+  minutes times the Linux x64 16x equivalent-minute multiplier, i.e. 480
+  equivalent minutes; reserve it inside the remaining free balance and do not
+  treat that balance as a provider-enforced cap. Upload or quota failure fails
+  the job; there is no release, tag, external store or update-feed fallback.
+- `android_release_candidate` cannot be combined with `desktop_app_image` or
+  `quality_base`. When only the candidate flag is true, the ordinary Debug/KMP
+  `build` and `desktop-compile` jobs are skipped so one Android job runs.
+
+Device installation, in-place update, playback and installed-storage changes
+are not established by a successful artifact upload. `python3 -m unittest
+scripts.test_candidate_workflow -v` covers the candidate gates, unchanged
+defaults, fake SDK/`gh`/`curl` contracts and metadata checks without a JVM,
+Gradle, network or real signing.
+
 ## GitHub Actions secrets
 
 No user-created secret is required for a workflow to run or publish; the
@@ -158,7 +231,12 @@ GitHub-hosted `macos-26` for the macOS and iOS legs:
 - Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
   under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
   `stage-windows-package.py` walks the PE import table, stages the prefix DLLs and
-  refuses anything outside the system-DLL allowlist. The engine builds with MinGW
+  refuses anything outside the system-DLL allowlist. That walk and the allowlist live
+  in `windows-native-deps.py`, which also writes `native-dependencies.txt` from the
+  staged import tables: Windows has no rpath, so the loader preloads that order before
+  `System.load` reaches the engine. The packaging job re-runs the script in `--check`
+  mode against the packaged app image, so an unbundled import, a non-x64 DLL or a
+  missing/stale manifest fails the build instead of a user's playback. The engine builds with MinGW
   (`MinGW Makefiles` generator, statically linked libgcc/winpthreads) while
   `archivetune_system` and `archivetune_browser` stay MSVC with the static CRT, so
   no vcruntime/msvcp DLL is needed for those adapters. Release TDLight also uses
@@ -196,11 +274,12 @@ GitHub-hosted `macos-26` for the macOS and iOS legs:
   keyring cannot live under the deep work tree) and prints the gpg log on failure.
   This is not yet a successful device-link/package result.
 
-Nightly preparation runs `scripts.test_release_workflow` and
-`scripts.test_native_release_packaging` with Python's standard-library unittest.
-These use fixture files and fake SDK/GitHub/native tools to cover argument
-boundaries, six/seven-variant inventories, missing signing secrets, private
-manifest URLs, stale-head refusal, download integrity and native staging.
+Nightly preparation runs `scripts.test_release_workflow`,
+`scripts.test_native_release_packaging` and `scripts.test_native_dependency_cache`
+with Python's standard-library unittest. These use fixture files and fake
+SDK/GitHub/native tools to cover argument boundaries, six/seven-variant
+inventories, missing signing secrets, private manifest URLs, stale-head refusal,
+download integrity, native staging and the synthetic cache manifests.
 They do not compile an APK, native library or JVM code, contact GitHub, or prove
 runtime behavior. New regression tests and packaging changes are unexecuted
 until the orchestrator runs the candidate on Blacksmith.
@@ -214,6 +293,54 @@ image, and without `%u` or a MimeType. `addLinuxBrowserDebDepends` adds
 it already unpacks, `addLinuxBrowserRpmRequires` passes jpackage an overriding
 `Natune.desktop` template through `--resource-dir`, and the AppImage's
 hand-written entry declares the same pair in the workflow.
+
+## Native dependency caches
+
+The release and opt-in iOS compile workflows cache only the pinned third-party
+producers, never project build output:
+
+- Desktop `build-native-deps.sh`: the `build/native/prefix` install prefix, the
+  static OpenSSL prefix, the miniaudio header/license and the four license files
+  its staging scripts require. Linux and Windows validate archive members in bulk;
+  macOS static-archive platform validation is not proven, so macOS dependency
+  caching is disabled instead of trusting a guessed probe.
+- iOS: only the pinned download archives. The per-platform install-prefix cache
+  is deferred: proving the Mach-O platform (device versus simulator) and every
+  static-archive member is not yet established, so the closure always builds
+  from source and the portable core is always rebuilt.
+- TDLib compiled-stage caching is deferred too: selecting a static zlib for the
+  desktop Linux archive is not proven PIC/shared-JNI safe, so the TDLib recipe
+  and its existing system/Windows dependency wiring stay unchanged.
+
+Never cached by this native cache layer: CMake/engine build trees, source
+checkouts or source-generator executables, Gradle caches, DerivedData, signed
+assets, IPA/installers, credentials or signing material.
+
+A release dispatch can select an older `commit_sha` whose source tree predates
+`scripts/native_dependency_cache.py`. The workflow then emits one uncached notice
+and runs the original native producers normally: no cache key is computed and no
+restore/save occurs. There is no legacy fallback helper or alternative transport.
+
+`scripts/native_dependency_cache.py` derives an exact key from the producer
+script SHA (which already pins versions, checksums, flags and derived targets),
+platform plus target architecture, workspace path, byte-exact whitelisted
+environment and the actual resolved tool binaries with their SHA-256/version
+(including `CC`/`CXX`/`AR`/`RANLIB`/`NM` overrides).
+A restored tree is accepted only when its manifest matches that input identity,
+the complete expected inventory, every file's SHA-256 and the target binary
+architecture. A mismatch removes only that cache's generated paths and reruns
+the recipe, so stale stamps cannot mask it. If an identity or probe is
+unsupported, caching is disabled for that run and the producer still runs; a
+manifest is written only after a validated build, and an absent/partial manifest
+cannot be saved. Download archives remain subject to the producer's own checksum
+and FFmpeg signature verification on every run.
+
+Pull-request paths use `actions/cache/restore` only. `actions/cache/save` runs
+only for `push` or `workflow_dispatch` on `NatuneGroup/Natune`, after a validated
+build and a present manifest. Feature-branch caches are not automatically
+visible to `dev`, `main` or unrelated pull requests, and nothing warms a cache.
+No cache run or duration improvement is claimed; the first approved run is the
+evidence.
 
 ## Run by hand
 

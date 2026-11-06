@@ -61,6 +61,12 @@ object FlamingoPage {
 
 private const val FlamingoMovingBlurScale = 1.35f
 
+// The floating light is stack-blurred down to 96 px (32 px without the moving effect) before it
+// reaches the screen, so the decode is bounded there too; the full-resolution cover was decoded
+// only to be scaled away immediately.
+private const val FlamingoFloatingLightSourcePx = 192
+private const val FlamingoFloatingLightCompactSourcePx = 64
+
 @Composable
 fun FlamingoFloatingLight(
     modifier: Modifier,
@@ -101,6 +107,13 @@ fun FlamingoFloatingLight(
                 val request = ImageRequest.Builder(context)
                     .data(url)
                     .allowHardware(false)
+                    .size(
+                        if (backgroundEffect) {
+                            FlamingoFloatingLightSourcePx
+                        } else {
+                            FlamingoFloatingLightCompactSourcePx
+                        },
+                    )
                     .build()
                 val result = context.imageLoader.execute(request)
                 if (result is SuccessResult) {

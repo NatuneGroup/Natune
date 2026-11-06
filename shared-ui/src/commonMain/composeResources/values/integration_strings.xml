@@ -12,6 +12,7 @@
     <string name="ios_queue_empty">The queue is empty</string>
     <string name="ios_queue_remove">Remove from queue</string>
     <string name="ios_menu_action_failed">The action could not be completed.</string>
+    <string name="ios_share_link_unavailable">This item has no public link to share.</string>
     <string name="ios_ok">OK</string>
     <string name="ios_logs_copied">Copied log to clipboard</string>
     <string name="ios_native_interface">Native iOS interface</string>

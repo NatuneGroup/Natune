@@ -4,9 +4,6 @@ import cnames.structs.at_audio_output
 import kotlin.time.Clock
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toLong
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
@@ -46,9 +43,7 @@ internal class IosBlendSource(
             speed: Float,
         ): IosBlendSource? {
             var transport = (outcome as? IosNativeAudioRoute.Outcome.Ready)?.transport
-            val native = memScoped {
-                at_audio_create(allocArray<ByteVar>(256), 256uL)
-            }
+            val native = createIosAudioOutput()
             if (native == null) {
                 transport?.close()
                 telegramSource?.close()

@@ -502,11 +502,8 @@ class ListenTogetherClient @Inject constructor(
     // Wake lock to keep connection alive when in a room
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // Track notification IDs for join requests to dismiss them from both UI and notification actions
-    private val joinRequestNotifications = mutableMapOf<String, Int>()
-
-    // Track notification IDs for suggestions to dismiss them similarly
-    private val suggestionNotifications = mutableMapOf<String, Int>()
+    // Socket callbacks record these ids while Compose UI and notification actions clear them.
+    private val roomNotificationIds = ListenTogetherRoomNotificationIds()
 
     /** Recent chat messages backing the conversation notification (MessagingStyle). */
     private val chatNotificationHistory = ArrayDeque<ChatMessagePayload>()
@@ -769,6 +766,8 @@ class ListenTogetherClient @Inject constructor(
         _pendingJoinRequests.value = emptyList()
         _bufferingUsers.value = emptyList()
 
+        roomNotificationIds.drainAndCancel(context)
+
         // Clear from persistent storage
         clearPersistedSession()
         reconnectAttempts = 0
@@ -836,8 +835,7 @@ class ListenTogetherClient @Inject constructor(
     private fun showJoinRequestNotification(payload: JoinRequestPayload) {
         val notifId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
 
-        // Store notification ID for this user so we can dismiss it from UI actions
-        joinRequestNotifications[payload.userId] = notifId
+        roomNotificationIds.trackJoinRequest(payload.userId, notifId)
 
         val approveIntent = Intent(context, ListenTogetherActionReceiver::class.java).apply {
             action = ACTION_APPROVE_JOIN
@@ -1043,8 +1041,7 @@ class ListenTogetherClient @Inject constructor(
     private fun showSuggestionNotification(payload: SuggestionReceivedPayload) {
         val notifId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
 
-        // Store notification ID for this suggestion so we can dismiss it from UI actions
-        suggestionNotifications[payload.suggestionId] = notifId
+        roomNotificationIds.trackSuggestion(payload.suggestionId, notifId)
 
         val approveIntent = Intent(context, ListenTogetherActionReceiver::class.java).apply {
             action = ACTION_APPROVE_SUGGESTION
@@ -1155,6 +1152,7 @@ class ListenTogetherClient @Inject constructor(
                 _roomState.value = null
                 _role.value = RoomRole.NONE
                 clearPersistedSession()
+                roomNotificationIds.drainAndCancel(context)
 
                 scope.launch {
                     _events.emit(ListenTogetherEvent.ConnectionError(t.message ?: "Unknown error"))
@@ -1298,7 +1296,7 @@ class ListenTogetherClient @Inject constructor(
                     _pendingJoinRequests.value = _pendingJoinRequests.value.filter { it.userId != payload.userId }
 
                     // Dismiss notification if it exists
-                    joinRequestNotifications.remove(payload.userId)?.let { notifId ->
+                    roomNotificationIds.forgetJoinRequest(payload.userId)?.let { notifId ->
                         NotificationManagerCompat.from(context).cancel(notifId)
                     }
 
@@ -1341,6 +1339,7 @@ class ListenTogetherClient @Inject constructor(
                     _roomState.value = null
                     _role.value = RoomRole.NONE
                     clearChatNotificationState()
+                    roomNotificationIds.drainAndCancel(context)
                     scope.launch { _events.emit(ListenTogetherEvent.Kicked(payload.reason)) }
                 }
 
@@ -1472,7 +1471,7 @@ class ListenTogetherClient @Inject constructor(
                     log(LogLevel.INFO, "Suggestion approved", payload.trackInfo?.title ?: payload.suggestionId)
 
                     // Dismiss notification if it exists (for host who approved via another device/modal)
-                    suggestionNotifications.remove(payload.suggestionId)?.let { notifId ->
+                    roomNotificationIds.forgetSuggestion(payload.suggestionId)?.let { notifId ->
                         NotificationManagerCompat.from(context).cancel(notifId)
                     }
 
@@ -1484,7 +1483,7 @@ class ListenTogetherClient @Inject constructor(
                     log(LogLevel.WARNING, "Suggestion rejected", payload.reason ?: "")
 
                     // Dismiss notification if it exists
-                    suggestionNotifications.remove(payload.suggestionId)?.let { notifId ->
+                    roomNotificationIds.forgetSuggestion(payload.suggestionId)?.let { notifId ->
                         NotificationManagerCompat.from(context).cancel(notifId)
                     }
 
@@ -1764,6 +1763,7 @@ class ListenTogetherClient @Inject constructor(
         _bufferingUsers.value = emptyList()
 
         clearChatNotificationState()
+        roomNotificationIds.drainAndCancel(context)
 
         // Clear from persistent storage
         clearPersistedSession()
@@ -1782,7 +1782,7 @@ class ListenTogetherClient @Inject constructor(
         sendMessage(MessageTypes.APPROVE_JOIN, ApproveJoinPayload(userId))
 
         // Dismiss notification immediately when approved from UI
-        joinRequestNotifications.remove(userId)?.let { notifId ->
+        roomNotificationIds.forgetJoinRequest(userId)?.let { notifId ->
             NotificationManagerCompat.from(context).cancel(notifId)
         }
     }
@@ -1799,7 +1799,7 @@ class ListenTogetherClient @Inject constructor(
         _pendingJoinRequests.value = _pendingJoinRequests.value.filter { it.userId != userId }
 
         // Dismiss notification immediately when rejected from UI
-        joinRequestNotifications.remove(userId)?.let { notifId ->
+        roomNotificationIds.forgetJoinRequest(userId)?.let { notifId ->
             NotificationManagerCompat.from(context).cancel(notifId)
         }
     }
@@ -1998,7 +1998,7 @@ class ListenTogetherClient @Inject constructor(
         _pendingSuggestions.value = _pendingSuggestions.value.filter { it.suggestionId != suggestionId }
 
         // Dismiss notification immediately when approved from UI
-        suggestionNotifications.remove(suggestionId)?.let { notifId ->
+        roomNotificationIds.forgetSuggestion(suggestionId)?.let { notifId ->
             NotificationManagerCompat.from(context).cancel(notifId)
         }
     }
@@ -2015,7 +2015,7 @@ class ListenTogetherClient @Inject constructor(
         _pendingSuggestions.value = _pendingSuggestions.value.filter { it.suggestionId != suggestionId }
 
         // Dismiss notification immediately when rejected from UI
-        suggestionNotifications.remove(suggestionId)?.let { notifId ->
+        roomNotificationIds.forgetSuggestion(suggestionId)?.let { notifId ->
             NotificationManagerCompat.from(context).cancel(notifId)
         }
     }

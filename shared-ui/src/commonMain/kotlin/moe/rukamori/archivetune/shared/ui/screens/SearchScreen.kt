@@ -18,6 +18,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -40,6 +42,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.NavigationBarHeight
 import moe.rukamori.archivetune.shared.ui.navigation.PillRole
 import moe.rukamori.archivetune.shared.ui.navigation.rememberPillStyle
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
 import org.jetbrains.compose.resources.stringResource
 
 enum class SearchScope { Online, Local }
@@ -65,7 +68,21 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
     contentPadding: PaddingValues = LocalShellContentPadding.current,
+    /**
+     * A search shortcut navigated here and asks the field to take focus. The screen consumes the request once, so a
+     * later tab visit leaves focus where the user put it.
+     */
+    focusRequested: Boolean = false,
+    onFocusConsumed: () -> Unit = {},
 ) {
+    val fieldFocus = remember { FocusRequester() }
+    LaunchedEffect(focusRequested) {
+        if (!focusRequested) return@LaunchedEffect
+        // The request arrives with the navigation that composes this screen. A request on a node that is not placed yet
+        // fails, and that failure must neither take the window down nor stay pending for the next visit.
+        try { fieldFocus.requestFocus() } catch (_: IllegalStateException) { }
+        onFocusConsumed()
+    }
     val appleMusicStyle = preferences.appleMusicSearchBar()
     val pill = rememberPillStyle(preferences)
     val searchBarAtBottom = preferences[SearchBarPositionKey] == "BOTTOM"
@@ -115,7 +132,8 @@ fun SearchScreen(
             if (!searchBarAtBottom) {
                 Text(stringResource(Res.string.m4_search), style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.padding(16.dp))
-                SearchField(query, onQuery, onSubmit, Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                SearchField(query, onQuery, onSubmit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    focusRequester = fieldFocus)
             }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(scope == SearchScope.Online, { onScope(SearchScope.Online) },
@@ -188,6 +206,7 @@ fun SearchScreen(
                         onSubmit = onSubmit,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = SearchHorizontalPadding / 2, vertical = 4.dp)
                             .testTag("search-query-bottom"),
+                        focusRequester = fieldFocus,
                     )
                 }
             }
@@ -201,8 +220,11 @@ private fun SearchField(
     onQuery: (String) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester,
 ) {
-    OutlinedTextField(query, onQuery, modifier = modifier.testTag("search-query"), singleLine = true,
+    // Typing here must never reach the transport keys, so the field reports its focus to the root's counter.
+    OutlinedTextField(query, onQuery,
+        modifier = modifier.shortcutTextInput().testTag("search-query").focusRequester(focusRequester), singleLine = true,
         label = { Text(stringResource(Res.string.m4_search_query)) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { if (query.isNotBlank()) onSubmit() }))

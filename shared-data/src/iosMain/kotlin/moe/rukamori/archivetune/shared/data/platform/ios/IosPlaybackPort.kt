@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
 import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
-import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
@@ -48,6 +48,7 @@ class IosPlaybackPort : PlaybackPort {
     private var handoffEpoch = 0L
     private var request: PlaybackRequest? = null
     private var reopenOutput = false
+    private var outputCreationError: String? = null
     private var closed = false
 
     // Main-queue only. A source that should be rendering but has not moved is a stall: the watchdog
@@ -66,8 +67,10 @@ class IosPlaybackPort : PlaybackPort {
     // Main-queue only. The pitch and equalizer tone every output loads with, applied like [desiredSpeed]. The
     // native units keep their parameters across manual output, so the tone survives a blend and its promotion.
     private var desiredPitchCents = 0f
-    private var equalizerEnabled = false
-    private var equalizerBands: List<IosEqBand> = emptyList()
+
+    // Main-queue only. The shared DSP document's value, applied like [desiredSpeed]: an output created or recreated
+    // later renders the same equalizer, and the port never keeps a band list of its own.
+    private var dspSettings = DspSettings()
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -84,6 +87,9 @@ class IosPlaybackPort : PlaybackPort {
 
     // Wakes the periodic read after a command, so a resume returns to the fast rate without waiting out the idle delay.
     private val pollWake = Channel<Unit>(Channel.CONFLATED)
+
+    // The steady read rate, reduced while the host reports the app is not frontmost.
+    private val pollCadence = IosPlaybackPollCadence()
 
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
@@ -137,9 +143,9 @@ class IosPlaybackPort : PlaybackPort {
         scope.launch {
             while (isActive) {
                 val busy = observe()
-                // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for nothing.
-                val interval = if (!busy) IDLE_POLL_MS else if (blend == null) ACTIVE_POLL_MS else BLEND_POLL_MS
-                withTimeoutOrNull(interval) { pollWake.receive() }
+                // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for
+                // nothing; a backgrounded app reads even less often while playback continues.
+                withTimeoutOrNull(pollCadence.intervalMs(busy, blend != null)) { pollWake.receive() }
             }
         }
     }
@@ -185,6 +191,12 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
+    /** Reports the app's activation, so the periodic read drops to the background rate while it is not frontmost. */
+    fun setAppActive(active: Boolean) {
+        pollCadence.appActive = active
+        pollWake.trySend(Unit)
+    }
+
     /**
      * The queue has already resolved this occurrence through the usual source chain. It is admitted/opened using the
      * same leases as Load, while the outgoing decoder keeps its source, position and account-bound transport.
@@ -223,12 +235,12 @@ class IosPlaybackPort : PlaybackPort {
                     outcome = null
                     telegramSource = null
                     val prepared = source ?: return@withContext false
-                    // A blend opened under a stored pitch/equalizer tone renders the same curve the
-                    // port's outputs do: the deck units render the fade and the promoted output keeps it.
+                    // A blend opened under a stored pitch/tone renders the same curve the port's
+                    // outputs do: the deck units render the fade and the promoted output keeps it.
                     val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
                         blend = it
                         it.setPitch(desiredPitchCents)
-                        it.setEqualizer(equalizerEnabled, equalizerBands)
+                        it.setTone(dspSettings.equalizerEnabled, dspSettings.toIosEqBands(), dspSettings.iosPreampDb)
                     } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
@@ -718,29 +730,27 @@ class IosPlaybackPort : PlaybackPort {
             output = null
             reopenOutput = false
         }
-        return output ?: memScoped {
-            val error = allocArray<ByteVar>(256)
-            at_audio_create(error, 256uL)
-        }?.also {
+        return output ?: createIosAudioOutput { outputCreationError = it }?.also {
             output = it
             at_audio_volume(it, volume)
             at_audio_speed(it, desiredSpeed)
             at_audio_pitch(it, desiredPitchCents)
-            applyEqualizer(it)
+            applyDsp(it)
         }
     }
 
     /**
-     * Applies the shared equalizer tone on every live output and any created or recreated later, like [setVolume].
-     * iOS renders the bands through each output's in-graph unit; the shared band list is converted once per call.
+     * Applies the shared DSP settings on every live output and any created or recreated later, like [setVolume].
+     * iOS renders the tone of that one value through each output's in-graph unit: the bands, their switch and the
+     * user preamp, with the adapter converting the band list once per call. Tempo stays with
+     * [PlaybackCommand.SetSpeed], so a settings push never moves it.
      */
-    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
+    fun applyDspSettings(settings: DspSettings) {
         scope.launch {
             if (closed) return@launch
-            equalizerEnabled = enabled
-            equalizerBands = bands.toIosEqBands()
-            output?.let { applyEqualizer(it) }
-            blend?.setEqualizer(enabled, equalizerBands)
+            dspSettings = settings
+            output?.let { applyDsp(it) }
+            blend?.setTone(settings.equalizerEnabled, settings.toIosEqBands(), settings.iosPreampDb)
         }
     }
 
@@ -751,9 +761,9 @@ class IosPlaybackPort : PlaybackPort {
     suspend fun currentRequest(): PlaybackRequest? =
         runCatching { withContext(scope.coroutineContext) { request.takeUnless { closed } } }.getOrNull()
 
-    /** Packs the stored equalizer bands into the native ABI and applies them to [native]. */
-    private fun applyEqualizer(native: CPointer<at_audio_output>) =
-        applyIosEqualizer(native, equalizerBands, equalizerEnabled)
+    /** Applies the stored DSP settings' bands and preamp to [native]. */
+    private fun applyDsp(native: CPointer<at_audio_output>) =
+        applyIosDsp(native, dspSettings)
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
     private fun observe(): Boolean {
@@ -778,7 +788,7 @@ class IosPlaybackPort : PlaybackPort {
                 at_audio_volume(incoming.output, volume)
                 at_audio_speed(incoming.output, desiredSpeed)
                 at_audio_pitch(incoming.output, desiredPitchCents)
-                applyEqualizer(incoming.output)
+                applyDsp(incoming.output)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
@@ -886,7 +896,9 @@ class IosPlaybackPort : PlaybackPort {
     private fun fail(reason: PlaybackFailureReason, message: String? = null) {
         request?.let {
             errors.tryEmit(
-                PlaybackFailure(it.occurrenceId, reason, message ?: "iOS playback rejected", attemptId = it.attemptId),
+                PlaybackFailure(it.occurrenceId, reason, message ?: (
+                    outputCreationError.takeIf { reason == PlaybackFailureReason.OUTPUT_FAILED }
+                        ?: "iOS playback rejected"), attemptId = it.attemptId),
             )
         }
     }
@@ -914,10 +926,6 @@ class IosPlaybackPort : PlaybackPort {
     private companion object {
         /** Queue preparations not yet claimed. The queue prepares one occurrence at a time, so a few cover every race. */
         const val MAX_QUEUED_VIEWS = 4
-
-        const val ACTIVE_POLL_MS = 50L
-        const val BLEND_POLL_MS = 20L
-        const val IDLE_POLL_MS = 250L
     }
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */

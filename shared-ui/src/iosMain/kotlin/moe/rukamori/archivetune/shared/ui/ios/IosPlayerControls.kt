@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,15 +15,21 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
+import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
+import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerHandoff
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
@@ -41,12 +48,14 @@ private const val STATE_STOP_TIMEOUT_MS = 5_000L
 /**
  * The iOS native controls over the one session graph. Skip and repeat go through the queue owner and the settings
  * store, seek goes through the one player, like goes through the library owner, and shuffle goes through the queue
- * owner. The app-level volume goes through the graph onto the engine's mixer, like the Android player. Song actions
- * without an owner on this host are reported and never shown as done.
+ * owner. The app-level volume goes through the graph onto the engine's mixer, like the Android player. Share opens
+ * the system sheet on the playing song's catalogue link. Song actions without an owner on this host are reported
+ * and never shown as done.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class IosPlayerControls(
     private val graph: IosSessionGraph,
+    private val host: IosHost,
     private val sleepSheet: IosSleepTimerSheetState,
     private val itemMenu: IosItemMenuState,
 ) : PlayerNativeControls {
@@ -133,10 +142,28 @@ internal class IosPlayerControls(
             // The root closes the sheet for COLLAPSE before an action reaches the host.
             PlayerAction.COLLAPSE -> Unit
             PlayerAction.LIKE -> toggleLike(occurrenceId)
+            PlayerAction.SHARE -> share(occurrenceId)
             PlayerAction.SLEEP -> sleepSheet.open = true
             // The more button opens the same song menu a row's overflow shows, tempo and pitch included.
             PlayerAction.MORE -> openItemMenu(occurrenceId)
             else -> graph.report("player action ${action.name} is not connected on the iOS host")
+        }
+    }
+
+    /**
+     * The Now Playing sheet's Share: presents the system share sheet with the playing song's catalogue link, the iOS
+     * counterpart of the desktop copy. A local file or a song with no public link shows the notice that says why
+     * instead of opening an empty sheet.
+     */
+    private fun share(occurrenceId: String?) {
+        val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
+        graph.scope.launch {
+            val link = iosNowPlayingShareLink(item.ref, host)
+            // The sheet and the notice are both UIKit/Compose surfaces, so they run on the main queue.
+            withContext(Dispatchers.Main) {
+                if (link == null) itemMenu.notice(IosItemMenuState.NOTICE_SHARE_UNAVAILABLE)
+                else iosShareText(host, link)
+            }
         }
     }
 
@@ -217,4 +244,39 @@ private fun PlayerRepeat.toQueueRepeatMode(): QueueRepeatMode = when (this) {
     PlayerRepeat.OFF -> QueueRepeatMode.OFF
     PlayerRepeat.ONE -> QueueRepeatMode.ONE
     PlayerRepeat.ALL -> QueueRepeatMode.ALL
+}
+
+/**
+ * The public catalogue link of [ref] for the share sheet, or null for a local file or a provider that has none. A
+ * Telegram id resolves through the signed-in client, which is the only owner of its channel message link. The same
+ * provider-to-link rules the desktop share applies, so a Spotify id never becomes a YouTube video id.
+ */
+private suspend fun iosNowPlayingShareLink(ref: ContentRef, host: IosHost): String? {
+    if (ref.id.startsWith("telegram://")) {
+        val track = TelegramTrackRef.fromMediaId(ref.id) ?: return null
+        return host.telegram.value?.messageLink(track.chatId, track.messageId)
+    }
+    val id = ref.id.takeIf { id -> id.isNotBlank() && id.none(Char::isWhitespace) } ?: return null
+    return when (ref.provider) {
+        ContentProvider.YOUTUBE.id -> when (ref.kind) {
+            ContentKind.SONG, ContentKind.EPISODE -> "https://music.youtube.com/watch?v=$id"
+            ContentKind.ARTIST -> "https://music.youtube.com/channel/$id"
+            ContentKind.PLAYLIST -> "https://music.youtube.com/playlist?list=$id"
+            ContentKind.ALBUM, ContentKind.PODCAST -> "https://music.youtube.com/browse/$id"
+            else -> null
+        }
+        ContentProvider.SPOTIFY_CATALOG.id -> {
+            val type = when (ref.kind) {
+                ContentKind.SONG -> "track"
+                ContentKind.EPISODE -> "episode"
+                ContentKind.ARTIST -> "artist"
+                ContentKind.PLAYLIST -> "playlist"
+                ContentKind.ALBUM -> "album"
+                ContentKind.PODCAST -> "show"
+                else -> return null
+            }
+            "https://open.spotify.com/$type/$id"
+        }
+        else -> null
+    }
 }

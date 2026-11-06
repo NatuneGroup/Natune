@@ -24,13 +24,13 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -45,8 +45,8 @@ val LocalShellContentPadding = staticCompositionLocalOf<PaddingValues> { Padding
 /**
  * Slots share one root owner. [content] excludes the mini-player/navigation.
  * Use ProvideBackdropSources and pass its page-only source modifier as [contentModifier].
- * While [nativeChrome] is active the platform draws the tab bar and mini player in the bottom layouts, and the shell
- * only reserves their height; rail layouts keep the shared chrome.
+ * This shell is the only bottom chrome on every platform: it measures its own bar and mini player and reserves
+ * exactly that height beneath the pages.
  */
 @Composable
 fun ArchiveTuneShell(
@@ -59,7 +59,6 @@ fun ArchiveTuneShell(
     searchActive: Boolean = false,
     onSearchItemDoubleClick: (() -> Unit)? = null,
     contentModifier: Modifier = Modifier,
-    nativeChrome: NativeShellChrome? = null,
     miniPlayer: @Composable () -> Unit,
     content: @Composable (route: String) -> Unit,
 ) {
@@ -100,11 +99,6 @@ fun ArchiveTuneShell(
             }
         val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
             navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route))
-        val nativeActive by (nativeChrome?.active ?: InactiveNativeChrome).collectAsState()
-        val nativeInsetDp by (nativeChrome?.bottomInsetDp ?: NoNativeInset).collectAsState()
-        val nativeYields = nativeActive && layout.nativeChromeReplaces()
-        SideEffect { nativeChrome?.reportShellYields(nativeYields) }
-        DisposableEffect(nativeChrome) { onDispose { nativeChrome?.reportShellYields(false) } }
         val hiddenByScroll =
             layout == ShellLayout.MiniPlayerOnly && effectiveScrolledDown && hideOnScroll &&
                 compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED
@@ -121,17 +115,14 @@ fun ArchiveTuneShell(
         )
         // The page is recorded for frosted navigation only while a frosted bar, rail or compact row is composed on screen.
         val frostedGate = LocalFrostedNavigationGate.current
-        val frostedOnScreen = frostedNavigationOnScreen(layout, preferences) && !nativeYields
+        val frostedOnScreen = frostedNavigationOnScreen(layout, preferences)
         SideEffect { frostedGate?.onScreen = frostedOnScreen }
         val apple = preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC
         val pill = rememberPillStyle(preferences)
         val glowStrength = preferences.navigationBarGlowStrength()
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }
-        val chromePadding = if (nativeYields) {
-            PaddingValues(bottom = nativeInsetDp.dp)
-        } else {
-            PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
-        }
+        // Pages reserve the measured bar and mini player, so no card sits under a control the shell drew.
+        val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
             if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
                 NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
@@ -161,7 +152,7 @@ fun ArchiveTuneShell(
                     LocalBottomUiCompactFraction provides bottomUiCompactFraction,
                 ) {
                     // This sibling is excluded from both recordings; only page pixels feed the chrome.
-                    if (!nativeYields) Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
+                    Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
                         when (layout) {
                             ShellLayout.Hidden -> Unit
                             ShellLayout.CompactRow -> Row(
@@ -173,13 +164,15 @@ fun ArchiveTuneShell(
                             ) {
                                 val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
                                 CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
-                                Box(Modifier.weight(1f).heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
+                                Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip()
+                                    .testTag("shell-mini-player")) { miniPlayer() }
                                 if (apple || compactSearchVisible(navigation.route)) {
                                     CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
                                 }
                             }
                             else -> {
-                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
+                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip()
+                                    .testTag("shell-mini-player")) { miniPlayer() }
                                 if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
                                     // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
                                     SukisuNavigationBar(
@@ -209,15 +202,6 @@ fun ArchiveTuneShell(
         }
     }
 }
-
-/** The bottom layouts a platform tab bar and mini player stand in for. Rails and the hidden layout keep their own. */
-internal fun ShellLayout.nativeChromeReplaces(): Boolean = when (this) {
-    ShellLayout.BottomBar, ShellLayout.CompactRow, ShellLayout.MiniPlayerOnly -> true
-    ShellLayout.Rail, ShellLayout.TvRail, ShellLayout.Hidden -> false
-}
-
-private val InactiveNativeChrome: StateFlow<Boolean> = MutableStateFlow(false)
-private val NoNativeInset: StateFlow<Float> = MutableStateFlow(0f)
 
 internal val ShellTab.label: StringResource get() = when (this) {
     ShellTab.Home -> Res.string.m4_home
@@ -281,6 +265,24 @@ private fun Modifier.navigationMaterial(
     preferences[NavigationBarFrostedBlurKey, false] || preferences[NavigationBarTintFrostedBlurKey, false] ->
         clip(shape).frostedNavigation(tinted = preferences[NavigationBarTintFrostedBlurKey, false])
     else -> background(MaterialTheme.colorScheme.surfaceContainer, shape)
+}
+
+/**
+ * The mini-player slot is chrome, so it paints an opaque surface: the page cards behind it cannot show through. It is
+ * also a hit target of its own, so a press its controls did not take stops here instead of reaching the page card
+ * painted beneath. Hit testing already stops at the topmost sibling under the pointer, so this handler only has to
+ * exist, and it must never consume: a consumed event cancels the wait-for-up of a control inside the strip. Nothing
+ * here adds semantics, focus or a click action to the empty area.
+ */
+@Composable
+private fun Modifier.miniPlayerStrip(): Modifier =
+    background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
+
+/** Watches the strip's pointer events without consuming, so presence in the chain claims the region and nothing else. */
+private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent()
+    }
 }
 
 /** Resource labels remain accessible even when a compact circle has no visible caption. */

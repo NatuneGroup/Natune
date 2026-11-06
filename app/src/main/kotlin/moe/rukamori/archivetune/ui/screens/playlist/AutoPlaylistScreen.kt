@@ -346,7 +346,6 @@ fun AutoPlaylistScreen(
                 }
             } else {
                 if (!isSearching) {
-                    // Hero Header Item
                     item(
                         key = "header",
                         contentType = CONTENT_TYPE_HEADER,
@@ -453,7 +452,6 @@ fun AutoPlaylistScreen(
                     }
                 }
 
-                // Sort Header
                 item(
                     key = "sortHeader",
                     contentType = CONTENT_TYPE_HEADER,

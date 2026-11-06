@@ -6,6 +6,7 @@ import io.ktor.http.headersOf
 import kotlin.test.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.shared.data.provider.ProviderRequestTimeout
@@ -25,7 +26,7 @@ internal fun echoConfiguration() = DesktopSpotifyEchoConfiguration("desktop-clie
     ByteArray(16) { it.toByte() }.joinToString("") { "%02x".format(it.toInt() and 255) })
 
 class DesktopSpotifyEchoAuthTest {
-    @Test fun pairingUsesOnlyTheStreamingJarAndNeverSendsItToClientTokenOrReusesItForAnotherCookie() = runTest {
+    @Test fun pairingUsesOnlyTheStreamingJarAndNeverSendsItToClientTokenOrReusesItForAnotherCookie() = runBlocking<Unit> {
         var cookie = "stream-cookie"
         var starts = 0
         val http = HttpClient(MockEngine { call ->
@@ -60,7 +61,7 @@ class DesktopSpotifyEchoAuthTest {
         } finally { http.close() }
     }
 
-    @Test fun verificationCannotRedirectTheStreamingCookieOffTheOfficialAccountsOrigin() = runTest {
+    @Test fun verificationCannotRedirectTheStreamingCookieOffTheOfficialAccountsOrigin() = runBlocking<Unit> {
         val hosts = mutableListOf<String>()
         val http = HttpClient(MockEngine { call ->
             hosts += call.url.host
@@ -85,7 +86,7 @@ class DesktopSpotifyEchoAuthTest {
         } finally { http.close() }
     }
 
-    @Test fun callerCancellationAndRevocationDuringPairingEscapeWithoutPublishingAToken() = runTest {
+    @Test fun callerCancellationAndRevocationDuringPairingEscapeWithoutPublishingAToken() = runBlocking<Unit> {
         val cancelled = HttpClient(MockEngine { throw CancellationException("fixture") })
         try {
             assertFailsWith<CancellationException> {

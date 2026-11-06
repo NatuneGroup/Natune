@@ -12,17 +12,14 @@ package moe.rukamori.archivetune.playback.dsp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.media3.common.C
-import tf.monochrome.android.audio.dsp.oxford.CompressorEffect
-import tf.monochrome.android.audio.usb.BypassDiagnostics
 
+/**
+ * What the output route currently reports, for the diagnostic surfaces.
+ *
+ * Every publisher bumps [revision], so a Compose reader keys on that one value instead of polling.
+ * The retired engine selections are gone: [dspActiveState] is the one chain's own engagement.
+ */
 object EngineRuntime {
-    @Volatile
-    var activeEngine: AudioEngineRouterProcessor.Engine = AudioEngineRouterProcessor.Engine.NONE
-
-    @Volatile
-    var outputFloat: Boolean = false
-
     @Volatile
     var usbExclusiveActive: Boolean = false
 
@@ -33,77 +30,16 @@ object EngineRuntime {
     @Volatile
     var usbExclusiveBits: Int = 0
 
-    @Volatile
-    var tryptifyUsbStream: BypassDiagnostics? = null
-
-    @Volatile
-    var lastwaveUsbRateHz: Int = 0
-
-    @Volatile
-    var lastwaveUsbBitsPerSample: Int = 0
-
-    @Volatile
-    var tryptifyUsbPinActive: Boolean = false
-
-    @Volatile
-    var lastwaveMixerBitPerfectActive: Boolean = false
-
-    @Volatile
-    var bitPerfectSinkRouteActive: Boolean = false
-
-    @Volatile
-    var sinkDecodedEncoding: Int = C.ENCODING_PCM_16BIT
-
-    var activeEngineState by mutableStateOf(AudioEngineRouterProcessor.Engine.NONE)
-        private set
-
-    var wantedEngineState by mutableStateOf(AudioEngineRouterProcessor.Engine.NONE)
-        private set
-
-    var tryptifyAvailableState by mutableStateOf(false)
-        private set
-
-    var lastwaveAvailableState by mutableStateOf(false)
-        private set
-
-    var outputFloatState by mutableStateOf(false)
-        private set
-
     var revision by mutableStateOf(0)
         private set
 
-    /** The compressor on the Tryptify mix bus, published once that bus is built. Null until then. */
-    var compressorEffectState by mutableStateOf<CompressorEffect?>(null)
+    /** True while [UnifiedDspAudioProcessor] is configured onto the sink and not bypassed. */
+    var dspActiveState by mutableStateOf(false)
         private set
 
-    fun revisionBump() {
-        revision++
-    }
-
-    fun publishCompressorEffect(effect: CompressorEffect) {
-        compressorEffectState = effect
-    }
-
-    fun publishActiveEngine(engine: AudioEngineRouterProcessor.Engine) {
-        activeEngine = engine
-        activeEngineState = engine
-        revision++
-    }
-
-    fun publishWantedEngine(engine: AudioEngineRouterProcessor.Engine) {
-        wantedEngineState = engine
-        revision++
-    }
-
-    fun publishEngineAvailability(tryptify: Boolean, lastwave: Boolean) {
-        tryptifyAvailableState = tryptify
-        lastwaveAvailableState = lastwave
-        revision++
-    }
-
-    fun publishOutputFloat(float: Boolean) {
-        outputFloat = float
-        outputFloatState = float
+    fun publishDspActive(active: Boolean) {
+        if (dspActiveState == active) return
+        dspActiveState = active
         revision++
     }
 
@@ -111,28 +47,6 @@ object EngineRuntime {
         usbExclusiveActive = active
         usbExclusiveRateHz = if (active) rateHz else 0
         usbExclusiveBits = if (active) bits else 0
-        revision++
-    }
-
-    fun publishTryptifyUsbPin(active: Boolean) {
-        tryptifyUsbPinActive = active
-        revision++
-    }
-
-    fun publishLastwaveMixerBitPerfect(active: Boolean) {
-        lastwaveMixerBitPerfectActive = active
-        revision++
-    }
-
-    fun publishSinkRoute(floatRoute: Boolean, decodedEncoding: Int) {
-        bitPerfectSinkRouteActive = floatRoute
-        sinkDecodedEncoding = decodedEncoding
-        revision++
-    }
-
-    fun publishUsbWire(rateHz: Int, bits: Int) {
-        lastwaveUsbRateHz = rateHz
-        lastwaveUsbBitsPerSample = bits
         revision++
     }
 }

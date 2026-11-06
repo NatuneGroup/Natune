@@ -154,9 +154,7 @@ class SmartFadeAnalyzer(
             }
         }
 
-    // ------------------------------------------------------------------
     // Public surface (called from the playback thread, must never block)
-    // ------------------------------------------------------------------
 
     /** What is known about [trackId] right now; empty analysis = no evidence. */
     fun analysisFor(trackId: String): TrackAnalysis = results[trackId] ?: TrackAnalysis(trackId = trackId)
@@ -304,9 +302,7 @@ class SmartFadeAnalyzer(
         }.start()
     }
 
-    // ------------------------------------------------------------------
     // Analysis pipeline
-    // ------------------------------------------------------------------
 
     /** A null result means "not now, try again" (short decode, missing bytes);
      * [Deferred] means "not now, low heap — retry without striking". */
@@ -627,9 +623,7 @@ class SmartFadeAnalyzer(
         duration = durationSeconds,
     )
 
-    // ------------------------------------------------------------------
     // Analysis audio store
-    // ------------------------------------------------------------------
 
     /**
      * Opens a [MediaDataSource] for the track: local URIs straight off the

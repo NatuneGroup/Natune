@@ -135,7 +135,10 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
         }
         center.changePlaybackRateCommand.supportedPlaybackRates = @[@0.25, @0.5, @1, @1.5, @2, @4];
         id visibility = [NSNotificationCenter.defaultCenter addObserverForName:NSWindowDidChangeOcclusionStateNotification
-            object:session.window queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification*) { [weak visibility]; }];
+            object:session.window queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification*) {
+                ATSystem* strong = weak;
+                if (strong && !strong.closed) [strong visibility];
+            }];
         [session.notifications addObject:visibility];
         for (NSNotificationName name in @[NSWorkspaceScreensDidSleepNotification, NSWorkspaceScreensDidWakeNotification,
                 NSWorkspaceWillSleepNotification, NSWorkspaceDidWakeNotification]) {

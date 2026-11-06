@@ -4,7 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.HttpStatusCode
 import kotlin.test.*
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.*
@@ -20,7 +20,7 @@ class DesktopQobuzSourceTest {
         this[UsePoolAccountsKey] = false
     }.snapshot()
 
-    @Test fun personalApiWorksWithPoolOffAndAdmitsOnlyTheProviderVerifiedUser() = runTest {
+    @Test fun personalApiWorksWithPoolOffAndAdmitsOnlyTheProviderVerifiedUser() = runBlocking<Unit> {
         val calls = mutableListOf<String>()
         var profiles = 0
         val http = HttpClient(MockEngine { call ->
@@ -62,7 +62,7 @@ class DesktopQobuzSourceTest {
         } finally { http.close() }
     }
 
-    @Test fun savedAccountsKeepTheirOrderAndARejectedCredentialCannotBlockTheNextOne() = runTest {
+    @Test fun savedAccountsKeepTheirOrderAndARejectedCredentialCannotBlockTheNextOne() = runBlocking<Unit> {
         val identities = mutableListOf<String>()
         val http = HttpClient(MockEngine { call ->
             val token = call.headers["X-User-Auth-Token"]
@@ -81,7 +81,7 @@ class DesktopQobuzSourceTest {
         } finally { http.close() }
     }
 
-    @Test fun mismatchedSavedIdentityAndPoolTaggedTokensWithPoolOffCannotObtainAudio() = runTest {
+    @Test fun mismatchedSavedIdentityAndPoolTaggedTokensWithPoolOffCannotObtainAudio() = runBlocking<Unit> {
         var profiles = 0
         val http = HttpClient(MockEngine { call ->
             assertTrue(call.url.encodedPath.endsWith("user/get"))

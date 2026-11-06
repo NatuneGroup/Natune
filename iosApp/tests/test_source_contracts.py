@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 IOS = ROOT / "iosApp"
 KOTLIN = ROOT / "shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios"
+UI_ROOT = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui"
 UI_IOS = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios"
 UI_COMMON = ROOT / "shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui"
 
@@ -39,7 +40,8 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn(":shared-ui:embedAndSignAppleFrameworkForXcode", project)
         swift = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
         self.assertIn("import ArchiveTuneShared", swift)
-        self.assertIn("host.close()", swift)
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn("host.close()", session)
 
     def test_release_selects_the_native_producers_exact_xcode(self):
         script = (ROOT / "scripts/build_ios_native_core.sh").read_text()
@@ -68,6 +70,106 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("EnginePlaybackMapper()", adapter)
         self.assertNotRegex(adapter, r"positionMs\s*(?:\+=|\+\+)")
         self.assertIn("at_audio_destroy", adapter)
+
+    def test_interruption_is_published_paused_and_resumes_only_approved_intent(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        began = audio.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[0]
+        self.assertIn("const bool resumeIntent = output->wants_play.load()", began)
+        self.assertIn("at_audio_pause(output)", began)
+        self.assertIn("output->resume_after_interruption.store(resumeIntent)", began)
+        ended = audio.split("resume_after_interruption.exchange(false)", 1)[1].split("});", 1)[0]
+        self.assertIn("AVAudioSessionInterruptionOptionShouldResume", ended)
+        self.assertIn("if (resume) at_audio_play(output); else at_audio_pause(output);", ended)
+        play = audio.split("int at_audio_play", 1)[1].split("\n}", 1)[0]
+        self.assertIn("if (p->interrupted.load())", play)
+        self.assertIn("p->resume_after_interruption.store(true)", play)
+        pause = audio.split("void at_audio_pause", 1)[1].split("\n}", 1)[0]
+        self.assertIn("p->resume_after_interruption.store(false)", pause)
+        snapshot = audio.split("void at_audio_snapshot", 1)[1].split("\n}", 1)[0]
+        self.assertIn("if (p->interrupted.load()) snapshot->flags &= ~AE_FLAG_PLAY_WHEN_READY;", snapshot)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        interruption = blend.split("AVAudioSessionInterruptionNotification", 1)[1].split("observers +=", 1)[0]
+        self.assertIn("dispatch_async(dispatch_get_main_queue())", interruption)
+        self.assertIn("current.nativeState().playWhenReady", interruption)
+        self.assertNotIn("ShouldResume != 0uL && current.nativeState().playWhenReady", interruption)
+
+    def test_blend_keeps_the_prepared_successor_through_an_interruption(self):
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("private var interrupted = false", blend)
+        self.assertIn("private var heldAfterInterruption = false", blend)
+        began = blend.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[0]
+        self.assertIn("interrupted = true", began)
+        self.assertIn("heldAfterInterruption = false", began)
+        ended = blend.split("val approved = options", 1)[1].split("if (approved)", 1)[0]
+        self.assertIn("heldAfterInterruption = true", ended)
+        handoff = (KOTLIN / "IosPlaybackBlend.kt").read_text()
+        poll = handoff.split("fun poll(nowNanos: Long): Read {", 1)[1].split("val source = next", 1)[0]
+        self.assertIn("graph.isInterrupted || graph.isHeldAfterInterruption", poll)
+
+    def test_host_close_makes_the_queue_durable_before_it_returns(self):
+        host = (UI_IOS.parent / "IosHost.kt").read_text()
+        close = host.split("fun close()", 1)[1].split("private fun runDurably", 1)[0]
+        self.assertIn("closeLock.lock()", close)
+        self.assertIn("runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS)", close)
+        self.assertIn("runDurably(GRAPH_CLOSE_TIMEOUT_MS)", close)
+        self.assertIn("openedGraph.checkpointQueue()", close)
+        self.assertIn("openedGraph.close()", close)
+        self.assertNotIn("openedGraph?.close()", close)
+        self.assertLess(close.index("runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS)"), close.index("nowPlaying?.close()"))
+        background = host.split("fun backgrounded()", 1)[1].split("fun openLink", 1)[0]
+        self.assertIn("opened.checkpointQueue()", background)
+        self.assertIn("runDurably(BACKGROUND_CHECKPOINT_TIMEOUT_MS)", background)
+        graph = (UI_IOS / "IosSessionGraph.kt").read_text()
+        self.assertIn("suspend fun checkpointQueue()", graph)
+        helper = host.split("private fun runDurably", 1)[1]
+        self.assertIn("CoroutineScope(SupervisorJob() + Dispatchers.Default).launch", helper)
+        self.assertIn("runBlocking(NonCancellable)", helper)
+        self.assertIn("withTimeoutOrNull(timeoutMs) { work.join() }", helper)
+
+    def test_fatal_exception_record_is_a_prewarmed_bounded_byte_formatter(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        fatal = session.split("private enum IosFatalExceptionRecord", 1)[1].split("\n}\n", 1)[0]
+        # The old shape used C-variadic snprintf, which Swift imports as unavailable, and its
+        # static buffer was allocated lazily on the first fatal record. These checks pin the
+        # bounded byte formatter and the launch-time initialization that replaces both.
+        self.assertNotIn("snprintf(", fatal)
+        self.assertNotIn("%lld", fatal)
+        self.assertNotIn("String(format:", fatal)
+        self.assertNotIn("withVaList", fatal)
+        self.assertNotIn("strlen(", fatal)
+        self.assertNotIn("abs(", fatal)
+        record = fatal.split("static func record", 1)[1]
+        self.assertNotIn("withCString", record)
+        self.assertIn("import Darwin", session)
+        self.assertIn("private static let capacity = 4096", fatal)
+        prepare = fatal.split("static func prepare()", 1)[1].split("static func record", 1)[0]
+        self.assertIn("buffer.initialize(repeating: 0, count: capacity)", prepare)
+        self.assertLess(prepare.index("buffer.initialize"), prepare.index("open("))
+        # The record sequence is epoch seconds, the fixed prefix, bounded name, bounded reason.
+        self.assertIn("writeInt64(Int64(time(nil))", record)
+        self.assertIn("private static let exceptionPrefix: StaticString", fatal)
+        self.assertIn("writeStaticString(exceptionPrefix", record)
+        self.assertIn("private static let nameByteLimit = 200", fatal)
+        self.assertIn("private static let reasonByteLimit = 2000", fatal)
+        self.assertIn("writeUTF8(exception.name.rawValue.utf8, limit: nameByteLimit", record)
+        self.assertIn("writeUTF8(reason.utf8, limit: reasonByteLimit", record)
+        self.assertIn("buffer[used] = 0", record)
+        self.assertIn("write(descriptor, UnsafeRawPointer(buffer), used)", record)
+        self.assertIn("guard descriptor >= 0 else { return }", record)
+        self.assertIn("ftruncate(descriptor, 0)", record)
+        self.assertIn("lseek(descriptor, 0, SEEK_SET)", record)
+        # Bounds: the byte writers reset at NUL, at the field limit and before the final NUL slot.
+        self.assertIn("if byte == 0 || copied >= limit || used >= capacity - 1 { return }", fatal)
+        self.assertIn("guard used < capacity - 1 else { return }", fatal)
+        self.assertIn("while index < value.utf8CodeUnitCount", fatal)
+        # Signed epochs use magnitude, so Int64.min cannot overflow a negation.
+        self.assertIn("let magnitude = value.magnitude", fatal)
+        self.assertIn("while divisor <= magnitude / 10 { divisor *= 10 }", fatal)
+        self.assertIn("divisor /= 10", fatal)
+        # One existing launch-time descriptor/record route, prepared before the handler can fire.
+        self.assertEqual(1, session.count("NSSetUncaughtExceptionHandler"))
+        self.assertIn("IosFatalExceptionRecord.record(exception)", session)
+        self.assertLess(session.index("IosFatalExceptionRecord.prepare()"), session.index("NSSetUncaughtExceptionHandler"))
 
     def test_platform_ports_are_the_m7_interfaces(self):
         for filename, interface in [
@@ -149,36 +251,100 @@ class IosSourceContractsTest(unittest.TestCase):
         bindings = (UI_IOS / "IosHostBindings.kt").read_text()
         self.assertNotIn("rememberIosLyricsSyncOffsetMs", bindings)
 
-    def test_native_swift_chrome_and_lyrics_share_the_kotlin_host(self):
-        app = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
-        self.assertIn("if #available(iOS 26.0, *)", app)
-        self.assertIn("NativeChromeHost(chrome: ArchiveTuneSession.shared.nativeChrome)", app)
-        self.assertIn("host.setNativeLyricsFactory", app)
-        self.assertIn("SystemLyrics.makeController(lyrics)", app)
-        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
-        self.assertIn("NativeChrome.swift", project)
-        self.assertIn("SystemLyrics.swift", project)
+    def test_swiftui_is_only_the_scene_and_compose_controller_shell(self):
+        sources = {path.name: path.read_text() for path in (IOS / "ArchiveTune").glob("*.swift")}
+        self.assertEqual(["ArchiveTuneApp.swift"], sorted(
+            name for name, source in sources.items() if re.search(r"^import SwiftUI$", source, re.MULTILINE)
+        ))
+        app = sources["ArchiveTuneApp.swift"]
+        for entry in ["WindowGroup", "UIViewControllerRepresentable", ".ignoresSafeArea()", ".onOpenURL",
+                      ".onContinueUserActivity(NSUserActivityTypeBrowsingWeb)", "activity.webpageURL"]:
+            self.assertIn(entry, app)
+        for source in sources.values():
+            self.assertNotRegex(source, r"\b(?:UIHostingController|TextRenderer|GlassEffectContainer|TimelineView)\b")
+            self.assertNotRegex(source, r"@(?:StateObject|ObservedObject|Environment|Published)\b")
+        self.assertNotRegex(app, r"\b(?:Text|Button|ZStack|HStack|VStack|NativeChromeHost)\s*[({]")
 
-    def test_native_lyrics_motion_dynamic_type_and_completion(self):
-        swift = (IOS / "ArchiveTune/SystemLyrics.swift").read_text()
-        # The saved point size follows Dynamic Type, as the retired @ScaledMetric did.
-        self.assertIn("UIFontMetrics(forTextStyle:", swift)
-        self.assertIn("scaledValue(for:", swift)
-        # The sweep share and the emphasis bump are the shared math, reduced motion honoured.
-        self.assertIn("LyricsSweepGeometry.shared.progressAt(", swift)
-        self.assertIn("LyricsEmphasis.shared.bumpAt(", swift)
-        self.assertIn("reduceMotion: reduceMotion", swift)
-        # A fully swept word draws lit to its bounds; the feather never leaves a dim tail.
-        self.assertIn("LyricsSweepGeometry.shared.sweepComplete(", swift)
-        # A reading or translation slides in when its text publishes, not when the row starts singing.
-        self.assertIn(".task(id: text)", swift)
-        self.assertNotIn("onChange(of: active)", swift)
-        # The renderer's inout context arguments match the declaration labels.
-        self.assertNotIn("context: &context", swift)
-        self.assertIn("in: &seat", swift)
-        # Every run reads the shared drop, so the sink and the completion lift match Compose.
-        self.assertIn("LyricsSweepGeometry.shared.dropAt(", swift)
-        self.assertIn("wordEndMs: word.endMs", swift)
+    def test_shared_compose_screens_own_the_ios_app_ui(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertEqual(1, session.count("IosHost()"))
+        self.assertIn("IosRootController(", session)
+        self.assertIn("compose: host.viewController", session)
+        self.assertIn("safeArea: host.safeArea", session)
+        self.assertIn("presenter === token", session)
+        self.assertIn("controller.willMove(toParent: nil)", session)
+        self.assertIn("host.foregrounded()", session)
+        self.assertIn("host.backgrounded()", session)
+        self.assertIn("addChild(compose)", session)
+        # No second renderer: the Swift host composes no app chrome and no lyric view.
+        for removed in ["NativeChromeController", "setNativeLyricsFactory", "SystemLyrics",
+                        "UIGlassEffect", "UIGlassContainerEffect", "UITableView", "CADisplayLink",
+                        "UIActivityViewController"]:
+            self.assertNotIn(removed, session)
+        for gone in ["ArchiveTune/NativeChrome.swift", "ArchiveTune/SystemLyrics.swift",
+                     "ArchiveTune/SystemLyricsRendering.swift"]:
+            self.assertFalse((IOS / gone).exists(), gone)
+        for gone in ["IosNativeChrome.kt", "IosNativeLyrics.kt", "ios/IosNativeLyricsSurface.kt",
+                     "navigation/NativeShellChrome.kt"]:
+            self.assertFalse((UI_ROOT / gone).exists(), gone)
+        kotlin = (UI_ROOT / "IosHost.kt").read_text()
+        self.assertNotRegex(kotlin, r"nativeChrome|IosNativeLyrics|NativeIosInterfaceKey")
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertNotRegex(bindings, r"nativeChrome|IosNativeLyricsSurface|NativeIosInterfaceKey")
+        # Every lyric look and every tab bar comes from the shared shell.
+        self.assertIn("val fullLyrics = lyrics.full", bindings)
+        shell = (UI_COMMON / "navigation/ArchiveTuneShell.kt").read_text()
+        self.assertIn("FloatingNavigationToolbar(", shell)
+        self.assertNotRegex(shell, r"nativeChrome|nativeYields|bottomInsetDp")
+        self.assertNotRegex((UI_COMMON / "ArchiveTuneRoot.kt").read_text(), r"nativeChrome|NativeChromeLink")
+
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        build_files = dict(re.findall(r"(\w+) = \{isa = PBXBuildFile; fileRef = (\w+);", project))
+        sources = re.search(r"isa = PBXSourcesBuildPhase;[^\n]+files = \(([^)]+)\)", project).group(1)
+        for path in (IOS / "ArchiveTune").glob("*.swift"):
+            file_id = re.search(rf"(\w+) = \{{isa = PBXFileReference;[^\n]+path = ArchiveTune/{path.name};", project).group(1)
+            build_id = next(key for key, value in build_files.items() if value == file_id)
+            self.assertIn(build_id, sources, path.name)
+        # One object graph, one owner per ID: the audio bridge owns 0A/22/23, the app session owns 0C/24, and the
+        # audio headers own 25/26. A copy-paste of either patch reusing one of these IDs fails here.
+        for build_id, file_id in [
+            ("A0000000000000000000000A", "A00000000000000000000022"),
+            ("A0000000000000000000000C", "A00000000000000000000024"),
+        ]:
+            self.assertEqual(1, project.count(f"{build_id} = {{isa = PBXBuildFile; fileRef = {file_id}; }}"))
+            self.assertIn(build_id, sources)
+        for file_id, path in [
+            ("A00000000000000000000022", "Native/ATAudioGraph.mm"),
+            ("A00000000000000000000023", "Native/ATAudioGraph.h"),
+            ("A00000000000000000000024", "ArchiveTune/ArchiveTuneSession.swift"),
+            ("A00000000000000000000025", "Native/ATAudioException.h"),
+            ("A00000000000000000000026", "Native/ATAudioFormat.h"),
+        ]:
+            self.assertEqual(1, project.count(f"path = {path};"))
+            self.assertRegex(project, rf"{file_id} = {{isa = PBXFileReference;[^\n]*path = {path};")
+        defined = re.findall(r"^        (A[0-9A-F]{23}) = {", project, re.M)
+        self.assertEqual(sorted(defined), sorted(set(defined)))
+
+    def test_safe_area_reaches_compose_once_and_pads_the_whole_app(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn("override func viewSafeAreaInsetsDidChange()", session)
+        self.assertIn("safeArea.update(left: Double(insets.left), top: Double(insets.top)", session)
+        safe_area = (UI_ROOT / "IosSafeArea.kt").read_text()
+        self.assertIn("fun update(left: Double, top: Double, right: Double, bottom: Double)", safe_area)
+        self.assertIn(".sanitized()", safe_area)
+        root = (UI_IOS / "IosMountedRoot.kt").read_text()
+        self.assertIn("host.safeArea.padding.collectAsState()", root)
+        self.assertIn("safeArea = safeArea", root)
+        owner = (UI_COMMON / "SafeAreaPadding.kt").read_text()
+        # Physical edges, and the same bar types consumed: a screen cannot reserve them twice.
+        self.assertIn("absolutePadding(", owner)
+        self.assertIn("consumeWindowInsets(WindowInsets.systemBars)", owner)
+        self.assertNotIn("start = insets.left.dp", owner)
+        # The zero path must stay a real no-op for the hosts that own their own bar insets.
+        self.assertIn("@Composable\nfun Modifier.safeAreaPadding(insets: SafeAreaPadding): Modifier =\n    if (!insets.needsRootPadding()) this", owner)
+        self.assertIn("internal fun SafeAreaPadding.needsRootPadding(): Boolean = hasInsets", owner)
+        self.assertIn("safeArea: SafeAreaPadding = SafeAreaPadding.None", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
+        self.assertIn(".safeAreaPadding(safeArea)", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
@@ -193,6 +359,108 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("NSDataWritingAtomic", files)
         self.assertIn("NSFileCoordinator", files)
         self.assertNotIn("NSURLBookmarkCreationWithSecurityScope", files)
+
+    def test_audio_graph_canonical_source_and_hardware_boundary(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertNotIn("interleaved:YES", audio)
+        self.assertIn("initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2", audio)
+        self.assertIn("at_audio_canonical_format(hardware.sampleRate, hardware.channelCount", audio)
+        self.assertIn("buffers->mNumberBuffers != 2", audio)
+        self.assertIn("at_audio_deinterleave(p->scratch", audio)
+        self.assertIn("connect:p->source to:p->converter format:pcm", audio)
+        self.assertIn("connect:p->converter to:p->time_pitch format:canonical", audio)
+        create = audio.split("static at_audio_output *create_output(", 1)[1].split("at_audio_output *at_audio_create(", 1)[0]
+        self.assertIn("configure_playback_locked() && build_graph(p, plain)", create)
+        self.assertIn("at_audio_destroy(p)", create)
+
+    def test_apple_exception_boundary_and_fallback_are_shared_by_both_consumers(self):
+        boundary = (IOS / "Native/ATAudioException.h").read_text()
+        self.assertIn("@try", boundary)
+        self.assertIn("@catch (NSException *exception)", boundary)
+        self.assertNotIn("exception.reason", boundary)
+        graph = (IOS / "Native/ATAudioGraph.mm").read_text()
+        self.assertIn("audio_try(^BOOL", graph)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertNotRegex(blend, r"engine\.(?:attachNode|connect|detachNode|prepare|startAndReturnError|pause|stop)\(")
+        self.assertNotRegex(blend, r"node\.(?:scheduleBuffer|play|playAtTime|pause|stop)\(")
+        self.assertIn("at_graph_connect(engine, node, converter, format)", blend)
+        self.assertIn("at_graph_connect(engine, converter, pitch, canonical)", blend)
+        factory = (KOTLIN / "IosAudioOutputFactory.kt").read_text()
+        self.assertIn("primary = { at_audio_create(error, 256uL) }", factory)
+        self.assertIn("plain = { at_audio_create_plain(error, 256uL) }", factory)
+        self.assertIn("createIosAudioOutput", (KOTLIN / "IosBlendSource.kt").read_text())
+        port = (KOTLIN / "IosPlaybackPort.kt").read_text()
+        self.assertIn("createIosAudioOutput { outputCreationError = it }", port)
+        self.assertIn("reason == PlaybackFailureReason.OUTPUT_FAILED", port)
+
+    def test_route_rebuild_retires_native_callbacks_and_keeps_unplayed_blend_pcm(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertIn("output->graph_generation == generation", audio)
+        self.assertIn("invalidate_graph(output)", audio)
+        self.assertIn("p->render_active.load() == 0 && p->retired_source == nil", audio)
+        self.assertIn("p->requires_recreation = true", audio)
+        self.assertIn("rebuild_graph(p, true)", audio)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("engine === observedEngine", blend)
+        self.assertIn("rebuildPreservingPcm()", blend)
+        self.assertIn("current.reschedule()", blend)
+        self.assertIn("canonical = checkNotNull(at_graph_output_format(engine))", blend)
+        self.assertIn("chunk.span.positionUs(chunk.span.startFrame + skip)", blend)
+        reschedule = blend.split("fun reschedule(): Boolean {", 1)[1].split("fun detachNodes()", 1)[0]
+        self.assertIn("val replacements = ArrayDeque<Chunk>()", reschedule)
+        self.assertIn("queued.addAll(replacements)", reschedule)
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
+
+    def test_native_bridge_is_built_and_tested_not_only_header_parsed(self):
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        self.assertIn("path = Native/ATAudioGraph.mm", project)
+        self.assertIn("A0000000000000000000000A = {isa = PBXBuildFile;", project)
+        sources = project.split("isa = PBXSourcesBuildPhase", 1)[1].split("};", 1)[0]
+        self.assertIn("A0000000000000000000000A", sources)
+        build = (ROOT / "shared-data/build.gradle.kts").read_text()
+        self.assertIn('cinterops.create("archivetuneGraph")', build)
+        self.assertIn("archivetuneGraph.def", build)
+        workflow = (ROOT / ".github/workflows/ios_compile.yml").read_text()
+        self.assertIn("iosApp/Native/ATNativeAudio.mm iosApp/Native/ATAudioGraph.mm", workflow)
+        self.assertIn("-fsyntax-only", workflow)
+        self.assertIn("iosApp/tests/audio_format_test.c", workflow)
+        self.assertIn("iosApp/tests/audio_exception_test.mm", workflow)
+        self.assertIn("python3 -m unittest discover -s iosApp/tests", workflow)
+
+    def test_blend_failed_attachment_and_queued_resume_are_contained(self):
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("Deck(output, 0f)", blend)
+        self.assertIn("if (suspended) { dropIncoming(); return false }", blend)
+        self.assertIn("epoch == resumeEpoch && current.nativeState().playWhenReady", blend)
+        self.assertIn("if (graphDirty && !rebuildWithFallback())", blend)
+        self.assertIn("if (!stopped || !currentDetached || !incomingDetached) return false", blend)
+        self.assertIn("if (!stopped || !incomingDetached || !currentDetached) at_audio_manual_output_failed", blend)
+        self.assertIn("incoming?.let { if (at_audio_play(it.output) == 0)", blend)
+        self.assertIn("graph.suspended = false", blend)
+        self.assertNotIn("if (deck.gainIsAudible) deck.start()", blend)
+        downstream = (KOTLIN / "IosPlaybackBlend.kt").read_text()
+        self.assertIn("if (!graph.promote())", downstream)
+
+    def test_shared_preamp_and_now_playing_share_reach_the_ios_host(self):
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn("void at_audio_preamp(at_audio_output *output, float gain_db)", header)
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertIn("p->equalizer.globalGain = clamped(p->preamp_db, -24.0f, 24.0f)", audio)
+        graph = (IOS / "Native/ATAudioGraph.mm").read_text()
+        self.assertIn("unit.globalGain = bounded(gain_db, -24.0f, 24.0f)", graph)
+        bands = (KOTLIN / "IosEqBands.kt").read_text()
+        self.assertIn("if (preampEnabled) preampDb.toFloat() else 0f", bands)
+        self.assertIn("at_audio_preamp(output, preampDb)", bands)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("at_graph_eq_gain(eq, preampDb)", blend)
+        controls = (UI_IOS / "IosPlayerControls.kt").read_text()
+        self.assertIn("PlayerAction.SHARE -> share(occurrenceId)", controls)
+        self.assertIn("iosShareText(host, link)", controls)
+        self.assertIn("NOTICE_SHARE_UNAVAILABLE", controls)
+        menu = (UI_IOS / "IosSongMenu.kt").read_text()
+        self.assertIn("import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable", menu)
+        self.assertIn("Res.string.ios_share_link_unavailable", menu)
 
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()

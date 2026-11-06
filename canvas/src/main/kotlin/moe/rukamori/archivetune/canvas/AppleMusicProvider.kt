@@ -19,6 +19,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -56,9 +57,7 @@ object AppleMusicProvider {
     // Log levels mirroring android.util.Log so this pure-JVM module doesn't
     // depend on the Android framework. The host app (App.kt) maps these to
     // android.util.Log when routing through GlobalLog.
-    private const val LOG_LEVEL_VERBOSE = 2
     private const val LOG_LEVEL_DEBUG = 3
-    private const val LOG_LEVEL_INFO = 4
     private const val LOG_LEVEL_WARN = 5
     private const val LOG_LEVEL_ERROR = 6
 
@@ -184,9 +183,16 @@ object AppleMusicProvider {
      * Scrapes a fresh Apple Music web player JWT from the JavaScript bundle the landing page
      * loads, and returns it, or null when none could be obtained. Reached through
      * [ensureTokenFresh] and the 401 retry paths, and throttled by the caller.
+     *
+     * [rejectedToken] is the token the caller found dead, if any. A caller that queued on
+     * [tokenRefreshMutex] behind a successful scrape reuses that winner's token instead of
+     * paying for a second page and bundle fetch.
      */
-    private suspend fun refreshToken(): String? =
+    private suspend fun refreshToken(rejectedToken: String? = null): String? =
         tokenRefreshMutex.withLock {
+            reusableRefreshedToken(
+                appleMusicToken, appleMusicTokenExpAtSec, rejectedToken, System.currentTimeMillis() / 1000L,
+            )?.let { return@withLock it }
             appleMusicTokenLastRefreshAtMs = System.currentTimeMillis()
             val fresh = scrapeTokenFromWeb()
             if (fresh != null) {
@@ -203,6 +209,14 @@ object AppleMusicProvider {
             }
             fresh
         }
+
+    /** The held token [refreshToken] may hand a queued caller: still fresh, and not the one it rejected. */
+    internal fun reusableRefreshedToken(
+        held: String?,
+        heldExpAtSec: Long,
+        rejected: String?,
+        nowSec: Long,
+    ): String? = held?.takeIf { it != rejected && heldExpAtSec - nowSec >= TOKEN_REFRESH_MARGIN_SEC }
 
     /**
      * Returns a usable Apple Music JWT, scraping one when none is held or the held one is within
@@ -285,6 +299,7 @@ object AppleMusicProvider {
             header("User-Agent", APPLE_MUSIC_WEB_UA)
         }
         if (!resp.status.isSuccess()) {
+            discard(resp)
             Log.w("Apple Music storefront fetch failed: ${resp.status}")
             return null
         }
@@ -310,7 +325,9 @@ object AppleMusicProvider {
                     parameter("types", "albums")
                     parameter("limit", "1")
                 }
-            response.status == HttpStatusCode.OK
+            val healthy = response.status == HttpStatusCode.OK
+            discard(response)
+            healthy
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -337,6 +354,7 @@ object AppleMusicProvider {
             // music.apple.com/ 301s to a localised landing page (e.g. /us/new). Ktor follows that,
             // so only a genuine error status is fatal here.
             if (!homeResponse.status.isSuccess()) {
+                discard(homeResponse)
                 Log.w("Apple Music home fetch failed: ${homeResponse.status}")
                 return null
             }
@@ -356,6 +374,7 @@ object AppleMusicProvider {
             for (jsBundleUrl in bundleUrls) {
                 val jsResponse = tokenClient.get(jsBundleUrl)
                 if (!jsResponse.status.isSuccess()) {
+                    discard(jsResponse)
                     Log.w("Apple Music token: JS bundle fetch failed: ${jsResponse.status} ($jsBundleUrl)")
                     continue
                 }
@@ -371,6 +390,11 @@ object AppleMusicProvider {
         }
 
     // ── Networking ───────────────────────────────────────────────────────────────────
+
+    /** Ktor completes the engine call only when the body is read, so an answer we discard must be drained. */
+    private suspend fun discard(response: HttpResponse) {
+        response.bodyAsText()
+    }
 
     private val json =
         Json {
@@ -504,8 +528,9 @@ object AppleMusicProvider {
             if (response.status == HttpStatusCode.Unauthorized) {
                 // Token expired between refresh and use — force-refresh and retry once. A refresh
                 // that yields nothing means a second attempt would repeat the same 401.
+                discard(response)
                 Log.w("AMP search returned 401 — force-refreshing token and retrying once")
-                token = refreshToken() ?: return@runCatching null
+                token = refreshToken(token) ?: return@runCatching null
                 response =
                     client.get(searchUrl) {
                         header("Authorization", "Bearer $token")
@@ -522,6 +547,7 @@ object AppleMusicProvider {
                     }
             }
             if (response.status != HttpStatusCode.OK) {
+                discard(response)
                 Log.w("search failed with status ${response.status}")
                 return@runCatching null
             }
@@ -628,8 +654,9 @@ object AppleMusicProvider {
                     parameter("include", "tracks")
                 }
             if (response.status == HttpStatusCode.Unauthorized) {
+                discard(response)
                 Log.w("album fetch returned 401 — force-refreshing token and retrying once")
-                token = refreshToken() ?: return@runCatching null
+                token = refreshToken(token) ?: return@runCatching null
                 response =
                     client.get(albumUrl) {
                         header("Authorization", "Bearer $token")
@@ -642,6 +669,7 @@ object AppleMusicProvider {
                     }
             }
             if (response.status != HttpStatusCode.OK) {
+                discard(response)
                 Log.w("album fetch failed for $albumId: ${response.status}")
                 return@runCatching null
             }

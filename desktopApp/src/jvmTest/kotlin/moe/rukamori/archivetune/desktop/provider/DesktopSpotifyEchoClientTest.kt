@@ -3,7 +3,7 @@ package moe.rukamori.archivetune.desktop.provider
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import kotlin.test.*
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.domain.repository.*
@@ -30,7 +30,7 @@ class DesktopSpotifyEchoClientTest {
         return field(2, number(2, 10) + field(3, field(3, field(2, track))))
     }
 
-    @Test fun retainedMetadataStorageAndPlayPlayProduceOnlyAnAccountBoundNativeRecipe() = runTest {
+    @Test fun retainedMetadataStorageAndPlayPlayProduceOnlyAnAccountBoundNativeRecipe() = runBlocking<Unit> {
         val paths = mutableListOf<String>()
         val http = HttpClient(MockEngine { call ->
             echoAuthReply(call.url.encodedPath)?.let { return@MockEngine respond(it) }

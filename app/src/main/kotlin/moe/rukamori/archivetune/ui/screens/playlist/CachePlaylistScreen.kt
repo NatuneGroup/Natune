@@ -287,7 +287,6 @@ fun CachePlaylistScreen(
         }
     }
 
-    // System bars padding
     val systemBarsTopPadding = LocalStableSystemBarsTopPadding.current
 
     Box(
@@ -327,7 +326,6 @@ fun CachePlaylistScreen(
                 }
             } else {
                 if (filteredSongs.isNotEmpty() && !isSearching) {
-                    // Hero Header Item
                     item(key = "header") {
                         MediaDetailHero(
                             title = stringResource(R.string.cached_playlist),
@@ -388,7 +386,6 @@ fun CachePlaylistScreen(
                 }
 
                 if (filteredSongs.isNotEmpty()) {
-                    // Sort Header
                     item(key = "sortHeader") {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -413,7 +410,6 @@ fun CachePlaylistScreen(
                     }
                 }
 
-                // Song items
                 itemsIndexed(filteredSongs, key = { _, song -> song.item.id }) { index, songWrapper ->
                     SongListItem(
                         song = songWrapper.item,

@@ -128,16 +128,15 @@ import me.bush.translator.Translator
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ai.AiLyricsDocumentParser
 import moe.rukamori.archivetune.ai.AiLyricsSegment
-import moe.rukamori.archivetune.constants.AiApiKeyKey
+import moe.rukamori.archivetune.ai.toAiServiceConfig
 import moe.rukamori.archivetune.constants.AiApiValidationStatus
 import moe.rukamori.archivetune.constants.AiApiValidationStatusKey
-import moe.rukamori.archivetune.constants.AiCustomEndpointKey
-import moe.rukamori.archivetune.constants.AiProvider
-import moe.rukamori.archivetune.constants.AiProviderKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
+import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsUtils
+import moe.rukamori.archivetune.lyrics.isAiTranslationAvailable
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
@@ -148,8 +147,8 @@ import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
 import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.viewmodels.LyricsSearchResultUiModel
 import moe.rukamori.archivetune.viewmodels.LyricsSearchScreenState
@@ -232,24 +231,19 @@ fun LyricsMenu(
     val lyricsSearchState by viewModel.lyricsSearchState.collectAsStateWithLifecycle()
     val isAiTranslating by viewModel.isAiTranslating.collectAsStateWithLifecycle()
     val translationUndo by viewModel.translationUndo.collectAsStateWithLifecycle()
-    val (aiProvider) = rememberEnumPreference(AiProviderKey, AiProvider.NONE)
-    val (aiApiKey) = rememberPreference(AiApiKeyKey, "")
-    val (aiCustomEndpoint) = rememberPreference(AiCustomEndpointKey, "")
-    val (aiValidationStatus) = rememberEnumPreference(AiApiValidationStatusKey, AiApiValidationStatus.UNKNOWN)
+    val aiPreferences = rememberPreferenceSnapshot()
+    val aiServiceConfig = aiPreferences.current.toAiServiceConfig()
+    val aiValidationStatus =
+        aiPreferences.current[AiApiValidationStatusKey].toEnum(AiApiValidationStatus.UNKNOWN)
     var expandedSearchResultId by rememberSaveable { mutableStateOf<String?>(null) }
     val currentLyrics = lyricsProvider()?.lyrics.orEmpty()
     val isTranslateEnabled =
         currentLyrics.isNotBlank() &&
             currentLyrics != LyricsEntity.LYRICS_NOT_FOUND
     val canUndoTranslation = translationUndo?.mediaId == mediaMetadataProvider().id
-    val isAiProviderConfigured = aiProvider != AiProvider.NONE
     val isAiTranslationEnabled =
-        currentLyrics.isNotBlank() &&
-            currentLyrics != LyricsEntity.LYRICS_NOT_FOUND &&
-            isAiProviderConfigured &&
-            aiApiKey.isNotBlank() &&
-            (aiProvider != AiProvider.CUSTOM || aiCustomEndpoint.isNotBlank()) &&
-            aiValidationStatus != AiApiValidationStatus.FAILED
+        isTranslateEnabled &&
+            isAiTranslationAvailable(aiServiceConfig, aiValidationStatus)
 
     var translationJob by remember { mutableStateOf<Job?>(null) }
     var isStandardTranslating by remember { mutableStateOf(false) }

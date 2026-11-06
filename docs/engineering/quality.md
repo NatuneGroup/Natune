@@ -1,8 +1,17 @@
 # Quality gates
 
-> In the private KMP workspace's code-only phase, implementers run none of the commands on this
-> page. They are final-phase checks (see the private KMP status in [README.md](../../README.md)).
-> The rest of this page describes their normal use.
+> The code-only phase forbids local JVM/Gradle/native execution, but it does not waive the
+> bounded repository checks or the structural quality job. Final exact-candidate build/lint,
+> unit tests and native validation remain separate and are not implied by fast checks.
+
+The reusable procedure is in [fast-check](../../.factory/skills/fast-check/SKILL.md). In short:
+
+1. Cheap: repository check, scoped `git diff --check`, relevant stdlib Python tests, `bash -n`
+   and `node --check`; `actionlint` only when an existing binary is available.
+2. Structural: `scripts/check_code_quality.py --base <full base OID>` over the Android and KMP
+   roots (ktfmt, Detekt, CPD). This is not type resolution, an LSP/compiler result or native proof.
+3. Targeted compile/tests, batching platform work; final exact-candidate BUILD/lint and TESTS stay
+   mandatory, and native expect/actual/link validation is not waived by any fast check.
 
 ## Lightweight checks
 
@@ -50,33 +59,44 @@ When changing issue classification, also run
 
 ## Kotlin analysis on a build host
 
-On a suitable JDK 21 host, or in the GitHub repository-quality workflow:
+The structural entrypoint is CI/authorized-build-host only; it spawns Gradle/JVM and is
+not part of the local cheap-edit loop:
 
 ```sh
-python3 scripts/check_code_quality.py --base <base-commit>
+python3 scripts/check_code_quality.py --base <full-40-char-base-oid>
 ```
 
-The analysis covers the production roots compiled into the selected
-GMS/mobile/universal Debug variant, including the GMS flavor source set
-`app/src/gms/kotlin`; the mutually exclusive `app/src/foss` implementations stay
-out of the same analysis tree. PR runs compare against the pull-request base.
-Manual dispatches of the repository-quality workflow take a `base` input
-(default `dev`): its merge-base with `origin/<base>` is the comparison base, and
-a base that contains HEAD is rejected. When dispatching on `dev` itself, pass
-the last validated revision instead — for example the previous release commit.
+`Build Pull Request` keeps the independent `kotlin-quality` job **manual-only** for now:
+it runs only when the quality-only `quality_base` input is supplied and is not an
+automatic PR/dev required gate until split and method-rename debt lineage is proven.
+Manual quality-only mode does not run the Android build or desktop compile and is
+mutually exclusive with `desktop_app_image`/`android_release_candidate`. The base is
+always an explicit full commit (manual SHA); an unavailable object is fetched read-only,
+and a base that resolves to HEAD is rejected. A non-zero finding report is diagnostic
+evidence, not proof that quality is clean.
 
-The isolated Gradle project in `quality/` needs no Android SDK or initialized
-submodules. Spotless runs ktfmt's Kotlin style on changed production/test Kotlin
-files, copied into an isolated temporary directory under `quality/build/`.
-The formatter check never rewrites the checkout or analyzes a file through a symlink.
-Detekt measures cyclomatic complexity, method length and nesting. PMD CPD detects
-repeated blocks of at least 120 Kotlin tokens. Without a compiler classpath,
-Detekt cannot run its semantic unused-private-code rules; the summary explicitly
-reports `semanticAnalysis: false`.
-Do not add suppressions or exclude changed production paths to obtain a pass.
+The default `structural` profile analyzes the legacy Android roots plus
+`shared-domain/src`, `shared-data/src`, `shared-ui/src` and `desktopApp/src` (all Kotlin
+source sets, including tests). The optional `legacy-android-gms` profile used with
+`--classpath-file` stays Android-GMS-only. The isolated Gradle project needs no Android
+SDK or initialized submodules. Spotless runs ktfmt's Kotlin style on changed production/test
+Kotlin files, copied into an isolated temporary directory under `quality/build/`; it never
+rewrites the checkout or analyzes through a symlink. Detekt measures cyclomatic complexity,
+method length and nesting. PMD CPD detects repeated blocks of at least 120 Kotlin tokens.
+Without a compiler classpath, Detekt cannot run its semantic unused-private-code rules; the
+summary reports `semanticAnalysis: false` and the analyzed roots/profile. Git-confirmed
+renames are normalized for base/candidate comparisons; new files, copies, new counts and
+increased complexity still fail. Do not add suppressions or exclude changed paths to pass.
+
+Known limitation: a Git `R<100` partial rename plus a newly added extracted file, or a
+renamed declaration whose finding message changes, can still be classified as new. The
+repository's recorded split case (`R055` old home screen to the renamed screen, plus a new
+components file and renamed main function) reproduces this as synthetic comparator
+evidence, not measured Detekt output. No cross-file lineage framework or waiver is added;
+the diagnostic report must not be presented as a clean or complete gate.
 
 Full Detekt/CPD reports and per-rule counts are retained under
-`.factory/reports/code-quality/` and in the PR quality artifact. Existing findings
+`.factory/reports/code-quality/` and in the manual quality artifact. Existing findings
 remain visible. The gate compares the base with the candidate using identical
 rules; it rejects new findings, increased reported complexity and new duplication.
 Source line movement and reductions of existing duplicated blocks do not create
@@ -100,7 +120,7 @@ complete SDK/submodule build checkout:
 ```sh
 ./gradlew --console=plain --stacktrace --profile \
   -I quality/dependency-analysis.init.gradle qualityInputs :app:projectHealth
-python3 scripts/check_code_quality.py --base <base-commit> \
+python3 scripts/check_code_quality.py --base <full-base-oid> \
   --classpath-file quality/build/analysis-classpath.txt
 ```
 
@@ -111,8 +131,8 @@ for that invocation, and reports resolved external runtime artifact weights. Art
 over 20 MiB are flagged for review; project modules are not weighed. Weight alone is not
 proof that a dependency is unnecessary. Review the generated dependency advice for
 runtime/reflection use before removing anything.
-Compiler-backed analysis is manual/weekly in `dependency_health.yml`, not added to
-ordinary pushes or release packaging. Host-specific classpath manifests stay
+Compiler-backed analysis remains a manual authorized-host path; `dependency_health.yml`
+stays parked/inactive and is not activated by this structural job. Host-specific classpath manifests stay
 under ignored `quality/build/` and are not uploaded.
 Only the documented GMS/mobile/universal Debug app variant is enabled during this
 optional analysis invocation; normal build and release variant matrices are unchanged.
@@ -157,6 +177,21 @@ The HTML/XML report includes all app bytecode. The enforced floor is 80% line an
 direct-stream metadata, source order/overrides, fallback chains and cached-source
 gating. This is a critical-policy threshold, not a claim of 80% whole-app coverage.
 Missing policy bytecode or execution data fails the check.
+
+The same workflow's second step is the KMP verdict and runs every shared and desktop suite:
+
+```sh
+./gradlew --console=plain --stacktrace --continue \
+  :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest :desktopApp:jvmTest \
+  -PdesktopEngineTests=false
+```
+
+`-PdesktopEngineTests=false` excludes only the three `:desktopApp` suites that decode the committed fixtures
+through the native engine (`DesktopPlaybackEngineTest`, `DesktopPlaybackPortTest`,
+`DesktopPlaybackStreamTest`), because that engine links the pinned FFmpeg/OpenSSL/libxml2 closure the job does
+not build. Build Pull Request with `desktop_app_image=true` builds the closure and runs the same task
+untrimmed, so those suites execute there. The property defaults to the untrimmed task, and an exclusion is
+never a pass: a suite that is excluded has to be green in the image job.
 
 For this constrained mission, full app compilation, lint, coverage and repeated/
 semantic checks run on GitHub-hosted runners, not the smaller VPS. Open a

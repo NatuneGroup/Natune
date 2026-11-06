@@ -210,6 +210,8 @@ private fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, se
 
 @Composable
 internal fun ActionButton(action: PlayerAction, c: PlayerRenderContext, modifier: Modifier = Modifier, secondary: Boolean = false) {
+    // An action with no owner on this host is hidden rather than offered as a control that only reports itself.
+    if (action !in c.state.actionSupport) return
     val outputButton = c.slots.outputButton
     if (action == PlayerAction.OUTPUT && outputButton != null) {
         outputButton(modifier.size(48.dp), LocalContentColor.current, true)
@@ -259,17 +261,26 @@ internal fun PlayButton(c: PlayerRenderContext, large: Boolean = true, square: B
     }
 }
 
+/** Title and artist, tappable only where the host actually answers the title and artist actions. */
 @Composable
 internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, editorial: Boolean = false) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if(centered) Alignment.CenterHorizontally else Alignment.Start) {
-        TextButton(onClick = { c.actions.onAction(PlayerAction.TITLE) }) {
+        val title: @Composable () -> Unit = {
             Text(c.state.title.ifBlank { stringResource(Res.string.m5_no_track) }, maxLines = if(editorial) 3 else 2,
                 overflow = TextOverflow.Ellipsis,
                 style = if(editorial) MaterialTheme.typography.displaySmall else MaterialTheme.typography.titleLarge,
                 fontFamily = c.state.spatialFont.takeIf { c.preferences.style.name == "SPATIALFLOW" })
         }
-        TextButton(onClick = { c.actions.onAction(PlayerAction.ARTIST) }) {
-            MarqueeText(c.state.artist, style = MaterialTheme.typography.bodyLarge)
+        if (PlayerAction.TITLE in c.state.actionSupport) {
+            TextButton(onClick = { c.actions.onAction(PlayerAction.TITLE) }) { title() }
+        } else {
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { title() }
+        }
+        val artist: @Composable () -> Unit = { MarqueeText(c.state.artist, style = MaterialTheme.typography.bodyLarge) }
+        if (PlayerAction.ARTIST in c.state.actionSupport) {
+            TextButton(onClick = { c.actions.onAction(PlayerAction.ARTIST) }) { artist() }
+        } else {
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { artist() }
         }
     }
 }

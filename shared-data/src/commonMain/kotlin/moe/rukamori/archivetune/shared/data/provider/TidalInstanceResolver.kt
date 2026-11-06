@@ -471,10 +471,10 @@ class TidalInstanceResolver(
         now: Long,
     ): Boolean = (instanceCooldownUntilMs[baseUrl] ?: 0L) > now
 
-    /** Healthy endpoints first; cooling-down ones trail only when everything is down. */
-    private fun orderedEndpoints(): List<TidalDownloadEndpoint> {
+    /** Healthy endpoints first; cooling-down ones trail. The cooldown map is only safe to read under [stateMutex]. */
+    private suspend fun orderedEndpoints(): List<TidalDownloadEndpoint> = stateMutex.withLock {
         val now = nowMs()
-        return activeEndpoints.sortedBy { if (isInstanceCoolingDown(it.baseUrl, now)) 1 else 0 }
+        activeEndpoints.sortedBy { if (isInstanceCoolingDown(it.baseUrl, now)) 1 else 0 }
     }
     // endregion
 

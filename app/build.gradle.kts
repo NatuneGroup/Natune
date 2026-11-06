@@ -408,8 +408,8 @@ android {
         buildConfigField("boolean", "IS_NIGHTLY", "$isNightlyBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
-        // The LastWave engine links Google Oboe (prefab), which requires the
-        // shared C++ STL. All native targets then build against c++_shared.
+        // Google Oboe ships as a prefab package, and prefab requires the shared
+        // C++ STL. All native targets then build against c++_shared.
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
@@ -689,6 +689,20 @@ android {
             excludes += "META-INF/build.archives"
             excludes += "META-INF/com.android.tools/**"
             excludes += "META-INF/proguard/**"
+            // Room's schema JSONs are committed KSP output under shared-data's commonMain resources so
+            // PortableStateMigrationTest can load them from the JVM test classpath. Nothing at runtime,
+            // backup or import reads them, so only the members that shipped are dropped here. They are
+            // listed one by one, never by namespace, so a future production schema under room-schemas/
+            // still reaches the APK and cannot disappear silently.
+            excludes += listOf(
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/1.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/7.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/8.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/9.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/10.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/11.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/12.json",
+            )
         }
     }
 
@@ -779,7 +793,8 @@ dependencies {
 
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
-    // LastWave audio engine output backend (Oboe/AAudio, prefab)
+    // Google Oboe 1.11.0 pin, kept as approved: the LastWave engine that linked it is gone, so no
+    // native target consumes the prefab package today and nothing depends on it at runtime.
     implementation("com.google.oboe:oboe:1.11.0")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
@@ -830,7 +845,7 @@ dependencies {
     implementation(project(":canvas"))
     implementation(project(":shazamkit"))
     implementation(project(":spotifycore"))
-    implementation(project(":morideobfuscator"))
+    implementation(project(":deobfuscator"))
     implementation(project(":jiosaavn"))
     implementation("com.materialkolor:material-kolor:5.0.0-alpha07")
 

@@ -43,8 +43,8 @@ internal fun settingsSwitchDisabledReason(
         (blurOverridden || blurConsumer) && preferences[DisableBlurKey] == true -> R.string.blur_setting_overridden
         key in navigationTreatmentKeys && !blurSupported -> R.string.settings_material_unsupported
         key == LiquidGlassNavBarEnabledKey && preferences[LiquidGlassEnabledKey] != true -> R.string.settings_liquid_glass_required
-        key in setOf(SkipSilenceKey, AudioNormalizationKey, TryptifyAudioProcessingKey, LastwaveAudioProcessingKey,
-            FloatDspEnabledKey, RejectSuspectedUpscaledAudioKey) && bitPerfect -> R.string.settings_processing_bypassed_bit_perfect
+        key in setOf(SkipSilenceKey, AudioNormalizationKey, AudioProcessingEnabledKey,
+            RejectSuspectedUpscaledAudioKey) && bitPerfect -> R.string.settings_processing_bypassed_bit_perfect
         key == SkipSilenceKey && preferences[AudioOffload] == true -> R.string.settings_processing_unavailable_offload
         key == AudioOffload && preferences[RejectSuspectedUpscaledAudioKey] == true -> R.string.settings_offload_unavailable_authenticity
         key == CrossfadeGaplessKey && preferences[CrossfadeEnabledKey] != true -> R.string.settings_crossfade_required

@@ -183,7 +183,6 @@ fun LibrarySongsScreen(
                     .fillMaxSize()
                     .padding(top = LibraryHeaderContentPadding),
         ) {
-            // Sub-Filters Row (All Songs, Downloaded, Liked)
             Row(
                 modifier =
                     Modifier
@@ -193,19 +192,16 @@ fun LibrarySongsScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Liked
                 SongSubFilterChip(
                     label = stringResource(R.string.filter_liked),
                     selected = filter == SongFilter.LIKED,
                     onClick = { filter = SongFilter.LIKED },
                 )
-                // Downloaded
                 SongSubFilterChip(
                     label = stringResource(R.string.filter_downloaded),
                     selected = filter == SongFilter.DOWNLOADED,
                     onClick = { filter = SongFilter.DOWNLOADED },
                 )
-                // All Songs
                 SongSubFilterChip(
                     label = stringResource(R.string.all_songs),
                     selected = filter == SongFilter.LIBRARY,
@@ -294,7 +290,6 @@ fun LibrarySongsScreen(
                     }
                 }
 
-                // Sort direction toggle button
                 Spacer(modifier = Modifier.width(4.dp))
                 Box(
                     modifier =
@@ -331,7 +326,6 @@ fun LibrarySongsScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                // Spotlight Collection Card
                 item(key = "collection_spotlight") {
                     Box(
                         modifier =
@@ -381,7 +375,6 @@ fun LibrarySongsScreen(
                                     )
                                 }
 
-                                // Play Button inside spotlight
                                 Button(
                                     onClick = {
                                         if (filteredSongs.isNotEmpty()) {
@@ -427,11 +420,12 @@ fun LibrarySongsScreen(
                     val isActive = song.id == mediaMetadata?.id
 
                     // The active row takes its colour from the artwork; inactive rows use the
-                    // theme colour.
+                    // theme colour and must not pay for the extraction at all.
                     val activeCardColor =
                         rememberArtworkCardColor(
                             thumbnailUrl = song.song.thumbnailUrl,
                             fallbackColor = MaterialTheme.colorScheme.primaryContainer,
+                            enabled = isActive,
                         )
                     val inactiveCardColor = MaterialTheme.colorScheme.surfaceContainerLow
 
@@ -567,7 +561,6 @@ fun LibrarySongsScreen(
                                 )
                             }
 
-                            // More options
                             IconButton(
                                 onClick = {
                                     menuState.show {

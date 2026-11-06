@@ -13,6 +13,7 @@ import kotlin.math.log10
 import kotlin.math.pow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
 
 /**
  * Renders an [AcousticAuditResult] heat grid to ARGB pixels without Android types, so it is unit-testable.

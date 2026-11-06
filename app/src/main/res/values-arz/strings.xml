@@ -706,7 +706,7 @@
     <string name="context_info">السياقات (مفصولة بفاصلة)</string>
     <string name="close_dialog">إغلاق</string>
     <string name="support_development_title">دعم تطوير التطبيق</string>
-    <string name="support_development_message">أهلاً بيك! أنا rukamori، مطور ArchiveTune. لو التطبيق بقا جزء من يومك، تقدر تدعم استمراره عن طريق التبرع أو إضافة نجمة للمشروع على GitHub. شكراً لدعمك وتعبك معانا.</string>
+    <string name="support_development_message">أهلاً بيك! Natune بيتطوّر من NatuneGroup والمتساهمين. لو التطبيق بقا جزء من يومك، تقدر تدعم استمراره عن طريق التبرع أو إضافة نجمة للمشروع على GitHub. شكراً لدعمك وتعبك معانا.</string>
     <string name="support_development_donate">تبرع لدعم التطوير</string>
     <string name="support_development_star">نجمة على GitHub</string>
     <string name="later">في وقت لاحق</string>

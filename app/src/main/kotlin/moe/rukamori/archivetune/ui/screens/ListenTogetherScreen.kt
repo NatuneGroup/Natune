@@ -302,7 +302,6 @@ fun ListenTogetherScreen(
             HeaderSection()
         }
 
-        // Connection status card
         item {
             ConnectionStatusCard(
                 connectionState = connectionState,
@@ -849,7 +848,6 @@ private fun RoomStatusCard(
                     }
                 }
 
-                // Copy Code Action
                 FilledTonalButton(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1569,7 +1567,6 @@ private fun JoinCreateRoomSection(
                 }
             }
 
-            // Error message
             AnimatedVisibility(
                 visible = joinErrorMessage != null && !isInRoom,
                 enter = fadeIn() + slideInVertically(),
@@ -1720,7 +1717,6 @@ private fun UserActionDialog(
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Kick button
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1755,7 +1751,6 @@ private fun UserActionDialog(
                 }
             }
 
-            // Permanently kick button
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1789,7 +1784,6 @@ private fun UserActionDialog(
                 }
             }
 
-            // Transfer ownership button
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -29,7 +29,7 @@ class StorageAndMigrationConflictsTest {
         val editor = PreferenceSnapshot.of(
             DynamicThemeKey to true, RandomThemeOnStartupKey to true,
             NavigationBarFrostedBlurKey to true, NavigationBarTintFrostedBlurKey to true, LiquidGlassNavBarEnabledKey to true,
-            RejectSuspectedUpscaledAudioKey to true, AudioOffload to true,
+            RejectSuspectedUpscaledAudioKey to true, AudioOffload to true, AudioProcessingEnabledKey to true,
             TryptifyAudioProcessingKey to true, LastwaveAudioProcessingKey to true, FloatDspEnabledKey to true,
             PlayerStreamClientKey to "HI_RES_LOSSLESS", LyricsBackgroundStyleKey to "CUSTOM",
             MaxSongCacheSizeKey to 0, MaxImageCacheSizeKey to 0, SmartTrimmerKey to true,
@@ -42,7 +42,9 @@ class StorageAndMigrationConflictsTest {
         assertEquals(false, editor[NavigationBarFrostedBlurKey])
         assertEquals(false, editor[NavigationBarTintFrostedBlurKey])
         assertEquals(false, editor[AudioOffload])
-        assertEquals(false, editor[LastwaveAudioProcessingKey])
+        // Offload excludes processing, but the retired engine keys are only preset-format input now.
+        assertEquals(false, editor[AudioProcessingEnabledKey])
+        assertEquals(true, editor[LastwaveAudioProcessingKey])
         assertEquals(true, editor[TryptifyAudioProcessingKey])
         assertEquals(true, editor[FloatDspEnabledKey])
         assertEquals("WEB_REMIX", editor[PlayerStreamClientKey])
