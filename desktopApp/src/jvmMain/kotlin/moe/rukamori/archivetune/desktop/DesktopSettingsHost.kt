@@ -797,7 +797,7 @@ private fun DesktopSettingsRouteBody(
     if (twoPane) {
         SettingsTwoPane(
             selectedRoute = routePath,
-            rows = settingsHomeRows(navigate, false, DesktopHideToTrayKey, {}),
+            rows = settingsHomeRows(navigate, false, DesktopHideToTrayKey, {}, desktop = true),
             onSelect = { target ->
                 when {
                     target == routePath -> Unit

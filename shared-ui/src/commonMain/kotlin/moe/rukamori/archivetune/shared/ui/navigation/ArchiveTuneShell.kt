@@ -101,8 +101,6 @@ fun ArchiveTuneShell(
             navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route),
             desktop = LocalDesktopLayout.current)
         val desktop = LocalDesktopLayout.current
-        // Captured in the BoxWithConstraints scope: its implicit receiver is unavailable inside the Row lambda below.
-        val labelledSidebar = desktop && maxWidth >= DesktopLabelledSidebarMinWidth
         // Search is the top bar's job on desktop, so the sidebar carries only the two library destinations.
         val tabs = remember(desktop) {
             if (desktop) ShellTab.entries.filter { it != ShellTab.Search } else ShellTab.entries
@@ -131,11 +129,84 @@ fun ArchiveTuneShell(
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }
         // Pages reserve the measured bar and mini player, so no card sits under a control the shell drew.
         val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
-        Row(Modifier.fillMaxSize()) {
-            if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
-                if (labelledSidebar && layout == ShellLayout.Rail) {
-                    DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
-                } else {
+        val pageArea: @Composable () -> Unit = {
+            CompositionLocalProvider(LocalShellContentPadding provides chromePadding) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .then(contentModifier)
+                        .then(if (scrollDrivesBottomUi) Modifier.nestedScroll(navigationBarScrollConnection) else Modifier)
+                        .testTag("shell-content"),
+                ) { content(navigation.route) }
+            }
+        }
+        val bottomChrome: @Composable () -> Unit = {
+            CompositionLocalProvider(
+                LocalNavigationBarHiddenByScroll provides hiddenByScroll,
+                LocalBottomUiCompactFraction provides bottomUiCompactFraction,
+            ) {
+                // This sibling is excluded from both recordings; only page pixels feed the chrome.
+                Column(Modifier.fillMaxWidth().onSizeChanged { chromeHeight = it.height }) {
+                    when (layout) {
+                        ShellLayout.Hidden -> Unit
+                        ShellLayout.CompactRow -> Row(
+                            Modifier.fillMaxWidth().heightIn(min = CompactControlSize + 8.dp)
+                                .padding(horizontal = 12.dp)
+                                .testTag("shell-compact"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
+                        ) {
+                            val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
+                            CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
+                            Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip()
+                                .testTag("shell-mini-player")) { miniPlayer() }
+                            if (apple || compactSearchVisible(navigation.route)) {
+                                CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
+                            }
+                        }
+                        else -> {
+                            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip()
+                                .testTag("shell-mini-player")) { miniPlayer() }
+                            if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
+                                // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
+                                SukisuNavigationBar(
+                                    items = ShellTab.entries,
+                                    selected = { tab -> navigation.selectedTab == tab },
+                                    onSelect = { tab -> navigation.select(tab, toRoot = false) },
+                                    modifier = Modifier.testTag("shell-bottom-bar"),
+                                    hideLabels = preferences[HideNavigationBarLabelsKey, false],
+                                )
+                            } else if (layout == ShellLayout.BottomBar) {
+                                FloatingNavigationToolbar(
+                                    items = ShellTab.entries,
+                                    preferences = preferences,
+                                    pureBlack = MaterialTheme.colorScheme.background == Color.Black,
+                                    modifier = Modifier.testTag("shell-bottom-bar"),
+                                    style = preferences.navigationPillStyle(),
+                                    isSelected = { tab -> navigation.selectedTab == tab },
+                                    onItemClick = { tab -> navigation.select(tab, toRoot = false) },
+                                    onSearchItemDoubleClick = onSearchItemDoubleClick,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (desktop) {
+            // Metrolist's desktop structure: a narrow navigation rail beside the page, and one full-width player bar
+            // under both. Phone hosts keep their existing bottom bar inside the content area.
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    if (layout == ShellLayout.Rail) {
+                        DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { pageArea() }
+                }
+                Box(Modifier.fillMaxWidth()) { bottomChrome() }
+            }
+        } else {
+            Row(Modifier.fillMaxSize()) {
+                if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
                     NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
                         containerColor = Color.Transparent) {
                         tabs.forEach { tab ->
@@ -149,66 +220,9 @@ fun ArchiveTuneShell(
                         }
                     }
                 }
-            }
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                CompositionLocalProvider(LocalShellContentPadding provides chromePadding) {
-                    Box(
-                        Modifier.fillMaxSize()
-                            .then(contentModifier)
-                            .then(if (scrollDrivesBottomUi) Modifier.nestedScroll(navigationBarScrollConnection) else Modifier)
-                            .testTag("shell-content"),
-                    ) { content(navigation.route) }
-                }
-                CompositionLocalProvider(
-                    LocalNavigationBarHiddenByScroll provides hiddenByScroll,
-                    LocalBottomUiCompactFraction provides bottomUiCompactFraction,
-                ) {
-                    // This sibling is excluded from both recordings; only page pixels feed the chrome.
-                    Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
-                        when (layout) {
-                            ShellLayout.Hidden -> Unit
-                            ShellLayout.CompactRow -> Row(
-                                Modifier.fillMaxWidth().heightIn(min = CompactControlSize + 8.dp)
-                                    .padding(horizontal = 12.dp)
-                                    .testTag("shell-compact"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
-                            ) {
-                                val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
-                                CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
-                                Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip()
-                                    .testTag("shell-mini-player")) { miniPlayer() }
-                                if (apple || compactSearchVisible(navigation.route)) {
-                                    CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
-                                }
-                            }
-                            else -> {
-                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip()
-                                    .testTag("shell-mini-player")) { miniPlayer() }
-                                if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
-                                    // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
-                                    SukisuNavigationBar(
-                                        items = ShellTab.entries,
-                                        selected = { tab -> navigation.selectedTab == tab },
-                                        onSelect = { tab -> navigation.select(tab, toRoot = false) },
-                                        modifier = Modifier.testTag("shell-bottom-bar"),
-                                        hideLabels = preferences[HideNavigationBarLabelsKey, false],
-                                    )
-                                } else if (layout == ShellLayout.BottomBar) {
-                                    FloatingNavigationToolbar(
-                                        items = ShellTab.entries,
-                                        preferences = preferences,
-                                        pureBlack = MaterialTheme.colorScheme.background == Color.Black,
-                                        modifier = Modifier.testTag("shell-bottom-bar"),
-                                        style = preferences.navigationPillStyle(),
-                                        isSelected = { tab -> navigation.selectedTab == tab },
-                                        onItemClick = { tab -> navigation.select(tab, toRoot = false) },
-                                        onSearchItemDoubleClick = onSearchItemDoubleClick,
-                                    )
-                                }
-                            }
-                        }
-                    }
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    pageArea()
+                    Box(Modifier.align(Alignment.BottomCenter)) { bottomChrome() }
                 }
             }
         }
@@ -288,13 +302,8 @@ private fun Modifier.navigationMaterial(
  */
 @Composable
 private fun Modifier.miniPlayerStrip(): Modifier =
-    if (LocalDesktopLayout.current) {
-        // The desktop transport bar is part of the window, not a card: it takes the page colour, and the bar's own
-        // seek line separates it from the content above.
-        background(MaterialTheme.colorScheme.background).pointerInput(Unit, MiniPlayerStripHitTarget)
-    } else {
-        background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
-    }
+    // The player is the same tinted chrome surface as the rail and the top bar, and it spans the window on desktop.
+    background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
 
 /** Watches the strip's pointer events without consuming, so presence in the chain claims the region and nothing else. */
 private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {

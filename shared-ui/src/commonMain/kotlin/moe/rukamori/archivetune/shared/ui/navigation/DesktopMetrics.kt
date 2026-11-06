@@ -3,9 +3,6 @@ package moe.rukamori.archivetune.shared.ui.navigation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** Below this window width the desktop sidebar keeps its icon-only rail instead of the labelled column. */
-val DesktopLabelledSidebarMinWidth = 1000.dp
-
 /** Below this content width the desktop settings page falls back to the single-column list -> page flow. */
 val DesktopSettingsTwoPaneMinWidth = 780.dp
 

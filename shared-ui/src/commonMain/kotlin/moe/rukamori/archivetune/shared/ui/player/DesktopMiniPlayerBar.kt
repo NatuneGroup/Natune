@@ -40,13 +40,12 @@ import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.stringResource
 
 private val DesktopPlayerBarHeight = RowHeights.playerBar
-private val DesktopSeekLineHeight = 2.dp
-private val DesktopSeekTouchHeight = 12.dp
+private val DesktopSeekTrackHeight = 16.dp
 
 /**
- * The desktop transport bar: page-coloured (no card behind it), 72 dp tall, with a 2 dp seek line on its top edge and
- * three columns - sleeve/title, centred transport, right-hand actions. It is the window's bottom chrome rather than a
- * Material surface, so the page still reads as one sheet.
+ * The desktop transport bar, shaped like the reference desktop app: the tinted chrome surface spans the full window,
+ * an inset 16 dp seek track sits near the top, and the sleeve, centred transport and right-hand actions share the
+ * controls row below it. Phone hosts never compose this.
  */
 @Composable
 internal fun DesktopMiniPlayerBar(
@@ -83,15 +82,11 @@ internal fun DesktopMiniPlayerBar(
     val seekable = duration != null && matching && nativeState.canSeek && playback?.isSeekable == true
     Box(Modifier.fillMaxWidth().height(DesktopPlayerBarHeight).testTag("desktop-player-bar")) {
         Box(
-            Modifier.align(Alignment.TopCenter).fillMaxWidth().height(DesktopSeekLineHeight)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .testTag("desktop-player-seek-line"),
-        ) {
-            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-        }
-        // A 12 dp hit band over the hairline keeps the seek gesture usable without drawing a slider track.
-        Box(
-            Modifier.align(Alignment.TopCenter).fillMaxWidth().height(DesktopSeekTouchHeight)
+            Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .padding(start = Space.md, end = Space.md, top = Space.md)
+                .height(DesktopSeekTrackHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 .pointerInput(seekable, duration) {
                     if (!seekable) return@pointerInput
                     detectHorizontalDragGestures(
@@ -106,9 +101,16 @@ internal fun DesktopMiniPlayerBar(
                     )
                 }
                 .testTag("desktop-player-seek"),
-        )
+        ) {
+            Box(
+                Modifier.fillMaxWidth(fraction).fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.primary)
+                    .testTag("desktop-player-seek-line"),
+            )
+        }
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(72.dp).padding(horizontal = Space.md)) {
         Row(
-            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.33f).padding(start = Space.sm)
+            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.33f)
                 .clip(RoundedCornerShape(10.dp))
                 .spaceTogglesPlayback(onPlayPause)
                 .clickable(onClick = onExpand)
@@ -178,7 +180,7 @@ internal fun DesktopMiniPlayerBar(
             )
         }
         Row(
-            Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.33f).padding(end = Space.sm),
+            Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.33f),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End,
         ) {
@@ -221,6 +223,7 @@ internal fun DesktopMiniPlayerBar(
                 size = 36.dp,
                 iconSize = IconSizes.small,
             )
+        }
         }
     }
 }

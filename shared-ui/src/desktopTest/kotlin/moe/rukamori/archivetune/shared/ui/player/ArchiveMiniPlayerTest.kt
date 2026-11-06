@@ -135,7 +135,7 @@ class ArchiveMiniPlayerTest {
         setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalDesktopLayout provides true) {
-                    Box(Modifier.requiredSize(1024.dp, 96.dp)) {
+                    Box(Modifier.requiredSize(1024.dp, 160.dp)) {
                         ArchiveMiniPlayer(
                             current = occurrence,
                             playback = playback,

@@ -14,6 +14,8 @@ fun settingsHomeRows(
     androidAuto: Boolean,
     hideToTrayKey: BooleanPreferenceKey?,
     openShortcuts: () -> Unit,
+    /** Desktop keeps the Metrolist shell, so the phone navigation-style page is not offered; its keys stay stored. */
+    desktop: Boolean = false,
 ): List<SettingsRow> {
     fun entry(anchor: String, title: StringResource, description: StringResource, route: String) =
         SettingsRow.Action(anchor, title, run = { navigate(route) }, description = description, navRoute = route)
@@ -30,8 +32,10 @@ fun settingsHomeRows(
             Res.string.m6_settings_home_appearance_extras_desc, "settings/appearance/extras"))
         add(entry("aod", Res.string.m6_settings_home_aod, Res.string.m6_settings_home_aod_desc,
             "settings/appearance/aod_customized"))
-        add(entry("navigation_bar", Res.string.m6_settings_home_navigation_bar,
-            Res.string.m6_settings_home_navigation_bar_desc, "settings/appearance/navigation_bar"))
+        if (!desktop) {
+            add(entry("navigation_bar", Res.string.m6_settings_home_navigation_bar,
+                Res.string.m6_settings_home_navigation_bar_desc, "settings/appearance/navigation_bar"))
+        }
         add(entry("lyrics_animations", Res.string.m6_settings_home_lyrics_animations,
             Res.string.m6_settings_home_lyrics_animations_desc, "settings/appearance/lyrics_animations"))
         add(entry("playback", Res.string.m6_settings_home_playback, Res.string.m6_settings_home_playback_desc, "settings/player"))

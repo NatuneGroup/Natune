@@ -3,7 +3,7 @@ package moe.rukamori.archivetune.shared.ui.navigation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,17 +23,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.shared.ui.theme.RowHeights
 import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.stringResource
 
-private val SidebarWidth = 232.dp
-private val SidebarRowHeight = RowHeights.navigation
+private val SidebarWidth = 104.dp
+private val SidebarRowHeight = 64.dp
 private val SidebarGutter = Space.xs
 
 /**
- * The wide desktop sidebar: icon and label rows, so the two destinations are named without opening anything. Narrow
- * desktop windows keep the stock icon rail, and phone hosts never compose this at all.
+ * The desktop navigation rail, shaped like the reference desktop app: 104 dp wide, icon over a small label, two
+ * destinations, on the tinted rail surface that also carries the top bar and player bar. Phone hosts never compose it.
  */
 @Composable
 internal fun DesktopNavigationSidebar(
@@ -45,23 +44,23 @@ internal fun DesktopNavigationSidebar(
         modifier
             .width(SidebarWidth)
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .padding(horizontal = SidebarGutter, vertical = Space.xs),
         verticalArrangement = Arrangement.spacedBy(Space.xxs),
     ) {
         tabs.forEach { tab ->
             val selected = navigation.selectedTab == tab
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .height(SidebarRowHeight)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(16.dp))
                     .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                     .selectable(selected = selected, role = Role.Tab, onClick = { navigation.select(tab, toRoot = false) })
                     .testTag("shell-tab-${tab.name}")
-                    .padding(horizontal = Space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    .padding(vertical = Space.xs),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 CompositionLocalProvider(
                     LocalContentColor provides
@@ -70,9 +69,10 @@ internal fun DesktopNavigationSidebar(
                 ) {
                     TabMark(tab)
                 }
+                Spacer(Modifier.height(Space.xxs))
                 Text(
                     stringResource(tab.label),
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
                     color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
