@@ -101,6 +101,8 @@ fun ArchiveTuneShell(
             navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route),
             desktop = LocalDesktopLayout.current)
         val desktop = LocalDesktopLayout.current
+        // Captured in the BoxWithConstraints scope: its implicit receiver is unavailable inside the Row lambda below.
+        val labelledSidebar = desktop && maxWidth >= DesktopLabelledSidebarMinWidth
         // Search is the top bar's job on desktop, so the sidebar carries only the two library destinations.
         val tabs = remember(desktop) {
             if (desktop) ShellTab.entries.filter { it != ShellTab.Search } else ShellTab.entries
@@ -131,7 +133,7 @@ fun ArchiveTuneShell(
         val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
             if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
-                if (desktop && layout == ShellLayout.Rail && maxWidth >= DesktopLabelledSidebarMinWidth) {
+                if (labelledSidebar && layout == ShellLayout.Rail) {
                     DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
                 } else {
                     NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
