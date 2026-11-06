@@ -32,8 +32,17 @@ private const val REQUEST_TIMEOUT_MS = 30_000L
  * client, player-config parser and pure-Kotlin cipher, so this tier shares nothing with the primary client walk and
  * still resolves when a YouTube change breaks it. It always asks as a visitor, as the Android tier does.
  *
- * The engine takes plain media URLs, so the capability hints keep the library off SABR, byte-range-only and HLS
- * clients, and the guards after `extract` refuse such a stream if a library regression hands one through anyway.
+ * It is the desktop resolver's first answer now, and the hand-rolled client walk is its fallback. The extractor is built
+ * without a strategy or a monitor on purpose: InnerTubeX's default is exactly the walk Metrolist ships —
+ * `ContentAwareFallbackStrategy` over the in-process `ClientHealthTracker` (two failures before a 2 min cooldown, 10 min
+ * after a MEDIA_FORBIDDEN, 10 min failure memory), so WEB_REMIX leads at priority 70, a broken or login-only client is
+ * hard-rejected, a SABR-only client is bucketed last and a failure demotes its client for the next extraction instead of
+ * being retried forever. Passing a strategy, or a `ClientHealthMonitor`, would replace that; the monitor implementations
+ * that keep the cooldowns are internal to the library.
+ *
+ * The engine takes a plain media URL or a host byte lease, so the capability hints still keep the library off HLS (a
+ * leased source refuses FFmpeg's child requests) and off SABR (the deck has no SABR transport yet); bounded byte ranges
+ * are allowed, because `HttpRangeSource` only ever asks for a bounded range.
  */
 internal class DesktopInnerTubeXTier(
     private val http: HttpClient,
@@ -48,15 +57,16 @@ internal class DesktopInnerTubeXTier(
     @Volatile
     private var prewarmed = false
 
-    suspend fun resolve(videoId: String, quality: DesktopYouTubeAudioQuality, trusted: Boolean): PreparedAudio? {
+    suspend fun resolve(
+        videoId: String,
+        quality: DesktopYouTubeAudioQuality,
+        trusted: Boolean,
+        hints: ContentHints = defaultContentHints(),
+    ): PreparedAudio? {
         prewarmOnce()
         val stream = extractor.extract(
             videoId = videoId,
-            hints = ContentHints(wantVideo = false).withStreamCapabilities(
-                allowHls = false,
-                allowSabr = false,
-                allowBoundedRange = false,
-            ),
+            hints = hints,
             audioQuality = quality.toInnerTubeXQuality(),
         ) ?: return null
         if (stream.audioUrl.contains("/manifest/hls") || stream.audioUrl.contains(".m3u8")) {
@@ -64,9 +74,6 @@ internal class DesktopInnerTubeXTier(
         }
         if (stream.sabrBootstrap != null) {
             throw DesktopInnerTubeXException("InnerTubeX returned a segmented SABR stream for $videoId")
-        }
-        if (stream.requireBoundedRange) {
-            throw DesktopInnerTubeXException("InnerTubeX returned a byte-range-only stream for $videoId")
         }
         return PreparedAudio.Progressive(stream.toDirectStream(trusted))
     }
@@ -121,6 +128,27 @@ internal class DesktopInnerTubeXTier(
 
 internal class DesktopInnerTubeXException(message: String) : IllegalStateException(message)
 
+/**
+ * The stream capabilities this host asks InnerTubeX for.
+ *
+ * HLS stays off: a leased source refuses FFmpeg's own child requests, and HLS only reaches FFmpeg's own reader through
+ * the header-free manifest exemption, which a per-client URL carrying a user agent cannot satisfy. SABR stays off
+ * because the deck has no SABR transport yet; a SABR-only client would otherwise hand back a bootstrap the engine
+ * cannot play. Bounded byte ranges are allowed because `HttpRangeSource` only ever asks for a bounded range, so a
+ * client that requires one is a client this host can read.
+ */
+internal fun defaultContentHints(
+    playbackClientOverrideId: String? = null,
+    isExplicit: Boolean? = null,
+    isAgeRestricted: Boolean? = null,
+): ContentHints =
+    ContentHints(
+        isExplicit = isExplicit,
+        isAgeRestricted = isAgeRestricted,
+        wantVideo = false,
+        playbackClientOverrideId = playbackClientOverrideId,
+    ).withStreamCapabilities(allowHls = false, allowSabr = false, allowBoundedRange = true)
+
 private fun DesktopYouTubeAudioQuality.toInnerTubeXQuality(): InnerTubeXAudioQuality =
     when (this) {
         DesktopYouTubeAudioQuality.AUTO -> InnerTubeXAudioQuality.AUTO
@@ -150,5 +178,8 @@ private fun ExtractedStream.toDirectStream(trusted: Boolean): DirectStream {
                 .entries.distinctBy { it.key.lowercase() }
                 .associate { it.key to it.value },
         ),
+        // The library reports the URL's own authorization window, and the `expire` parameter states it again. Without
+        // it the locator would look reusable forever and recovery would replay a dead URL.
+        expiresAtEpochMs = expiresAt?.toEpochMilliseconds() ?: youTubeStreamExpiryMs(audioUrl),
     )
 }

@@ -32,6 +32,10 @@ kotlin {
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
             // tier can drive the extractor directly, which adds nothing to the package.
             implementation(libs.innertubex.desktop)
+            // InnerTubeX delegates the signature and `n` transforms to QuackJS. Nothing here calls it directly; the
+            // explicit declaration pins the 0.1.4 build that InnerTubeX v0.11.5 is compiled against instead of
+            // leaving the version to whatever the transitive graph resolves.
+            implementation(libs.quackjs)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
             // The Hyprland visibility watcher parses the compositor's IPC replies with it.
@@ -316,6 +320,77 @@ val hostIsWindows = System.getProperty("os.name").startsWith("Windows")
 val hostIsMacos = !hostIsLinux && !hostIsWindows
 val hostArch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
 
+/**
+ * Why this invocation may build no playback engine, or an empty string when the engine is required.
+ *
+ * The engine is a package requirement, not an optimisation: a build without `libarchivetune_engine` installs,
+ * starts and then plays nothing, and the only signal is a player error on the first press of play. Two legs
+ * legitimately carry no media closure, and they say so on the command line — the unit-test workflow passes
+ * `-PdesktopEngineTests=false` because it excludes exactly the suites that decode through the engine, and a
+ * developer iterating on UI can pass `-PdesktopEngineBuild=skip`.
+ */
+val nativeEngineSkipReason = providers.provider {
+    when {
+        providers.gradleProperty("desktopEngineBuild").orNull?.trim() == "skip" ->
+            "-PdesktopEngineBuild=skip was passed, so this run needs no playback engine"
+        providers.gradleProperty("desktopEngineTests").orNull?.trim() == "false" ->
+            "-PdesktopEngineTests=false excluded the engine suites, so this run needs no media closure"
+        else -> ""
+    }
+}
+
+/** The native dependency prefix CMake configures against; the engine cannot be built without its `lib` directory. */
+val nativePrefixDirectory = nativePrefix.map { it.asFile }
+
+/**
+ * Refuses staged resources that cannot play. Every host stages the engine beside the media closure it links: `$ORIGIN`
+ * resolves the ELF one, `@loader_path` the Apple one, and on Windows the runtime preloads that same directory. A package
+ * missing any of them installs, starts, and then fails the first play, so the package is refused here instead.
+ */
+fun requireStagedPlaybackEngine(directory: File) {
+    val engine = File(directory, System.mapLibraryName("archivetune_engine"))
+    check(engine.isFile) {
+        "$directory carries no ${engine.name}: this package would install and then play nothing. Run the host's " +
+            "stage-*-package script (it installs a built engine) before packaging."
+    }
+    val staged = directory.listFiles().orEmpty().map { it.name.lowercase() }
+    val missing = listOf(
+        "the FFmpeg closure" to staged.any { "avformat" in it },
+        "the codec library" to staged.any { "avcodec" in it },
+        "the resampler" to staged.any { "swresample" in it || "avutil" in it },
+        "the TLS library" to staged.any { "ssl" in it || "crypto" in it },
+    ).filterNot { it.second }.map { it.first }
+    check(missing.isEmpty()) {
+        "$directory is missing ${missing.joinToString(", ")} beside ${engine.name}; the engine links them, so this " +
+            "package could not decode. Rebuild the native dependencies and stage the closure again."
+    }
+}
+
+/**
+ * The engine build's input gate. Every task that needs the engine depends on it, so a run with no media closure
+ * either opted out on the command line or stops here naming the script that produces the prefix. Replacing the old
+ * silent `onlyIf` is the point: an engine-less build used to be a successful build.
+ */
+val verifyNativeEnginePrefix = tasks.register("verifyNativeEnginePrefix") {
+    group = "build"
+    description = "Refuses a build that needs the desktop playback engine and has no native dependency prefix."
+    doFirst {
+        val prefix = nativePrefixDirectory.get()
+        if (prefix.resolve("lib").isDirectory) return@doFirst
+        val skip = nativeEngineSkipReason.get()
+        if (skip.isNotEmpty()) {
+            logger.lifecycle("verifyNativeEnginePrefix: continuing without the playback engine ($skip)")
+            return@doFirst
+        }
+        throw GradleException(
+            "The desktop playback engine needs its native dependency prefix at $prefix, which does not exist. " +
+                "Run bash desktopApp/native/scripts/build-native-deps.sh first (Windows: build-native-deps.ps1) " +
+                "and then build the engine. A package built without it installs and then plays nothing. Pass " +
+                "-PdesktopEngineBuild=skip only for a run that needs no playback.",
+        )
+    }
+}
+
 // Windows per-monitor DPI v2 lives in the launcher manifest, not in JVM code: Windows reads it once at process start.
 // jpackage writes the JDK launcher manifest, which declares system DPI awareness, so a mixed-DPI desktop keeps one scale
 // for every monitor. Stamping the committed manifest into the app image's launcher, before packageMsi and the EXE/ZIP
@@ -380,6 +455,9 @@ val nativeArchitectureArguments = if (hostIsMacos) {
 val configureNativeEngine = tasks.register<Exec>("configureNativeEngine") {
     group = "build"
     description = "Configures the desktop playback engine against the native dependency prefix."
+    dependsOn(verifyNativeEnginePrefix)
+    // verifyNativeEnginePrefix already refused the run when the engine is required and the prefix is absent, so this
+    // gate only keeps CMake off a directory that has none, for the legs that opted out of the engine build.
     onlyIf { nativePrefix.get().asFile.resolve("lib").isDirectory }
     outputs.file(nativeEngineBuildDir.map { it.file("CMakeCache.txt") })
     inputs.file(file("native/CMakeLists.txt"))
@@ -467,7 +545,7 @@ val desktopNativeDirectoryOverride = providers.gradleProperty("desktopNativeDire
 val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") {
     group = "distribution"
     description = "Stages actual host-native libraries and required notices; refuses incomplete packages."
-    dependsOn(buildNativeSystem, installNativeBrowser)
+    dependsOn(buildNativeSystem, installNativeBrowser, verifyNativeEnginePrefix)
     if (hostIsLinux) dependsOn("stageLinuxNativeResources")
     // The in-repo recipes stage the closure from build/native; -PdesktopNativeDirectory keeps the
     // override for a foreign media closure that was not produced by them.
@@ -497,6 +575,9 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
                 ?: error("Host native OS adapter missing")
             copy { from(system); into(hostNativeDirectory) }
         }
+        // Every host ends here with the engine and the media closure it links inside the staged resources. A package
+        // without them installs, starts and plays nothing, so the build refuses it here instead of shipping it.
+        requireStagedPlaybackEngine(hostNativeDirectory.get().asFile)
         copy { from("packaging/notices"); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
         // TDLight is desktop-only. Its native library comes from the pinned source through the host's recipe, and its notice
         // must carry the verbatim Boost license from that tree. A package missing either is refused, not shipped with a
