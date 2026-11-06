@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.lyrics
 
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import moe.rukamori.archivetune.ui.component.buildSyncedLyrics
+import moe.rukamori.archivetune.ui.component.hasWordTiming
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
