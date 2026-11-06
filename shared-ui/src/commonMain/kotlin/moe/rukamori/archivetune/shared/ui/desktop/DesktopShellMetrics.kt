@@ -28,6 +28,11 @@ object DesktopShellMetrics {
     val searchTightWindowWidth = 960.dp
     val searchFieldNarrowWidth = 280.dp
     val searchFieldWideWidth = 420.dp
+    /**
+     * The rail toggle's touch target in the title bar: the 48 dp interactive minimum of its icon button. The Windows
+     * frame publishes it as a client region, so the click reaches Compose instead of dragging the window.
+     */
+    val titleBarRailToggleWidth = 48.dp
 
     /** Linux and the Windows fallback paint their own caption strip; Windows' native frame is 48 dp in total. */
     val captionHeight = 32.dp
@@ -49,6 +54,8 @@ object DesktopShellMetrics {
     val paneMinWidth = 280.dp
     val paneMaxWidthFraction = 0.6f
     val paneHeaderHeight = 56.dp
+    /** The drag target between the page and a docked pane; it is spent from the window's pane budget. */
+    val paneDividerWidth = 6.dp
 
     /** The page sits on a rounded, outlined surface inside the shell, as the reference app's content frame does. */
     val contentCorner = 16.dp
@@ -64,15 +71,14 @@ object DesktopShellMetrics {
     /** Below this height the expanded player stacks in a scrollable column instead of two side-by-side columns. */
     val expandedTwoColumnMinHeight = 560.dp
 
-    /** A window narrower than rail + page + pane cannot dock a pane without squeezing the page. */
-    val paneDockMinWindowWidth = 1040.dp
     /** A short window keeps its page and shows panes over it instead of beside it. */
     val paneDockMinHeight = 480.dp
 }
 
 /**
- * Width classes of the reference app: 600 / 840 / 1200 / 1600 dp. They drive the rail's expansion, how many docked
- * panes fit and whether the search takes its narrow width.
+ * Width classes of the reference app: 600 / 840 / 1200 / 1600 dp. They drive the rail's expansion, the size of the
+ * expanded player and whether the search takes its narrow width. Docked panes are *not* decided from a class: see
+ * [desktopPaneSlots], which budgets their real widths.
  */
 enum class DesktopWidthClass { Compact, Medium, Expanded, Large, ExtraLarge }
 
@@ -93,27 +99,63 @@ fun desktopHeightClass(height: Dp): DesktopHeightClass = when {
     else -> DesktopHeightClass.Compact
 }
 
-/** Where a requested side pane goes: docked beside the page, over it, or nowhere because it was not asked for. */
-enum class DesktopPaneMode { Hidden, Docked, Overlay }
+/** Where a pane the user asked for is drawn: beside the page, or over it when the window has no room for both. */
+enum class DesktopPanePlacement { Docked, Overlay }
 
-fun desktopPaneMode(windowWidth: Dp, windowHeight: Dp, requested: Boolean): DesktopPaneMode = when {
-    !requested -> DesktopPaneMode.Hidden
-    windowHeight < DesktopShellMetrics.paneDockMinHeight -> DesktopPaneMode.Overlay
-    windowWidth < DesktopShellMetrics.paneDockMinWindowWidth -> DesktopPaneMode.Overlay
-    else -> DesktopPaneMode.Docked
-}
+/** A pane the user asked for, with the width its divider last gave it. */
+data class DesktopPaneRequest(val pane: DesktopPane, val width: Dp)
+
+/** One pane the shell draws: the width it gets and whether it sits beside the page or over it. */
+data class DesktopPaneSlot(val pane: DesktopPane, val width: Dp, val placement: DesktopPanePlacement)
 
 /**
- * How many panes the window carries: two from 1200 dp (page plus queue plus lyrics), one from 840 dp, and one over
- * the page below that. The reference app's maximum pane count follows the same width steps.
+ * The window's pane budget: the one place that decides which panes are drawn and how wide they are.
+ *
+ * The budget is measured in real dp, not in width classes: the rail, the page's own
+ * [DesktopShellMetrics.primaryPaneMinWidth], one [DesktopShellMetrics.paneDividerWidth] per docked pane and each open
+ * pane's actual width. A pane is docked only while the page keeps its minimum, and narrows to
+ * [DesktopShellMetrics.paneMinWidth] before it loses its slot. A pane that still does not fit covers the page when it
+ * is the one the user opened last ([active]); every other overflow pane is left out of the layout, so the state can
+ * follow the layout instead of a closed pane counting as open. A window shorter than
+ * [DesktopShellMetrics.paneDockMinHeight] never docks: the active pane covers the page.
+ *
+ * Two 360 dp panes do not fit at 1200 x 720 even though the width class says "two panes": 180 rail + 560 page + 6 + 360
+ * leaves 94 dp, so the second pane covers the page while the first stays docked.
  */
-fun desktopPaneCapacity(windowWidth: Dp, windowHeight: Dp): Int {
-    if (desktopHeightClass(windowHeight) == DesktopHeightClass.Compact) return 1
-    return when (desktopWidthClass(windowWidth)) {
-        DesktopWidthClass.ExtraLarge, DesktopWidthClass.Large -> 2
-        DesktopWidthClass.Expanded, DesktopWidthClass.Medium -> 1
-        DesktopWidthClass.Compact -> 1
+fun desktopPaneSlots(
+    windowWidth: Dp,
+    windowHeight: Dp,
+    railWidth: Dp,
+    open: List<DesktopPaneRequest>,
+    active: DesktopPane?,
+): List<DesktopPaneSlot> {
+    if (open.isEmpty()) return emptyList()
+    val pageMinimum = DesktopShellMetrics.primaryPaneMinWidth.value
+    val paneMinimum = DesktopShellMetrics.paneMinWidth.value
+    val divider = DesktopShellMetrics.paneDividerWidth.value
+    fun overlay(request: DesktopPaneRequest): DesktopPaneSlot = DesktopPaneSlot(
+        request.pane,
+        overlayPaneWidth(request.width, windowWidth, railWidth),
+        DesktopPanePlacement.Overlay,
+    )
+    if (windowHeight < DesktopShellMetrics.paneDockMinHeight) {
+        // A short window has no vertical room for a second column.
+        return listOf(overlay(open.firstOrNull { it.pane == active } ?: open.last()))
     }
+    val budget = windowWidth.value - railWidth.value - pageMinimum
+    var used = 0f
+    val docked = mutableListOf<DesktopPaneSlot>()
+    open.forEach { request ->
+        val width = minOf(request.width.value.coerceAtLeast(paneMinimum), budget - used - divider)
+        if (width >= paneMinimum) {
+            docked += DesktopPaneSlot(request.pane, width.dp, DesktopPanePlacement.Docked)
+            used += width + divider
+        }
+    }
+    val covering = open.firstOrNull { request ->
+        request.pane == active && docked.none { it.pane == request.pane }
+    }
+    return if (covering == null) docked else docked + overlay(covering)
 }
 
 /** The rail is labelled from 840 dp and while the window is tall enough for two-line items. */
@@ -127,17 +169,6 @@ fun desktopSearchFieldWidth(windowWidth: Dp): Dp = if (windowWidth < DesktopShel
     DesktopShellMetrics.searchFieldNarrowWidth
 } else {
     DesktopShellMetrics.searchFieldWideWidth
-}
-
-/**
- * A pane width that leaves the page its [DesktopShellMetrics.primaryPaneMinWidth]. The result never goes below the
- * pane minimum, so a drag cannot make a pane vanish, and the page column is what narrows first.
- */
-fun clampPaneWidth(requested: Dp, windowWidth: Dp, railWidth: Dp, otherPanes: Int): Dp {
-    val paneMin = DesktopShellMetrics.paneMinWidth.value
-    val available = windowWidth.value - railWidth.value - paneMin * otherPanes
-    val ceiling = max(paneMin, available - DesktopShellMetrics.primaryPaneMinWidth.value)
-    return max(paneMin, minOf(requested.value, ceiling)).dp
 }
 
 /** The overlay pane's width: it may cover the page, but it always leaves the rail and a strip of page visible. */

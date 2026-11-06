@@ -41,7 +41,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /** How wide the drag target is: a thin divider that is still easy to grab without moving the page. */
-private val DividerHitWidth = 6.dp
+private val DividerHitWidth: Dp = DesktopShellMetrics.paneDividerWidth
 private val DividerLineWidth = 1.dp
 
 /** The visible title of a pane, so the pane and its close button never disagree about what it holds. */
@@ -53,7 +53,8 @@ internal val DesktopPane.label: StringResource
 
 /**
  * The divider between the page and a docked pane. Dragging it right narrows the pane, because the pane is on the
- * right; a double click puts it back to its default width.
+ * right; a double click puts it back to its default width. The drag reports device pixels (`draggable`'s own unit) and
+ * the shell converts them to dp against the density of the window.
  */
 @Composable
 internal fun DesktopPaneDivider(
