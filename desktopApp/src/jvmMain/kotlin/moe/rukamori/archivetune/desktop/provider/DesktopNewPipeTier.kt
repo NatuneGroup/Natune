@@ -218,8 +218,7 @@ internal class DesktopNewPipeTier(
         DesktopYouTubeJavaScript.playableUrl(videoId, directUrl, signatureCipher, legacyCipher)
 
     /** A rotated player script leaves NewPipe's cached deobfuscation stale; one cache clear and retry recovers it. */
-    private inline fun <T> withPlayerCacheRecovery(block: () -> T): T =
-        DesktopYouTubeJavaScript.withPlayerCacheRecovery(block)
+    private fun <T> withPlayerCacheRecovery(block: () -> T): T = DesktopYouTubeJavaScript.withPlayerCacheRecovery(block)
 
     private companion object {
         /** The BotGuard mint allowance inside the 12 s tier bound, leaving the rest to extraction. */
