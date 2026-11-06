@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.navigation.desktopSettingsNavWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import org.jetbrains.compose.resources.painterResource
@@ -111,7 +112,7 @@ fun SettingsTwoPane(
         }
         ?: fallbackTitle
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val navWidth = if (maxWidth >= 1200.dp) 320.dp else 272.dp
+        val navWidth = desktopSettingsNavWidth(maxWidth)
         Row(Modifier.fillMaxSize()) {
             SettingsNavigationPane(
                 items = visible,
@@ -125,7 +126,7 @@ fun SettingsTwoPane(
             Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 28.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -163,7 +164,7 @@ private fun SettingsNavigationPane(
             value = filter,
             onValueChange = onFilter,
             onClear = onClearFilter,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
         )
         var lastGroup: String? = null
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
@@ -176,7 +177,7 @@ private fun SettingsNavigationPane(
                             stringResource(header.title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 4.dp),
                         )
                     }
                 }
@@ -207,7 +208,7 @@ private fun SettingsNavRow(item: SettingsNavItem, selected: Boolean, onClick: ()
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 8.dp)
             .testTag("settings-nav-${item.route}"),
         verticalArrangement = Arrangement.Center,
     ) {
@@ -244,7 +245,7 @@ private fun SettingsSearchField(
         modifier = modifier.height(40.dp),
     ) {
         Row(
-            Modifier.fillMaxSize().padding(start = 12.dp, end = 4.dp),
+            Modifier.fillMaxSize().padding(start = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

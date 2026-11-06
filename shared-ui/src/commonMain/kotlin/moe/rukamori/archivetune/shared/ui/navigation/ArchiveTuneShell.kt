@@ -131,7 +131,7 @@ fun ArchiveTuneShell(
         val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
             if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
-                if (desktop && layout == ShellLayout.Rail && maxWidth >= 1100.dp) {
+                if (desktop && layout == ShellLayout.Rail && maxWidth >= DesktopLabelledSidebarMinWidth) {
                     DesktopNavigationSidebar(navigation, tabs, Modifier.testTag("shell-rail"))
                 } else {
                     NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),

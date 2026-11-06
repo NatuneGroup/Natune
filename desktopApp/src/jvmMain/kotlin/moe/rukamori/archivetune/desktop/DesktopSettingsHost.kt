@@ -58,6 +58,7 @@ import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
+import moe.rukamori.archivetune.shared.ui.navigation.DesktopSettingsTwoPaneMinWidth
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
@@ -313,7 +314,7 @@ internal fun DesktopSettingsScreen(
     // The two-pane shell draws the sidebar itself, so a detail page no longer needs a lone back header. Narrow desktop
     // windows fall back to the single-column list -> page flow the phone hosts use.
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val twoPane = LocalDesktopLayout.current && maxWidth >= 900.dp &&
+        val twoPane = LocalDesktopLayout.current && maxWidth >= DesktopSettingsTwoPaneMinWidth &&
             route.value.substringBefore('?').startsWith("settings")
         CompositionLocalProvider(LocalSettingsBack provides if (twoPane) null else back) {
             DesktopSettingsRouteBody(owners, graph, route, navigation, twoPane)
