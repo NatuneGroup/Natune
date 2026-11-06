@@ -20,9 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.theme.Space
 
@@ -65,17 +66,18 @@ fun DesktopShell(
     ) {
         val windowWidth = maxWidth
         val windowHeight = maxHeight
+        val density = LocalDensity.current
         val railExpanded = desktopRailExpanded(windowWidth, windowHeight, state.railExpanded)
         val railWidth = if (railExpanded) DesktopShellMetrics.railExpandedWidth else DesktopShellMetrics.railCollapsedWidth
-        val capacity = desktopPaneCapacity(windowWidth, windowHeight)
-        // A window that can only carry one pane keeps the one the user opened last; the state must agree with the
-        // layout, or a closed pane would still count as open for the shortcut that toggles it.
+        val open = PaneOrder.filter { state.isOpen(it) }.map { DesktopPaneRequest(it, state.width(it)) }
+        // One budget for the whole window: which panes are drawn, how wide they are and whether they sit beside the
+        // page or over it. The pixels a drag reports are converted here, once, so the pane state stays in dp.
+        val slots = desktopPaneSlots(windowWidth, windowHeight, railWidth, open, state.activePane)
+        // The state follows the layout: a pane the window cannot draw is closed, or a closed pane would still count
+        // as open for the shortcut that toggles it.
         SideEffect {
-            if (capacity < 2) {
-                state.activePane?.let { active ->
-                    if (active != DesktopPane.Queue && state.queueOpen) state.close(DesktopPane.Queue)
-                    if (active != DesktopPane.Lyrics && state.lyricsOpen) state.close(DesktopPane.Lyrics)
-                }
+            open.forEach { request ->
+                if (slots.none { it.pane == request.pane }) state.close(request.pane)
             }
         }
         Column(Modifier.fillMaxSize()) {
@@ -84,9 +86,9 @@ fun DesktopShell(
                 DesktopRail(navigation, railExpanded)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     DesktopContentSurface { pageModifier -> content(pageModifier) }
-                    OverlayPanes(state, capacity, windowWidth, windowHeight, railWidth, queuePane, lyricsPane)
+                    OverlayPanes(state, slots, queuePane, lyricsPane)
                 }
-                DockedPanes(state, capacity, windowWidth, windowHeight, railWidth, queuePane, lyricsPane)
+                DockedPanes(state, slots, density, queuePane, lyricsPane)
             }
             playerBar()
         }
@@ -118,25 +120,21 @@ private fun DesktopContentSurface(content: @Composable (Modifier) -> Unit) {
 @Composable
 private fun RowScope.DockedPanes(
     state: DesktopShellState,
-    capacity: Int,
-    windowWidth: Dp,
-    windowHeight: Dp,
-    railWidth: Dp,
+    slots: List<DesktopPaneSlot>,
+    density: Density,
     queuePane: @Composable (Modifier) -> Unit,
     lyricsPane: @Composable (Modifier) -> Unit,
 ) {
-    var docked = 0
-    PaneOrder.forEach { pane ->
-        if (!shouldRender(state, capacity, pane)) return@forEach
-        if (desktopPaneMode(windowWidth, windowHeight, requested = true) != DesktopPaneMode.Docked) return@forEach
-        val width = clampPaneWidth(state.width(pane), windowWidth, railWidth, otherPanes = docked)
+    slots.forEach { slot ->
+        if (slot.placement != DesktopPanePlacement.Docked) return@forEach
         DesktopPaneDivider(
-            pane = pane,
-            onDrag = { delta -> state.resize(pane, state.width(pane) + delta.dp) },
-            onReset = { state.resetWidth(pane) },
+            pane = slot.pane,
+            // The divider reports device pixels; the pane state is dp, and the drag starts from the width the pane is
+            // drawn at, so dragging a pane the window narrowed still tracks the pointer.
+            onDrag = { delta -> state.resize(slot.pane, slot.width + with(density) { delta.toDp() }) },
+            onReset = { state.resetWidth(slot.pane) },
         )
-        DesktopPaneSlot(pane, width, state, queuePane, lyricsPane)
-        docked++
+        DockedPane(slot.pane, slot.width, state, queuePane, lyricsPane)
     }
 }
 
@@ -144,28 +142,25 @@ private fun RowScope.DockedPanes(
 @Composable
 private fun BoxScope.OverlayPanes(
     state: DesktopShellState,
-    capacity: Int,
-    windowWidth: Dp,
-    windowHeight: Dp,
-    railWidth: Dp,
+    slots: List<DesktopPaneSlot>,
     queuePane: @Composable (Modifier) -> Unit,
     lyricsPane: @Composable (Modifier) -> Unit,
 ) {
-    PaneOrder.forEach { pane ->
-        if (!shouldRender(state, capacity, pane)) return@forEach
-        if (desktopPaneMode(windowWidth, windowHeight, requested = true) != DesktopPaneMode.Overlay) return@forEach
+    slots.forEach { slot ->
+        if (slot.placement != DesktopPanePlacement.Overlay) return@forEach
         DesktopPaneOverlay(
-            pane = pane,
-            width = overlayPaneWidth(state.width(pane), windowWidth, railWidth),
-            onClose = { state.close(pane) },
+            pane = slot.pane,
+            width = slot.width,
+            onClose = { state.close(slot.pane) },
         ) {
-            DesktopPaneContent(pane, queuePane, lyricsPane)
+            DesktopPaneContent(slot.pane, queuePane, lyricsPane)
         }
     }
 }
 
+/** One docked pane: its surface and the pane content the host supplies for it. */
 @Composable
-private fun DesktopPaneSlot(
+private fun DockedPane(
     pane: DesktopPane,
     width: Dp,
     state: DesktopShellState,
@@ -192,6 +187,3 @@ private fun DesktopPaneContent(
         DesktopPane.Lyrics -> lyricsPane(paneModifier)
     }
 }
-
-private fun shouldRender(state: DesktopShellState, capacity: Int, pane: DesktopPane): Boolean =
-    state.isOpen(pane) && (capacity >= 2 || state.activePane == pane)
