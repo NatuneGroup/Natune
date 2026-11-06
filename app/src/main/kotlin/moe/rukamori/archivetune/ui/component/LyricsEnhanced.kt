@@ -29,10 +29,12 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,6 +71,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -85,9 +88,9 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -98,18 +101,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
-import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
-import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
-import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -138,36 +142,37 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FO
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
+import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils
-import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
-import kotlin.math.roundToLong
+import kotlin.math.abs
 
 private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
-private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
+
+/** The slowest idle re-poll. */
+private const val IDLE_POLL_MS = 250L
+private const val MANUAL_SCROLL_TIMEOUT_MS = 4500L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
 private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
 private const val LYRIC_FIRST_FOCUS_EMPTY_FRAMES = 6
-private const val SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS = 80L
-private const val SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS = 180L
-private const val SMOOTH_PLAYBACK_DRIFT_CORRECTION = 0.55f
 // Sentinels for the first-focus collector: the user took over the list, or no line index is
 // published yet.
 private const val LYRIC_FOCUS_TARGET_MANUAL = -2
@@ -177,37 +182,16 @@ private const val LYRIC_FOCUS_TARGET_PENDING = -1
 private const val LYRIC_FIRST_FOCUS_FADE_MS = 200
 // Hard ceiling on how long the lines may stay hidden waiting for that placement.
 private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
-// A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
-// the library will accept rather than a share of the line's duration — see
-// buildWrappingKaraokeSyllables.
-private const val MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
+// Minimum position jump in either direction (in ms) that we treat as a "reset"
+// trigger — large enough to ride through ExoPlayer's normal position jitter
+// (which is well under 200ms even on a stuttering device) and minor playback
+// corrections, small enough to catch any real seek or REPEAT_MODE_ONE wrap
+// (which is typically a jump from near the end of the song back to 0, i.e. minutes).
+private const val POSITION_RESET_THRESHOLD_MS = 1000L
 
-// KaraokeLyricsView resolves the focused line as "the line whose [start, end) contains the
-// position", and falls back to the *next* line whenever the position lands between two windows.
-// These constants exist to make sure that fallback only ever fires on a genuine instrumental
-// break; see the long comment in buildSyncedLyrics.
-//
-// How long a line may keep focus after its own timestamp before it is allowed to hand over to a
-// breathing-dots interlude. Below this the line simply holds until the next one starts.
-private const val LINE_SYNCED_MAX_FOCUS_HOLD_MS = 5_000L
-// Mirrors the library's own interlude threshold: it draws the breathing dots only when the silence
-// between two lines is strictly longer than this.
-private const val LINE_SYNCED_INTERLUDE_MIN_GAP_MS = 5_000L
-// The last line has no successor to butt against, so give it a fixed window.
-private const val LINE_SYNCED_TRAILING_LINE_DURATION_MS = 4_000L
-// Minimum backward position jump (in ms) that we treat as a "reset" trigger —
-// large enough to ride through ExoPlayer's normal position jitter (which is
-// well under 200ms even on a stuttering device) and minor playback corrections,
-// small enough to catch any real seek-backward or REPEAT_MODE_ONE wrap (which
-// is typically a jump from near the end of the song back to 0, i.e. minutes).
-private const val POSITION_RESET_BACKWARD_THRESHOLD_MS = 1000L
-
-// How long the first build waits for the built-in romanisation pass before giving up and publishing
-// without it. Romanising every line is local work (ICU tables, or one Kuromoji tokenize per line)
-// and normally lands well inside this, so the very first build the karaoke view ever sees already
-// carries its phonetics — which is what keeps KaraokeLyricsView from freezing the on-screen lines
-// on a layout that has none. See [KaraokeBuild] for why that matters, and note the cost of missing
-// the window is only that the shimmer holds a moment longer.
+// How long the first build waits for the built-in romanisation pass before publishing without it. Romanising is
+// local work that normally lands inside this, so the first placement already measures the phonetic rows; a later
+// build would reflow the placed list. Missing the window only holds the shimmer a moment longer. See [KaraokeBuild].
 private const val ROMANIZATION_FIRST_BUILD_GRACE_MS = 700L
 
 /** One published [SyncedLyrics] plus the identity of the romanisation baked into it. */
@@ -343,6 +327,11 @@ fun LyricsEnhanced(
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics!!) || isTtml(lyrics!!)) }
     val isTtmlFormat = remember(lyrics) { lyrics != null && isTtml(lyrics!!) }
+    // The document's credits: songwriters close the list; machine-made lines carry the badge.
+    val lyricsCredits =
+        remember(lyrics) {
+            lyrics?.takeIf { isTtml(it) }?.let { LyricsParser.parseTtmlCredits(it) }
+        }
 
     // Parsed off the composition thread. `null` means "not parsed yet" — the render `when` below
     // keeps the shimmer up on that state instead of falling through to "lyrics not found".
@@ -443,11 +432,10 @@ fun LyricsEnhanced(
         // change; run the whole batch on Default and only publish the results back.
         withContext(Dispatchers.Default) {
         // Publishing new lyrics as state (instead of bumping a key that tears the whole karaoke
-        // subtree down mid-playback) lets the view pick up a *translation* without a re-layout
-        // hitch. Romanisation is not so lucky — the library pins each line's glyph layout to
-        // whatever it measured the first time that line was composed — so a build that changes the
-        // romanisation of lines already on screen has to carry a new generation with it. See
-        // KaraokeBuild.
+        // subtree down mid-playback) lets the list pick up a *translation* without a re-layout
+        // hitch. Romanisation is different: a build that changes the romanisation of lines already
+        // on screen carries a new generation, which re-keys the list and places its lines again
+        // instead of reflowing them under the reader. See KaraokeBuild.
         fun publish(romanization: Map<Int, LyricsPhonetics>) {
             val previous = karaokeBuild
             val changesVisibleLines =
@@ -525,11 +513,19 @@ fun LyricsEnhanced(
         remember(player) {
             mutableLongStateOf(player.currentPosition.coerceAtLeast(0L))
         }
+    // What the pane draws from. The loop anchors this clock once per frame and the pane projects it at
+    // draw time, so a frame shows the position of the instant it is painted at rather than the value
+    // the frame before it published. See LyricsPositionProjection.
+    val drawClock = remember(player) { EnhancedLyricsDrawClock() }
+    // Bumped once per frame the loop wants drawn; it is the draw-phase subscription, so an unchanged
+    // parked frame asks for no frame at all.
+    val frameTick = remember(player) { mutableIntStateOf(0) }
     val playbackSyncPosition: () -> Int =
-        remember {
+        remember(drawClock, frameTick) {
             {
+                frameTick.intValue
                 (
-                    playbackPositionMs.longValue +
+                    drawClock.positionMs() +
                         latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value +
                         LYRIC_VISUAL_TUNING_OFFSET_MS
@@ -558,23 +554,16 @@ fun LyricsEnhanced(
     // rebuilt when romanization finishes) without re-launching the loop and stuttering the
     // 60 Hz position interpolation.
     val latestSyncedLyrics = rememberUpdatedState(syncedLyrics)
-    // Incremented every time we detect a backward position discontinuity larger
-    // than 1 second — this happens when REPEAT_MODE_ONE wraps the song back to
-    // the start (or when the user seeks backward by more than a second). The
-    // KaraokeLyricsView from com.mocharealm.accompanist:lyrics-ui doesn't reset
-    // its internal karaoke-progress / current-line state when the player
-    // position jumps backward, so the highlight gets stuck at whatever line
-    // was last active before the wrap. Forcing a re-key here disposes the old
-    // view instance and creates a fresh one, which restarts the karaoke
-    // animation from the current line.
+    // Bumped on a backward position jump of over a second (a REPEAT_MODE_ONE wrap or a backward seek). The list state,
+    // the glide and the sweep are keyed on it, so they restart at the current line rather than the one before the jump.
     var positionResetCounter by remember { mutableIntStateOf(0) }
     var isManualScrolling by remember { mutableStateOf(false) }
     var lastManualScrollTime by remember { mutableLongStateOf(0L) }
     // The scroll state is recreated together with the subtree that owns it.
     val listState = key(lyricsSessionKey, positionResetCounter, karaokeGeneration) { rememberLazyListState() }
 
-    // ── First-frame placement ── A fresh LazyListState starts at line 0 and KaraokeLyricsView
-    // walks it to the active line; the lines stay hidden until the collector below sees it settle.
+    // ── First-frame placement ── A fresh LazyListState starts at line 0 and the list walks it to
+    // the active line; the lines stay hidden until the collector below sees it settle.
     var awaitingFirstFocus by
         remember(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
             mutableStateOf(isSynced)
@@ -602,6 +591,13 @@ fun LyricsEnhanced(
 
     LaunchedEffect(lyricsSessionKey) {
         playbackPositionMs.longValue = player.currentPosition.coerceAtLeast(0L)
+        // A new track starts from its own position instead of projecting from the last one's anchor.
+        drawClock.anchor(
+            positionMs = playbackPositionMs.longValue,
+            atNanos = System.nanoTime(),
+            speed = latestPlaybackSpeed.value,
+            advancing = false,
+        )
         isManualScrolling = false
         lastManualScrollTime = 0L
         isSelectionModeActive = false
@@ -611,129 +607,180 @@ fun LyricsEnhanced(
         currentLineIndexState.intValue = -1
     }
 
-    LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // The word/line boundaries below which the position loop sleeps instead of frame-stepping.
+    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, LyricsSweepGeometry.MIN_SWEEP_MS) }
+    LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed, deadlineSchedule) {
         var wasSliderActive = false
         var anchorPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)
         var anchorFrameNanos = 0L
         var lastRawPositionMs = player.currentPosition.coerceAtLeast(0L)
-        // Cache the current line index + boundary timestamps to avoid calling
-        // findLastStartedLineIndex (binary search) every frame.
+        // Cache the current line index + activation boundary timestamps to avoid
+        // the binary search every frame.
         var lastLyricsRef: SyncedLyrics? = null
         var cachedLineIdx = -1
         var cachedCurrentLineStart = Int.MIN_VALUE
         var cachedNextLineStart = Int.MAX_VALUE
-        while (isActive) {
-            val sliderPosition = latestSliderPositionProvider.value()
-            val isSliderActive = sliderPosition != null
-            if (isSliderActive && !wasSliderActive) {
-                isManualScrolling = false
-            }
-            wasSliderActive = isSliderActive
-
-            val rawPosition = (sliderPosition ?: player.currentPosition).coerceAtLeast(0L)
-            // Detect a backward position discontinuity, measured against the
-            // PLAYER's clock rather than the slider-provided value. This catches
-            // both REPEAT_MODE_ONE wraps (duration -> 0) and explicit backward
-            // seeks, while the 1s threshold excludes playback jitter and minor
-            // ExoPlayer position corrections.
-            //
-            // Do NOT gate this on `sliderPosition == null`: the Apple Music player always installs
-            // a slider provider, so the gate would disable restart detection there and the lyrics
-            // would snap back to the first line without re-animating until the overlay was
-            // reopened.
-            val rawPlayerPosition = player.currentPosition.coerceAtLeast(0L)
-            if (lastRawPositionMs - rawPlayerPosition > POSITION_RESET_BACKWARD_THRESHOLD_MS) {
-                positionResetCounter += 1
-            }
-            lastRawPositionMs = rawPlayerPosition
-            // effectivePositionMs is the synced position (offset + lead +
-            // tuning) that we'd otherwise compute via playbackSyncPosition().
-            // Computing it here inline avoids a redundant State read of
-            // playbackPositionMs.longValue (we already have the value in
-            // `rawPosition` / `nextPosition`).
-            val effectivePositionMs: Long
-            if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
-                anchorPlayerPositionMs = rawPosition
-                anchorFrameNanos = 0L
-                if (playbackPositionMs.longValue != rawPosition) {
-                    playbackPositionMs.longValue = rawPosition
+        var cachedActivationStarts: IntArray? = null
+        val interludeGate = EnhancedInterludeGate { latestSyncedLyrics.value }
+        // Parks the frame loop while the screen is not resumed, so a paused or backgrounded lyrics view stops polling.
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                val sliderPosition = latestSliderPositionProvider.value()
+                val isSliderActive = sliderPosition != null
+                if (isSliderActive && !wasSliderActive) {
+                    isManualScrolling = false
                 }
-                effectivePositionMs =
+                wasSliderActive = isSliderActive
+
+                val rawPosition = (sliderPosition ?: player.currentPosition).coerceAtLeast(0L)
+                // Detect a position discontinuity in either direction, measured
+                // against the PLAYER's clock rather than the slider-provided value. This
+                // catches REPEAT_MODE_ONE wraps (duration -> 0) and explicit seeks both
+                // backward and forward, while the 1s threshold excludes playback jitter
+                // and minor ExoPlayer position corrections. A forward jump re-keys the
+                // list the same way so the new line snaps in rather than scrolling the gap.
+                //
+                // Do NOT gate this on `sliderPosition == null`: the Apple Music player always installs
+                // a slider provider, so the gate would disable restart detection there and the lyrics
+                // would snap back to the first line without re-animating until the overlay was
+                // reopened.
+                val rawPlayerPosition = player.currentPosition.coerceAtLeast(0L)
+                if (abs(rawPlayerPosition - lastRawPositionMs) > POSITION_RESET_THRESHOLD_MS) {
+                    positionResetCounter += 1
+                }
+                lastRawPositionMs = rawPlayerPosition
+                // effectivePositionMs is the synced position (offset + lead +
+                // tuning) that we'd otherwise compute via playbackSyncPosition().
+                // Computing it here inline avoids a redundant State read of
+                // playbackPositionMs.longValue (we already have the value in
+                // `rawPosition` / `nextPosition`).
+                val effectivePositionMs: Long
+                // The anchor the pane projects at draw time, and whether it keeps advancing from there.
+                var drawAnchorPositionMs = 0L
+                var drawAnchorNanos = 0L
+                var drawAdvancing = false
+                // Between word and line boundaries the drawn state is static, so the loop parks until the next deadline.
+                var parkMs = 0L
+                val idleFeedEstimateMs =
                     (rawPosition + latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
                         .coerceIn(0L, Int.MAX_VALUE.toLong())
-                if (sliderPosition == null) {
-                    delay(100L)
-                } else {
-                    withFrameNanos { }
-                }
-            } else {
-                val frameNanos = withFrameNanos { frameTimeNanos -> frameTimeNanos }
-                if (anchorFrameNanos == 0L) {
-                    anchorFrameNanos = frameNanos
+                // The library view lifts each syllable for 700 ms past its start, and both lists breathe their interlude
+                // dots from the position; the word schedule knows neither, so those get a fresh position every frame.
+                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying && !animationsDisabled &&
+                    !deadlineSchedule.isLive(idleFeedEstimateMs) && !interludeGate.covers(idleFeedEstimateMs)
+                ) {
+                    // Publish before parking, so a sweep or lift that just left its live span shows its final frame now.
+                    val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
+                    parkMs = lyricsIdleParkMs(next, idleFeedEstimateMs, latestPlaybackSpeed.value, 16L, IDLE_POLL_MS)
                     anchorPlayerPositionMs = rawPosition
+                    anchorFrameNanos = 0L
+                    if (playbackPositionMs.longValue != rawPosition) {
+                        playbackPositionMs.longValue = rawPosition
+                    }
+                    effectivePositionMs = idleFeedEstimateMs
+                    drawAnchorPositionMs = playbackPositionMs.longValue
+                    drawAnchorNanos = System.nanoTime()
+                } else if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
+                    anchorPlayerPositionMs = rawPosition
+                    anchorFrameNanos = 0L
+                    if (playbackPositionMs.longValue != rawPosition) {
+                        playbackPositionMs.longValue = rawPosition
+                    }
+                    drawAnchorPositionMs = rawPosition
+                    drawAnchorNanos = System.nanoTime()
+                    effectivePositionMs =
+                        (rawPosition + latestLyricsSyncOffset.value.toLong() +
+                            latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
+                            .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    if (sliderPosition == null) {
+                        delay(100L)
+                    } else {
+                        withFrameNanos { }
+                    }
+                } else {
+                    val frameNanos = withFrameNanos { frameTimeNanos -> frameTimeNanos }
+                    if (anchorFrameNanos == 0L) {
+                        anchorFrameNanos = frameNanos
+                        anchorPlayerPositionMs = rawPosition
+                    }
+
+                    // Shared with the pane's own projection (LyricsPositionProjection), so the position
+                    // the loop indexes and the position the frame paints come from one curve.
+                    val elapsedNanos = frameNanos - anchorFrameNanos
+                    val projectedPosition =
+                        LyricsPositionProjection.project(anchorPlayerPositionMs, elapsedNanos, latestPlaybackSpeed.value)
+                    if (LyricsPositionProjection.shouldReanchor(rawPosition, projectedPosition)) {
+                        anchorPlayerPositionMs = rawPosition
+                        anchorFrameNanos = frameNanos
+                    }
+                    val nextPosition =
+                        LyricsPositionProjection
+                            .corrected(anchorPlayerPositionMs, frameNanos - anchorFrameNanos, latestPlaybackSpeed.value, rawPosition)
+                            .coerceAtLeast(0L)
+
+                    if (playbackPositionMs.longValue != nextPosition) {
+                        playbackPositionMs.longValue = nextPosition
+                    }
+                    // The anchor is this frame's own vsync instant, so whatever the draw phase does
+                    // with it — before or after this continuation runs — the projection lands on the
+                    // position of the instant it paints.
+                    drawAnchorPositionMs = nextPosition
+                    drawAnchorNanos = frameNanos
+                    drawAdvancing = true
+                    effectivePositionMs =
+                        (nextPosition + latestLyricsSyncOffset.value.toLong() +
+                            latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
+                            .coerceIn(0L, Int.MAX_VALUE.toLong())
                 }
 
-                val elapsedMs = ((frameNanos - anchorFrameNanos) / 1_000_000f) * latestPlaybackSpeed.value
-                val projectedPosition = anchorPlayerPositionMs + elapsedMs.roundToLong()
-                val driftMs = rawPosition - projectedPosition
-                val nextPosition =
-                    when {
-                        driftMs > SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS ||
-                            driftMs < -SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS -> {
-                            anchorPlayerPositionMs = rawPosition
-                            anchorFrameNanos = frameNanos
-                            rawPosition
+                // Line-index tracking: only re-search when the position crosses a
+                // line boundary OR the lyrics object identity changed (romanization
+                // finished). This is the key per-frame optimization — the binary
+                // search is skipped entirely on the vast majority of frames, and
+                // we reuse `effectivePositionMs` instead of calling the
+                // `playbackSyncPosition()` lambda (which would do 3 more State
+                // reads + arithmetic on every frame).
+                val syncedLyricsNow = latestSyncedLyrics.value
+                if (syncedLyricsNow.lines.isNotEmpty()) {
+                    val lyricsChanged = syncedLyricsNow !== lastLyricsRef
+                    if (lyricsChanged) {
+                        lastLyricsRef = syncedLyricsNow
+                        cachedLineIdx = -1
+                        cachedActivationStarts = null
+                    }
+                    val pos = effectivePositionMs.toInt()
+                    val needsResearch =
+                        cachedLineIdx == -1 ||
+                            pos >= cachedNextLineStart ||
+                            pos < cachedCurrentLineStart
+                    if (needsResearch) {
+                        // Follows whichever list draws, so the first-focus gate and the strip never run ahead of it.
+                        val activationStarts =
+                            cachedActivationStarts
+                                ?: enhancedPaneLineStarts(syncedLyricsNow).also { cachedActivationStarts = it }
+                        val newLineIdx = activeSyncedLineIndex(activationStarts, pos)
+                        cachedLineIdx = newLineIdx
+                        cachedCurrentLineStart =
+                            if (newLineIdx >= 0) activationStarts[newLineIdx] else Int.MIN_VALUE
+                        cachedNextLineStart =
+                            activationStarts.getOrNull(newLineIdx + 1) ?: Int.MAX_VALUE
+                        if (newLineIdx != currentLineIndexState.intValue) {
+                            currentLineIndexState.intValue = newLineIdx
                         }
-
-                        driftMs != 0L -> {
-                            projectedPosition + (driftMs * SMOOTH_PLAYBACK_DRIFT_CORRECTION).roundToLong()
-                        }
-
-                        else -> {
-                            projectedPosition
-                        }
-                    }.coerceAtLeast(0L)
-
-                if (playbackPositionMs.longValue != nextPosition) {
-                    playbackPositionMs.longValue = nextPosition
-                }
-                effectivePositionMs =
-                    (nextPosition + latestLyricsSyncOffset.value.toLong() +
-                        latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
-                        .coerceIn(0L, Int.MAX_VALUE.toLong())
-            }
-
-            // Line-index tracking: only re-search when the position crosses a
-            // line boundary OR the lyrics object identity changed (romanization
-            // finished). This is the key per-frame optimization — the binary
-            // search is skipped entirely on the vast majority of frames, and
-            // we reuse `effectivePositionMs` instead of calling the
-            // `playbackSyncPosition()` lambda (which would do 3 more State
-            // reads + arithmetic on every frame).
-            val syncedLyricsNow = latestSyncedLyrics.value
-            if (syncedLyricsNow.lines.isNotEmpty()) {
-                val lyricsChanged = syncedLyricsNow !== lastLyricsRef
-                if (lyricsChanged) {
-                    lastLyricsRef = syncedLyricsNow
-                    cachedLineIdx = -1
-                }
-                val pos = effectivePositionMs.toInt()
-                val needsResearch =
-                    cachedLineIdx == -1 ||
-                        pos >= cachedNextLineStart ||
-                        pos < cachedCurrentLineStart
-                if (needsResearch) {
-                    val newLineIdx = syncedLyricsNow.findLastStartedLineIndex(pos)
-                    cachedLineIdx = newLineIdx
-                    cachedCurrentLineStart =
-                        if (newLineIdx >= 0) syncedLyricsNow.lines[newLineIdx].start else Int.MIN_VALUE
-                    cachedNextLineStart =
-                        syncedLyricsNow.lines.getOrNull(newLineIdx + 1)?.start ?: Int.MAX_VALUE
-                    if (newLineIdx != currentLineIndexState.intValue) {
-                        currentLineIndexState.intValue = newLineIdx
                     }
                 }
+                // One subscription for the whole pane: the frame after this publishes paints from the
+                // anchor it just set, and a parked iteration still repaints the frame it published.
+                drawClock.anchor(
+                    positionMs = drawAnchorPositionMs,
+                    atNanos = drawAnchorNanos,
+                    speed = latestPlaybackSpeed.value,
+                    advancing = drawAdvancing,
+                )
+                frameTick.intValue++
+                if (parkMs > 0L) delay(parkMs)
             }
         }
     }
@@ -824,9 +871,9 @@ fun LyricsEnhanced(
         // the LYRIC_FIRST_FOCUS_TIMEOUT_MS safety net above covers the case where it never arrives.
         snapshotFlow { latestSyncedLyricsForScroll.value.lines.isNotEmpty() }.first { it }
 
-        // KaraokeLyricsView scrolls its own list to the active line, so it is the only auto-scroll
-        // owner. A second app-side scroller fought it and clipped the top active line of an
-        // accompaniment/duet aggregate. This collector only decides when the hidden list may fade in.
+        // The pane's list (KaraokeLyricsView, or BasicSyncedLyricsList below API 29) is the only auto-scroll owner. A
+        // second app-side scroller fought it and clipped the top active line of an accompaniment/duet aggregate. This
+        // collector only decides when the hidden list may fade in.
         snapshotFlow {
             if (isManualScrolling || isSelectionModeActive) {
                 LYRIC_FOCUS_TARGET_MANUAL
@@ -843,7 +890,7 @@ fun LyricsEnhanced(
                     return@collectLatest
                 }
                 // No index published yet: releasing here would fade the list in at line 0 and then
-                // show the library walking to the active line. LYRIC_FIRST_FOCUS_TIMEOUT_MS still
+                // show the list walking to the active line. LYRIC_FIRST_FOCUS_TIMEOUT_MS still
                 // releases it if no line ever becomes active (long intro).
                 if (target == LYRIC_FOCUS_TARGET_PENDING) return@collectLatest
                 if (awaitingFirstFocus) {
@@ -891,7 +938,6 @@ fun LyricsEnhanced(
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
-
     // Remembered: fresh TextStyle identities every recomposition forced the karaoke view to
     // re-measure all lines on unrelated state changes (scroll flags, selection, etc.).
     val typography = MaterialTheme.typography
@@ -899,22 +945,23 @@ fun LyricsEnhanced(
         remember(typography, lyricsTextSize, lyricsFontFamily) {
             typography.headlineMedium.copy(
                 fontSize = lyricsTextSize.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = lyricsFontFamily ?: typography.headlineMedium.fontFamily,
+                fontWeight = FontWeight.Bold, fontFamily = lyricsFontFamily ?: typography.headlineMedium.fontFamily,
+                // headlineMedium's 36sp leading is tuned for its 28sp font: scale it or the sweep bands slice glyph ink.
+                lineHeight = (lyricsTextSize * 9f / 7f).coerceAtLeast(36f).sp,
             )
         }
     val accompanimentTextStyle =
         remember(typography, lyricsTextSize, lyricsFontFamily) {
             typography.titleLarge.copy(
-                fontSize = (lyricsTextSize * 0.82f).sp,
-                fontFamily = lyricsFontFamily ?: typography.titleLarge.fontFamily,
+                fontSize = (lyricsTextSize * 0.82f).sp, fontFamily = lyricsFontFamily ?: typography.titleLarge.fontFamily,
+                lineHeight = (lyricsTextSize * 0.82f * 14f / 11f).coerceAtLeast(28f).sp,
             )
         }
     val phoneticTextStyle =
         remember(typography, lyricsTextSize) {
             typography.bodyMedium.copy(
-                fontSize = (lyricsTextSize * 0.55f).sp,
-                fontWeight = FontWeight.Normal,
+                fontSize = (lyricsTextSize * 0.55f).sp, fontWeight = FontWeight.Normal,
+                lineHeight = (lyricsTextSize * 0.55f * 1.25f).coerceAtLeast(20f).sp,
             )
         }
     val plainLyrics =
@@ -1124,66 +1171,49 @@ fun LyricsEnhanced(
             }
 
             else -> {
-                BoxWithConstraints(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .nestedScroll(nestedScrollConnection),
-                ) {
-                    val lyricsViewportOffset = remember(maxHeight) { maxHeight * 0.08f }
-                    val lyricsContentWidth =
-                        minOf(maxWidth, if (spotifyStyle) 760.dp else 860.dp)
-
-                    // Keyed on the session + a position-reset counter so that when the song repeats
-                    // (REPEAT_MODE_ONE wraps position to 0) or the user seeks backward by more than
-                    // 1 second, the KaraokeLyricsView instance is disposed and recreated — the
-                    // library's internal highlight state doesn't reset on backward position jumps,
-                    // so without this re-key the karaoke animation freezes at the line that was
-                    // active just before the repeat.
-                    key(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
-                        KaraokeLyricsView(
-                            listState = listState,
-                            lyrics = syncedLyrics,
-                            currentPosition = playbackSyncPosition,
-                            onLineClicked = { line ->
-                                if (isSelectionModeActive) {
-                                    toggleSelectedLine(line.selectionKey())
-                                } else if (lyricsClick && isSynced && line.start > 0) {
-                                    player.seekTo(line.start.toLong())
+                // Keyed on the session and a position-reset counter: when the song repeats (REPEAT_MODE_ONE wraps the
+                // position to 0) or the user seeks backward by more than 1 second, the list is recreated, so the new
+                // position snaps into place rather than scrolling back from the line that was active before the jump.
+                key(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
+                    EnhancedKaraokePane(
+                        listState = listState,
+                        lyrics = syncedLyrics,
+                        currentPosition = playbackSyncPosition,
+                        onLineClicked = { line ->
+                            if (isSelectionModeActive) {
+                                toggleSelectedLine(line.selectionKey())
+                            } else if (lyricsClick && isSynced && line.start > 0) {
+                                // A tap is a seek, so following resumes at once instead of waiting out the scroll hold.
+                                isManualScrolling = false
+                                lastManualScrollTime = 0L
+                                player.seekTo(line.start.toLong())
+                            }
+                        },
+                        onLinePressed = { line ->
+                            val lineKey = line.selectionKey()
+                            if (!isSelectionModeActive) {
+                                isSelectionModeActive = true
+                                if (!selectedLineKeys.contains(lineKey)) {
+                                    selectedLineKeys.add(lineKey)
                                 }
-                            },
-                            onLinePressed = { line ->
-                                val lineKey = line.selectionKey()
-                                if (!isSelectionModeActive) {
-                                    isSelectionModeActive = true
-                                    if (!selectedLineKeys.contains(lineKey)) {
-                                        selectedLineKeys.add(lineKey)
-                                    }
-                                } else if (!selectedLineKeys.contains(lineKey)) {
-                                    toggleSelectedLine(lineKey)
-                                }
-                            },
-                            textColor = textColor,
-                            normalLineTextStyle = normalTextStyle,
-                            accompanimentLineTextStyle = accompanimentTextStyle,
-                            phoneticTextStyle = phoneticTextStyle,
-                            blendMode = BlendMode.SrcOver,
-                            // Per-line RenderEffect blur is the single heaviest per-frame cost in
-                            // this view; drop it when animations are disabled (low-RAM default).
-                            useBlurEffect = lyricsLineBlur && !animationsDisabled,
-                            showTranslation = showTranslations,
-                            showPhonetic = romanizationPreferences.showsRomanization,
-                            offset = lyricsViewportOffset,
-                            // Reduced from 36.dp → 20.dp → 8.dp.
-                            keepAliveZone = 8.dp,
-                            modifier =
-                                Modifier
-                                    .widthIn(max = lyricsContentWidth)
-                                    .fillMaxWidth()
-                                    .fillMaxHeight()
-                                    .align(Alignment.TopCenter),
-                        )
-                    }
+                            } else if (!selectedLineKeys.contains(lineKey)) {
+                                toggleSelectedLine(lineKey)
+                            }
+                        },
+                        textColor = textColor,
+                        normalLineTextStyle = normalTextStyle,
+                        accompanimentLineTextStyle = accompanimentTextStyle,
+                        phoneticTextStyle = phoneticTextStyle,
+                        // The pane gates the distance blur on motion and on what the device can draw. This passes only
+                        // the user's line-blur choice.
+                        useBlurEffect = lyricsLineBlur,
+                        manualScrolling = isManualScrolling,
+                        credits = lyricsCredits,
+                        showTranslation = showTranslations,
+                        showPhonetic = romanizationPreferences.showsRomanization,
+                        maxContentWidth = if (spotifyStyle) 760.dp else 860.dp,
+                        modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection),
+                    )
                 }
             }
         }
@@ -1299,6 +1329,100 @@ fun LyricsEnhanced(
             onDismissRequest = { showShareImageDialog = false },
         )
     }
+}
+
+@Immutable
+private data class PlainLyrics(
+    val items: List<PlainLyricLine>,
+)
+
+@Immutable
+private data class PlainLyricLine(
+    val itemId: String,
+    val selectionId: String,
+    val text: String,
+)
+
+@Immutable
+private data class LyricSelectionLine(
+    val itemId: String,
+    val selectionId: String,
+    val text: String,
+)
+
+@Composable
+private fun PlainLyricsView(
+    lines: PlainLyrics,
+    listState: LazyListState,
+    selectedLineKeys: Set<String>,
+    textColor: Color,
+    textStyle: TextStyle,
+    onLineClicked: (String) -> Unit,
+    onLinePressed: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val contentPadding =
+        remember {
+            PaddingValues(
+                start = 12.dp,
+                top = 120.dp,
+                end = 12.dp,
+                bottom = 96.dp,
+            )
+        }
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier.lyricsViewportFade(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(
+            items = lines.items,
+            key = { line -> line.itemId },
+            contentType = { "plain_lyric_line" },
+        ) { line ->
+            PlainLyricLineItem(
+                line = line,
+                selected = line.selectionId in selectedLineKeys,
+                textColor = textColor,
+                textStyle = textStyle,
+                onLineClicked = onLineClicked,
+                onLinePressed = onLinePressed,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlainLyricLineItem(
+    line: PlainLyricLine,
+    selected: Boolean,
+    textColor: Color,
+    textStyle: TextStyle,
+    onLineClicked: (String) -> Unit,
+    onLinePressed: (String) -> Unit,
+) {
+    val contentColor =
+        if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            textColor
+        }
+
+    Text(
+        text = line.text,
+        style = textStyle,
+        color = contentColor,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .combinedClickable(
+                    onClick = { onLineClicked(line.selectionId) },
+                    onLongClick = { onLinePressed(line.selectionId) },
+                ).padding(horizontal = 12.dp, vertical = 8.dp),
+    )
 }
 
 @Composable
@@ -1461,8 +1585,8 @@ private fun LyricsSelectionLineItem(
     }
 }
 
-// Waits, without scrolling, until KaraokeLyricsView has placed the active line and stopped moving.
-// Both loops are frame-bounded so an empty list or a target the library never shows cannot hold
+// Waits, without scrolling, until the list has placed the active line and stopped moving.
+// Both loops are frame-bounded so an empty list or a target the list never shows cannot hold
 // the lyrics hidden; LYRIC_FIRST_FOCUS_TIMEOUT_MS remains the outer ceiling.
 private suspend fun LazyListState.awaitKaraokeFirstFocus(index: Int) {
     var framesAwaited = 0
@@ -1490,44 +1614,6 @@ private fun ISyncedLine.lineText(): String =
 
 private fun ISyncedLine.selectionKey(text: String = lineText()): String = "$start:$end:${text.hashCode()}"
 
-private fun SyncedLyrics.findLastStartedLineIndex(time: Int): Int {
-    var low = 0
-    var high = lines.lastIndex
-    var result = -1
-
-    while (low <= high) {
-        val mid = low + (high - low) / 2
-        if (lines[mid].start <= time) {
-            result = mid
-            low = mid + 1
-        } else {
-            high = mid - 1
-        }
-    }
-
-    return result
-}
-
-private fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): List<KaraokeSyllable> =
-    mapIndexed { index, word ->
-        val start = word.startTime.toMilliseconds()
-        val nextStart = getOrNull(index + 1)?.startTime?.toMilliseconds()
-        val rawEnd = word.endTime.toMilliseconds()
-        val end =
-            nextStart
-                ?.let { minOf(rawEnd, it) }
-                ?: rawEnd
-
-        KaraokeSyllable(
-            content = word.text,
-            start = start,
-            end = end.coerceAtLeast(start + MIN_KARAOKE_SYLLABLE_DURATION_MS),
-            phonetic = phonetics.getOrNull(index),
-        )
-    }
-
-private fun Double.toMilliseconds(): Int = (this * 1000.0).roundToInt().coerceAtLeast(0)
-
 /**
  * AI supplies line readings, not timed-word alignment.
  */
@@ -1542,143 +1628,6 @@ private fun aiRomanizationMap(
         map[index] = LyricsPhonetics(line = romanized)
     }
     return map
-}
-
-private fun buildSyncedLyrics(
-    entries: List<LyricsEntry>,
-    romanizationMap: Map<Int, LyricsPhonetics>,
-): SyncedLyrics {
-    if (entries.isEmpty()) return SyncedLyrics(emptyList())
-    val lines = mutableListOf<ISyncedLine>()
-
-    entries.forEachIndexed { index, entry ->
-        if (entry.time < 0L) return@forEachIndexed
-        if (entry.isInstrumental) return@forEachIndexed
-        if (entry.text.isBlank() && entry.words.isNullOrEmpty()) return@forEachIndexed
-
-        if (entry.words != null && hasTrueWordSync(entry)) {
-            val translation = providedTranslationTextForEntry(entry)
-            val mainWords = entry.words!!.filter { !it.isBackground }
-            val bgWords = entry.words!!.filter { it.isBackground }
-            val alignment =
-                when (entry.agent?.lowercase()) {
-                    "v2" -> KaraokeAlignment.End
-                    else -> KaraokeAlignment.Start
-                }
-
-            val wordsForMain = if (mainWords.isNotEmpty()) mainWords else entry.words!!
-            val wordPhonetics = romanizationMap[index]?.words.orEmpty()
-            val mainSyllables = wordsForMain.toKaraokeSyllables(wordPhonetics)
-
-            val lineStart = mainSyllables.first().start
-            val lineEnd = mainSyllables.last().end
-            if (lineEnd <= lineStart) return@forEachIndexed
-
-            val accompanimentLines =
-                if (mainWords.isNotEmpty() && bgWords.isNotEmpty()) {
-                    val bgSyllables = bgWords.toKaraokeSyllables(emptyList())
-                    val bgStart = bgSyllables.first().start
-                    val bgEnd = bgSyllables.last().end
-                    if (bgEnd > bgStart) {
-                        listOf(
-                            KaraokeLine.AccompanimentKaraokeLine(
-                                syllables = bgSyllables,
-                                translation = null,
-                                alignment = alignment,
-                                start = bgStart,
-                                end = bgEnd,
-                                phonetic = null,
-                            ),
-                        )
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-
-            lines.add(
-                KaraokeLine.MainKaraokeLine(
-                    syllables = mainSyllables,
-                    translation = translation,
-                    alignment = alignment,
-                    start = lineStart,
-                    end = lineEnd,
-                    phonetic = romanizationMap[index]?.line.takeIf { wordPhonetics.isEmpty() },
-                    accompanimentLines = accompanimentLines,
-                ),
-            )
-        } else {
-            val nextEntry = entries.getOrNull(index + 1)
-            // ── Why `end` must be exactly the next line's start ── KaraokeLyricsView picks the
-            // focused line with lines.indices.firstOrNull { pos >= it.start && pos <
-            // effectiveEnd(it) } ?: lines.indexOfFirst { it.start > pos } // ← the *upcoming* line
-            // ?: lines.lastIndex so any instant that falls in a gap between one line's end and the
-            // next line's start resolves to the line that has NOT started yet.
-            val lineEnd =
-                if (nextEntry != null && nextEntry.time > entry.time) {
-                    val handOver = entry.time + LINE_SYNCED_MAX_FOCUS_HOLD_MS
-                    if (nextEntry.time - handOver > LINE_SYNCED_INTERLUDE_MIN_GAP_MS) {
-                        // A real instrumental break. Hand focus over so the library's breathing-dots
-                        // interlude — which only triggers when `next.start - previous.end` exceeds
-                        // its own 5s threshold — still gets to run through the silence.
-                        handOver.toInt()
-                    } else {
-                        nextEntry.time.toInt()
-                    }
-                } else {
-                    (entry.time + LINE_SYNCED_TRAILING_LINE_DURATION_MS).toInt()
-                }
-            lines.add(
-                buildLineSyncedLrcLine(
-                    entry = entry,
-                    romanizedText = romanizationMap[index]?.line,
-                    start = entry.time.toInt(),
-                    end = lineEnd,
-                ),
-            )
-        }
-    }
-
-    return SyncedLyrics(lines = lines)
-}
-
-private fun buildLineSyncedLrcLine(
-    entry: LyricsEntry,
-    romanizedText: String?,
-    start: Int,
-    end: Int,
-): ISyncedLine {
-    val translation = providedTranslationTextForEntry(entry)
-    val normalizedRomanizedText = romanizedText?.trim()?.takeIf { it.isNotEmpty() }
-
-    if (normalizedRomanizedText == null) {
-        return SyncedLine(
-            content = entry.text,
-            translation = translation,
-            start = start,
-            end = end,
-        )
-    }
-
-    // Keep the existing wrapping units, but never manufacture timed phonetic alignment.
-    val syllables = entry.text.toLyricsWrappingUnits().ifEmpty { listOf(entry.text) }.map { unit ->
-        KaraokeSyllable(
-            content = unit,
-            start = start,
-            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
-            phonetic = null,
-        )
-    }
-
-    return KaraokeLine.MainKaraokeLine(
-        syllables = syllables,
-        translation = translation,
-        alignment = KaraokeAlignment.Start,
-        start = start,
-        end = end,
-        phonetic = normalizedRomanizedText,
-    )
 }
 
 /**

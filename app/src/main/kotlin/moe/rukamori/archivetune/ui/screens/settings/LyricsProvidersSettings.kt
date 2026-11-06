@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableBetterLyricsKey
@@ -59,6 +60,7 @@ import moe.rukamori.archivetune.constants.EnableLrcRedKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
+import moe.rukamori.archivetune.constants.EnableLyprioLyricsKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
 import moe.rukamori.archivetune.constants.EnableMusixmatchExperimentalKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
@@ -78,6 +80,7 @@ import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
+import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -135,12 +138,19 @@ fun LyricsProvidersSettings(
         prefs.state(key = PaxsenixEndpointKey, defaultValue = "")
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
         prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
+    val (enableLyprioLyrics, onEnableLyprioLyricsChange) =
+        prefs.state(key = EnableLyprioLyricsKey, defaultValue = true)
+    // A build-time Lyprio pair (BuildConfig.LYPRIO_BASE_URL / LYPRIO_HMAC_KEY) is the only endpoint the
+    // provider can have: the Metrolist developers run the server, so there is no URL or key to enter and
+    // the build key is never written to preferences or displayed. Without a pair the toggle greys out.
+    val lyprioBuiltIn =
+        remember { LyprioEndpoint.parse(BuildConfig.LYPRIO_BASE_URL, BuildConfig.LYPRIO_HMAC_KEY) != null }
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
         prefs.state(key = EnableTidalLyricsKey, defaultValue = true)
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
         prefs.state(key = EnableDeezerLyricsKey, defaultValue = true)
     val (prioritizeWordSynced, onPrioritizeWordSyncedChange) =
-        prefs.state(key = PrioritizeWordSyncedLyricsKey, defaultValue = false)
+        prefs.state(key = PrioritizeWordSyncedLyricsKey, defaultValue = true)
     val (enableMusixmatchExperimental, onEnableMusixmatchExperimentalChange) =
         prefs.state(key = EnableMusixmatchExperimentalKey, defaultValue = false)
     val (providerOrderStr, onProviderOrderStrChange) =
@@ -230,30 +240,35 @@ fun LyricsProvidersSettings(
                     .then(positions.containerModifier()),
         ) {
             preferenceGroup(title = providersTitle) {
-                // "Prioritize Word Synced Lyrics" sits at the TOP of the providers
-                // group because when it's ON it overrides every other toggle and the
-                // Lyrics Priority order below — the app queries only BetterLyrics,
-                // BetterLyrics Portato, YouLyPlus, and Unison directly. Putting it
-                // first makes the override relationship visually obvious.
+                // This is a preliminary sweep; the ordinary fallback still reads the controls below.
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("prioritize_word_synced_lyrics"),
                         title = { Text(stringResource(R.string.prioritize_word_synced_lyrics)) },
-                        description = stringResource(R.string.prioritize_word_synced_lyrics_desc),
+                        description = stringResource(R.string.settings_word_sync_fallback),
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         checked = prioritizeWordSynced,
                         onCheckedChange = onPrioritizeWordSyncedChange,
                     )
                 }
 
-                // When "Prioritize Word Synced Lyrics" is ON, the per-provider
-                // toggles and Lyrics Priority order are ignored by LyricsHelper
-                // (the four word-sync-capable providers are queried directly).
-                // We grey them out here to signal that they have no effect while
-                // the override is active. They remain visible (not hidden) so the
-                // user can still see their state and understand what will resume
-                // when the override is turned back off.
-                val providerTogglesEnabled = !prioritizeWordSynced
+                val providerTogglesEnabled = true
+
+                // The bundled server is the only endpoint Lyprio can have; a build without the
+                // pair keeps the row listed but greyed out, like the other unavailable controls.
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_lyprio_lyrics", "lyprio_lyrics"),
+                        title = { Text(stringResource(R.string.enable_lyprio_lyrics)) },
+                        description = stringResource(
+                            if (lyprioBuiltIn) R.string.enable_lyprio_lyrics_desc else R.string.lyprio_not_available,
+                        ),
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableLyprioLyrics && lyprioBuiltIn,
+                        onCheckedChange = onEnableLyprioLyricsChange,
+                        isEnabled = providerTogglesEnabled && lyprioBuiltIn,
+                    )
+                }
 
                 item {
                     SwitchPreference(
@@ -553,14 +568,20 @@ fun LyricsProvidersSettings(
                     )
                 }
 
+                // With the word-synced sweep on, sync quality picks the providers and the order row
+                // only misleads — it stays listed, greyed, saying why.
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("set_first_lyrics_provider", "first_lyrics_provider"),
                         title = { Text(stringResource(R.string.set_first_lyrics_provider)) },
-                        description = providerOrder.firstOrNull()?.displayName(),
+                        description = if (prioritizeWordSynced) {
+                            stringResource(R.string.provider_order_overridden_by_word_sync)
+                        } else {
+                            providerOrder.firstOrNull()?.displayName()
+                        },
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         onClick = { showProviderOrderDialog = true },
-                        isEnabled = providerTogglesEnabled,
+                        isEnabled = providerTogglesEnabled && !prioritizeWordSynced,
                     )
                 }
             }
@@ -574,7 +595,7 @@ fun LyricsProvidersSettings(
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         checked = enableMusixmatchExperimental,
                         onCheckedChange = onEnableMusixmatchExperimentalChange,
-                        isEnabled = !prioritizeWordSynced,
+                        isEnabled = true,
                     )
                 }
                 item(visible = enableMusixmatchExperimental) {

@@ -49,7 +49,6 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -74,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -96,7 +94,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -146,8 +143,6 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Rect
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.PlayerPaletteCache
@@ -276,7 +271,7 @@ fun LyricsScreen(
 
     // Read through the preference rather than inside the effect so that flipping the toggle while
     // the panel is open re-runs the fetch instead of leaving the stored lyrics untouched.
-    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = false)
+    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = true)
 
     LaunchedEffect(
         mediaMetadata.id,
@@ -450,12 +445,12 @@ fun LyricsScreen(
 
     LaunchedEffect(mediaMetadata.id, mediaMetadata.thumbnailUrl, lyricsBackground, darkTheme) {
 
-        
 
-        
 
-        
-        
+
+
+
+
         kotlinx.coroutines.delay(120)
         if (lyricsBackground != LyricsBackgroundStyle.DEFAULT &&
             lyricsBackground != LyricsBackgroundStyle.COLORING &&
@@ -526,7 +521,7 @@ fun LyricsScreen(
                 null
             }
 
-        
+
         if (extractedColors != null) {
             val stillCurrent =
                 mediaMetadata.thumbnailUrl == thumbnailUrl
@@ -709,7 +704,7 @@ fun LyricsScreen(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 28.dp),
+                            .padding(horizontal = 20.dp),
                 )
 
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -769,67 +764,71 @@ fun LyricsScreen(
                                     onControlsInteraction = onControlsInteraction,
                                     foregroundColor = foregroundColor,
                                     currentFormat = currentFormat,
-                                    lyricsProviderName = currentLyrics?.providerName.orEmpty(),
-                                    hasLyrics = currentLyrics != null,
-                                    onOverflowClick = openLyricsMenuFromControls,
-                                    onOverflowPositioned = { controlsMoreBounds = it },
-                                    onCloseClick = onBackClick,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }
                     }
                 } else {
-                AppleMusicLyricsPane(
-                    foregroundColor = foregroundColor,
-                    sliderPositionProvider = { sliderPosition },
-                    lyricsSyncOffset = lyricsSyncOffset,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                )
-
-                AnimatedVisibility(
-                    visible = controlsVisible,
-                    enter =
-                        fadeIn(tween(120)) +
-                            slideInVertically(tween(180)) { fullHeight -> fullHeight / 6 },
-                    exit =
-                        fadeOut(tween(90)) +
-                            slideOutVertically(tween(140)) { fullHeight -> fullHeight / 8 },
-                    label = "lyrics-player-controls",
-                ) {
-                    AppleMusicControls(
-                        positionProvider = { positionState.longValue },
-                        durationProvider = { durationState.longValue },
-                        sliderPosition = sliderPosition,
-                        controlsExpanded = controlsExpanded,
-                        isPlaying = isPlaying,
-                        isLoading = isLoading,
-                        volumeController = deviceMusicVolumeController,
-                        showVolume = showVolume,
-                        onPositionChange = onControlsPositionChange,
-                        onPositionChangeFinished = onControlsPositionChangeFinished,
-                        onVolumeChange = onControlsVolumeChange,
-                        onPreviousClick = onControlsPreviousClick,
-                        onPlayPauseClick = onControlsPlayPauseClick,
-                        onNextClick = onControlsNextClick,
-                        onControlsInteraction = onControlsInteraction,
+                    AppleMusicLyricsPane(
                         foregroundColor = foregroundColor,
-                        currentFormat = currentFormat,
-                        lyricsProviderName = currentLyrics?.providerName.orEmpty(),
-                        hasLyrics = currentLyrics != null,
-                        onOverflowClick = openLyricsMenuFromControls,
-                        onOverflowPositioned = { controlsMoreBounds = it },
-                        onCloseClick = onBackClick,
+                        sliderPositionProvider = { sliderPosition },
+                        lyricsSyncOffset = lyricsSyncOffset,
                         modifier =
                             Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 28.dp),
+                                .weight(1f)
+                                .fillMaxWidth(),
                     )
+
+                    AnimatedVisibility(
+                        visible = controlsVisible,
+                        enter =
+                            fadeIn(tween(120)) +
+                                slideInVertically(tween(180)) { fullHeight -> fullHeight / 6 },
+                        exit =
+                            fadeOut(tween(90)) +
+                                slideOutVertically(tween(140)) { fullHeight -> fullHeight / 8 },
+                        label = "lyrics-player-controls",
+                    ) {
+                        AppleMusicControls(
+                            positionProvider = { positionState.longValue },
+                            durationProvider = { durationState.longValue },
+                            sliderPosition = sliderPosition,
+                            controlsExpanded = controlsExpanded,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            volumeController = deviceMusicVolumeController,
+                            showVolume = showVolume,
+                            onPositionChange = onControlsPositionChange,
+                            onPositionChangeFinished = onControlsPositionChangeFinished,
+                            onVolumeChange = onControlsVolumeChange,
+                            onPreviousClick = onControlsPreviousClick,
+                            onPlayPauseClick = onControlsPlayPauseClick,
+                            onNextClick = onControlsNextClick,
+                            onControlsInteraction = onControlsInteraction,
+                            foregroundColor = foregroundColor,
+                            currentFormat = currentFormat,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp),
+                        )
+                    }
                 }
-            }
+                // Under the auto-hiding transport rather than inside it: the credit, the lyric actions and the
+                // way out are the sheet's own chrome, and they stay put while the player controls tuck away.
+                AppleMusicLyricsFooter(
+                    lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
+                    hasLyrics = currentLyrics != null,
+                    foregroundColor = foregroundColor,
+                    onOverflowClick = openLyricsMenuFromControls,
+                    onOverflowPositioned = { controlsMoreBounds = it },
+                    onCloseClick = onBackClick,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 2.dp),
+                )
             }
         }
 
@@ -1153,6 +1152,8 @@ private fun AppleMusicBackground(
                 .background(AppleMusicFallbackGradient.last()),
     ) {
         val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+        // Held outside the AnimatedContent child, so a new backdrop shows the last loaded one while it loads.
+        val heldBackgroundCover = remember { mutableStateOf<String?>(null) }
         AnimatedContent(
             targetState = mediaMetadata.thumbnailUrl,
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
@@ -1182,9 +1183,9 @@ private fun AppleMusicBackground(
                         )
                     }
                 } else {
-                    AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = null,
+                    HeldPlayerCover(
+                        imageUrl = thumbnailUrl,
+                        held = heldBackgroundCover,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -1215,6 +1216,27 @@ private fun AppleMusicBackground(
                     .background(bottomScrim),
         )
     }
+}
+
+@Composable
+private fun AppleMusicGrabber(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val closeDescription = stringResource(R.string.close)
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .semantics { contentDescription = closeDescription }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                ),
+    )
 }
 
 @Composable
@@ -1254,12 +1276,7 @@ private fun AppleMusicControls(
     onControlsInteraction: () -> Unit,
     foregroundColor: Color,
     currentFormat: FormatEntity?,
-    lyricsProviderName: String,
-    hasLyrics: Boolean,
-    onOverflowClick: () -> Unit,
-    onCloseClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onOverflowPositioned: ((Rect) -> Unit)? = null,
 ) {
     val displayedVolume = volumeDisplayFraction(volumeController)
     val volumeInteractions = rememberVolumeSliderInteractions(volumeController)
@@ -1273,7 +1290,7 @@ private fun AppleMusicControls(
     Column(
         modifier =
             modifier
-                .offset(y = (-6).dp)
+                .offset(y = (-4).dp)
                 .pointerInput(controlsExpanded) {
                     if (controlsExpanded) return@pointerInput
                     awaitEachGesture {
@@ -1294,7 +1311,7 @@ private fun AppleMusicControls(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1334,18 +1351,18 @@ private fun AppleMusicControls(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 15.dp),
+                        .padding(bottom = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(top = 26.dp),
+                            .padding(top = 14.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AppleMusicTransportButton(
+                    LyricsTransportButton(
                         iconRes = R.drawable.player_fast_forward,
                         contentDescription = stringResource(R.string.widget_previous),
                         iconSize = 44.dp,
@@ -1377,7 +1394,7 @@ private fun AppleMusicControls(
                             )
                         }
                     }
-                    AppleMusicTransportButton(
+                    LyricsTransportButton(
                         iconRes = R.drawable.player_fast_forward,
                         contentDescription = stringResource(R.string.next),
                         iconSize = 44.dp,
@@ -1392,7 +1409,7 @@ private fun AppleMusicControls(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(top = 26.dp),
+                            .padding(top = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -1425,89 +1442,8 @@ private fun AppleMusicControls(
                         modifier = Modifier.size(19.dp),
                     )
                 }
-
-                // The credit, and beside it the way out. Ported from the BitChord style, where
-                // this row already sat under the scrubber, so every lyrics style now names its
-                // provider and offers the lyric actions in the same place.
-                Row(
-                    modifier = Modifier.padding(top = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .clip(RoundedCornerShape(percent = 50))
-                                .background(foregroundColor.copy(alpha = 0.10f))
-                                .clickable(onClick = onOverflowClick)
-                                .padding(horizontal = 18.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text =
-                                when {
-                                    lyricsProviderName.isNotBlank() ->
-                                        stringResource(R.string.lyrics_from_source, lyricsProviderName)
-                                    hasLyrics -> stringResource(R.string.lyrics)
-                                    else -> stringResource(R.string.lyrics_not_found)
-                                },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = foregroundColor.copy(alpha = 0.75f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    AppleMusicTransportButton(
-                        iconRes = R.drawable.more_horiz,
-                        contentDescription = stringResource(R.string.more_options),
-                        iconSize = 20.dp,
-                        touchSize = 40.dp,
-                        foregroundColor = foregroundColor.copy(alpha = 0.75f),
-                        onClick = onOverflowClick,
-                        modifier =
-                            if (onOverflowPositioned != null) {
-                                Modifier.onGloballyPositioned { coords -> onOverflowPositioned(coords.boundsInRoot()) }
-                            } else {
-                                Modifier
-                            },
-                    )
-                    AppleMusicTransportButton(
-                        iconRes = R.drawable.close,
-                        contentDescription = stringResource(R.string.close),
-                        iconSize = 20.dp,
-                        touchSize = 40.dp,
-                        foregroundColor = foregroundColor.copy(alpha = 0.75f),
-                        onClick = onCloseClick,
-                    )
-                }
             }
         }
-    }
-}
-
-@Composable
-private fun AppleMusicTransportButton(
-    iconRes: Int,
-    contentDescription: String?,
-    iconSize: Dp,
-    touchSize: Dp,
-    foregroundColor: Color,
-    mirrored: Boolean = false,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = modifier.size(touchSize),
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = foregroundColor,
-            modifier =
-                Modifier
-                    .size(iconSize)
-                    .graphicsLayer { if (mirrored) scaleX = -1f },
-        )
     }
 }
 

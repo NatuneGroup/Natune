@@ -56,15 +56,20 @@ internal object LyricsInterludeMotion {
 
     private const val ENTER_MS = 400L
     private const val EXIT_MS = 400L
-    private const val BREATH_CYCLE_MS = 2_400L
-    private const val BREATH_MIN = 0.92f
+
+    /** One full turn of the travelling pulse: the dots peak a third of a cycle apart. */
+    const val PULSE_CYCLE_MS = 1_400L
+
+    /** The slow size breath, two pulse turns long, so the two rhythms meet again every cycle. */
+    const val BREATH_CYCLE_MS = 2_800L
+    private const val BREATH_MIN = 0.94f
     private const val BREATH_MAX = 1.08f
-    private const val IDLE_LIGHT = 0.25f
+    private const val IDLE_LIGHT = 0.28f
 
     /** Over the last [END_SWELL_MS] of the break the dots swell toward the arriving line. */
     const val END_SWELL_MS = 1_500L
-    const val END_SWELL_FROM = 1.1f
-    const val END_SWELL_TO = 1.4f
+    const val END_SWELL_FROM = 1.05f
+    const val END_SWELL_TO = 1.3f
 
     /**
      * The anticipation swell, from [END_SWELL_FROM] to [END_SWELL_TO] over the last [END_SWELL_MS] of
@@ -85,30 +90,40 @@ internal object LyricsInterludeMotion {
         return minOf(enter, exit, 1f)
     }
 
-    /** The share of the break that has passed, from 0 to 1. */
-    fun progress(interlude: LyricsInterlude, positionMs: Long): Float =
-        ((positionMs - interlude.startMs).toFloat() / interlude.durationMs.coerceAtLeast(1L)).coerceIn(0f, 1f)
-
     /**
-     * How lit dot [index] is, from [IDLE_LIGHT] to 1. The dots take their turn across the break, a third each.
-     * Reduced motion lights them in steps rather than easing them.
+     * How lit dot [index] is at [positionMs], from [IDLE_LIGHT] to 1: a travelling pulse whose per-dot
+     * brightness is one half of a cosine, each dot a third of a cycle behind the one before it.
+     *
+     * The loop is seamless by construction — a cosine of the phase returns the same value and slope at
+     * the wrap — and the phase comes from the lyrics timeline rather than the break's progress, so a
+     * long break and a short one pulse alike instead of a fill that begins again at every break.
+     * Reduced motion lights one dot at a time without easing.
      */
-    fun dotLight(progress: Float, index: Int, reduceMotion: Boolean): Float {
-        val turn = progress * DOT_COUNT - index
-        val share = if (reduceMotion) {
-            if (turn > 0f) 1f else 0f
-        } else {
-            turn.coerceIn(0f, 1f)
+    fun dotLight(
+        positionMs: Long,
+        index: Int,
+        reduceMotion: Boolean,
+    ): Float {
+        if (reduceMotion) {
+            val slot = (phaseOf(positionMs) * DOT_COUNT).toInt().coerceIn(0, DOT_COUNT - 1)
+            return if (slot == index) 1f else IDLE_LIGHT
         }
-        return IDLE_LIGHT + (1f - IDLE_LIGHT) * share
+        val offset = phaseOf(positionMs - index * (PULSE_CYCLE_MS / DOT_COUNT))
+        val lobe = ((cos(2.0 * PI * offset) + 1.0) / 2.0).toFloat()
+        return IDLE_LIGHT + (1f - IDLE_LIGHT) * lobe
     }
 
     /** The breath, from [BREATH_MIN] to [BREATH_MAX], on a cycle of [BREATH_CYCLE_MS] of the lyrics timeline. */
     fun breath(positionMs: Long): Float {
-        val phase = (positionMs % BREATH_CYCLE_MS).toDouble() / BREATH_CYCLE_MS
-        val swell = 0.5 - 0.5 * cos(2.0 * PI * phase)
+        val swell = 0.5 - 0.5 * cos(2.0 * PI * phaseOf(positionMs, BREATH_CYCLE_MS))
         return BREATH_MIN + (BREATH_MAX - BREATH_MIN) * swell.toFloat()
     }
+
+    /** [positionMs] as a share of [cycleMs], wrapped into `0..1` for any position, negative included. */
+    private fun phaseOf(
+        positionMs: Long,
+        cycleMs: Long = PULSE_CYCLE_MS,
+    ): Double = (((positionMs % cycleMs) + cycleMs) % cycleMs).toDouble() / cycleMs
 }
 
 /**
@@ -132,11 +147,12 @@ internal fun LyricsInterludeDots(
     )
 }
 
-// Three 10dp dots 6dp apart; the band is tall enough for the 1.4x end swell.
-private const val DOTS_WIDTH_DP = 42
-private const val DOTS_HEIGHT_DP = 14
-private const val DOT_DIAMETER_DP = 10
-private const val DOT_GAP_DP = 6
+// Three 14dp dots 8dp apart, at the size the dots read at under a lyric line; the band is tall enough
+// for the 1.3x end swell.
+private const val DOTS_WIDTH_DP = 58
+private const val DOTS_HEIGHT_DP = 20
+private const val DOT_DIAMETER_DP = 14
+private const val DOT_GAP_DP = 8
 
 private fun DrawScope.drawInterludeDots(
     interlude: LyricsInterlude,
@@ -146,7 +162,6 @@ private fun DrawScope.drawInterludeDots(
 ) {
     val visibility = LyricsInterludeMotion.visibility(interlude, positionMs)
     if (visibility <= 0f) return
-    val progress = LyricsInterludeMotion.progress(interlude, positionMs)
     val breath = if (reduceMotion) {
         1f
     } else {
@@ -163,8 +178,8 @@ private fun DrawScope.drawInterludeDots(
         drawCircle(
             color = color,
             radius = radius,
-            center = Offset(diameter / 2f + index * (diameter + gap), centerY),
-            alpha = visibility * LyricsInterludeMotion.dotLight(progress, index, reduceMotion),
+            center = Offset(size.width / 2f - (diameter + gap) + index * (diameter + gap), centerY),
+            alpha = visibility * LyricsInterludeMotion.dotLight(positionMs, index, reduceMotion),
         )
     }
 }
