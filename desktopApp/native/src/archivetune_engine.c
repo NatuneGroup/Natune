@@ -966,10 +966,14 @@ static int source_open_stream(ae_engine *e, ae_source *s, const ae_stream_io *io
     /*
      * An empty whitelist refuses every protocol. avformat_open_input duplicates a non-NULL pb whitelist into the
      * input context (demux.c), so a child that reached a protocol opener anyway would still be refused, behind the
-     * refused io_open. A literal is used because the AVIOContext never frees the string it points to, so a
-     * duplicate allocated here would leak on every open.
+     * refused io_open. The copy must be heap-owned: avio_context_free() frees the whitelist it finds on the context,
+     * so assigning the literal here is an invalid free at every leased-source teardown.
      */
-    s->avio->protocol_whitelist = "";
+    s->avio->protocol_whitelist = av_strdup("");
+    if (!s->avio->protocol_whitelist) {
+        snprintf(message, len, "out of memory");
+        return -1;
+    }
 
     s->format = avformat_alloc_context();
     if (!s->format) {
