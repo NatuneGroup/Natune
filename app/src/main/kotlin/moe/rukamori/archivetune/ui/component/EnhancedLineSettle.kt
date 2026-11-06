@@ -100,14 +100,16 @@ private const val NANOS_PER_MS = 1_000_000L
 
 /**
  * The glide curve, kept apart from the state so its timing can be checked without a composition. A critically damped
- * spring released from rest is `x(t) = x0 * (1 + w t) * e^(-w t)`, with no overshoot. [ANGULAR_FREQUENCY] is the square root
- * of `Spring.StiffnessLow`, the stiffness the depth change uses too, so the two motions share their timing.
+ * spring released from rest is `x(t) = x0 * (1 + w t) * e^(-w t)`, with no overshoot. [ANGULAR_FREQUENCY] is the square
+ * root of `Spring.StiffnessMedium`, the stiffness the row's depth change uses too, so the two motions share their
+ * timing: the ripple a line change makes and the fade of the rows it passes settle together, in about 400 ms rather
+ * than the ~1 s the softest spring took.
  */
 internal object EnhancedLineSettleMotion {
     /** The longest a glide runs: the largest stagger delay plus the time the spring needs to come to rest. */
     const val DURATION_MS = 1_000L
 
-    private const val ANGULAR_FREQUENCY = 14.142136f
+    private const val ANGULAR_FREQUENCY = 38.729835f
 
     fun offsetPx(displacementPx: Float, elapsedMs: Long, delayMs: Long): Float {
         val seconds = (elapsedMs - delayMs).coerceAtLeast(0L) / 1_000f

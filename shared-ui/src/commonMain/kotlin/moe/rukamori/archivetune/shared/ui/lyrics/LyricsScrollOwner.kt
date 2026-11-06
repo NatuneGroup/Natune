@@ -155,7 +155,7 @@ private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
 /** The one animated scroll speed of a line change: a fixed ease-in-out over this many ms. */
-private const val AUTO_SCROLL_MS = 350
+private const val AUTO_SCROLL_MS = 280
 private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
