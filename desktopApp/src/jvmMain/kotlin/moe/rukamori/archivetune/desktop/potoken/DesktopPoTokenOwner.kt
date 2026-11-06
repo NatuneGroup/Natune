@@ -68,8 +68,9 @@ internal class DesktopPoTokenOwner(
     /**
      * The minted pair for one [videoId] resolve under the current session, as
      * `resolvePlayerPoToken`/`resolveGvsPoToken` would read them: the video-id-bound player token
-     * first, the session token as the fallback. Null when the feature is off, unconfigured or the
-     * mint failed — the caller then sends the same untokened request it always did.
+     * first, the session token as the fallback. The credentialed engine answers first when a build
+     * carries both keys; otherwise the managed helper does. Null means neither provider could mint,
+     * and the caller sends the same untokened request it always did.
      */
     suspend fun mintForPlayback(
         videoId: String,
@@ -115,7 +116,14 @@ internal class DesktopPoTokenOwner(
             return PoTokenHelperStatus(PoTokenHelperState.DISABLED)
         }
         val helper = localHelper ?: return PoTokenHelperStatus(PoTokenHelperState.UNSUPPORTED)
-        return helper.status()
+        val status = helper.status()
+        // A disable leaves the manager's last state Disabled; once the switch is on again the helper is
+        // merely idle until the next mint, so the row must not keep saying Disabled.
+        return if (status.state == PoTokenHelperState.DISABLED) {
+            PoTokenHelperStatus(PoTokenHelperState.IDLE)
+        } else {
+            status
+        }
     }
 
     /** The token one web-client player request or stream URL carries; null outside the web set. */

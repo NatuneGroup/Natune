@@ -92,6 +92,18 @@ class DesktopPoTokenOwnerTest {
         assertEquals(PoTokenHelperStatus(PoTokenHelperState.UNSUPPORTED), owner.localHelperStatus())
     }
 
+    @Test
+    fun reEnablingShowsIdleInsteadOfTheLastDisable() = runTest {
+        val helper =
+            FakeLocalHelper(
+                tokens = null,
+                status = PoTokenHelperStatus(PoTokenHelperState.DISABLED),
+            )
+        val owner = owner(enabled = false, helper = helper, helperEnabled = true)
+
+        assertEquals(PoTokenHelperState.IDLE, owner.localHelperStatus().state)
+    }
+
     private fun owner(
         enabled: Boolean,
         helper: LocalPoTokenHelper?,
@@ -108,6 +120,7 @@ class DesktopPoTokenOwnerTest {
     private class FakeLocalHelper(
         private val tokens: MintedPoTokens?,
         override val availableOnHost: Boolean = true,
+        private val status: PoTokenHelperStatus = PoTokenHelperStatus(PoTokenHelperState.READY, "127.0.0.1:4416"),
     ) : LocalPoTokenHelper {
         val requests = mutableListOf<Pair<String, String>>()
 
@@ -122,8 +135,7 @@ class DesktopPoTokenOwnerTest {
         override suspend fun disable() {
         }
 
-        override suspend fun status(): PoTokenHelperStatus =
-            PoTokenHelperStatus(PoTokenHelperState.READY, "127.0.0.1:4416")
+        override suspend fun status(): PoTokenHelperStatus = status
 
         override suspend fun close() {
         }
