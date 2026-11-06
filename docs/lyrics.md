@@ -242,7 +242,7 @@ them skipped under reduced motion:
   `ttm:role="x-bg"`, which `TTMLParser` (pinned `lyrics` submodule) and `shared/domain`'s `TtmlParser`
   both read. The enhanced-LRC providers have no attribute for it and write the backing vocal inline in
   round brackets, so both enhanced-LRC readers mark a bracketed run as `isBackground` as well
-  (`LyricsUtils.mapBackgroundRuns`, `EnhancedLrcWords.mapBackgroundRuns`): a run that opens at a word's
+  (`lyrics/BackgroundVocalRuns.withBackgroundRuns`, `EnhancedLrcWords.mapBackgroundRuns`): a run that opens at a word's
   own start and closes at a word's own end, with an unbalanced open bracket marking the rest of the
   line. The brackets stay in the text — the renderers draw the source text, they never rewrite it. A rising or emphasized word's cut
   and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
