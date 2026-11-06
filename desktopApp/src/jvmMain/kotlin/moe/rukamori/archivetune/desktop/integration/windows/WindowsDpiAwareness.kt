@@ -17,7 +17,7 @@ internal object WindowsDpiAwareness {
     private const val DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4L
     private const val DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED = -5L
 
-    private interface User32 : Library {
+    internal interface User32 : Library {
         // Windows 10 1703+. Older systems have no export and the lazy binding fails, which the caller treats as unknown.
         fun GetProcessDpiAwarenessContext(): Pointer?
         fun GetDpiForSystem(): Int

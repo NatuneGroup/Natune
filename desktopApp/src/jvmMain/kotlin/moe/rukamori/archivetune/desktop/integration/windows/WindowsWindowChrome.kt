@@ -27,7 +27,7 @@ internal object WindowsWindowChrome {
     private const val ATTRIBUTE_BYTES = 4
     private const val S_OK = 0
 
-    private interface DwmApi : Library {
+    internal interface DwmApi : Library {
         fun DwmSetWindowAttribute(window: Pointer, attribute: Int, value: Pointer, size: Int): Int
     }
 
