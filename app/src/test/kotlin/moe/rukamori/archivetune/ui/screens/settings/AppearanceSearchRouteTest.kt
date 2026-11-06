@@ -51,6 +51,10 @@ class AppearanceSearchRouteTest {
             "settings/ai_integration?scrollTo=target_language",
             searchableSettingsRoute("ai_integration", "target_language"),
         )
+        assertEquals(
+            "settings/sources?scrollTo=spotify_stream_enable",
+            searchableSettingsRoute("playback", "spotify_stream_enable"),
+        )
     }
 
     @Test

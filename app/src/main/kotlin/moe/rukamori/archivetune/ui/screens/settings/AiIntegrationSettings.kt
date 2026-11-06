@@ -347,6 +347,7 @@ fun AiIntegrationSettings(
     // opening transition.
     val aiProviderSettingsTitle = stringResource(R.string.ai_provider_settings)
     val aiTranslationSettingsTitle = stringResource(R.string.ai_translation_settings)
+    val translatorOptionsTitle = stringResource(R.string.translator_options)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
@@ -729,18 +730,6 @@ fun AiIntegrationSettings(
                         )
                     }
                 }
-                // Translation target language + mode shared by DeepL/OpenRouter/Mistral.
-                translatorSettingsRows(
-                    positions = positions,
-                    enabled = translatorEnabled,
-                    onEnabledChange = onTranslatorEnabledChange,
-                    contexts = translatorContexts,
-                    onContextsChange = onTranslatorContextsChange,
-                    targetLanguage = effectiveTranslatorTarget,
-                    languageCodes = translatorLanguages.map { it.code },
-                    languageNames = translatorLanguages.associate { it.code to it.name },
-                    onTargetLanguageChange = onTranslatorTargetLanguageChange,
-                )
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("translate_mode"),
@@ -751,6 +740,22 @@ fun AiIntegrationSettings(
                     )
                 }
             }
+        }
+
+        // The manual presence translator is independent of the AI chat/translation provider, so it stays reachable on
+        // a default install (AiProvider.NONE) as well as with DeepL/OpenRouter/Mistral selected.
+        preferenceGroup(title = translatorOptionsTitle) {
+            translatorSettingsRows(
+                positions = positions,
+                enabled = translatorEnabled,
+                onEnabledChange = onTranslatorEnabledChange,
+                contexts = translatorContexts,
+                onContextsChange = onTranslatorContextsChange,
+                targetLanguage = effectiveTranslatorTarget,
+                languageCodes = translatorLanguages.map { it.code },
+                languageNames = translatorLanguages.associate { it.code to it.name },
+                onTargetLanguageChange = onTranslatorTargetLanguageChange,
+            )
         }
     }
 
