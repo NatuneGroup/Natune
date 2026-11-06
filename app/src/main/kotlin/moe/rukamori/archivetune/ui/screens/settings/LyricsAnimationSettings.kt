@@ -8,9 +8,6 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -22,23 +19,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
-import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
-import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
-import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
-import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
 import moe.rukamori.archivetune.constants.LyricsV2InterludeDotsKey
 import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
 import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
@@ -55,13 +45,8 @@ fun LyricsAnimationSettings(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val (bounceFactor, onBounceFactorChange) = rememberPreference(LyricsV2BounceFactorKey, defaultValue = 1f)
-    val (glowFactor, onGlowFactorChange) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
-    val (fillTransitionWidth, onFillTransitionWidthChange) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (lrcBounceEnabled, onLrcBounceEnabledChange) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
-    val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     val (softWordReveal, onSoftWordRevealChange) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
-    val (emphasizeLastWord, onEmphasizeLastWordChange) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
     val (interludeDots, onInterludeDotsChange) = rememberPreference(LyricsV2InterludeDotsKey, defaultValue = true)
 
     Scaffold(
@@ -122,22 +107,10 @@ fun LyricsAnimationSettings(
                     )
                 }
 
-                item {
-                    PreferenceEntry(
-                        title = { Text("Adaptive Scroll Spring") },
-                        description = "Match scroll speed to the gap between lines (fast lyrics snap, slow lyrics glide)",
-                        icon = { Icon(painterResource(R.drawable.animation), null) },
-                        trailingContent = {
-                            Switch(
-                                checked = adaptiveScrollSpring,
-                                onCheckedChange = onAdaptiveScrollSpringChange,
-                            )
-                        },
-                    )
-                }
 
                 item {
                     PreferenceEntry(
+                        modifier = positions.modifierFor("lyrics_soft_word_reveal"),
                         title = { Text("Soft Word Reveal") },
                         description = "Feather the sung-word edge with a sliding gradient instead of a hard clip",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
@@ -150,22 +123,10 @@ fun LyricsAnimationSettings(
                     )
                 }
 
-                item {
-                    PreferenceEntry(
-                        title = { Text("Last-Word Emphasize") },
-                        description = "Replay the final word of each line with a per-character glow and float (off by default)",
-                        icon = { Icon(painterResource(R.drawable.animation), null) },
-                        trailingContent = {
-                            Switch(
-                                checked = emphasizeLastWord,
-                                onCheckedChange = onEmphasizeLastWordChange,
-                            )
-                        },
-                    )
-                }
 
                 item {
                     PreferenceEntry(
+                        modifier = positions.modifierFor("lyrics_interlude_dots"),
                         title = { Text("Interlude Dots") },
                         description = "Show breathing dots beside the note during instrumental breaks",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
@@ -178,59 +139,8 @@ fun LyricsAnimationSettings(
                     )
                 }
 
-                item {
-                    var bounceFactorDraft by remember(bounceFactor) { mutableFloatStateOf(bounceFactor) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_scale_animation"),
-                        title = { Text("Bounce Amplitude") },
-                        description = "Adjust the bounce effect when a word is sung (${(bounceFactorDraft * 100).toInt()}%)",
-                        icon = { Icon(painterResource(R.drawable.animation), null) },
-                        content = {
-                            Slider(
-                                value = bounceFactorDraft,
-                                onValueChange = { bounceFactorDraft = it },
-                                onValueChangeFinished = { onBounceFactorChange(bounceFactorDraft) },
-                                valueRange = 0f..2f,
-                            )
-                        },
-                    )
-                }
 
-                item {
-                    var glowFactorDraft by remember(glowFactor) { mutableFloatStateOf(glowFactor) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_glow_animation"),
-                        title = { Text("Glow Intensity") },
-                        description = "Adjust the glow brightness of the sung word (${(glowFactorDraft * 100).toInt()}%)",
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        content = {
-                            Slider(
-                                value = glowFactorDraft,
-                                onValueChange = { glowFactorDraft = it },
-                                onValueChangeFinished = { onGlowFactorChange(glowFactorDraft) },
-                                valueRange = 0f..2f,
-                            )
-                        },
-                    )
-                }
 
-                item {
-                    var fillTransitionWidthDraft by remember(fillTransitionWidth) { mutableFloatStateOf(fillTransitionWidth) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("lyrics_fade_animation"),
-                        title = { Text("Fill Transition Smoothness") },
-                        description = "Adjust the gradient edge width of the liquid fill effect (${fillTransitionWidthDraft.toInt()} dp)",
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        content = {
-                            Slider(
-                                value = fillTransitionWidthDraft,
-                                onValueChange = { fillTransitionWidthDraft = it },
-                                onValueChangeFinished = { onFillTransitionWidthChange(fillTransitionWidthDraft) },
-                                valueRange = 2f..24f,
-                            )
-                        },
-                    )
-                }
             }
         }
     }

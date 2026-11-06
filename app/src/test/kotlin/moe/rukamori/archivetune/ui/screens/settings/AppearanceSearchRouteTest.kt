@@ -12,10 +12,6 @@ class AppearanceSearchRouteTest {
             searchableSettingsRoute("appearance", "player_design_style"),
         )
         assertEquals("settings/appearance?scrollTo=tablet_mode", searchableSettingsRoute("appearance", "tablet_mode"))
-        assertEquals(
-            "settings/appearance?scrollTo=lyrics_background_style",
-            searchableSettingsRoute("lyrics", "lyrics_background_style"),
-        )
     }
 
     @Test
@@ -34,14 +30,36 @@ class AppearanceSearchRouteTest {
     }
 
     @Test
-    fun `pages that moved out of appearance keep their own routes`() {
+    fun `moved rows resolve to the page that now owns them`() {
         assertEquals(
-            "settings/appearance/navigation_bar?scrollTo=liquid_glass_nav_bar",
-            searchableSettingsRoute("appearance", "liquid_glass_nav_bar"),
+            "settings/player?scrollTo=show_codec_on_player",
+            searchableSettingsRoute("playback", "show_codec_on_player"),
         )
+        assertEquals(
+            "settings/tidal?scrollTo=tidal_animated_covers",
+            searchableSettingsRoute("sources", "tidal_animated_covers"),
+        )
+        assertEquals(
+            "settings/tidal?scrollTo=tidal_artwork_fallback",
+            searchableSettingsRoute("sources", "tidal_artwork_fallback"),
+        )
+        assertEquals(
+            "settings/ai_integration?scrollTo=target_language",
+            searchableSettingsRoute("ai_integration", "target_language"),
+        )
+    }
+
+    @Test
+    fun `pages that moved out of appearance keep their own routes`() {
         assertEquals(
             "settings/appearance/extras?scrollTo=show_home_category_chips",
             searchableSettingsRoute("appearance", "show_home_category_chips"),
+        )
+        // The removed treatment row no longer belongs to the navigation-bar page; the bare anchor falls back to the
+        // appearance page, and the search index no longer emits an entry for it.
+        assertEquals(
+            "settings/appearance?scrollTo=liquid_glass_nav_bar",
+            searchableSettingsRoute("appearance", "liquid_glass_nav_bar"),
         )
     }
 

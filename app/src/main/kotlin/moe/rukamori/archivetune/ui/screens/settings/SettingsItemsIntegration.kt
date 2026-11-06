@@ -7,7 +7,6 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableDiscordRPCKey
 import moe.rukamori.archivetune.constants.EnableLastFMScrobblingKey
 import moe.rukamori.archivetune.constants.EnableTranslatorKey
-import moe.rukamori.archivetune.constants.HideAiMixKey
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenTogetherSyncVolumeKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
@@ -99,8 +98,6 @@ internal fun discordExperimentalSettingsItem(
         onClick = { navController.navigate("settings/discord/experimental") },
         hidden = true,
         children = listOf(
-            SettingsChild("Enable translator", "enable_translator", listOf("discord translator", "enable translator", "translate presence")) { SearchResultSwitch(EnableTranslatorKey, false) },
-            SettingsChild("Target language", "target_language", listOf("target language", "translation language", "discord language")),
             SettingsChild("Show button 1", "discord_show_button_1", listOf("discord button", "show button", "rpc button 1")),
             SettingsChild("Button 1 URL source", "discord_activity_button_1_url", listOf("button 1 url", "discord button url", "rpc button link")),
             SettingsChild("Show button 2", "discord_show_button_2", listOf("discord button 2", "show second button", "rpc button 2")),
@@ -123,6 +120,8 @@ internal fun tidalDetailSettingsItem(
         onClick = { navController.navigate("settings/tidal") },
         hidden = true,
         children = listOf(
+            SettingsChild("Tidal animated covers", "tidal_animated_covers", listOf("tidal animated covers", "tidal canvas", "tidal video cover", "animated cover")),
+            SettingsChild("Tidal artwork fallback", "tidal_artwork_fallback", listOf("tidal artwork", "artwork fallback", "tidal cover", "hi-res artwork")),
             SettingsChild("Tidal account", "tidal_account_connected", listOf("tidal account", "connected account", "tidal user")),
             SettingsChild("Sign in with Tidal (web)", "tidal_login_web", listOf("tidal login", "tidal sign in", "tidal web login", "connect tidal")),
             SettingsChild("Reconnect Tidal account", "tidal_reconnect", listOf("reconnect tidal", "refresh tidal", "tidal reconnect")),
@@ -152,7 +151,6 @@ internal fun qobuzDetailSettingsItem(
         onClick = { navController.navigate("settings/qobuz") },
         hidden = true,
         children = listOf(
-            SettingsChild("Enable Qobuz source", "qobuz_enable", listOf("enable qobuz", "qobuz source", "turn on qobuz")),
             SettingsChild("Qobuz audio quality", "qobuz_audio_quality", listOf("qobuz quality", "hi-res", "flac", "cd quality", "24 bit")),
             SettingsChild("Sign in with Qobuz (web)", "qobuz_login_web", listOf("qobuz login", "qobuz sign in", "qobuz web login", "connect qobuz")),
             SettingsChild("Add tokens (paste)", "qobuz_add_tokens", listOf("add qobuz tokens", "qobuz token", "app secret", "app id", "paste tokens")),
@@ -233,10 +231,11 @@ internal fun aiIntegrationSettingsItem(
             SettingsChild("AI API key", "ai_api_key", listOf("api key", "key", "secret", "ai key", "token")),
             SettingsChild("AI model", "ai_model", listOf("model", "ai model", "gpt", "gemini model", "claude model")),
             SettingsChild("Test API", "ai_test_api", listOf("test", "test api", "verify", "test connection", "ai test")),
-            SettingsChild("Hide AI mix", "hide_ai_mix", listOf("hide ai", "ai mix", "smart mix", "hide mix")) { SearchResultSwitch(HideAiMixKey, false) },
+            SettingsChild("Enable translator", "enable_translator", listOf("translator", "translation engine", "lyrics translator")) { SearchResultSwitch(EnableTranslatorKey, false) },
+            SettingsChild("Translation contexts", "translator_contexts", listOf("translation contexts", "translator contexts", "presence fields")),
+            SettingsChild("Target language", "target_language", listOf("target language", "translate to", "translation language")),
             SettingsChild("Automatic translation", "auto_translate_lyrics", listOf("automatic translation", "auto translate", "auto translate lyrics", "translate automatically")),
             SettingsChild("Don't auto translate these languages", "auto_translate_excluded_languages", listOf("excluded languages", "skip translation", "do not translate", "translation exclusions")),
-            SettingsChild("Target language", "translate_language", listOf("target language", "translate to", "translation language")),
             SettingsChild("Translation mode", "translate_mode", listOf("translation mode", "translate mode", "translation style")),
             SettingsChild("DeepL API key", "deepl_api_key", listOf("deepl", "deepl api key", "deepl key", "deepl token")),
             SettingsChild("DeepL formality", "deepl_formality", listOf("deepl formality", "formality", "formal informal")),

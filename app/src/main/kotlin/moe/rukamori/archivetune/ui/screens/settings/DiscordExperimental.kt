@@ -10,14 +10,12 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -28,7 +26,6 @@ import moe.rukamori.archivetune.ui.component.EditTextPreference
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
-import moe.rukamori.archivetune.utils.TranslatorLanguages
 import moe.rukamori.archivetune.utils.rememberPreference
 
 private val DiscordExperimentalButtonUrlOptions =
@@ -40,21 +37,6 @@ fun DiscordExperimental(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val context = LocalContext.current
-    val languages = remember(context) { TranslatorLanguages.load(context) }
-    val languageCodes = remember(languages) { languages.map { it.code } }
-    val languageNamesByCode = remember(languages) { languages.associate { it.code to it.name } }
-
-    val (translatorEnabled, onTranslatorEnabledChange) =
-        rememberPreference(key = EnableTranslatorKey, defaultValue = false)
-    val (translatorContexts, onTranslatorContextsChange) =
-        rememberPreference(
-            key = TranslatorContextsKey,
-            defaultValue = "{song}, {artist}, {album}",
-        )
-    val (translatorTargetLang, onTranslatorTargetLangChange) =
-        rememberPreference(key = TranslatorTargetLangKey, defaultValue = "ENGLISH")
-
     val (button1Label, onButton1LabelChange) =
         rememberPreference(
             key = DiscordActivityButton1LabelKey,
@@ -122,43 +104,6 @@ fun DiscordExperimental(
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                item {
-                    PreferenceGroup(title = stringResource(R.string.translator_options)) {
-                        item {
-                            SwitchPreference(
-                                modifier = positions.modifierFor("enable_translator", "translate_lyrics"),
-                                title = { Text(stringResource(R.string.enable_translator)) },
-                                description = stringResource(R.string.enable_translator_desc),
-                                icon = { Icon(painterResource(R.drawable.translate), null) },
-                                checked = translatorEnabled,
-                                onCheckedChange = onTranslatorEnabledChange,
-                            )
-                        }
-
-                        item(visible = translatorEnabled) {
-                            EditTextPreference(
-                                title = { Text(stringResource(R.string.context_info)) },
-                                icon = { Icon(painterResource(R.drawable.translate), null) },
-                                value = translatorContexts,
-                                onValueChange = onTranslatorContextsChange,
-                                isInputValid = { true },
-                            )
-                        }
-
-                        item(visible = translatorEnabled) {
-                            ListPreference(
-                                modifier = positions.modifierFor("target_language"),
-                                title = { Text(stringResource(R.string.target_language)) },
-                                icon = { Icon(painterResource(R.drawable.translate), null) },
-                                selectedValue = translatorTargetLang,
-                                values = languageCodes,
-                                valueText = { code -> languageNamesByCode[code] ?: code },
-                                onValueSelected = onTranslatorTargetLangChange,
-                            )
-                        }
-                    }
-                }
-
                 item {
                     PreferenceGroup(title = stringResource(R.string.discord_button_options)) {
                         item {
