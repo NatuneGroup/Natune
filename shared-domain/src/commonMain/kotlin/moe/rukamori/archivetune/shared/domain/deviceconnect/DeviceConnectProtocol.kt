@@ -58,6 +58,13 @@ data class DeviceFrame(
     val payload: ByteArray,
 )
 
+private fun writeUInt32(out: ByteArray, offset: Int, value: Long) {
+    out[offset] = (value ushr 24).toByte()
+    out[offset + 1] = (value ushr 16).toByte()
+    out[offset + 2] = (value ushr 8).toByte()
+    out[offset + 3] = value.toByte()
+}
+
 object DeviceFrameCodec {
     const val FLAG_ENCRYPTED = 1
     private const val HEADER = 7
