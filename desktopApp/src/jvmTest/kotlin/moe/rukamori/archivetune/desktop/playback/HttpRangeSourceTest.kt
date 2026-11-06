@@ -57,7 +57,7 @@ class HttpRangeSourceTest {
                 assertEquals("bytes=0-65535", ranges.first())
                 assertTrue(ranges.size >= 2, "the reader must request a bounded chunk, not one open-ended response")
                 assertEquals("bytes=65536-199999", ranges[1])
-                assertTrue(ranges.all { it.startsWith("bytes=") && it.substringAfter('bytes').contains('-') })
+                assertTrue(ranges.all { it.startsWith("bytes=") && it.substringAfter("bytes").contains('-') })
                 assertTrue(agents.all { it == DEFAULT_DESKTOP_STREAM_USER_AGENT }, agents.toString())
             } finally {
                 lease.close()

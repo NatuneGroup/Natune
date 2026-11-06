@@ -16,11 +16,11 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
-import moe.rukamori.archivetune.shared.domain.repository.TrackMatching
 import moe.rukamori.archivetune.shared.domain.settings.AutoChoosePlaybackClientKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerStreamClientKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 
 class DesktopYouTubeResolverTest {
     private val videoId = "dQw4w9WgXcQ"
