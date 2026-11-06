@@ -12,12 +12,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.LocalHostSafeArea
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.glass.OpticalPolicy
 import moe.rukamori.archivetune.shared.ui.glass.opticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.playerstyles.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.safeAreaPadding
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
 
@@ -98,8 +100,12 @@ fun BottomSheetPlayer(
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat),
             ) {
+                // The expansion surface paints edge to edge: its background fills the whole window, including the
+                // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.
+                // A host with no measured safe area (Android, desktop) gets an inset of zero and this is unchanged.
                 Box(Modifier.fillMaxSize().testTag("player-${presentation.style.name}-${if(landscape) "landscape" else "portrait"}")) {
                     PlayerBackground(c)
+                    Box(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current)) {
                     if(interaction.fullscreenLyrics) {
                         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ interaction.fullscreenLyrics=false })
@@ -144,6 +150,7 @@ fun BottomSheetPlayer(
                         if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
                             SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp))
                         }
+                    }
                     }
                 }
             }

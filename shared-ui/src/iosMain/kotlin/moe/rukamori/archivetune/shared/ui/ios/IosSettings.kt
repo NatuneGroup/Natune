@@ -460,6 +460,8 @@ private fun IosSettingsRouteBody(
                 navigate = navigate,
                 onFailure = onFailure,
                 scrollTo = scrollTo,
+                // The root never takes key focus on this host, so a shortcut table here could never fire.
+                keyboardShortcuts = false,
             )
             "settings/tidal" -> {
                 val health by owners.tidalInstanceHealth.collectAsState()
