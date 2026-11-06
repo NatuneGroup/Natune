@@ -146,6 +146,42 @@ class PlaybackRecoveryPolicyTest {
     }
 
     @Test
+    fun aTransportFailureTheLeaseNamesReResolvesInsteadOfStalling() {
+        // The desktop lease fails a dead body read with the exception class rather than returning zero bytes and
+        // leaving the engine to spend its 30 s starvation limit. Without a status or an expiry in the evidence the
+        // failure is UNKNOWN, which buys a bounded re-resolve through the source chain.
+        val transport = PlaybackFailure(
+            "occ",
+            PlaybackFailureReason.DECODE_FAILED,
+            "the source's connection failed: SocketTimeoutException",
+        )
+        assertEquals(PlaybackFailureCategory.UNKNOWN, PlaybackFailureClassifier.categorize(transport))
+        assertEquals(
+            PlaybackRecoveryAction.RETRY_CLIENT,
+            PlaybackRecoveryPolicy.decide(
+                PlaybackFailureClassifier.categorize(transport),
+                PlaybackRecoveryBudget.starting(0L),
+                0L,
+            ).action,
+        )
+
+        // The status the lease carried outranks the wording, as it does for a status the engine reports itself.
+        val refused = transport.copy(
+            message = "the source read failed (the source answered HTTP 403)",
+            httpStatus = 403,
+        )
+        assertEquals(PlaybackFailureCategory.CDN_FORBIDDEN, PlaybackFailureClassifier.categorize(refused))
+        assertEquals(
+            PlaybackRecoveryAction.REFRESH_URL,
+            PlaybackRecoveryPolicy.decide(
+                PlaybackFailureClassifier.categorize(refused),
+                PlaybackRecoveryBudget.starting(0L),
+                0L,
+            ).action,
+        )
+    }
+
+    @Test
     fun consumeNeverDropsBelowZero() {
         val budget = PlaybackRecoveryBudget(0, 0, 0L)
         assertEquals(0, budget.consumeRequest().requestsRemaining)

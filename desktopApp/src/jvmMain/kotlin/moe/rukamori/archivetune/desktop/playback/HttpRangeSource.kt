@@ -32,13 +32,18 @@ import moe.rukamori.archivetune.shared.domain.playback.SegmentFetchPolicy
  * The socket timeouts bound each call, so a call that misses an interrupt still returns soon, and the
  * engine asks again. [interrupt] closes the socket, which wakes a blocked call at once. Every refusal records a
  * sanitized failure detail, because an engine error code cannot carry an HTTP status or an expiry across JNI.
+ *
+ * A read that fails below HTTP is a transport failure, not the end of the stream: it earns the same two attempts
+ * [SegmentFetchPolicy] gives a fetch and then fails the lease with a message naming the exception class, so the
+ * queue's classifier can re-resolve an expired URL instead of the engine waiting out its 30 s starvation limit on a
+ * connection that will never answer.
  */
 internal class HttpRangeSource(
     override val lease: ByteSourceLease,
     private val url: String,
     private val headers: PlaybackHeaders,
     private val cookies: Collection<ScopedCookie>,
-    private val onFailure: (String) -> Unit = {},
+    private val onFailure: (String, Int?) -> Unit = { _, _ -> },
 ) : RandomAccessByteSource {
     private val cancellation = LeaseCancellation()
 
@@ -61,6 +66,14 @@ internal class HttpRangeSource(
 
     /** Consecutive responses that ended before their declared length without any byte progress. */
     private var consecutiveTruncations = 0
+
+    /**
+     * Consecutive transport failures at [failedPosition]. A socket that dies mid-body is the status-0 class, so the
+     * first one asks the engine for the same read again and the second fails the lease with a named cause. Confined to
+     * the producer thread like the stream state.
+     */
+    private var consecutiveReadFailures = 0
+    private var failedPosition = -1L
 
     /** The total length (-1 when the server did not report one) and whether ranged reads are honoured. */
     class Probe(val sizeBytes: Long, val seekable: Boolean)
@@ -140,6 +153,7 @@ internal class HttpRangeSource(
                     ) {
                         return 0
                     }
+                    onFailure("the source ended before its declared length", null)
                     throw ByteSourceException("the source ended before its declared length")
                 }
                 return RandomAccessByteSource.END_OF_STREAM
@@ -147,13 +161,25 @@ internal class HttpRangeSource(
             streamPosition += read
             streamDeliveredBytes += read
             consecutiveTruncations = 0
+            consecutiveReadFailures = 0
+            failedPosition = -1L
             return read
         } catch (io: IOException) {
             // Closing a socket is how an interrupt wakes a read, so a stale generation reports a cancellation.
-            // Any other socket error or timeout is retried: the engine gives up after its starvation limit.
             if (!ticket.isCurrent) throw failureOf(io, ticket)
             dropConnection()
-            return 0
+            // Everything else is the status-0 transport class: no HTTP answer reached this read. It earns the same
+            // second attempt a failed segment fetch gets, and then fails the lease by name — the engine's own retry
+            // loop only watches its 30 s starvation budget, so a dead connection used to stall a chunk for that long
+            // and then report a generic decode failure the queue could not classify.
+            consecutiveReadFailures = if (failedPosition == position) consecutiveReadFailures + 1 else 1
+            failedPosition = position
+            if (SegmentFetchPolicy.allowsAnotherAttempt(SegmentFetchPolicy.FailureClass.NO_RESPONSE, consecutiveReadFailures)) {
+                return 0
+            }
+            val reason = "the source's connection failed: ${io.javaClass.simpleName}"
+            onFailure(reason, null)
+            throw ByteSourceException(reason, io)
         } catch (failure: Throwable) {
             throw failureOf(failure, ticket)
         }
@@ -264,14 +290,16 @@ internal class HttpRangeSource(
                 val stale = sizeBytes >= 0L && position < sizeBytes
                 dropConnection()
                 if (stale) {
-                    onFailure("the source answered HTTP 416")
+                    // The status travels with the detail, so recovery classifies a 416 as an expired URL instead of
+                    // parsing the message text.
+                    onFailure("the source answered HTTP 416", HTTP_RANGE_NOT_SATISFIABLE)
                     throw ByteSourceException("the source answered HTTP 416")
                 }
                 return null
             }
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                 dropConnection()
-                onFailure("the source answered HTTP $code")
+                onFailure("the source answered HTTP $code", code)
                 throw ByteSourceException("the source answered HTTP $code")
             }
             resolvedUrl = current
@@ -288,7 +316,7 @@ internal class HttpRangeSource(
             // cannot be read from there. Reporting it as a failure is better than silently decoding from byte zero.
             if (position != 0L) {
                 dropConnection()
-                onFailure("the source ignored the requested byte range")
+                onFailure("the source ignored the requested byte range", null)
                 throw ByteSourceException("the source ignored the requested byte range")
             }
             return Opened(
@@ -340,7 +368,7 @@ internal class HttpRangeSource(
     private fun checkNotExpired() {
         val expiresAt = lease.expiresAtEpochMs ?: return
         if (System.currentTimeMillis() >= expiresAt) {
-            onFailure("the stream lease has expired")
+            onFailure("the stream lease has expired", null)
             throw ByteSourceException("the stream lease has expired")
         }
     }

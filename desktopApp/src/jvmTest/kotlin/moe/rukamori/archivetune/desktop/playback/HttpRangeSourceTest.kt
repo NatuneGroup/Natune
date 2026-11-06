@@ -7,6 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import moe.rukamori.archivetune.desktop.provider.DEFAULT_DESKTOP_STREAM_USER_AGENT
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
@@ -81,11 +82,27 @@ class HttpRangeSourceTest {
             try {
                 assertTrue(lease.open(LongArray(2)) < 0)
                 assertEquals("the source answered HTTP 403", lease.failureDetail())
+                // The status travels beside the text, so recovery classifies the refusal without parsing a message.
+                assertEquals(403, lease.failureStatus())
             } finally {
                 lease.close()
             }
         } finally {
             server.stop(0)
+        }
+    }
+
+    @Test
+    fun anExpiredLeaseIsRefusedBeforeARequestAndCarriesNoStatus() {
+        val lease = NativeStreamLease.forRemote(
+            PlaybackLocator.Remote(url = "https://example.invalid/media", expiresAtEpochMs = System.currentTimeMillis() - 1L),
+        )!!
+        try {
+            assertTrue(lease.open(LongArray(2)) < 0)
+            assertEquals("the stream lease has expired", lease.failureDetail())
+            assertNull(lease.failureStatus())
+        } finally {
+            lease.close()
         }
     }
 
