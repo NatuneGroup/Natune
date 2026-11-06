@@ -731,3 +731,10 @@ val DeviceConnectDeviceNameKey = StringPreferenceKey("deviceConnectDeviceName")
 val DeviceConnectAllowVpnKey = BooleanPreferenceKey("deviceConnectAllowVpn")
 val DeviceConnectDefaultDeviceKey = StringPreferenceKey("deviceConnectDefaultDeviceId")
 val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevices")
+
+// Desktop window behavior. Both keys stay stored on every host; only the desktop shell reads them, and a host
+// without that shell keeps the value for a later desktop run and for a backup round trip.
+// The shell draws its own title bar unless this is on, in which case the system window frame is used.
+val DesktopSystemWindowFrameKey = BooleanPreferenceKey("desktopSystemWindowFrame")
+// Closing the window hides it to the tray instead of quitting the process.
+val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")

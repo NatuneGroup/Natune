@@ -82,12 +82,15 @@ fun SettingsTwoPane(
 ) {
     var filter by rememberSaveable { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+    val query = filter.trim().lowercase()
     var group: SettingsRow.Header? = null
     val navItems = mutableListOf<SettingsNavItem>()
     for (row in rows) {
         when {
             row is SettingsRow.Header -> group = row
-            row is SettingsRow.Action && row.navRoute != null -> {
+            // A hidden row (a developer page) is listed only while the user searches for it, so it stays reachable
+            // without being offered to every user.
+            row is SettingsRow.Action && row.navRoute != null && (!row.hidden || query.isNotEmpty()) -> {
                 val descriptionRes = row.description
                 val description = if (descriptionRes != null) stringResource(descriptionRes) else null
                 navItems.add(
@@ -101,7 +104,6 @@ fun SettingsTwoPane(
             }
         }
     }
-    val query = filter.trim().lowercase()
     val visible = if (query.isEmpty()) {
         navItems
     } else {
