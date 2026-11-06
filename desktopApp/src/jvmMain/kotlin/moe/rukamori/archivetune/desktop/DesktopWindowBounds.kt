@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
 private const val BOUNDS_FILE = "window-bounds.properties"
 // The smallest window the three-column layouts are built for: below this the navigation, player and queue controls clip.
 private const val MIN_WIDTH = 800f
-private const val MIN_HEIGHT = 600f
+private const val MIN_HEIGHT = 500f
 private const val MAX_EDGE = 8192f
 // At least a title-bar-sized strip of the window has to land on a screen for a saved position to be kept.
 private const val TITLE_STRIP_DP = 48f
@@ -58,7 +58,7 @@ private val DesktopScreenSpace.safeScale: Float
  * size is fitted to the screen work area, so a 1024x720 dp window still fits a 125-150 % laptop screen above the taskbar.
  */
 internal object DesktopWindowBounds {
-    private val defaultSize = DpSize(1024.dp, 720.dp)
+    private val defaultSize = DpSize(1080.dp, 720.dp)
     private val atomicMoveWarning = AtomicBoolean()
 
     /**
