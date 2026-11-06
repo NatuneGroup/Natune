@@ -35,6 +35,20 @@ import moe.rukamori.archivetune.shared.ui.settings.PoTokenHelperStatus
  * disabled, unsupported or unavailable the owner answers null exactly as the old unconfigured path
  * did, so requests stay untokened rather than fabricating a token.
  */
+
+/**
+ * Whether this build can mint a PO token, as the startup self-check reads it. [Ready] names the provider in [detail]
+ * for the diagnostic log; [Unavailable] says why nothing can mint, which is what the user is told. Neither carries a
+ * token value.
+ */
+internal sealed interface DesktopAttestationStatus {
+    val detail: String
+
+    data class Ready(override val detail: String) : DesktopAttestationStatus
+
+    data class Unavailable(override val detail: String) : DesktopAttestationStatus
+}
+
 internal class DesktopPoTokenOwner(
     private val http: HttpClient,
     private val enabled: () -> Boolean,
@@ -262,6 +276,24 @@ internal class DesktopPoTokenOwner(
     suspend fun invalidateAttestation() {
         if (engineRef.isInitialized()) engine.invalidate()
         localHelper?.clearTokens()
+    }
+
+    /**
+     * Whether this build can mint at all, for the startup self-check. It starts nothing and mints nothing, so it costs
+     * no process launch and no request; it only names the provider that would answer or why none would.
+     */
+    fun attestationStatus(): DesktopAttestationStatus = when {
+        botGuardUsable() -> DesktopAttestationStatus.Ready("BotGuard")
+        helperUsable() -> DesktopAttestationStatus.Ready("the managed PO token helper")
+        !localHelperEnabled() -> DesktopAttestationStatus.Unavailable(
+            "the PO token helper is switched off in settings, so YouTube requests carry no attestation token",
+        )
+        localHelper == null -> DesktopAttestationStatus.Unavailable(
+            "this host has no PO token helper, so YouTube requests carry no attestation token",
+        )
+        else -> DesktopAttestationStatus.Unavailable(
+            "the PO token helper is not available on this host, so YouTube requests carry no attestation token",
+        )
     }
 
     private companion object {
