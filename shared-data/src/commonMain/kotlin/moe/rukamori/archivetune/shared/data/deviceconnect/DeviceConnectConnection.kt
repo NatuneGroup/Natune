@@ -106,7 +106,6 @@ class DeviceConnectConnection(
     val peerDeviceId: String? get() = handshake.peerDeviceId
 
     fun start() {
-        println("dc-connection start role=$role")
         if (started) return
         started = true
         startedAtMs = nowEpochMs()
@@ -244,7 +243,6 @@ class DeviceConnectConnection(
     }
 
     private suspend fun onFrame(frame: DeviceFrame) {
-        println("dc-connection frame role=$role type=${frame.header.type} seq=${frame.header.seq} enc=${frame.header.encrypted}")
         if (closed) return
         lastReceivedMs = nowEpochMs()
         if (!replay.accept(frame.header.seq)) {
