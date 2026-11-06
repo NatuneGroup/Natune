@@ -34,9 +34,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import moe.rukamori.archivetune.shared.ui.theme.IconSizes
+import moe.rukamori.archivetune.shared.ui.theme.RowHeights
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.stringResource
 
-private val DesktopPlayerBarHeight = 72.dp
+private val DesktopPlayerBarHeight = RowHeights.playerBar
 private val DesktopSeekLineHeight = 2.dp
 private val DesktopSeekTouchHeight = 12.dp
 
@@ -105,7 +108,7 @@ internal fun DesktopMiniPlayerBar(
                 .testTag("desktop-player-seek"),
         )
         Row(
-            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.33f).padding(start = 20.dp)
+            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.33f).padding(start = Space.sm)
                 .clip(RoundedCornerShape(10.dp))
                 .spaceTogglesPlayback(onPlayPause)
                 .clickable(onClick = onExpand)
@@ -136,7 +139,7 @@ internal fun DesktopMiniPlayerBar(
                 onClick = { onAction(PlayerAction.SHUFFLE) },
                 selected = nativeState.shuffle,
                 size = 36.dp,
-                iconSize = 18.dp,
+                iconSize = IconSizes.small,
             )
             PlayerIcon(
                 symbol = PlayerSymbol.PREVIOUS,
@@ -144,7 +147,7 @@ internal fun DesktopMiniPlayerBar(
                 onClick = { onAction(PlayerAction.PREVIOUS) },
                 enabled = matching && nativeState.canPrevious,
                 size = 36.dp,
-                iconSize = 20.dp,
+                iconSize = IconSizes.medium,
             )
             TextButton(onClick = onPlayPause) {
                 Text(
@@ -158,7 +161,7 @@ internal fun DesktopMiniPlayerBar(
                 onClick = { onAction(PlayerAction.NEXT) },
                 enabled = matching && nativeState.canNext,
                 size = 36.dp,
-                iconSize = 20.dp,
+                iconSize = IconSizes.medium,
             )
             PlayerIcon(
                 symbol = PlayerSymbol.REPEAT,
@@ -171,11 +174,11 @@ internal fun DesktopMiniPlayerBar(
                     null
                 },
                 size = 36.dp,
-                iconSize = 18.dp,
+                iconSize = IconSizes.small,
             )
         }
         Row(
-            Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.33f).padding(end = 20.dp),
+            Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.33f).padding(end = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End,
         ) {
@@ -186,7 +189,7 @@ internal fun DesktopMiniPlayerBar(
                     onClick = { onAction(PlayerAction.LIKE) },
                     selected = matching && nativeState.liked,
                     size = 36.dp,
-                    iconSize = 18.dp,
+                    iconSize = IconSizes.small,
                 )
             }
             PlayerIcon(
@@ -194,14 +197,14 @@ internal fun DesktopMiniPlayerBar(
                 label = stringResource(Res.string.m5_lyrics),
                 onClick = { onOpenPanel(PlayerPanel.LYRICS) },
                 size = 36.dp,
-                iconSize = 18.dp,
+                iconSize = IconSizes.small,
             )
             PlayerIcon(
                 symbol = PlayerSymbol.QUEUE,
                 label = stringResource(Res.string.m5_queue),
                 onClick = { onOpenPanel(PlayerPanel.QUEUE) },
                 size = 36.dp,
-                iconSize = 18.dp,
+                iconSize = IconSizes.small,
             )
             val volume = nativeState.volume?.takeIf { it.isFinite() }
             if (volume != null) {
@@ -216,7 +219,7 @@ internal fun DesktopMiniPlayerBar(
                 label = stringResource(Res.string.native_chrome_open_player),
                 onClick = onExpand,
                 size = 36.dp,
-                iconSize = 18.dp,
+                iconSize = IconSizes.small,
             )
         }
     }

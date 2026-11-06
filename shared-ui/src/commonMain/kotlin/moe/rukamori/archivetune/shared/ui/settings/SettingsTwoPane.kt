@@ -51,6 +51,9 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.navigation.desktopSettingsNavWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
+import moe.rukamori.archivetune.shared.ui.theme.IconSizes
+import moe.rukamori.archivetune.shared.ui.theme.RowHeights
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -126,7 +129,7 @@ fun SettingsTwoPane(
             Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = Space.md, end = Space.md, top = Space.md, bottom = Space.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -164,10 +167,10 @@ private fun SettingsNavigationPane(
             value = filter,
             onValueChange = onFilter,
             onClear = onClearFilter,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
         )
         var lastGroup: String? = null
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = Space.xs)) {
             items.forEach { item ->
                 val header = item.group
                 if (header != null && header.anchor != lastGroup) {
@@ -177,7 +180,7 @@ private fun SettingsNavigationPane(
                             stringResource(header.title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = Space.xs, top = Space.sm, bottom = Space.xxs),
                         )
                     }
                 }
@@ -191,11 +194,11 @@ private fun SettingsNavigationPane(
                         stringResource(Res.string.m6_settings_search_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp).testTag("settings-nav-empty"),
+                        modifier = Modifier.padding(Space.sm).testTag("settings-nav-empty"),
                     )
                 }
             }
-            item(key = "bottom-space") { Spacer(Modifier.height(16.dp)) }
+            item(key = "bottom-space") { Spacer(Modifier.height(Space.sm)) }
         }
     }
 }
@@ -204,11 +207,11 @@ private fun SettingsNavigationPane(
 private fun SettingsNavRow(item: SettingsNavItem, selected: Boolean, onClick: () -> Unit) {
     Column(
         Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = RowHeights.setting)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .padding(horizontal = Space.xs, vertical = Space.xs)
             .testTag("settings-nav-${item.route}"),
         verticalArrangement = Arrangement.Center,
     ) {
@@ -245,15 +248,15 @@ private fun SettingsSearchField(
         modifier = modifier.height(40.dp),
     ) {
         Row(
-            Modifier.fillMaxSize().padding(start = 8.dp, end = 4.dp),
+            Modifier.fillMaxSize().padding(start = Space.xs, end = Space.xxs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
             Icon(
                 painterResource(Res.drawable.m4_icon_search),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(IconSizes.small),
             )
             BasicTextField(
                 value = value,
@@ -293,7 +296,7 @@ private fun SettingsSearchField(
                         painterResource(Res.drawable.m4_icon_close),
                         contentDescription = stringResource(Res.string.m4_close),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSizes.small),
                     )
                 }
             }

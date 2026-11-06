@@ -23,11 +23,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.theme.RowHeights
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.stringResource
 
 private val SidebarWidth = 232.dp
-private val SidebarRowHeight = 48.dp
-private val SidebarGutter = 10.dp
+private val SidebarRowHeight = RowHeights.navigation
+private val SidebarGutter = Space.xs
 
 /**
  * The wide desktop sidebar: icon and label rows, so the two destinations are named without opening anything. Narrow
@@ -44,8 +46,8 @@ internal fun DesktopNavigationSidebar(
             .width(SidebarWidth)
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = SidebarGutter, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = SidebarGutter, vertical = Space.xs),
+        verticalArrangement = Arrangement.spacedBy(Space.xxs),
     ) {
         tabs.forEach { tab ->
             val selected = navigation.selectedTab == tab
@@ -57,9 +59,9 @@ internal fun DesktopNavigationSidebar(
                     .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                     .selectable(selected = selected, role = Role.Tab, onClick = { navigation.select(tab, toRoot = false) })
                     .testTag("shell-tab-${tab.name}")
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 CompositionLocalProvider(
                     LocalContentColor provides

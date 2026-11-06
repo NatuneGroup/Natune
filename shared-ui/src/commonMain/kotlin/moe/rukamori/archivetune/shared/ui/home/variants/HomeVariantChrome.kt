@@ -33,6 +33,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedGutter
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -64,8 +65,8 @@ internal fun HomeVariantChipRow(
                 .fillMaxWidth()
                 .heightIn(min = if (compact) 44.dp else 68.dp)
                 .horizontalScroll(rememberScrollState())
-                .padding(start = HomeFeedGutter, end = if (compact) HomeFeedGutter + 8.dp else HomeFeedGutter)
-                .padding(vertical = if (compact) 4.dp else 10.dp),
+                .padding(start = HomeFeedGutter, end = if (compact) HomeFeedGutter + Space.xs else HomeFeedGutter)
+                .padding(vertical = if (compact) Space.xxs else 10.dp),
     ) {
         chips.forEach { chip ->
             val selected = chip.key == selectedKey
