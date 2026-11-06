@@ -29,6 +29,7 @@ import moe.rukamori.archivetune.desktop.potoken.desktopLocalPoTokenHelper
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
+import moe.rukamori.archivetune.desktop.provider.DesktopResolvedStreamCache
 import moe.rukamori.archivetune.desktop.provider.DesktopSourceAdmissions
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
@@ -237,6 +238,10 @@ internal suspend fun assembleDesktopSessionOwners(
         search = youtubeTransport,
         signIn = { vault.snapshots.value.youTubeSignIn() },
         poTokens = poTokens,
+        // A resolved googlevideo URL is reused only for the same video, quality, account and route, and only while its
+        // own `expire` still leaves the engine room to read it.
+        cache = DesktopResolvedStreamCache(),
+        networkScope = { network.routeScope() },
     )
     // The shipped app warms BotGuard once the auth state names a session, so a cold mint never
     // lands inside a bounded tier; the same warm runs off the graph scope and stays a no-op while
