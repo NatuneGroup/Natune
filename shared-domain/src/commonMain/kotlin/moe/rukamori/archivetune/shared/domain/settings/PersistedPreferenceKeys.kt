@@ -731,3 +731,12 @@ val DeviceConnectDeviceNameKey = StringPreferenceKey("deviceConnectDeviceName")
 val DeviceConnectAllowVpnKey = BooleanPreferenceKey("deviceConnectAllowVpn")
 val DeviceConnectDefaultDeviceKey = StringPreferenceKey("deviceConnectDefaultDeviceId")
 val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevices")
+
+// Desktop window chrome. The shell paints its own Windows title bar and Linux caption unless this is on; Wayland and
+// macOS always keep the system title bar because an app-drawn caption cannot drive those compositors. AWT cannot add or
+// remove a decoration on a live window, so the desktop host mirrors this value and applies a change at the next launch.
+val DesktopSystemWindowFrameKey = BooleanPreferenceKey("desktop_system_window_frame")
+
+/** The stored window-chrome choice; unset means the shell draws its own caption. */
+val PreferenceSnapshot.desktopSystemWindowFrame: Boolean
+    get() = this[DesktopSystemWindowFrameKey, false]

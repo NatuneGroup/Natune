@@ -13,18 +13,12 @@ fun shellLayout(
     searchActive: Boolean = false,
     topLevel: Boolean = true,
     settingsRoute: Boolean = false,
-    /**
-     * The desktop host keeps one chrome on every route: the search lives in its top bar, the sidebar stays beside the
-     * page (Settings included) and the mini player stays at the bottom. Phone hosts pass false.
-     */
-    desktop: Boolean = false,
 ): ShellLayout {
     if (searchActive) return ShellLayout.Hidden
-    if (settingsRoute && !desktop) return ShellLayout.Hidden
-    // The Apple Music one-row bar is a phone geometry; the desktop keeps its sidebar whichever pill style is stored.
-    if (preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC && !desktop) return ShellLayout.CompactRow
+    if (settingsRoute) return ShellLayout.Hidden
+    // The Apple Music one-row bar is a phone geometry; every other host keeps the rail whichever pill style is stored.
+    if (preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) return ShellLayout.CompactRow
     if (television) return ShellLayout.TvRail
-    if (desktop) return ShellLayout.Rail
     if (widthDp >= 840f || preferences[TabletModeEnabledKey, false]) return ShellLayout.Rail
     val behavior = preferences.navigationBarCompactBehavior()
     val compact = when (behavior) {

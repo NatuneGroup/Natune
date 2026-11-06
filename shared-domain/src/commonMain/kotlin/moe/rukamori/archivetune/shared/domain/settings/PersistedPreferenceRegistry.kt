@@ -48,6 +48,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         DeviceConnectAllowVpnKey,
         DeviceConnectDefaultDeviceKey,
         DeviceConnectPairedDevicesKey,
+        DesktopSystemWindowFrameKey,
         TikTokMainLyricsEnabledKey,
         LibraryChipOrderKey,
         PlaylistTagOrderKey,

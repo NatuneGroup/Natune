@@ -110,9 +110,9 @@ class DesktopWindowBoundsTest {
     fun minimumSizeIsScaledOnceAndNeverExceedsTheWorkArea() {
         val minimum = DesktopWindowBounds.minimumWindowSize(laptopAt150Percent())
 
-        // 800x600 dp is 1200x900 device px at 150 %, and 900 px is still below the 1040 px work area height.
+        // 800x500 dp is 1200x750 device px at 150 %, and 750 px is still below the 1040 px work area height.
         assertEquals(1200, minimum.width)
-        assertEquals(900, minimum.height)
+        assertEquals(750, minimum.height)
     }
 
     @Test
@@ -122,8 +122,8 @@ class DesktopWindowBoundsTest {
         )
 
         assertEquals(1000, minimum.width)
-        // 600 dp at 125 % is 750 px, taller than the 728 px work area: the window must still be resizable to fit.
-        assertEquals(728, minimum.height)
+        // 500 dp at 125 % is 625 px, still inside the 728 px work area, so the layout minimum is what is applied.
+        assertEquals(625, minimum.height)
     }
 
     @Test
