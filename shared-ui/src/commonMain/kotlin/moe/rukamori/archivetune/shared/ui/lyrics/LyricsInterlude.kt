@@ -84,10 +84,14 @@ internal object LyricsInterludeMotion {
         return 1f + (END_SWELL_TO - 1f) * eased
     }
 
-    /** The dots' scale at [positionMs]: the slow breath times the end swell, so neither can restart. */
+    /**
+     * The dots' scale at [positionMs]: the slow breath times the end swell, so neither can restart.
+     * Both are motion, so reduced motion leaves the dots at their own size — a neutral 1 — instead of
+     * holding the breath still and still swelling them 1.3x into the arriving line.
+     */
     fun scale(interlude: LyricsInterlude, positionMs: Long, reduceMotion: Boolean): Float {
-        val breath = if (reduceMotion) 1f else breath(positionMs)
-        return breath * endSwell(interlude, positionMs)
+        if (reduceMotion) return 1f
+        return breath(positionMs) * endSwell(interlude, positionMs)
     }
 
     /** How visible the whole indicator is at [positionMs]. It fades in as the break starts and out before it ends. */
