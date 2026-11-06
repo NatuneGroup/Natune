@@ -115,6 +115,22 @@ app bundles the same QuickJS notice and the Apache-2.0 licence text it names as 
 from `iosApp/ArchiveTune/Notices/`.
 Each notice travels with the binary it covers.
 
+## Local PO token helper
+
+The desktop host can download and run the standalone
+[bgutil-ytdlp-pot-provider-rs](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs) server
+(`v0.8.1`, [release](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/tag/v0.8.1))
+to mint YouTube PO tokens when a build carries no BotGuard credentials. The project is
+GPL-3.0 (Copyright © jim60105 and contributors); the corresponding source is the tagged upstream
+repository.
+
+The binary is **not bundled or shipped**: `desktopApp` downloads the asset matching the host
+OS/architecture on first use from that official GitHub release, verifies it against a compiled-in
+SHA-256, and runs it only on `127.0.0.1`. The pinned digests are the release's own asset digests
+(also recomputed from the downloaded Linux x64 asset) and are recorded in
+`desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/potoken/BgutilSidecarRelease.kt`.
+Nothing in the helper path sends telemetry.
+
 ## Japanese romanization data
 
 - **Kuromoji** (Copyright © 2010–2015 Atilika Inc. and contributors, Apache-2.0): the
