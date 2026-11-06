@@ -54,6 +54,9 @@ private class FakeSettingsStore(initial: PreferenceSnapshot = PreferenceSnapshot
  */
 class SharedUpdateCheckerTest {
 
+    /** The digest the synthetic stable manifest publishes for its desktop artifact. */
+    private val stableDigest = "b1946ac92492d2347c6235b4d2611184"
+
     private fun stableProfile(installedCode: Int = 10) = UpdateInstallProfile(
         updaterAvailable = true,
         installMode = UpdateInstallMode.DIRECT_INSTALL,
@@ -70,7 +73,9 @@ class SharedUpdateCheckerTest {
           "versionName": "$tag", "versionCode": $versionCode,
           "commit": "abc123", "publishedAt": "2026-10-27T00:00:00Z",
           "releaseUrl": "", "notes": "stable notes",
-          "assets": [{"name": "natune-linux-x64-$tag.deb", "url": "https://example/$tag.deb"}]
+          "assets": [
+            {"name": "natune-linux-x64-$tag.deb", "url": "https://example/$tag.deb", "sha256": "$stableDigest"}
+          ]
         }
     """.trimIndent()
 
@@ -110,10 +115,12 @@ class SharedUpdateCheckerTest {
             assertEquals(1_000_000L, store.current()[GitHubReleasesLastCheckedAtKey])
             assertNotNull(store.current()[UpdateFeedManifestStableJsonKey])
             assertEquals(1_000_000L, store.current()[UpdateFeedManifestStableLastCheckedAtKey])
-            // The offered artifact is the direct download link for a DIRECT_INSTALL build.
+            // The offered artifact is the direct download link for a DIRECT_INSTALL build, and the
+            // feed's digest travels with the offer so the desktop installer can verify it.
             val release = checker.latestRelease(UpdateChannel.STABLE)
             assertEquals("v2.0.0", release?.tagName)
             assertEquals("https://example/v2.0.0.deb", checker.cachedOffer(UpdateChannel.STABLE)?.downloadUrl)
+            assertEquals(stableDigest, checker.cachedOffer(UpdateChannel.STABLE)?.sha256)
         } finally { client.close() }
     }
 
@@ -157,6 +164,8 @@ class SharedUpdateCheckerTest {
             val release = checker.latestRelease(UpdateChannel.STABLE)
             assertEquals("v2.0.0", release?.tagName)
             assertEquals("STABLE|v2.0.0|11", checker.cachedOffer(UpdateChannel.STABLE)?.identity)
+            // The releases API publishes no asset digest, so the offer claims none.
+            assertNull(checker.cachedOffer(UpdateChannel.STABLE)?.sha256)
         } finally { client.close() }
     }
 
