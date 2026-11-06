@@ -28,10 +28,10 @@ import moe.rukamori.archivetune.shared.ui.settings.PoTokenHelperStatus
  * object: one shared BotGuard engine whose QuickJS session, mint cache and broken state the primary
  * player walk, the InnerTubeX tier and the settings generation all share.
  *
- * A build that carries both BotGuard credentials uses that engine when `webClientPoTokenEnabled` is
- * on. Every other build (including the shipped desktop artifact, whose BotGuard keys are empty)
- * falls back to the managed local helper, which mints through the pinned `bgutil` server on
- * loopback. The helper is independent of the old web-client switch and on by default; when it is
+ * A build whose build config, environment or system properties supply both BotGuard credentials
+ * uses that engine when `webClientPoTokenEnabled` is on. Every other build (including the shipped
+ * desktop artifact, whose BotGuard keys are empty) falls back to the managed local helper, which
+ * mints through the pinned `bgutil` server on loopback. The helper is independent of the old web-client switch and on by default; when it is
  * disabled, unsupported or unavailable the owner answers null exactly as the old unconfigured path
  * did, so requests stay untokened rather than fabricating a token.
  */
@@ -55,8 +55,8 @@ internal class DesktopPoTokenOwner(
 
     private fun credentials(): PoTokenCredentials? =
         configuredCredentials?.invoke() ?: PoTokenCredentials(
-            requestKey = DesktopCredentials.value("ARCHIVETUNE_POTOKEN_REQUEST_KEY"),
-            googleApiKey = DesktopCredentials.value("ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"),
+            requestKey = DesktopCredentials.value(REQUEST_KEY_NAME),
+            googleApiKey = DesktopCredentials.value(API_KEY_NAME),
         )
 
     /** The build-secret BotGuard path is usable only when the preference is on and both keys are present. */
@@ -258,7 +258,16 @@ internal class DesktopPoTokenOwner(
             }
         }
 
+    /** Drops the minted session and the identifier cache after the network rejected a token. */
+    suspend fun invalidateAttestation() {
+        if (engineRef.isInitialized()) engine.invalidate()
+        localHelper?.clearTokens()
+    }
+
     private companion object {
+        const val REQUEST_KEY_NAME = "ARCHIVETUNE_POTOKEN_REQUEST_KEY"
+        const val API_KEY_NAME = "ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"
+
         // A fixed sanitized detail; never a credential fragment.
         const val NOT_CONFIGURED_DETAIL = "BotGuard credentials are not configured"
 

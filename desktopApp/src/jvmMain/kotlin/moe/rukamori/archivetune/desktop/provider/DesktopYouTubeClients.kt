@@ -8,6 +8,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.Url
 import io.ktor.http.contentType
 import java.util.Locale
 import kotlinx.serialization.json.Json
@@ -40,6 +41,12 @@ private const val ORIGIN_YOUTUBE_MUSIC = "https://music.youtube.com"
 private const val REFERER_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/"
 private const val REFERER_YOUTUBE_TV = "$ORIGIN_YOUTUBE/tv"
 private const val USER_AGENT_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+
+/**
+ * The user agent a fetch carries when the resolver cannot name the client that minted the URL. It is a plain desktop
+ * browser, never FFmpeg's `Lavf/...`: googlevideo treats the library agent as a bot signal.
+ */
+internal const val DEFAULT_DESKTOP_STREAM_USER_AGENT = USER_AGENT_WEB
 private const val USER_AGENT_WEB_REMIX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
 /** Bounds on attacker- or outage-controlled bodies; a real player response is far below these. */
@@ -224,31 +231,59 @@ internal object DesktopYouTubeClients {
             isEmbedded = true,
         )
 
-    /** Clients tried after the preferred one, in the shipped resolver's order. */
+    /**
+     * Clients tried after the preferred one. The order leads with the clients that need no PoToken and no sign-in.
+     * VISIONOS leads that set because its googlevideo URLs accept arbitrary bounded ranges, which the host lease
+     * needs for its 4 MiB chunked reads; ANDROID_VR 1.65.10 returns playable URLs here whose later range requests are
+     * rejected with HTTP 403, so it stays a fallback rather than the first attempt. WEB_REMIX follows for metadata
+     * continuity and for a signed-in or tokened session.
+     */
     val STREAM_FALLBACK_CLIENTS: List<DesktopYouTubeClient> =
-        listOf(VISIONOS, ANDROID_VR_1_65_10, MAIN_CLIENT, WEB, MWEB, WEB_CREATOR)
+        listOf(VISIONOS, ANDROID_VR_1_65_10, IOS, MAIN_CLIENT, WEB, MWEB, WEB_CREATOR)
 
     val AGE_GATE_BYPASS_CLIENTS: List<DesktopYouTubeClient> =
         listOf(TVHTML5_SIMPLY_EMBEDDED_PLAYER_ANONYMOUS, WEB_EMBEDDED_ANONYMOUS)
 }
 
 /**
+ * The clients that can answer a stream without a PoToken or a sign-in. They lead the walk whenever no token could be
+ * minted, because asking a token-gated client first only earns the bot check that also poisons the rest of the walk.
+ */
+private val TOKEN_FREE_CLIENT_NAMES = setOf("ANDROID_VR", "VISIONOS", "IOS")
+
+internal val DesktopYouTubeClient.isTokenFree: Boolean
+    get() = clientName.uppercase(Locale.US) in TOKEN_FREE_CLIENT_NAMES
+
+/**
  * Client order for one playback request. The preferred client leads, the last client that actually
  * played this session comes next, then the fallback set, the main client if it was not already
  * first, and the age-gate clients only when the user has opted in.
+ *
+ * Without a PoToken the walk leads with the token-free clients even when the default preferred
+ * client is WEB_REMIX, which is token-gated on most networks. A manual client choice keeps leading
+ * the walk, because that choice is the listener's explicit instruction.
  */
 internal fun streamClientOrder(
     preferred: DesktopYouTubeClient,
     lastSuccessful: DesktopYouTubeClient?,
     ageGateAllowed: Boolean,
-): List<DesktopYouTubeClient> =
-    buildList {
-        add(preferred)
-        lastSuccessful?.takeIf { it != preferred }?.let { add(it) }
+    hasPoToken: Boolean = false,
+    manualClient: Boolean = false,
+): List<DesktopYouTubeClient> {
+    val lead =
+        if (!hasPoToken && !manualClient && preferred == DesktopYouTubeClients.MAIN_CLIENT) {
+            DesktopYouTubeClients.STREAM_FALLBACK_CLIENTS.filter { it.isTokenFree }
+        } else {
+            listOf(preferred)
+        }
+    return buildList {
+        addAll(lead)
+        lastSuccessful?.takeIf { it !in lead }?.let { add(it) }
         addAll(DesktopYouTubeClients.STREAM_FALLBACK_CLIENTS)
-        if (preferred != DesktopYouTubeClients.MAIN_CLIENT) add(DesktopYouTubeClients.MAIN_CLIENT)
+        if (preferred !in lead) add(preferred)
         if (ageGateAllowed) addAll(DesktopYouTubeClients.AGE_GATE_BYPASS_CLIENTS)
     }.distinct()
+}
 
 /** Quality as the shipped resolver names it; any unknown value keeps the automatic choice. */
 internal enum class DesktopYouTubeAudioQuality {
@@ -268,18 +303,6 @@ internal enum class DesktopYouTubeAudioQuality {
             }
     }
 }
-
-/**
- * The quality ladder for one request. Each attempt is a full client walk; a lower quality is tried
- * only after the higher one produced no playable stream, matching the shipped resolver.
- */
-internal fun qualityAttempts(quality: DesktopYouTubeAudioQuality): List<DesktopYouTubeAudioQuality> =
-    when (quality) {
-        DesktopYouTubeAudioQuality.HIGHEST -> listOf(DesktopYouTubeAudioQuality.HIGHEST, DesktopYouTubeAudioQuality.HIGH, DesktopYouTubeAudioQuality.LOW)
-        DesktopYouTubeAudioQuality.HIGH -> listOf(DesktopYouTubeAudioQuality.HIGH, DesktopYouTubeAudioQuality.LOW)
-        DesktopYouTubeAudioQuality.AUTO -> listOf(DesktopYouTubeAudioQuality.AUTO, DesktopYouTubeAudioQuality.HIGH, DesktopYouTubeAudioQuality.LOW)
-        DesktopYouTubeAudioQuality.LOW -> listOf(DesktopYouTubeAudioQuality.LOW, DesktopYouTubeAudioQuality.HIGH, DesktopYouTubeAudioQuality.AUTO)
-    }.distinct()
 
 /** One audio format from a player response, or a NewPipe stream converted to the same shape. */
 internal data class DesktopAudioFormat(
@@ -308,13 +331,35 @@ internal class DesktopYouTubeBadResponseException(
 internal class DesktopYouTubeBotDetectionException(
     val videoId: String,
     val clients: Set<String>,
-) : IllegalStateException("YouTube playback bot detection blocked all stream clients")
+) : IllegalStateException(
+    "YouTube answered its bot check for $videoId; tried ${clients.sorted().joinToString(", ")}" +
+        " — sign in or enable web-client PO tokens",
+)
 
 internal class DesktopYouTubeNoPlayableResponseException(
     val videoId: String,
     val failedClients: Set<String>,
     cause: Throwable?,
-) : IllegalStateException("YouTube playback stream clients returned no playable response", cause)
+) : IllegalStateException(
+    "YouTube returned no playable stream for $videoId; tried ${failedClients.sorted().joinToString(", ")}" +
+        (cause?.let { "; last failure ${it.javaClass.simpleName}: ${it.message.sanitizedFailureDetail()}" } ?: ""),
+    cause,
+)
+
+/**
+ * The `expire` query parameter of a googlevideo URL in epoch milliseconds, or null for a URL that does not state one.
+ * The parameter is seconds since the epoch, as `PlaybackLocator.expiresAtEpochMs` expects milliseconds.
+ */
+internal fun youTubeStreamExpiryMs(url: String): Long? =
+    runCatching { Url(url).parameters["expire"]?.toLongOrNull()?.times(1_000L) }.getOrNull()
+
+/** A short, sanitized failure line: no URL query strings, no tokens, bounded length. */
+private fun String?.sanitizedFailureDetail(): String =
+    this.orEmpty()
+        .replace(Regex("""https?://\S+"""), "<url>")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+        .take(160)
 
 /**
  * Sends one `/youtubei/v1/player` request for [client]. Non-2xx answers are reported through

@@ -125,9 +125,16 @@ private fun ContentRef.directSourceId(): Pair<AudioSourceType, String>? =
         else -> null
     }
 
-/** The failure line of an occurrence no connected source resolved, naming each attempt and its result. */
+/**
+ * The failure line of an occurrence no connected source resolved, naming each attempt and its result. A failed
+ * attempt also carries the sanitized reason its resolver threw, so a bot check, a CDN status or a decipher failure
+ * reaches the dialog's message instead of the single generic sentence.
+ */
 fun unresolvedSourceReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>, host: String): String {
-    val tried = attempts.joinToString(separator = ", ") { "${it.source.name} ${it.result.name}" }
+    val tried = attempts.joinToString(separator = ", ") {
+        val detail = it.detail?.takeIf(String::isNotBlank)?.let { reason -> ": $reason" }.orEmpty()
+        "${it.source.name} ${it.result.name}$detail"
+    }
     return "no connected source resolved ${occurrence.item.ref.provider} on this $host host" +
         if (tried.isEmpty()) "" else " ($tried)"
 }

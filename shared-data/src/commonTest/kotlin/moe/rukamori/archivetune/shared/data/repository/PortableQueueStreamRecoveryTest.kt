@@ -198,11 +198,10 @@ class PortableQueueStreamRecoveryTest {
     }
 
     @Test
-    fun localTelegramYoutubeUnknownAndOutputFailuresKeepTheirOriginalErrorPolicy() = runTest(UnconfinedTestDispatcher()) {
+    fun localTelegramUnknownAndOutputFailuresKeepTheirOriginalErrorPolicy() = runTest(UnconfinedTestDispatcher()) {
         val cases = listOf(
             PlaybackLocator.LocalFile("/saved/song.flac") to PlaybackFailureReason.DECODE_FAILED,
             PlaybackLocator.TelegramFile(TelegramTrackRef(-1L, 2L, 3)) to PlaybackFailureReason.OPEN_FAILED,
-            remote(AudioSourceType.YOUTUBE, "youtube") to PlaybackFailureReason.OPEN_FAILED,
             PlaybackLocator.Remote("https://cdn.invalid/unlabelled") to PlaybackFailureReason.OPEN_FAILED,
             remote(AudioSourceType.TIDAL, "output") to PlaybackFailureReason.OUTPUT_FAILED,
         )
@@ -217,6 +216,60 @@ class PortableQueueStreamRecoveryTest {
             assertEquals(listOf(failed), h.finalFailures)
             assertEquals(1, h.loads.size)
         }
+    }
+
+    @Test
+    fun aRejectedYoutubeUrlRefreshesItsOwnSourceOnceThenFallsThrough() = runTest(UnconfinedTestDispatcher()) {
+        val h = Harness(backgroundScope, initial = remote(AudioSourceType.YOUTUBE, "expired"))
+        h.start()
+        h.observe(12_345L)
+        runCurrent()
+        h.port.failures.emit(h.failure(status = 403))
+        runCurrent()
+        assertEquals(AudioSourceType.YOUTUBE, h.locators.recoveries.single().refreshSource)
+        assertEquals(AudioSourceType.YOUTUBE, h.loads.last().request.locator.source)
+
+        // The second failure spends the remaining budget: the same source is rejected and the chain moves on.
+        h.port.failures.emit(h.failure(status = 403))
+        runCurrent()
+        assertEquals(2, h.locators.recoveries.size)
+        assertEquals(null, h.locators.recoveries.last().refreshSource)
+        assertEquals(setOf(AudioSourceType.YOUTUBE), h.locators.recoveries.last().rejectedSources)
+        assertEquals(AudioSourceType.QOBUZ, h.loads.last().request.locator.source)
+    }
+
+    @Test
+    fun everyGoneVideoStatusReResolvesTheYoutubeSource() = runTest(UnconfinedTestDispatcher()) {
+        for (status in listOf(401, 403, 404, 410, 416)) {
+            val h = Harness(backgroundScope, initial = remote(AudioSourceType.YOUTUBE, "gone-$status"))
+            h.start()
+            h.observe(5_000L)
+            runCurrent()
+            h.port.failures.emit(h.failure(status = status))
+            runCurrent()
+            assertEquals(AudioSourceType.YOUTUBE, h.locators.recoveries.single().refreshSource, "status $status")
+        }
+    }
+
+    @Test
+    fun anExpiredYoutubeLeaseIsNeverReplayedFromTheOldUrl() = runTest(UnconfinedTestDispatcher()) {
+        val expired = PlaybackLocator.Remote(
+            "https://cdn.invalid/expired",
+            source = AudioSourceType.YOUTUBE,
+            expiresAtEpochMs = 1L,
+        )
+        val h = Harness(backgroundScope, initial = expired)
+        h.start()
+        h.observe(7_000L)
+        runCurrent()
+        // The engine reports the expired lease as a decode failure with no carried status; the message is the evidence.
+        h.port.failures.emit(
+            h.failure(reason = PlaybackFailureReason.DECODE_FAILED, status = null, message = "the stream lease has expired"),
+        )
+        runCurrent()
+        assertEquals(AudioSourceType.YOUTUBE, h.locators.recoveries.single().refreshSource)
+        assertEquals(AudioSourceType.YOUTUBE, h.loads.last().request.locator.source)
+        assertNotEquals(expired, h.loads.last().request.locator)
     }
 
     @Test
@@ -297,11 +350,13 @@ class PortableQueueStreamRecoveryTest {
             )
         }
 
-        fun failure(reason: PlaybackFailureReason = PlaybackFailureReason.OPEN_FAILED): PlaybackFailure {
+        fun failure(
+            reason: PlaybackFailureReason = PlaybackFailureReason.OPEN_FAILED,
+            status: Int? = if (reason == PlaybackFailureReason.OUTPUT_FAILED) null else 403,
+            message: String = "fixture failure",
+        ): PlaybackFailure {
             val loaded = loads.last().request
-            return PlaybackFailure(loaded.occurrenceId, reason, "fixture failure",
-                httpStatus = if (reason == PlaybackFailureReason.OUTPUT_FAILED) null else 403,
-                attemptId = loaded.attemptId)
+            return PlaybackFailure(loaded.occurrenceId, reason, message, httpStatus = status, attemptId = loaded.attemptId)
         }
     }
 
