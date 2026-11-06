@@ -746,12 +746,16 @@ val desktopWindowTestClasses = listOf(
     "moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChromeTest",
 )
 val jvmTestTask = tasks.named<Test>("jvmTest")
+// `provider { }` reads the collections lazily but is not *derived from the task*, so it adds no dependency on jvmTest
+// (a `jvmTestTask.map { }` here would make desktopWindowTests depend on jvmTest and close the dependsOn cycle).
+val jvmTestClasses = provider { jvmTestTask.get().testClassesDirs }
+val jvmTestClasspath = provider { jvmTestTask.get().classpath }
 tasks.register<Test>("desktopWindowTests") {
     group = "verification"
     description = "Runs the desktop window, icon and renderer diagnostics suites in their own JVM."
     // The same compiled classes and runtime classpath as jvmTest; only the JVM instance differs.
-    testClassesDirs = files(jvmTestTask.map { it.testClassesDirs })
-    classpath = files(jvmTestTask.map { it.classpath })
+    testClassesDirs = files(jvmTestClasses)
+    classpath = files(jvmTestClasspath)
     desktopWindowTestClasses.forEach { filter.includeTestsMatching(it) }
 }
 jvmTestTask.configure {
