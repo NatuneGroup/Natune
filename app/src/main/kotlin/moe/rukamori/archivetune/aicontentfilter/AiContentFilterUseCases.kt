@@ -25,8 +25,7 @@ import moe.rukamori.archivetune.innertube.models.PodcastItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.spotify.models.SpotifyHomeFeedItem
-import moe.rukamori.archivetune.spotify.models.SpotifyTrack
+import moe.rukamori.archivetune.spotify.SpotifyHomeSectionItem
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -125,20 +124,21 @@ private fun AiChannelLists.policyFor(settings: AiContentFilterSettings): AiConte
 class FilterAiContentByCreatorNameUseCase
     @Inject
     constructor() {
-        fun spotifyTracks(
-            tracks: List<SpotifyTrack>,
+        /**
+         * A Spotify home shelf, filtered item by item: one shelf can mix albums with playlists, so
+         * each item is judged on the creator names its own kind carries rather than on the kind the
+         * shelf happens to hold most of. A shelf left with nothing is dropped by the caller.
+         */
+        fun spotifySectionItems(
+            items: List<SpotifyHomeSectionItem>,
             policy: AiContentFilterPolicy,
-        ): List<SpotifyTrack> = tracks.filterByCreatorNames(policy) { track -> track.artists.asSequence().map { it.name } }
-
-        fun spotifyFeedItems(
-            items: List<SpotifyHomeFeedItem>,
-            policy: AiContentFilterPolicy,
-        ): List<SpotifyHomeFeedItem> =
+        ): List<SpotifyHomeSectionItem> =
             items.filterByCreatorNames(policy) { item ->
                 when (item) {
-                    is SpotifyHomeFeedItem.Album -> item.artists.asSequence().map { it.name }
-                    is SpotifyHomeFeedItem.Artist -> sequenceOf(item.name)
-                    is SpotifyHomeFeedItem.Playlist -> sequenceOf(item.ownerName)
+                    is SpotifyHomeSectionItem.Track -> item.track.artists.asSequence().map { it.name }
+                    is SpotifyHomeSectionItem.Album -> item.album.artists.asSequence().map { it.name }
+                    is SpotifyHomeSectionItem.Artist -> sequenceOf(item.artist.name)
+                    is SpotifyHomeSectionItem.Playlist -> sequenceOf(item.playlist.owner?.displayName)
                 }
             }
 
