@@ -150,12 +150,20 @@ class DeviceConnectConnection(
         val proof = DeviceConnectPairing.proof(secret, "approve", role, localIdentity.installId, peerId, hash)
         handshake.awaitingPairCommit()
         listener.onPairingEnded()
-        sendPlain(DeviceMessageType.PAIR_APPROVE, PairApprovePayload(proof.toHex()))
+        sendControl(
+            DeviceMessageType.PAIR_APPROVE,
+            DeviceWireJson.json.encodeToString(PairApprovePayload.serializer(), PairApprovePayload(proof.toHex())),
+        )
     }
 
     suspend fun rejectPairing() {
         if (closed) return
-        runCatching { sendPlain(DeviceMessageType.PAIR_REJECT, PairRejectPayload("rejected")) }
+        runCatching {
+            sendControl(
+                DeviceMessageType.PAIR_REJECT,
+                DeviceWireJson.json.encodeToString(PairRejectPayload.serializer(), PairRejectPayload("rejected")),
+            )
+        }
         listener.onPairingEnded()
         closeInternal()
     }
@@ -187,7 +195,14 @@ class DeviceConnectConnection(
     }
 
     suspend fun sendBye(reason: String = "closed") {
-        if (!closed) runCatching { sendPlainOrEncrypted(DeviceMessageType.BYE, DeviceWireJson.json.encodeToString(ByePayload.serializer(), ByePayload(reason))) }
+        if (!closed) {
+            runCatching {
+                sendControl(
+                    DeviceMessageType.BYE,
+                    DeviceWireJson.json.encodeToString(ByePayload.serializer(), ByePayload(reason)),
+                )
+            }
+        }
         closeInternal()
     }
 
@@ -259,23 +274,7 @@ class DeviceConnectConnection(
                     onHelloCommit(DeviceWireJson.json.decodeFromString(HelloCommitPayload.serializer(), text))
                 DeviceMessageType.HELLO ->
                     onHello(DeviceWireJson.json.decodeFromString(HelloPayload.serializer(), text))
-                DeviceMessageType.AUTH_PROOF ->
-                    onAuthProof(DeviceWireJson.json.decodeFromString(AuthProofPayload.serializer(), text))
-                DeviceMessageType.PAIR_REQUEST ->
-                    onPairRequest(DeviceWireJson.json.decodeFromString(PairRequestPayload.serializer(), text))
-                DeviceMessageType.PAIR_APPROVE ->
-                    onPairApprove(DeviceWireJson.json.decodeFromString(PairApprovePayload.serializer(), text))
-                DeviceMessageType.PAIR_COMMIT ->
-                    onPairCommit(DeviceWireJson.json.decodeFromString(PairCommitPayload.serializer(), text))
-                DeviceMessageType.AUTH_RESULT ->
-                    onAuthResult(DeviceWireJson.json.decodeFromString(AuthResultPayload.serializer(), text))
-                DeviceMessageType.DEVICE_INFO ->
-                    onDeviceInfo(DeviceWireJson.json.decodeFromString(DeviceInfoPayload.serializer(), text))
-                DeviceMessageType.PAIR_REJECT -> {
-                    listener.onPairingEnded()
-                    fail(DeviceConnectErrorCode.NOT_ALLOWED, "The other device rejected pairing")
-                }
-                DeviceMessageType.ERROR -> onPlainError(DeviceWireJson.json.decodeFromString(ErrorPayload.serializer(), text))
+                DeviceMessageType.ERROR -> onPeerError(DeviceWireJson.json.decodeFromString(ErrorPayload.serializer(), text))
                 else -> fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Unexpected unencrypted frame")
             }
         } catch (_: IllegalArgumentException) {
@@ -285,7 +284,8 @@ class DeviceConnectConnection(
         }
     }
 
-    private suspend fun onPlainError(payload: ErrorPayload) {
+    /** A peer error closes the connection, except for the one case that means "re-pair with me". */
+    private suspend fun onPeerError(payload: ErrorPayload) {
         val error = payload.toError()
         if (error.code == DeviceConnectErrorCode.UNAUTHENTICATED && role == DeviceConnectRole.INITIATOR && !authenticated) {
             sendPairRequest()
@@ -295,8 +295,8 @@ class DeviceConnectConnection(
     }
 
     private suspend fun onEncrypted(frame: DeviceFrame) {
-        if (!authenticated) {
-            fail(DeviceConnectErrorCode.UNAUTHENTICATED, "An encrypted frame arrived before authentication")
+        if (!handshake.allowsEncrypted(frame.header.type)) {
+            fail(DeviceConnectErrorCode.INVALID_MESSAGE, "An encrypted frame arrived out of order")
             return
         }
         val nonce = frame.nonce ?: return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Encrypted frame without a nonce")
@@ -309,6 +309,16 @@ class DeviceConnectConnection(
             ?: return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "An encrypted frame was not UTF-8")
         try {
             when (frame.header.type) {
+                DeviceMessageType.AUTH_PROOF ->
+                    onAuthProof(DeviceWireJson.json.decodeFromString(AuthProofPayload.serializer(), text))
+                DeviceMessageType.PAIR_REQUEST ->
+                    onPairRequest(DeviceWireJson.json.decodeFromString(PairRequestPayload.serializer(), text))
+                DeviceMessageType.PAIR_APPROVE ->
+                    onPairApprove(DeviceWireJson.json.decodeFromString(PairApprovePayload.serializer(), text))
+                DeviceMessageType.PAIR_COMMIT ->
+                    onPairCommit(DeviceWireJson.json.decodeFromString(PairCommitPayload.serializer(), text))
+                DeviceMessageType.AUTH_RESULT ->
+                    onAuthResult(DeviceWireJson.json.decodeFromString(AuthResultPayload.serializer(), text))
                 DeviceMessageType.PLAYBACK -> onSyncPayload(plaintext)
                 DeviceMessageType.PLAYBACK_CHUNK ->
                     onPlaybackChunk(DeviceWireJson.json.decodeFromString(PlaybackChunkPayload.serializer(), text))
@@ -325,10 +335,12 @@ class DeviceConnectConnection(
                 }
                 DeviceMessageType.PONG -> Unit
                 DeviceMessageType.BYE -> closeInternal()
-                DeviceMessageType.ERROR -> {
-                    val error = DeviceWireJson.json.decodeFromString(ErrorPayload.serializer(), text).toError()
-                    fail(error.code, error.message)
+                DeviceMessageType.PAIR_REJECT -> {
+                    listener.onPairingEnded()
+                    fail(DeviceConnectErrorCode.NOT_ALLOWED, "The other device rejected pairing")
                 }
+                DeviceMessageType.ERROR ->
+                    onPeerError(DeviceWireJson.json.decodeFromString(ErrorPayload.serializer(), text))
                 DeviceMessageType.DEVICE_INFO ->
                     onDeviceInfo(DeviceWireJson.json.decodeFromString(DeviceInfoPayload.serializer(), text))
                 else -> fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Unexpected encrypted frame")
@@ -456,7 +468,7 @@ class DeviceConnectConnection(
         val peerId = peerDeviceId ?: return
         val hash = transcript ?: return
         val proof = DeviceConnectPairing.proof(secret, "auth", role, localIdentity.installId, peerId, hash)
-        sendPlain(
+        sendEncrypted(
             DeviceMessageType.AUTH_PROOF,
             AuthProofPayload(role.wire, localIdentity.installId, peerId, proof.toHex()),
         )
@@ -468,7 +480,7 @@ class DeviceConnectConnection(
         val peerId = peerDeviceId ?: return
         val sas = DeviceConnectPairing.sas(secret)
         if (!handshake.awaitingPairApproval(nowEpochMs())) return
-        sendPlain(DeviceMessageType.PAIR_REQUEST, PairRequestPayload(sas, true, localIdentity.installId))
+        sendEncrypted(DeviceMessageType.PAIR_REQUEST, PairRequestPayload(sas, true, localIdentity.installId))
         listener.onPairingPrompt(
             DevicePairingPrompt(
                 peerId = peerId,
@@ -482,6 +494,9 @@ class DeviceConnectConnection(
     }
 
     private suspend fun onAuthProof(payload: AuthProofPayload) {
+        if (!handshake.canAcceptAuthProof()) {
+            return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "An authentication proof arrived out of order")
+        }
         val peerId = peerDeviceId ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No peer")
         val hash = transcript ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No transcript")
         if (payload.senderId != peerId || payload.receiverId != localIdentity.installId || payload.role != role.peer().wire) {
@@ -491,7 +506,10 @@ class DeviceConnectConnection(
         if (secret == null) {
             // The peer kept a grant we no longer have. Tell it to re-pair; it answers with a pair request.
             if (role == DeviceConnectRole.RESPONDER) {
-                sendPlain(DeviceMessageType.ERROR, ErrorPayload(DeviceConnectErrorCode.UNAUTHENTICATED.name, "re-pair"))
+                sendControl(
+                    DeviceMessageType.ERROR,
+                    DeviceWireJson.json.encodeToString(ErrorPayload.serializer(), ErrorPayload(DeviceConnectErrorCode.UNAUTHENTICATED.name, "re-pair")),
+                )
             }
             return
         }
@@ -506,6 +524,7 @@ class DeviceConnectConnection(
 
     private suspend fun onPairRequest(payload: PairRequestPayload) {
         if (role != DeviceConnectRole.RESPONDER) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Only the responder approves a pair request")
+        if (!handshake.canAcceptPairRequest()) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "A pair request arrived out of order")
         val peerId = peerDeviceId ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No peer")
         if (payload.senderId != peerId) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "The request named another peer")
         val secret = newPairSecret ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No pair secret")
@@ -528,6 +547,7 @@ class DeviceConnectConnection(
 
     private suspend fun onPairApprove(payload: PairApprovePayload) {
         if (role != DeviceConnectRole.INITIATOR) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Only the initiator accepts approval")
+        if (!handshake.canAcceptPairApprove()) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "A pairing approval arrived out of order")
         val peerId = peerDeviceId ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No peer")
         val hash = transcript ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No transcript")
         val secret = newPairSecret ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No pair secret")
@@ -536,14 +556,15 @@ class DeviceConnectConnection(
         if (!DeviceConnectPairing.verify(expected, proof)) {
             return fail(DeviceConnectErrorCode.SAS_MISMATCH, "The approval proof did not verify")
         }
+        if (!handshake.awaitingPairCommit()) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Unexpected pair approval")
         storeGrant()
         val commit = DeviceConnectPairing.proof(secret, "commit", role, localIdentity.installId, peerId, hash)
-        handshake.awaitingPairCommit()
-        sendPlain(DeviceMessageType.PAIR_COMMIT, PairCommitPayload(commit.toHex()))
+        sendEncrypted(DeviceMessageType.PAIR_COMMIT, PairCommitPayload(commit.toHex()))
     }
 
     private suspend fun onPairCommit(payload: PairCommitPayload) {
         if (role != DeviceConnectRole.RESPONDER) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Only the responder accepts a commit")
+        if (!handshake.canAcceptPairCommit()) return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "A pair commitment arrived out of order")
         val peerId = peerDeviceId ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No peer")
         val hash = transcript ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No transcript")
         val secret = newPairSecret ?: return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "No pair secret")
@@ -553,20 +574,26 @@ class DeviceConnectConnection(
             return fail(DeviceConnectErrorCode.SAS_MISMATCH, "The commit proof did not verify")
         }
         storeGrant()
-        sendPlain(DeviceMessageType.AUTH_RESULT, AuthResultPayload(ok = true))
+        // The result is the responder's confirmation, so it only travels sealed; the initiator accepts it
+        // solely from the pair-commit phase, after it verified the approval proof that bound the same secret.
+        sendEncrypted(DeviceMessageType.AUTH_RESULT, AuthResultPayload(ok = true))
         markAuthenticated()
     }
 
     private suspend fun onAuthResult(payload: AuthResultPayload) {
+        if (role != DeviceConnectRole.INITIATOR || !handshake.canAcceptAuthResult()) {
+            return fail(DeviceConnectErrorCode.INVALID_MESSAGE, "An authentication result arrived out of order")
+        }
         if (!payload.ok) return fail(DeviceConnectErrorCode.UNAUTHENTICATED, payload.error ?: "The other device refused authentication")
         markAuthenticated()
     }
 
     private fun onDeviceInfo(payload: DeviceInfoPayload) {
+        if (!authenticated) return fail(DeviceConnectErrorCode.UNAUTHENTICATED, "Device info arrived before authentication")
         if (peerDeviceId != null && payload.deviceId != peerDeviceId) return
         peerInfo = payload
         listener.onPeerInfo(payload)
-        if (authenticated) listener.onAuthenticated(payload)
+        listener.onAuthenticated(payload)
     }
 
     private suspend fun storeGrant() {
@@ -585,8 +612,17 @@ class DeviceConnectConnection(
         storedSecret = secret
     }
 
+    /**
+     * The single door to the authenticated state. Every caller has already verified a proof against the
+     * pairing secret and the transcript, and the phase check is the second lock: a hello-level peer that
+     * only completed the key exchange can never reach this method.
+     */
     private fun markAuthenticated() {
         if (authenticated) return
+        if (!handshake.canAuthenticate()) {
+            fail(DeviceConnectErrorCode.INVALID_MESSAGE, "The connection tried to authenticate out of order")
+            return
+        }
         authenticated = true
         handshake.authenticated()
         listener.onPairingEnded()
@@ -708,8 +744,16 @@ class DeviceConnectConnection(
         }
     }
 
-    private suspend fun sendPlainOrEncrypted(type: DeviceMessageType, payload: String) {
-        if (authenticated) sendEncryptedBytes(type, payload.encodeToByteArray()) else sendPlainText(type, payload)
+    /**
+     * Seals a control frame as soon as the key exchange finished. Only the hello commitment exchange runs
+     * before the keys exist; after that the connection never writes a readable frame.
+     */
+    private suspend fun sendControl(type: DeviceMessageType, payload: String) {
+        if (keys != null && transcript != null) {
+            sendEncryptedBytes(type, payload.encodeToByteArray())
+        } else {
+            sendPlainText(type, payload)
+        }
     }
 
     private fun nextSequence(): Long {
@@ -726,7 +770,7 @@ class DeviceConnectConnection(
         listener.onFailure(DeviceConnectError(code, message))
         scope.launch {
             runCatching {
-                sendPlainOrEncrypted(
+                sendControl(
                     DeviceMessageType.ERROR,
                     DeviceWireJson.json.encodeToString(ErrorPayload.serializer(), ErrorPayload(code.name, message)),
                 )

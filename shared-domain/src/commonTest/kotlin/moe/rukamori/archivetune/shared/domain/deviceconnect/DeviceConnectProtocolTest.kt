@@ -191,6 +191,78 @@ class DeviceConnectStateMachineTest {
         assertFalse(state.pairingExpired(1_000 + DeviceConnectLimits.PAIRING_TIMEOUT_MS))
         assertTrue(state.pairingExpired(1_001 + DeviceConnectLimits.PAIRING_TIMEOUT_MS))
     }
+
+    @Test
+    fun nothingButTheHelloTravelsInTheClear() {
+        val state = DeviceHandshakeState(DeviceConnectRole.INITIATOR)
+        assertTrue(state.allowsPlainText(DeviceMessageType.HELLO_COMMIT))
+        state.onHelloCommit()
+        assertTrue(state.allowsPlainText(DeviceMessageType.HELLO))
+        state.onHello("0123456789abcdef")
+        val forbidden = listOf(
+            DeviceMessageType.HELLO,
+            DeviceMessageType.AUTH_PROOF,
+            DeviceMessageType.PAIR_REQUEST,
+            DeviceMessageType.PAIR_APPROVE,
+            DeviceMessageType.PAIR_COMMIT,
+            DeviceMessageType.AUTH_RESULT,
+            DeviceMessageType.DEVICE_INFO,
+            DeviceMessageType.PLAYBACK,
+            DeviceMessageType.PLAYBACK_CHUNK,
+            DeviceMessageType.PING,
+            DeviceMessageType.ERROR,
+        )
+        for (type in forbidden) assertFalse(state.allowsPlainText(type), "$type must be sealed")
+    }
+
+    @Test
+    fun theInitiatorAcceptsTheAuthResultOnlyAfterItsOwnCommit() {
+        val state = DeviceHandshakeState(DeviceConnectRole.INITIATOR)
+        state.onHelloCommit()
+        state.onHello("0123456789abcdef")
+        // The key exchange alone must not be enough: no pairing step has happened yet.
+        assertTrue(state.canAuthenticate())
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
+        assertFalse(state.canAcceptAuthResult())
+        assertTrue(state.allowsEncrypted(DeviceMessageType.AUTH_PROOF))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_REQUEST))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PLAYBACK))
+        assertTrue(state.awaitingPairApproval(1_000))
+        assertTrue(state.canAcceptPairApprove())
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_APPROVE))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_COMMIT))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
+        assertTrue(state.awaitingPairCommit())
+        assertTrue(state.canAcceptAuthResult())
+        assertTrue(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
+        assertFalse(state.canAcceptPairCommit())
+        state.authenticated()
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PLAYBACK))
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PING))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_PROOF))
+        assertFalse(state.allowsPlainText(DeviceMessageType.PLAYBACK))
+    }
+
+    @Test
+    fun theResponderAcceptsOnlyTheCommitItAskedFor() {
+        val state = DeviceHandshakeState(DeviceConnectRole.RESPONDER)
+        state.onHelloCommit()
+        state.onHello("0123456789abcdef")
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_REQUEST))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_COMMIT))
+        assertFalse(state.canAcceptPairCommit())
+        assertFalse(state.canAcceptAuthResult())
+        assertTrue(state.awaitingPairApproval(1_000))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PAIR_APPROVE))
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_REJECT))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.AUTH_RESULT))
+        assertTrue(state.awaitingPairCommit())
+        assertTrue(state.canAcceptPairCommit())
+        assertFalse(state.canAcceptAuthResult())
+        assertTrue(state.allowsEncrypted(DeviceMessageType.PAIR_COMMIT))
+        assertFalse(state.allowsEncrypted(DeviceMessageType.PLAYBACK))
+    }
 }
 
 class DeviceCommandPolicyTest {
