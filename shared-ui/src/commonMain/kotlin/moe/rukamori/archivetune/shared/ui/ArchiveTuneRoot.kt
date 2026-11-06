@@ -30,6 +30,8 @@ import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
 import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
+import moe.rukamori.archivetune.shared.ui.theme.artworkPaletteSeed
+import moe.rukamori.archivetune.shared.ui.theme.artworkSurfaceScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.savedPaletteSeed
 import org.jetbrains.compose.resources.stringResource
@@ -225,14 +227,22 @@ private fun ArchiveTuneLoadedRoot(
         val policy = opticalPolicy(preferences, opticalCapabilities, resumed, visible,
             playerExpanded = expanded, lyricsExpanded = expanded && interaction.fullscreenLyrics)
         val darkTheme = darkThemeFor(preferences[DarkModeKey], systemDark)
-        // A palette is rebuilt only when its seed, style or dark flag changes. Without a saved palette the scheme is
-        // the default one, so the default look does not change.
+        val nativeState by host.playerControls.state.collectAsState()
+        // A palette is rebuilt only when its seed, style or dark flag changes. On desktop, with Dynamic theme on and no
+        // saved custom colour, the current sleeve seeds the scheme so the page, rail and top bar carry its tonal family;
+        // turning Dynamic theme off (or a host with no artwork palette) keeps the default scheme unchanged.
         val paletteSeed = preferences.savedPaletteSeed()
         val paletteStyle = preferences.themePaletteStyle()
-        val colorScheme = remember(paletteSeed, paletteStyle, darkTheme) {
-            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) } ?: archiveTuneDefaultColorScheme(darkTheme)
+        val artworkSeed = if (desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null) {
+            artworkPaletteSeed(nativeState.palette)
+        } else {
+            null
         }
-        val nativeState by host.playerControls.state.collectAsState()
+        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme) {
+            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
+                ?: artworkSurfaceScheme(artworkSeed, darkTheme, paletteStyle)
+                ?: archiveTuneDefaultColorScheme(darkTheme)
+        }
         var rememberedMute by remember { mutableStateOf<Float?>(null) }
         fun handleKeymap(action: KeymapAction): Boolean {
             val player = host.queue.player
