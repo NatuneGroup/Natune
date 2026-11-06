@@ -17,6 +17,8 @@ import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.data.deviceconnect.DeviceConnectConnection
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceConnectRole
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DeviceIdentity
+import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePairGrant
+import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePairInfo
 import moe.rukamori.archivetune.shared.domain.deviceconnect.DevicePlatform
 
 class DeviceConnectHandshakeTest {
@@ -124,6 +126,62 @@ class DeviceConnectHandshakeTest {
             )
             a3.close()
             b3.close()
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * Only the responder kept a grant: the initiator asks to pair and the responder answers the hello
+     * with its stored-secret proof. That proof is unverifiable on both sides, so it must be ignored
+     * instead of closing the connection, and pairing must still finish after the user approves it.
+     */
+    @Test
+    fun aResponderThatKeptTheGrantStillPairsWithADeviceThatLostIt() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val staleSecret = ByteArray(32) { 7 }
+            val pairsA = MemoryPairRepository()
+            val pairsB = MemoryPairRepository()
+            pairsB.save(
+                DevicePairGrant(
+                    DevicePairInfo(identityA.installId, "Laptop", DevicePlatform.DESKTOP),
+                    staleSecret,
+                ),
+            )
+            val listenerA = RecordingListener()
+            val listenerB = RecordingListener()
+            val (channelA, channelB) = loopbackChannels(scope)
+            val a = DeviceConnectConnection(
+                DeviceConnectRole.INITIATOR, identityA, JvmDeviceCrypto(), pairsA, channelA, scope, "Phone", listener = listenerA,
+            )
+            val b = DeviceConnectConnection(
+                DeviceConnectRole.RESPONDER, identityB, JvmDeviceCrypto(), pairsB, channelB, scope, "Laptop", listener = listenerB,
+            )
+            a.start()
+            b.start()
+            val promptA = awaitPrompt(listenerA)
+            val promptB = awaitPrompt(listenerB)
+            assertEquals(promptA.code, promptB.code)
+            assertTrue(promptA.isRequester)
+            assertFalse(promptB.isRequester)
+            // The responder writes its stored-grant proof from its own hello, so it has crossed the wire
+            // before the pair request is answered. The initiator must ignore it: no failure, no close
+            // and no authentication may come out of it.
+            delay(300)
+            assertNull(listenerA.failures.tryReceive().getOrNull())
+            assertNull(listenerB.failures.tryReceive().getOrNull())
+            assertNull(listenerA.authenticated)
+            assertNull(listenerB.authenticated)
+            assertFalse(listenerA.closed)
+            b.approvePairing()
+            awaitAuthenticated(listenerA, listenerB)
+            val newSecretA = assertNotNull(pairsA.secret(identityB.installId))
+            val newSecretB = assertNotNull(pairsB.secret(identityA.installId))
+            assertContentEquals(newSecretA, newSecretB)
+            assertFalse(newSecretA.contentEquals(staleSecret), "the stale grant must be replaced by the pairing")
+            a.close()
+            b.close()
         } finally {
             scope.cancel()
         }
