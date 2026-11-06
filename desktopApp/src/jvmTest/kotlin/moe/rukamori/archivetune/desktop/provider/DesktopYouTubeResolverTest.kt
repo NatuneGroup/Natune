@@ -47,7 +47,8 @@ class DesktopYouTubeResolverTest {
         val bodies = mutableListOf<String>()
         val calls = mutableListOf<String>()
         val http = HttpClient(MockEngine { call ->
-            if (call.url.encodedPath.endsWith("/visitor")) return@MockEngine respond("{}")
+            // The visitor fetch is a GET to sw.js_data, not a player request; only player posts are recorded.
+            if (!call.url.encodedPath.endsWith("/player")) return@MockEngine respond("{}")
             val client = call.headers["X-YouTube-Client-Name"].orEmpty()
             calls += client
             bodies += (call.body as? TextContent)?.text.orEmpty()
@@ -107,7 +108,7 @@ class DesktopYouTubeResolverTest {
     @Test
     fun aBotCheckedWalkNamesTheCheckAndTheClientsItTried() = runBlocking<Unit> {
         val http = HttpClient(MockEngine { call ->
-            if (call.url.encodedPath.endsWith("/visitor")) return@MockEngine respond("{}")
+            if (!call.url.encodedPath.endsWith("/player")) return@MockEngine respond("{}")
             respond(
                 playerBody(status = "LOGIN_REQUIRED", reason = "Sign in to confirm you're not a bot", formats = ""),
                 HttpStatusCode.OK,
