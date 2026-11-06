@@ -231,7 +231,7 @@ object KeyboardShortcuts {
         add(
             ShortcutEntry(
                 KeymapAction.Queue, ShortcutGroup.VIEW, Res.string.shortcut_action_queue,
-                listOf(ShortcutChord(Key.Q, "Q", alt = true, shift = true)),
+                listOf(ShortcutChord(Key.Q, "Q"), ShortcutChord(Key.Q, "Q", alt = true, shift = true)),
             ),
         )
         add(
@@ -261,6 +261,8 @@ object KeyboardShortcuts {
                 listOf(
                     ShortcutChord(Key.Slash, "/", primary = true),
                     ShortcutChord(Key.Slash, "?", primary = true, shift = true),
+                    // The desktop reference app opens its shortcut sheet with Ctrl+`; both chords stay in this one table.
+                    ShortcutChord(Key.Grave, "`", primary = true),
                 ),
             ),
         )
