@@ -181,6 +181,9 @@ private val LyricsSwipeStartRegion = 144.dp
 private const val MovingBlurDriftScale = 2.4f
 private val LyricsSwipeDismissThreshold = 96.dp
 
+/** The sheet's one side inset: header, pane, transport and chrome row share it. */
+private val LyricsSheetSidePadding = 16.dp
+
 /**
  * Plumbs the lyrics-scroll signal up from [LyricsEnhanced] / [LyricsV2] (which own the
  * LazyListState internally) to [LyricsScreen] without changing every signature along the way.
@@ -549,13 +552,11 @@ fun LyricsScreen(
 
     var showAnchoredLyricsMenu by remember { mutableStateOf(false) }
     var lyricsMenuAnchor by remember { mutableStateOf(Rect.Zero) }
-    var headerMoreBounds by remember { mutableStateOf(Rect.Zero) }
     var controlsMoreBounds by remember { mutableStateOf(Rect.Zero) }
     val openLyricsMenu: (Rect) -> Unit = { anchor ->
         lyricsMenuAnchor = anchor
         showAnchoredLyricsMenu = true
     }
-    val openLyricsMenuFromHeader = { openLyricsMenu(headerMoreBounds) }
     val openLyricsMenuFromControls = { openLyricsMenu(controlsMoreBounds) }
 
     // Feeds the quality badge in the controls bar, the same source the players read.
@@ -696,15 +697,10 @@ fun LyricsScreen(
                 AppleMusicTrackHeader(
                     mediaMetadata = mediaMetadata,
                     foregroundColor = foregroundColor,
-                    onMoreClick = openLyricsMenuFromHeader,
-                    onMorePositioned = { headerMoreBounds = it },
-                    onDismissClick = onBackClick,
-                    isLiked = currentSongLiked,
-                    onToggleLike = playerConnection::toggleLike,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = LyricsSheetSidePadding),
                 )
 
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -811,7 +807,7 @@ fun LyricsScreen(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 20.dp),
+                                    .padding(horizontal = LyricsSheetSidePadding),
                         )
                     }
                 }
@@ -824,10 +820,12 @@ fun LyricsScreen(
                     onOverflowClick = openLyricsMenuFromControls,
                     onOverflowPositioned = { controlsMoreBounds = it },
                     onCloseClick = onBackClick,
+                    isLiked = currentSongLiked,
+                    onToggleLike = playerConnection::toggleLike,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 2.dp),
+                            .padding(horizontal = LyricsSheetSidePadding, vertical = 2.dp),
                 )
             }
         }
@@ -1252,7 +1250,7 @@ private fun AppleMusicLyricsPane(
         modifier =
             modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = LyricsSheetSidePadding),
         textColorOverride = foregroundColor,
     )
 }

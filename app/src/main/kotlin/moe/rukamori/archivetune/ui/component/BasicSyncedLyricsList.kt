@@ -291,11 +291,13 @@ private fun BasicSyncedLyricLine(
     )
     val depthAlpha by animateFloatAsState(depth.alpha, depthSpec, label = "enhanced-depth-alpha")
     val depthScale by animateFloatAsState(depth.scale, depthSpec, label = "enhanced-depth-scale")
-    val depthBlur by animateFloatAsState(
-        if (blurAllowed) depth.blurDp else 0f,
-        depthSpec,
-        label = "enhanced-depth-blur",
-    )
+    // The distance veil is a whole-row soften, not a motion: it is read straight from the row's
+    // depth instead of being animated. `Modifier.blur` builds a RenderEffect for the radius it is
+    // given, so an animated radius rebuilt one effect per row per frame for the whole length of a
+    // line change — the construct that made ArchiveTune's sweep read as 30 fps on a 60 Hz panel.
+    // The veil still arrives with the line change (depth is part of the row's state) and still
+    // lifts while the user scrolls or reads the sung line.
+    val depthBlur = if (blurAllowed) depth.blurDp else 0f
     // The quick pop the sung line takes on activation; reduced motion keeps the line's size.
     val activePop by animateFloatAsState(
         targetValue = if (isActive && !animationsDisabled) ACTIVE_POP_SCALE else 1f,
@@ -324,7 +326,7 @@ private fun BasicSyncedLyricLine(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                .padding(horizontal = 24.dp, vertical = 6.dp)
+                .padding(horizontal = LYRIC_ROW_SIDE_PADDING, vertical = LYRIC_ROW_VERTICAL_PADDING)
                 // The scale grows from the aligned edge so a start-aligned line does not drift sideways. Scale, fade and
                 // the glide are read in the draw phase, so a frame of them does not recompose the row.
                 .graphicsLayer {
@@ -434,7 +436,15 @@ private const val SECONDARY_LINE_ALPHA = 0.6f
 
 /** The one animated scroll speed of a line change: a fixed ease-in-out over [AUTO_SCROLL_MS]. */
 private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
-private val LINE_SPACING = 4.dp
+/**
+ * The gap between two lyric lines. It is the spacing *plus* twice the row's vertical padding, because a
+ * row's padding is what actually separates its text from the next line's: 2 + 4 + 4 = 10 dp, against the
+ * 16 dp the maintainer called too airy. The list's own side inset (the pane's) is not repeated here, so
+ * the rows are 12 dp in from a 16 dp pane rather than 24 dp inside a 24 dp pane.
+ */
+private val LINE_SPACING = 2.dp
+private val LYRIC_ROW_VERTICAL_PADDING = 4.dp
+private val LYRIC_ROW_SIDE_PADDING = 12.dp
 
 /** The mark a machine-made translation carries. */
 private const val AUTO_CREATED_MARK = "✦ "
@@ -452,7 +462,7 @@ private fun EnhancedCreditsFooter(
     if (credits.isEmpty) return
     val autoCreated = credits.translationAutoCreated || credits.transliterationAutoCreated
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+        Modifier.fillMaxWidth().padding(horizontal = LYRIC_ROW_SIDE_PADDING, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (credits.songwriters.isNotEmpty()) {

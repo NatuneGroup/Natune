@@ -1,8 +1,6 @@
 package moe.rukamori.archivetune.ui.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,26 +12,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -46,63 +37,47 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.MarqueeText
 
 /**
- * The width budget of the lyrics header. The row is one line holding the artwork tile, the track's
- * title and artist, and three 48 dp targets. The tap targets stay 48 dp — they are the accessibility
- * floor — so the row's room comes from the gaps between them (none: the three read as one group), the
- * gap to the artwork, and the sheet's own side padding. What is left is the title/artist column, and a
- * title that does not fit one line is allowed a second one rather than being cut off (see
- * [LyricsHeaderTitle]); the artwork is a share of the row so a phone gets a tile that reads as artwork
- * instead of a thumbnail.
+ * The width budget of the lyrics header. The row is one line holding the artwork tile and the track's
+ * title and artist — and nothing else. The close, favourite and lyric-menu controls are not in this
+ * row: they are the sheet's chrome and live in its own row below the transport
+ * (`LyricsScreenFooter`), which is what gives the title the width it needs. Three 48 dp targets in
+ * this row left a phone about 100 dp for a name, and the name is what the row is for.
+ *
+ * What is left is the title/artist column, and a title that does not fit one line is allowed a second
+ * one rather than being cut off (see [LyricsHeaderTitle]); the artwork is a share of the row so a
+ * phone gets a tile that reads as artwork instead of a thumbnail.
  */
 internal object LyricsHeaderMetrics {
     /** The artwork tile's share of the row, clamped so it stays artwork and never a thumbnail. */
-    const val ARTWORK_SHARE = 0.20f
-    const val ARTWORK_MIN_DP = 56f
-    const val ARTWORK_MAX_DP = 84f
+    const val ARTWORK_SHARE = 0.28f
+    const val ARTWORK_MIN_DP = 72f
+    const val ARTWORK_MAX_DP = 104f
 
     /** The gap between the artwork and the title/artist column. */
-    const val ARTWORK_GAP_DP = 8f
+    const val ARTWORK_GAP_DP = 12f
 
-    /** The gap between the title/artist column and the button group. */
-    const val TRACK_GAP_DP = 4f
-
-    /** One icon button's tap target; the filled circle drawn inside it is smaller. */
-    const val ICON_TARGET_DP = 48f
-
-    /** The gap between two icon buttons: none, so the three read as one group at the row's end. */
-    const val BUTTON_GAP_DP = 0f
-
-    /** Close, favourite and overflow: the three controls the lyrics header always carries. */
-    const val BUTTON_COUNT = 3
-
-    /** The header row's end-to-end chrome, in dp, with the title and artist column left out. */
-    const val CHROME_DP =
-        ARTWORK_GAP_DP + TRACK_GAP_DP + ICON_TARGET_DP * BUTTON_COUNT + BUTTON_GAP_DP * (BUTTON_COUNT - 1)
+    /** This row's end-to-end chrome, in dp, with the title and artist column left out. */
+    const val CHROME_DP = ARTWORK_GAP_DP
 
     /** The artwork tile's edge for a row [rowWidthDp] wide. */
     fun artworkSize(rowWidthDp: Float): Float =
         (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
 
-    /** The width the title and artist keep once the artwork, its gaps and the buttons are taken out. */
+    /** The width the title and artist keep once the artwork and its gap are taken out. */
     fun textWidth(rowWidthDp: Float): Float =
         (rowWidthDp - artworkSize(rowWidthDp) - CHROME_DP).coerceAtLeast(0f)
 }
 
 /**
- * The lyrics sheet's header: the track's artwork, its title and artist, and the close, favourite and
- * overflow buttons. The sizes come from [LyricsHeaderMetrics] so the text column is measured against
- * the row's real width instead of against whatever three fixed targets leave over.
+ * The lyrics sheet's header: the track's artwork, its title and artist. The sizes come from
+ * [LyricsHeaderMetrics] so the text column is measured against the row's real width. The sheet's
+ * controls are not drawn here — see `LyricsScreenFooter`.
  */
 @Composable
 internal fun AppleMusicTrackHeader(
     mediaMetadata: MediaMetadata,
     foregroundColor: Color,
-    onMoreClick: () -> Unit,
-    onDismissClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    isLiked: Boolean = false,
-    onToggleLike: () -> Unit = {},
-    onMorePositioned: ((Rect) -> Unit)? = null,
 ) {
     val artistText =
         remember(mediaMetadata.id, mediaMetadata.artists) {
@@ -152,34 +127,6 @@ internal fun AppleMusicTrackHeader(
                     color = foregroundColor.copy(alpha = 0.72f),
                 )
             }
-
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.TRACK_GAP_DP.dp))
-
-            // Close (cross) button: the lyrics sheet is dismissed without the system back gesture.
-            // It sits to the left of the favourite and overflow buttons, as upstream's lyrics bar does.
-            AppleMusicHeaderIconButton(
-                iconRes = R.drawable.close,
-                contentDescription = stringResource(R.string.close),
-                foregroundColor = foregroundColor,
-                onClick = onDismissClick,
-            )
-
-            AppleMusicHeaderIconButton(
-                iconRes = if (isLiked) R.drawable.player_favorite else R.drawable.player_favorite_border,
-                contentDescription = stringResource(
-                    if (isLiked) R.string.action_remove_like else R.string.action_like,
-                ),
-                foregroundColor = foregroundColor,
-                onClick = onToggleLike,
-            )
-
-            AppleMusicHeaderIconButton(
-                iconRes = R.drawable.player_more_horiz,
-                contentDescription = stringResource(R.string.more_options),
-                foregroundColor = foregroundColor,
-                onClick = onMoreClick,
-                onPositioned = onMorePositioned,
-            )
         }
     }
 }
@@ -220,52 +167,6 @@ private fun LyricsHeaderTitle(
             )
         } else {
             MarqueeText(text = title, style = style, color = color)
-        }
-    }
-}
-
-@Composable
-private fun AppleMusicHeaderIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    foregroundColor: Color,
-    onClick: () -> Unit,
-    onPositioned: ((Rect) -> Unit)? = null,
-) {
-    val target = LyricsHeaderMetrics.ICON_TARGET_DP.dp
-    Box(
-        modifier =
-            Modifier
-                .size(target)
-                .let { base ->
-                    if (onPositioned != null) {
-                        base.onGloballyPositioned { coords -> onPositioned(coords.boundsInRoot()) }
-                    } else {
-                        base
-                    }
-                }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = false, radius = target / 2),
-                    role = Role.Button,
-                    onClick = onClick,
-                ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(target * 0.75f)
-                    .clip(CircleShape)
-                    .background(foregroundColor.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription,
-                tint = foregroundColor,
-                modifier = Modifier.fillMaxSize(0.61f),
-            )
         }
     }
 }

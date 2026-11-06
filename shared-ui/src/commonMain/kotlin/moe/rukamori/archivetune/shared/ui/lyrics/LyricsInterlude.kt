@@ -68,18 +68,26 @@ internal object LyricsInterludeMotion {
 
     /** Over the last [END_SWELL_MS] of the break the dots swell toward the arriving line. */
     const val END_SWELL_MS = 1_500L
-    const val END_SWELL_FROM = 1.05f
     const val END_SWELL_TO = 1.3f
 
     /**
-     * The anticipation swell, from [END_SWELL_FROM] to [END_SWELL_TO] over the last [END_SWELL_MS] of
-     * the break, and 0 before it, so the dots grow just as the next line is about to start.
+     * The anticipation swell as a *share of the breath*: exactly 1 everywhere outside the last
+     * [END_SWELL_MS] of the break, easing to [END_SWELL_TO] as the next line arrives. A factor of 1 is
+     * neutral in a product, so the curve leaves and re-enters the breath without a jump — a `maxOf`
+     * against a function that started above 1 snapped the dots larger on the frame its window opened.
      */
     fun endSwell(interlude: LyricsInterlude, positionMs: Long): Float {
         val remaining = interlude.endMs - positionMs
-        if (remaining <= 0L || remaining > END_SWELL_MS) return 0f
+        if (remaining <= 0L || remaining > END_SWELL_MS) return 1f
         val through = 1f - remaining.toFloat() / END_SWELL_MS
-        return END_SWELL_FROM + (END_SWELL_TO - END_SWELL_FROM) * through
+        val eased = through * through * (3f - 2f * through)
+        return 1f + (END_SWELL_TO - 1f) * eased
+    }
+
+    /** The dots' scale at [positionMs]: the slow breath times the end swell, so neither can restart. */
+    fun scale(interlude: LyricsInterlude, positionMs: Long, reduceMotion: Boolean): Float {
+        val breath = if (reduceMotion) 1f else breath(positionMs)
+        return breath * endSwell(interlude, positionMs)
     }
 
     /** How visible the whole indicator is at [positionMs]. It fades in as the break starts and out before it ends. */
@@ -147,12 +155,12 @@ internal fun LyricsInterludeDots(
     )
 }
 
-// Three 14dp dots 8dp apart, at the size the dots read at under a lyric line; the band is tall enough
-// for the 1.3x end swell.
-private const val DOTS_WIDTH_DP = 58
-private const val DOTS_HEIGHT_DP = 20
-private const val DOT_DIAMETER_DP = 14
-private const val DOT_GAP_DP = 8
+// ArchiveTune's breathing-dot defaults, kept identical on every host: three 16 dp dots 12 dp apart,
+// 72 dp across, in a band tall enough for the 1.3x end swell.
+private const val DOTS_WIDTH_DP = 72
+private const val DOTS_HEIGHT_DP = 22
+private const val DOT_DIAMETER_DP = 16
+private const val DOT_GAP_DP = 12
 
 private fun DrawScope.drawInterludeDots(
     interlude: LyricsInterlude,
@@ -162,14 +170,7 @@ private fun DrawScope.drawInterludeDots(
 ) {
     val visibility = LyricsInterludeMotion.visibility(interlude, positionMs)
     if (visibility <= 0f) return
-    val breath = if (reduceMotion) {
-        1f
-    } else {
-        maxOf(
-            LyricsInterludeMotion.breath(positionMs),
-            LyricsInterludeMotion.endSwell(interlude, positionMs),
-        )
-    }
+    val breath = LyricsInterludeMotion.scale(interlude, positionMs, reduceMotion)
     val diameter = DOT_DIAMETER_DP.dp.toPx()
     val gap = DOT_GAP_DP.dp.toPx()
     val radius = diameter / 2f * breath
