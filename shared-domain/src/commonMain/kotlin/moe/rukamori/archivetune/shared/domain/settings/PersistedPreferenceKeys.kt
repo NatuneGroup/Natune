@@ -732,10 +732,15 @@ val DeviceConnectAllowVpnKey = BooleanPreferenceKey("deviceConnectAllowVpn")
 val DeviceConnectDefaultDeviceKey = StringPreferenceKey("deviceConnectDefaultDeviceId")
 val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevices")
 
-// Desktop window chrome. The shell paints its own Windows title bar and Linux caption unless this is on; Wayland and
-// macOS always keep the system title bar because an app-drawn caption cannot drive those compositors. AWT cannot add or
-// remove a decoration on a live window, so the desktop host mirrors this value and applies a change at the next launch.
+// Desktop window behavior. Both keys stay stored on every host; only the desktop shell reads them, and a host
+// without that shell keeps the value for a later desktop run and for a backup round trip. The on-disk names follow
+// the snake_case desktop keys already stored (local_songs_*, poolAccounts*), because a name is a migration.
+// The shell paints its own Windows title bar and Linux caption unless this is on; Wayland and macOS always keep the
+// system title bar because an app-drawn caption cannot drive those compositors. AWT cannot add or remove a decoration
+// on a live window, so the desktop host mirrors this value and applies a change at the next launch.
 val DesktopSystemWindowFrameKey = BooleanPreferenceKey("desktop_system_window_frame")
+// Closing the window hides it to the tray instead of quitting the process.
+val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")
 
 /** The stored window-chrome choice; unset means the shell draws its own caption. */
 val PreferenceSnapshot.desktopSystemWindowFrame: Boolean

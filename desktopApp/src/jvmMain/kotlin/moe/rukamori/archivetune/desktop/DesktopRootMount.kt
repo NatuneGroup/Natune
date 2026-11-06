@@ -55,7 +55,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChrome
 import moe.rukamori.archivetune.desktop.playback.DesktopEnginePrewarm
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
-import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
+import moe.rukamori.archivetune.shared.domain.settings.DesktopHideToTrayKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
@@ -362,11 +362,10 @@ internal class DesktopCloseRequests {
 }
 
 /**
- * The desktop close preference, written by the Window group's close-to-tray row on the settings home page. True hides
- * the window to the tray instead of exiting, but only where a tray exists; without one a close still exits.
+ * The desktop close preference, written by the Window group's close-to-tray row on the Appearance page. True hides
+ * the window to the tray instead of exiting, but only where a tray exists; without one a close still exits. The key
+ * itself is shared so the settings page and this close handler cannot disagree.
  */
-internal val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")
-
 private fun DesktopSessionGraph.hidesWindowOnClose(): Boolean = settings.snapshots.value?.get(DesktopHideToTrayKey) == true
 
 /** The explicit boundary for a failed open. It names the gap and offers no library, playback or settings action. */

@@ -77,4 +77,46 @@
     <string name="m6_settings_home_close_to_tray_desc">Closing the window keeps playback running in the system tray</string>
     <string name="m6_settings_search_hint">Search settings</string>
     <string name="m6_settings_search_empty">No settings match</string>
+
+    <!-- Desktop settings tree: the groups and entries the two-pane overlay draws, in Metrolist's order. -->
+    <string name="m6_settings_desktop_group_playback">Playback</string>
+    <string name="m6_settings_desktop_group_interface">Interface</string>
+    <string name="m6_settings_desktop_group_integrations">Integrations</string>
+    <string name="m6_settings_desktop_group_privacy">Privacy &amp; security</string>
+    <string name="m6_settings_desktop_group_storage">Storage &amp; data</string>
+    <string name="m6_settings_desktop_group_application">Application &amp; about</string>
+    <string name="m6_settings_desktop_player_audio">Player and audio</string>
+    <string name="m6_settings_desktop_player_audio_desc">Audio processing, quality, transitions and output</string>
+    <string name="m6_settings_desktop_queue">Queue</string>
+    <string name="m6_settings_desktop_queue_desc">Restore, shuffle, duplicates and auto-load</string>
+    <string name="m6_settings_desktop_equalizer_desc">Band gains, preamp and presets</string>
+    <string name="m6_settings_desktop_ai_lyrics">AI lyrics</string>
+    <string name="m6_settings_desktop_content_desc">Language, filters and recommendation defaults</string>
+    <string name="m6_settings_desktop_connected_services">Connected services</string>
+    <string name="m6_settings_desktop_connected_services_desc">Discord, scrobbling, Listen Together and Device Connect</string>
+    <string name="m6_settings_desktop_privacy">Privacy</string>
+    <string name="m6_settings_desktop_privacy_desc">Listening and search history, and network data use</string>
+    <string name="m6_settings_desktop_pause_listen">Pause listening history</string>
+    <string name="m6_settings_desktop_pause_search">Pause search history</string>
+    <string name="m6_settings_desktop_crash_reports">Crash reports</string>
+    <string name="m6_settings_desktop_crash_reports_desc">Crash logs recorded on this device</string>
+    <string name="m6_settings_desktop_backup_import">Backup &amp; import</string>
+    <string name="m6_settings_desktop_backup_import_desc">Export this library or restore a backup</string>
+    <string name="m6_settings_desktop_changelog">Changelog</string>
+    <string name="m6_settings_desktop_changelog_desc">What changed in each release</string>
+    <string name="m6_settings_desktop_devtools">Devtools</string>
+    <string name="m6_settings_desktop_diagnostic_log">Diagnostic log</string>
+    <string name="m6_settings_desktop_diagnostic_log_desc">Application log lines for bug reports</string>
+    <string name="m6_settings_desktop_window">Window</string>
+    <string name="m6_settings_desktop_system_frame">System window frame</string>
+    <string name="m6_settings_desktop_system_frame_desc">Use the system window frame instead of the app title bar</string>
+    <string name="m6_settings_desktop_discord">Discord</string>
+    <string name="m6_settings_desktop_discord_desc">Show what you are listening to on your Discord profile</string>
+    <string name="m6_settings_home_scrobbling_desc">Scrobble plays to Last.fm, Libre.fm or ListenBrainz</string>
+    <string name="m6_settings_home_device_connect_desc">Show this device and control playback on paired devices</string>
+    <string name="m6_settings_desktop_integrations_title">Connected services</string>
+    <string name="m6_settings_desktop_integrations_hint">Sign in to a service to link it with this app.</string>
+    <string name="m6_hide_video">Hide video songs</string>
+    <string name="m6_allow_age_restricted">Allow age-restricted playback</string>
+    <string name="m6_queue_prevent_duplicates">Prevent duplicate songs in the queue</string>
 </resources>

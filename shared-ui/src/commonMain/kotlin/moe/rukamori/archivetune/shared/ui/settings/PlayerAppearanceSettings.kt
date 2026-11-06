@@ -32,6 +32,11 @@ fun playerAppearanceSettingsRows(
     blurSupported: Boolean,
     navigate: (String) -> Unit,
     chooseHomeScreens: () -> Unit,
+    /**
+     * Desktop draws no always-on display and no separate mini player window, so the AOD entry, the compact mini-player
+     * switch and the mobile-data artwork switch are not offered. Their stored keys stay untouched.
+     */
+    desktop: Boolean = false,
 ): List<SettingsRow> = buildList {
     val style = preferences.selectedPlayerDesignStyle()
     // The same per-style answers the players render from; Metrolist has native controls.
@@ -105,13 +110,15 @@ fun playerAppearanceSettingsRows(
             if (miniPlayerMaterialBlock(material, this[DisableBlurKey, false], blurSupported,
                     this[LiquidGlassEnabledKey, false]) == null) this[MiniPlayerBackgroundStyleKey] = it
         }))
-    add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false))
+    if (!desktop) {
+        add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false))
+    }
     add(SettingsRow.Toggle("hide_player_thumbnail", Res.string.m6_hide_thumbnail, HidePlayerThumbnailKey, false,
         description = note(PlayerStyleSetting.HIDE_THUMBNAIL), enabled = style.honors(PlayerStyleSetting.HIDE_THUMBNAIL)))
     add(SettingsRow.Decimal("thumbnail_corner_radius", Res.string.m6_thumbnail_radius, ThumbnailCornerRadiusKey, 16f, 0f..64f,
         enabled = style.honors(PlayerStyleSetting.CORNER_RADIUS), description = note(PlayerStyleSetting.CORNER_RADIUS)))
     add(SettingsRow.Toggle("crop_thumbnail_to_square", Res.string.m6_crop_square, CropThumbnailToSquareKey, false))
-    add(SettingsRow.Action("aod_customize", Res.string.m6_aod_settings, { navigate("settings/appearance/aod_customized") }))
+    if (!desktop) add(SettingsRow.Action("aod_customize", Res.string.m6_aod_settings, { navigate("settings/appearance/aod_customized") }))
     add(SettingsRow.Choice("player_buttons_style", Res.string.m6_player_buttons, PlayerButtonsStyleKey, "DEFAULT",
         listOf(SettingsRow.Option("DEFAULT", Res.string.m6_default), SettingsRow.Option("SECONDARY", Res.string.m6_secondary)),
         enabled = style.honors(PlayerStyleSetting.BUTTONS_STYLE), description = note(PlayerStyleSetting.BUTTONS_STYLE)))
@@ -119,11 +126,13 @@ fun playerAppearanceSettingsRows(
         playbackSliderOptions(), enabled = style.honors(PlayerStyleSetting.SLIDER_STYLE),
         description = note(PlayerStyleSetting.SLIDER_STYLE)))
     add(SettingsRow.Toggle("album_canvas_enabled", Res.string.m6_album_canvas, AlbumCanvasEnabledKey, true))
-    add(SettingsRow.Toggle(
-        "disable_animated_artwork_on_mobile_data", Res.string.m6_disable_animated_artwork_mobile,
-        DisableAnimatedArtworkOnMobileDataKey, false,
-        description = Res.string.m6_disable_animated_artwork_mobile_desc,
-    ))
+    if (!desktop) {
+        add(SettingsRow.Toggle(
+            "disable_animated_artwork_on_mobile_data", Res.string.m6_disable_animated_artwork_mobile,
+            DisableAnimatedArtworkOnMobileDataKey, false,
+            description = Res.string.m6_disable_animated_artwork_mobile_desc,
+        ))
+    }
 }
 
 internal fun playerDesignOptions(): List<SettingsRow.Option> = listOf(

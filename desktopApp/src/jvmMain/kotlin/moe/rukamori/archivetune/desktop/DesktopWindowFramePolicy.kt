@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicBoolean
+import moe.rukamori.archivetune.shared.domain.settings.DesktopSystemWindowFrameKey
 
 /** How this launch draws its window decoration. */
 enum class DesktopFrameMode {
@@ -28,8 +29,12 @@ enum class DesktopFrameMode {
  * own caption cannot reliably move or resize the window. macOS keeps its native title bar for the same reason.
  */
 object DesktopWindowFramePolicy {
-    /** The preference key the settings row owns. The shell mirrors its value to [cacheFile] for the next launch. */
-    const val PREFERENCE_NAME = "desktop_system_window_frame"
+    /**
+     * The on-disk name the settings row owns, read from the one key declaration ([DesktopSystemWindowFrameKey]) so the
+     * mirror file and the toggle cannot disagree about it. The shell mirrors the value to [CACHE_FILE] for the next
+     * launch.
+     */
+    val PREFERENCE_NAME: String = DesktopSystemWindowFrameKey.name
 
     private const val CACHE_FILE = "window-frame.properties"
     private const val CACHE_KEY = "system_frame"
