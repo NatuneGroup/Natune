@@ -1,22 +1,16 @@
 package moe.rukamori.archivetune.desktop.provider
 
 import io.ktor.client.HttpClient
-import io.ktor.http.URLBuilder
-import io.ktor.http.Url
-import io.ktor.http.parseQueryString
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.rukamori.archivetune.innertube.NewPipeUtils
 import moe.rukamori.archivetune.shared.data.potoken.MintedPoTokens
 import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
 import moe.rukamori.archivetune.shared.data.potoken.poTokenForWebClient
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
-import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.exceptions.ParsingException
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
@@ -28,8 +22,8 @@ private const val WATCH_URL_PREFIX = "https://www.youtube.com/watch?v="
  *
  * NewPipe's own YouTube stream extractor runs first: its player request, client set and signature and n-parameter
  * transforms share nothing with the primary walk. If it yields nothing usable, the visitor-capable clients are asked
- * directly and every ciphered format is deciphered through NewPipe's JavaScript player, which is the one thing the
- * primary walk cannot do. Neither path carries the signed-in session: a track the signed-in walk was refused is often
+ * directly and every ciphered format is deciphered through NewPipe's JavaScript player, the same shared path the
+ * primary walk now uses. Neither path carries the signed-in session: a track the signed-in walk was refused is often
  * served to a plain visitor. NewPipe's process-wide downloader is the one `:core` installs.
  */
 internal class DesktopNewPipeTier(
@@ -134,10 +128,7 @@ internal class DesktopNewPipeTier(
         if (ready) return
         synchronized(this) {
             if (ready) return
-            // Touching the object runs its initializer, which installs the downloader NewPipe needs.
-            if (NewPipe.getDownloader() == null) NewPipeUtils.hashCode()
-            // The stream extractor otherwise asks a third-party dislike service for every track; nothing reads it.
-            ServiceList.YouTube.setFetchDislike(false)
+            DesktopYouTubeJavaScript.ensureExtractorReady()
             ready = true
         }
     }
@@ -222,43 +213,13 @@ internal class DesktopNewPipeTier(
         return null
     }
 
-    /** The signed, n-transformed URL of one format, deciphering a `signatureCipher` or `cipher` entry when needed. */
-    private fun playableUrl(videoId: String, directUrl: String?, signatureCipher: String?, legacyCipher: String?): String {
-        val base = directUrl ?: run {
-            val cipher = signatureCipher ?: legacyCipher ?: throw ParsingException("Could not find format url")
-            val params = parseQueryString(cipher)
-            val signature = params["s"] ?: throw ParsingException("Could not parse cipher signature")
-            val signatureParam = params["sp"]?.takeIf(String::isNotBlank) ?: "signature"
-            val url = params["url"] ?: throw ParsingException("Could not parse cipher url")
-            val deciphered = withPlayerCacheRecovery { YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, signature) }
-            URLBuilder(url).apply { parameters[signatureParam] = deciphered }.buildString()
-        }
-        if (Url(base).parameters["n"].isNullOrBlank()) return base
-        return withPlayerCacheRecovery {
-            YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(videoId, base)
-        }
-    }
+    /** The signed, n-transformed URL of one format through the shared JavaScript-player path. */
+    private fun playableUrl(videoId: String, directUrl: String?, signatureCipher: String?, legacyCipher: String?): String =
+        DesktopYouTubeJavaScript.playableUrl(videoId, directUrl, signatureCipher, legacyCipher)
 
     /** A rotated player script leaves NewPipe's cached deobfuscation stale; one cache clear and retry recovers it. */
-    private inline fun <T> withPlayerCacheRecovery(block: () -> T): T {
-        try {
-            return block()
-        } catch (error: Exception) {
-            if (!error.isStalePlayerScript()) throw error
-            runCatching { YoutubeJavaScriptPlayerManager.clearAllCaches() }
-            try {
-                return block()
-            } catch (retry: Exception) {
-                retry.addSuppressed(error)
-                throw retry
-            }
-        }
-    }
-
-    private fun Throwable.isStalePlayerScript(): Boolean =
-        generateSequence(this) { it.cause }.take(8).any {
-            it is ParsingException && it.message?.contains("deobfuscation function", ignoreCase = true) == true
-        }
+    private inline fun <T> withPlayerCacheRecovery(block: () -> T): T =
+        DesktopYouTubeJavaScript.withPlayerCacheRecovery(block)
 
     private companion object {
         /** The BotGuard mint allowance inside the 12 s tier bound, leaving the rest to extraction. */

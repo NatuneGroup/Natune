@@ -8,9 +8,10 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 
 class NativeSourceLocatorTest {
     @Test
-    fun headerFreeUnknownExpiryKeepsTheExistingEngineOpener() {
+    fun everyRemoteLocatorGoesThroughTheHostLease() {
         val locator = PlaybackLocator.Remote("https://audio.invalid/song")
-        assertEquals(locator.url, assertIs<EngineSource.Direct>(engineSourceOpen(locator, null)).source)
+        val source = assertIs<EngineSource.Leased>(engineSourceOpen(locator, null))
+        source.discard()
     }
 
     @Test

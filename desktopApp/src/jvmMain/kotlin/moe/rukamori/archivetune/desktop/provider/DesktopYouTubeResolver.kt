@@ -34,17 +34,18 @@ private const val SEARCHED_ID_CACHE_SIZE = 64
 
 /**
  * The desktop YouTube terminal tier over [DesktopYouTubeClients]. It walks the shipped quality ladder and client order
- * and returns the first ranked audio format that carries a direct URL. With a personal sign-in from [signIn], the
+ * and returns the first ranked audio format it can turn into a playable URL. With a personal sign-in from [signIn], the
  * cookie-capable clients ask as that account and the login-only clients join the walk, as the shipped resolver lets
  * them for a signed-in user. Without one every request is a visitor request.
  *
- * The primary walk skips ciphered formats (`signatureCipher`/`cipher`): the base.js deobfuscation of the Android core is
- * not part of it, and a URL without its signature would only fail later in the engine.
+ * The walk leads with the token-free clients when no PoToken was minted, states the player's signatureTimestamp for the
+ * clients that ask for it, and deciphers `signatureCipher`/`cipher` formats and rewrites the throttling `n` parameter
+ * through [cipher] — the same NewPipe JavaScript-player path the NewPipe tier uses. A ciphered format is therefore no
+ * longer dropped, and an untransformed URL is no longer handed to the engine.
  *
  * [fallback] runs the shipped extractor tiers in the order the shared failsafe walk gives them: InnerTubeX through
- * [DesktopInnerTubeXTier], then NewPipe through [DesktopNewPipeTier], which also deciphers what the primary walk
- * skipped. Echo runs on Android and iOS only; the desktop has no
- * Echo port, so its tier answers null, which the walk reads as a failed tier. Every tier
+ * [DesktopInnerTubeXTier], then NewPipe through [DesktopNewPipeTier]. Echo runs on Android and iOS only; the desktop has
+ * no Echo port, so its tier answers null, which the walk reads as a failed tier. Every tier
  * writes one diagnostic line with its outcome.
  */
 internal class DesktopYouTubeResolver(
@@ -54,6 +55,7 @@ internal class DesktopYouTubeResolver(
     private val locale: () -> Locale = { Locale.getDefault() },
     private val signIn: () -> DesktopYouTubeSignIn? = { null },
     private val poTokens: DesktopPoTokenOwner? = null,
+    private val cipher: DesktopYouTubeStreamCipher = NewPipeDesktopYouTubeStreamCipher(),
     private val innerTubeX: DesktopInnerTubeXTier = DesktopInnerTubeXTier(http, tokenProvider = poTokens?.tokenProvider),
     private val newPipe: DesktopNewPipeTier = DesktopNewPipeTier(
         http,
@@ -184,31 +186,68 @@ internal class DesktopYouTubeResolver(
         visitorData
     }
 
-    private suspend fun resolveVideo(videoId: String, trusted: Boolean): PreparedAudio? {
+    private suspend fun resolveVideo(videoId: String, trusted: Boolean): PreparedAudio? =
+        // The walk is bounded on its own, so a bot-checked network surfaces in seconds and the extractor tiers still
+        // get their turn inside the caller's budget instead of waiting for one exhausted client ladder.
+        withTimeoutOrNull(PRIMARY_WALK_BUDGET_MS) { walkClients(videoId, trusted) }
+
+    private suspend fun walkClients(videoId: String, trusted: Boolean): PreparedAudio? {
         val snapshot = preferences()
         val quality = DesktopYouTubeAudioQuality.fromRequestValue(snapshot?.get(AudioQualityKey))
         val ageGate = snapshot?.get(AllowAgeRestrictedKey) ?: false
         val preferred = preferredClient(snapshot)
-        val order = streamClientOrder(preferred, lastSuccessful, ageGate)
+        val manualClient = snapshot?.manualPlaybackClient() != null
         val session = signIn()
         // The account's own visitor identity travels with its cookie; a fetched visitor id belongs to no account.
         val visitorData = session?.visitorData ?: visitor()
-        // One BotGuard mint per resolve, as the shipped chain does for its main client: the pair below then
-        // fills the web clients' serviceIntegrityDimensions and pot= like PlaybackAuthState does.
-        val minted = poTokens?.mintForPlayback(videoId, session, visitorData)
+        // A cold BotGuard start must not eat the resolution budget: a timed-out mint leaves the walk untokened, and
+        // the token-free clients lead it precisely because that is the common case on a bot-checking network.
+        val minted =
+            try {
+                withTimeoutOrNull(MINT_BUDGET_MS) { poTokens?.mintForPlayback(videoId, session, visitorData) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        val order =
+            streamClientOrder(
+                preferred,
+                lastSuccessful,
+                ageGate,
+                hasPoToken = minted != null,
+                manualClient = manualClient,
+            )
         val region = locale().country.takeIf { it.length == 2 }?.uppercase(Locale.US) ?: "US"
         val language = locale().toLanguageTag().ifBlank { "en" }
         val failed = linkedSetOf<String>()
         val botBlocked = linkedSetOf<String>()
         var loginRequired: String? = null
         var lastFailure: Throwable? = null
-        for (attemptQuality in qualityAttempts(quality)) {
-            for (client in order) {
-                if (client.loginRequired && session == null) continue
-                if (client.key in failed) continue
-                val response = try {
+        var requests = 0
+        var timestampResolved = false
+        var timestamp: Int? = null
+        for (client in order) {
+            if (requests >= MAX_PLAYER_REQUESTS) break
+            if (client.loginRequired && session == null) continue
+            if (client.key in failed) continue
+            // One player timestamp covers the walk: every client asks the same player version, so reading it once
+            // keeps the JavaScript read off the per-client path after the first use.
+            val clientTimestamp =
+                if (client.useSignatureTimestamp) {
+                    if (!timestampResolved) {
+                        timestampResolved = true
+                        timestamp = cipher.signatureTimestamp(videoId)
+                    }
+                    timestamp
+                } else {
+                    null
+                }
+            requests++
+            val response =
+                try {
                     requestYouTubePlayer(
-                        http, videoId, null, client, null, visitorData, region, language, session,
+                        http, videoId, null, client, clientTimestamp, visitorData, region, language, session,
                         poToken = poTokens?.tokenFor(client.clientName, minted),
                     )
                 } catch (cancelled: CancellationException) {
@@ -218,28 +257,26 @@ internal class DesktopYouTubeResolver(
                     failed += client.key
                     continue
                 }
-                val status = response.playabilityStatus()
-                val reason = response.playabilityReason()
-                if (!status.equals("OK", ignoreCase = true)) {
-                    when {
-                        isBotDetectionReason(reason) -> botBlocked += client.key
-                        isLoginRecoveryResponse(status, reason) -> loginRequired = reason
-                    }
-                    failed += client.key
-                    continue
+            val status = response.playabilityStatus()
+            val reason = response.playabilityReason()
+            if (!status.equals("OK", ignoreCase = true)) {
+                when {
+                    isBotDetectionReason(reason) -> botBlocked += client.key
+                    isLoginRecoveryResponse(status, reason) -> loginRequired = reason
                 }
-                val format = rankAudioFormats(response.audioFormats(), attemptQuality, networkMetered = false)
-                    .firstOrNull { it.url != null }
-                if (format == null) {
-                    // Only ciphered formats; another client may still answer with direct URLs.
-                    continue
-                }
+                failed += client.key
+                continue
+            }
+            val details = response.videoDetails()
+            // One ranking per response: the requested quality already ranks every codec and bitrate, so a lower
+            // quality retry of the same client would only repeat the same answer.
+            for (format in rankAudioFormats(response.audioFormats(), quality, networkMetered = false)) {
+                val url = cipher.playableUrl(videoId, format.url, format.signatureCipher, format.cipher) ?: continue
                 lastSuccessful = client
-                val details = response.videoDetails()
                 return PreparedAudio.Progressive(
                     format.toDirectStream(
                         uri = appendPoTokenToStreamUrl(
-                            requireNotNull(format.url),
+                            url,
                             poTokens?.tokenFor(client.clientName, minted),
                         ),
                         label = "YouTube ${client.friendlyName ?: client.clientName} ${format.bitrate / 1000} kbps",
@@ -250,6 +287,18 @@ internal class DesktopYouTubeResolver(
                         userAgent = client.userAgent,
                     ),
                 )
+            }
+            // Every format was ciphered and the player could not decipher one. Another client may still answer.
+            failed += client.key
+        }
+        if (botBlocked.isNotEmpty() && minted != null) {
+            // The token the network rejected should not be reused for the next track; the next resolve re-mints.
+            try {
+                poTokens?.invalidateAttestation()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A failed invalidation only leaves the old mint in place; the next resolve still tries a fresh one.
             }
         }
         if (loginRequired != null && botBlocked.isEmpty()) {
@@ -273,6 +322,21 @@ internal class DesktopYouTubeResolver(
             "ANDROID_MUSIC" -> DesktopYouTubeClients.ANDROID_MUSIC
             else -> DesktopYouTubeClients.MAIN_CLIENT
         }
+    }
+
+    private companion object {
+        /**
+         * The whole client walk's bound. The caller allows 30 s and then two 12 s extractor tiers; capping the walk
+         * here means a bot-checked network reports its failure after this, not after the client ladder and every
+         * quality retry burned the caller's budget.
+         */
+        const val PRIMARY_WALK_BUDGET_MS = 15_000L
+
+        /** Player requests per walk. Six covers the token-free clients, WEB_REMIX and the two fallback web clients. */
+        const val MAX_PLAYER_REQUESTS = 6
+
+        /** A cold BotGuard mint may need the WebView/QuickJS boot; it leaves the rest of the walk its time. */
+        const val MINT_BUDGET_MS = 4_000L
     }
 }
 
@@ -302,4 +366,6 @@ internal fun DesktopAudioFormat.toDirectStream(
         trustedDirectId = trusted,
         sampleRate = audioSampleRate,
         headers = userAgent?.let { PlaybackHeaders.of(mapOf("User-Agent" to it)) } ?: PlaybackHeaders.NONE,
+        // A googlevideo URL states its own authorization window; without it the locator would look reusable forever.
+        expiresAtEpochMs = youTubeStreamExpiryMs(uri),
     )

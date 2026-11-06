@@ -9,13 +9,16 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 
 /**
  * The occurrence a deck plays. [trackGainDb] and [trackPeak] describe it for normalization, and are null
- * when the caller has not supplied them, which leaves the track at unity gain.
+ * when the caller has not supplied them, which leaves the track at unity gain. [lease] is the host stream
+ * behind a leased remote source, kept so the failure message can name the HTTP status or expiry the native
+ * error code cannot carry.
  */
 internal data class DeckSession(
     val request: PlaybackRequest,
     val generation: Long,
     val trackGainDb: Double? = null,
     val trackPeak: Double? = null,
+    val lease: NativeStreamLease? = null,
 )
 
 /**

@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import moe.rukamori.archivetune.desktop.provider.DEFAULT_DESKTOP_STREAM_USER_AGENT
 import moe.rukamori.archivetune.shared.data.bytesource.AdmittedTelegramPartialFilePort
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceCancelledException
@@ -27,6 +28,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.telegramFileLease
 import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
 import moe.rukamori.archivetune.shared.data.stream.deezer.DeezerChunkByteSource
 import moe.rukamori.archivetune.shared.data.stream.deezer.DeezerCrypto
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 
@@ -70,6 +72,8 @@ internal class NativeStreamLease private constructor(
      * [interruptSource] already breaks.
      */
     private val lifetimes: ReadLifetimes? = null,
+    /** The sanitized reason of the most recent refusal, which the native error code cannot carry. */
+    private val failure: StreamFailureDetail = StreamFailureDetail(),
 ) {
     // Confined to the producer thread. The engine keeps the same position in its own view of the stream.
     private var position = 0L
@@ -139,6 +143,9 @@ internal class NativeStreamLease private constructor(
         closeSource()
     }
 
+    /** The sanitized reason the lease last refused a request, for the playback failure message. */
+    fun failureDetail(): String? = failure.read()
+
     /** The context for a call the producer waits on: the read's own token, so an interrupt ends only the read in flight. */
     private fun blockingContext(): CoroutineContext = lifetimes?.start() ?: EmptyCoroutineContext
 
@@ -163,9 +170,13 @@ internal class NativeStreamLease private constructor(
         }
 
         /**
-         * The lease for a header-bearing HTTP(S) resource. Returns null when the locator is not one, such as a URL with
-         * userinfo, which is refused so that credentials never ride in a URL. The lease permits only the primary origin,
-         * so no redirect or child request can leave it.
+         * The lease for one HTTP(S) resource. Returns null when the locator is not one, such as a URL with userinfo,
+         * which is refused so that credentials never ride in a URL. The lease permits only the primary origin, so no
+         * redirect or child request can leave it.
+         *
+         * A locator that names no User-Agent gets [DEFAULT_DESKTOP_STREAM_USER_AGENT]: the URL was minted for a
+         * browser-like client, and the engine's own `Lavf/...` agent is a bot signal that googlevideo rejects. The
+         * client's own agent, when the resolver knows it, always wins.
          */
         fun forRemote(locator: PlaybackLocator.Remote): NativeStreamLease? {
             val origin = StreamOrigin.parse(locator.url) ?: return null
@@ -178,13 +189,28 @@ internal class NativeStreamLease private constructor(
                 expiresAtEpochMs = locator.expiresAtEpochMs,
                 lengthBytes = null,
             )
-            val http = HttpRangeSource(lease, locator.url, locator.headers, cookies = emptyList())
+            val failure = StreamFailureDetail()
+            val http = HttpRangeSource(
+                lease,
+                locator.url,
+                withDefaultUserAgent(locator.headers),
+                cookies = emptyList(),
+                onFailure = failure::record,
+            )
             return NativeStreamLease(
                 readAt = { position, buffer, offset, length -> http.readAt(position, buffer, offset, length) },
                 probe = { http.probe().let { StreamSizing(it.sizeBytes, it.seekable) } },
                 interruptSource = { http.interrupt() },
                 closeSource = { http.close() },
+                failure = failure,
             )
+        }
+
+        /** [headers] with a plain desktop browser agent when the caller named none. */
+        private fun withDefaultUserAgent(headers: PlaybackHeaders): PlaybackHeaders {
+            val values = headers.reveal()
+            if (values.keys.any { it.equals("User-Agent", ignoreCase = true) }) return headers
+            return PlaybackHeaders.of(LinkedHashMap(values).apply { put("User-Agent", DEFAULT_DESKTOP_STREAM_USER_AGENT) })
         }
 
         /**
@@ -204,7 +230,14 @@ internal class NativeStreamLease private constructor(
                 expiresAtEpochMs = locator.expiresAtEpochMs,
                 lengthBytes = null,
             )
-            val http = HttpRangeSource(lease, locator.url, locator.headers, cookies = emptyList())
+            val failure = StreamFailureDetail()
+            val http = HttpRangeSource(
+                lease,
+                locator.url,
+                locator.headers,
+                cookies = emptyList(),
+                onFailure = failure::record,
+            )
             val cancellation = LeaseCancellation()
             // The ciphertext reader takes its ticket at the start of each read, and the plaintext guard is applied per
             // read, so an interrupt discards the chunk in flight without making every later read refuse.
@@ -225,6 +258,7 @@ internal class NativeStreamLease private constructor(
                     cancellation.cancelAll()
                     http.close()
                 },
+                failure = failure,
             )
         }
 
@@ -304,6 +338,22 @@ internal class NativeStreamLease private constructor(
 
 /** What the engine learns when it opens a lease: the length (-1 when unknown) and whether a read can start mid-stream. */
 internal class StreamSizing(val sizeBytes: Long, val seekable: Boolean)
+
+/**
+ * The sanitized reason the most recent host call refused. A native error code carries no HTTP status or expiry text,
+ * so the lease records it here for the playback failure message; the value only names a status or an expiry, never a
+ * URL, header or credential.
+ */
+internal class StreamFailureDetail {
+    @Volatile
+    private var detail: String? = null
+
+    fun record(reason: String) {
+        detail = reason
+    }
+
+    fun read(): String? = detail
+}
 
 /**
  * Completes each read from [upstream] unless the stream ends first, so each chunk request reaches

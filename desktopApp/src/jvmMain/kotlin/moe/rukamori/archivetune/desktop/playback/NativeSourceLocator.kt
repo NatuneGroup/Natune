@@ -44,20 +44,18 @@ internal fun engineSourceOf(locator: PlaybackLocator): String? = when (locator) 
 
 /**
  * What the engine opens for [locator], or null when it cannot open it. Every deck that opens a source goes through
- * here, so the same locator always names the same source. Only header-free sources with no known expiry keep the
- * engine's own reader. The host lease otherwise enforces the authorization window and origin-bound headers.
+ * here, so the same locator always names the same source. Only a local file keeps the engine's own reader. Every
+ * remote resource is read through [NativeStreamLease], even when it carries no headers and no known expiry: the lease
+ * supplies the client's User-Agent, bounded ranged requests and socket timeouts, while FFmpeg's own reader would send
+ * its `Lavf/...` agent with no timeout at all. The spectral probe keeps [engineSourceOf]'s string form because it only
+ * needs a short bounded decode.
  */
 internal fun engineSourceOpen(
     locator: PlaybackLocator,
     telegram: TelegramFileProvider?,
 ): EngineSource? = when (locator) {
     is PlaybackLocator.LocalFile -> engineSourceOf(locator)?.let { EngineSource.Direct(it) }
-    is PlaybackLocator.Remote ->
-        if (locator.headers.isEmpty() && locator.expiresAtEpochMs == null) {
-            engineSourceOf(locator)?.let { EngineSource.Direct(it) }
-        } else {
-            NativeStreamLease.forRemote(locator)?.let { EngineSource.Leased(it) }
-        }
+    is PlaybackLocator.Remote -> NativeStreamLease.forRemote(locator)?.let { EngineSource.Leased(it) }
     is PlaybackLocator.DeezerEncrypted -> engineSourceForDeezerTrack(locator)
     is PlaybackLocator.TelegramFile -> engineSourceForTelegramTrack(locator, telegram)
     is PlaybackLocator.PreparedPlaintext -> engineSourceForPreparedPlaintext(locator)
