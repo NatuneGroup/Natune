@@ -196,8 +196,14 @@ private fun ArchiveTuneLoadedRoot(
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
             }
         }
-        val goBack = {
+        // Every back gesture goes through this one handler: the native one (Alt+Left, a mouse back button), Escape and
+        // the keyboard's Back action. On the desktop the expanded player and the panes are the innermost layers, so
+        // they close before the route changes; the phone shell keeps its sheet first, exactly as before.
+        val goBack: () -> Unit = {
             when {
+                desktopShell && desktopShellState.expandedPlayer -> desktopShellState.expandedPlayer = false
+                desktopShell && (desktopShellState.queueOpen || desktopShellState.lyricsOpen) ->
+                    desktopShellState.closePanes()
                 expanded && interaction.back() -> Unit
                 expanded -> expanded = false
                 !navigation.back() -> host.onBackAtRoot()
@@ -272,11 +278,7 @@ private fun ArchiveTuneLoadedRoot(
                     val target = fractionSeekTargetMs(snapshot.durationMs ?: return false, action.fraction) ?: return false
                     player.seekTo(target)
                 }
-                KeymapAction.Back -> when {
-                    desktopShell && desktopShellState.expandedPlayer -> desktopShellState.expandedPlayer = false
-                    desktopShell && (desktopShellState.queueOpen || desktopShellState.lyricsOpen) -> desktopShellState.closePanes()
-                    else -> goBack()
-                }
+                KeymapAction.Back -> goBack()
                 KeymapAction.Search -> {
                     if (desktopShell) {
                         desktopSearchFocus.requestFocus()
@@ -371,55 +373,59 @@ private fun ArchiveTuneLoadedRoot(
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
                     if (desktopShell) {
-                        DesktopShell(
-                            navigation = navigation,
-                            state = desktopShellState,
-                            titleBar = {
-                                DesktopTitleBar(
-                                    title = stringResource(Res.string.app_name),
-                                    searchFocus = desktopSearchFocus,
-                                    railExpanded = desktopShellState.railExpanded,
-                                    onToggleRail = { desktopShellState.toggleRail() },
-                                    onSubmitSearch = { query ->
-                                        navigation.select(ShellTab.Search, toRoot = true)
-                                        navigation.open(ArchiveRoutes.search(query, ContentProvider.YOUTUBE))
-                                    },
-                                )
-                            },
-                            playerBar = {
-                                if (current != null) {
-                                    DesktopPlayerBar(
-                                        current = current,
-                                        playback = playback,
-                                        nativeState = nativeState,
-                                        artwork = host.artwork,
-                                        motion = policy.motion,
-                                        panes = desktopShellState,
-                                        onExpand = { desktopShellState.expandedPlayer = true },
-                                        onPlayPause = ::playPause,
-                                        onSeekTo = ::seekTo,
-                                        onAction = ::desktopPlayerAction,
-                                        onVolumeChange = ::setVolume,
+                        // The whole desktop shell reports text focus through the one counter the shortcut layer
+                        // reads, so the title bar search field suppresses unmodified shortcuts like any page field.
+                        CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                            DesktopShell(
+                                navigation = navigation,
+                                state = desktopShellState,
+                                titleBar = {
+                                    DesktopTitleBar(
+                                        title = stringResource(Res.string.app_name),
+                                        searchFocus = desktopSearchFocus,
+                                        railExpanded = desktopShellState.railExpanded,
+                                        onToggleRail = { desktopShellState.toggleRail() },
+                                        onSubmitSearch = { query ->
+                                            navigation.select(ShellTab.Search, toRoot = true)
+                                            navigation.open(ArchiveRoutes.search(query, ContentProvider.YOUTUBE))
+                                        },
                                     )
-                                } else {
-                                    // An empty queue keeps the bar's slot, so the page never jumps when a track starts.
-                                    Spacer(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight))
-                                }
-                            },
-                            queuePane = { paneModifier -> slots.queue(paneModifier) },
-                            lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
-                            content = { pageModifier -> page(pageSource.then(pageModifier)) },
-                        )
-                        if (desktopShellState.expandedPlayer && current != null) {
-                            DesktopExpandedPlayer(
-                                state = desktopPlayerState(current, playback, nativeState, policy.motion),
-                                slots = slots,
-                                onClose = { desktopShellState.expandedPlayer = false },
-                                onPlayPause = ::playPause,
-                                onSeekTo = ::seekTo,
-                                onAction = ::desktopPlayerAction,
-                                onVolumeChange = ::setVolume,
+                                },
+                                playerBar = {
+                                    if (current != null) {
+                                        DesktopPlayerBar(
+                                            current = current,
+                                            playback = playback,
+                                            nativeState = nativeState,
+                                            artwork = host.artwork,
+                                            motion = policy.motion,
+                                            panes = desktopShellState,
+                                            onExpand = { desktopShellState.expandedPlayer = true },
+                                            onPlayPause = ::playPause,
+                                            onSeekTo = ::seekTo,
+                                            onAction = ::desktopPlayerAction,
+                                            onVolumeChange = ::setVolume,
+                                        )
+                                    } else {
+                                        // An empty queue keeps the bar's slot, so the page never jumps.
+                                        Spacer(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight))
+                                    }
+                                },
+                                queuePane = { paneModifier -> slots.queue(paneModifier) },
+                                lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
+                                content = { pageModifier -> page(pageSource.then(pageModifier)) },
                             )
+                            if (desktopShellState.expandedPlayer && current != null) {
+                                DesktopExpandedPlayer(
+                                    state = desktopPlayerState(current, playback, nativeState, policy.motion),
+                                    slots = slots,
+                                    onClose = { desktopShellState.expandedPlayer = false },
+                                    onPlayPause = ::playPause,
+                                    onSeekTo = ::seekTo,
+                                    onAction = ::desktopPlayerAction,
+                                    onVolumeChange = ::setVolume,
+                                )
+                            }
                         }
                     } else {
                         Column(Modifier.fillMaxSize()) {
