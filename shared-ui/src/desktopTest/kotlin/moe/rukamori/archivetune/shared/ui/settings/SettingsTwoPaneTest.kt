@@ -39,8 +39,9 @@ class SettingsTwoPaneTest {
             }
         }
         onNodeWithTag("settings-two-pane").assertIsDisplayed()
-        onNodeWithText("Playback").assertIsDisplayed()
+        onNodeWithTag("settings-detail-title").assertIsDisplayed()
         onNodeWithText("Playback detail body").assertIsDisplayed()
+        onNodeWithTag("settings-nav-settings/player").assertIsDisplayed()
         onNodeWithTag("settings-nav-settings/account").assertIsDisplayed()
 
         onNodeWithTag("settings-search-field").performTextInput("worker")
