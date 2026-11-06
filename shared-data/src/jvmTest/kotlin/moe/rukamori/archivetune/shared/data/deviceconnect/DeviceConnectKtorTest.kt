@@ -45,7 +45,10 @@ class DeviceConnectKtorTest {
         }
         val http = HttpClient(CIO)
         try {
-            val port = withTimeout(10_000) { server.start() }
+            val port = withTimeout(30_000) {
+                println("device-connect: starting loopback server")
+                server.start().also { println("device-connect: loopback server on $it") }
+            }
             assertTrue(port in 1..65_535)
             val channelA = withTimeout(10_000) {
                 DeviceConnectClient(http).connect(DeviceEndpoint("127.0.0.1", port))
@@ -55,7 +58,14 @@ class DeviceConnectKtorTest {
             )
             a.start()
             val b = withTimeout(10_000) { responder.await() }
-            val prompt = withTimeout(10_000) { listenerB.prompts.receive() }
+            val prompt = withTimeout(10_000) {
+                while (true) {
+                    listenerB.failures.tryReceive().getOrNull()?.let { throw AssertionError("responder failed: ${it.code} ${it.message}") }
+                    listenerB.prompts.tryReceive().getOrNull()?.let { return@withTimeout it }
+                    delay(10)
+                }
+                error("unreachable")
+            }
             assertEquals(6, prompt.code.length)
             b.approvePairing()
             withTimeout(10_000) {

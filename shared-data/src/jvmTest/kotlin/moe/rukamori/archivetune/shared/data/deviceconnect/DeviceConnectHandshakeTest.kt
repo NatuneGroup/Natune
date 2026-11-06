@@ -40,8 +40,8 @@ class DeviceConnectHandshakeTest {
             )
             a.start()
             b.start()
-            val promptA = withTimeout(5_000) { listenerA.prompts.receive() }
-            val promptB = withTimeout(5_000) { listenerB.prompts.receive() }
+            val promptA = awaitPrompt(listenerA)
+            val promptB = awaitPrompt(listenerB)
             assertEquals(promptA.code, promptB.code)
             assertEquals(6, promptA.code.length)
             assertTrue(promptA.isRequester)
@@ -75,7 +75,7 @@ class DeviceConnectHandshakeTest {
             )
             a.start()
             b.start()
-            withTimeout(5_000) { firstB.prompts.receive() }
+            awaitPrompt(firstB)
             b.approvePairing()
             awaitAuthenticated(firstA, firstB)
             a.close()
@@ -131,7 +131,20 @@ class DeviceConnectHandshakeTest {
 
     private suspend fun awaitAuthenticated(first: RecordingListener, second: RecordingListener) {
         withTimeout(5_000) {
-            while (first.authenticated == null || second.authenticated == null) delay(10)
+            while (first.authenticated == null || second.authenticated == null) {
+                first.failures.tryReceive().getOrNull()?.let { throw AssertionError("initiator failed: ${it.code} ${it.message}") }
+                second.failures.tryReceive().getOrNull()?.let { throw AssertionError("responder failed: ${it.code} ${it.message}") }
+                delay(10)
+            }
         }
+    }
+
+    private suspend fun awaitPrompt(listener: RecordingListener) = withTimeout(5_000) {
+        while (true) {
+            listener.failures.tryReceive().getOrNull()?.let { throw AssertionError("connection failed: ${it.code} ${it.message}") }
+            listener.prompts.tryReceive().getOrNull()?.let { return@withTimeout it }
+            delay(10)
+        }
+        error("unreachable")
     }
 }
