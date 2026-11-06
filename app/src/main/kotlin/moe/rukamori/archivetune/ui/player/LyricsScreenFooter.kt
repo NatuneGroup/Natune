@@ -32,8 +32,12 @@ import moe.rukamori.archivetune.R
  * The credit, and beside it the lyric actions and the way out. Ported from the BitChord style, where this row
  * already sat under the scrubber, so every lyrics style names its provider and offers the lyric actions in the
  * same place. It is drawn outside the auto-hiding transport — see the portrait column — because it is the
- * sheet's chrome rather than a player control: the credit and the way out stay reachable while the transport
- * tucks itself away.
+ * sheet's chrome rather than a player control: the credit, the favourite, the lyric actions and the way out stay
+ * reachable while the transport tucks itself away.
+ *
+ * This row is also the only place the sheet's three controls live. The header row above the lyrics carries the
+ * artwork and the track's name, and gives the name every dp it has: three 48 dp targets there left a phone about
+ * 100 dp for a title, which is why the name had no room while the row still looked spaced out.
  */
 @Composable
 internal fun AppleMusicLyricsFooter(
@@ -43,12 +47,14 @@ internal fun AppleMusicLyricsFooter(
     onOverflowClick: () -> Unit,
     onCloseClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isLiked: Boolean = false,
+    onToggleLike: () -> Unit = {},
     onOverflowPositioned: ((Rect) -> Unit)? = null,
 ) {
     Row(
-        modifier = modifier.padding(top = 8.dp),
+        modifier = modifier.padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
         Box(
             modifier =
@@ -56,7 +62,7 @@ internal fun AppleMusicLyricsFooter(
                     .clip(RoundedCornerShape(percent = 50))
                     .background(foregroundColor.copy(alpha = 0.10f))
                     .clickable(onClick = onOverflowClick)
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 7.dp),
         ) {
             Text(
                 text =
@@ -73,10 +79,20 @@ internal fun AppleMusicLyricsFooter(
             )
         }
         LyricsTransportButton(
+            iconRes = if (isLiked) R.drawable.player_favorite else R.drawable.player_favorite_border,
+            contentDescription = stringResource(
+                if (isLiked) R.string.action_remove_like else R.string.action_like,
+            ),
+            iconSize = 20.dp,
+            touchSize = SheetChromeTarget,
+            foregroundColor = foregroundColor.copy(alpha = 0.75f),
+            onClick = onToggleLike,
+        )
+        LyricsTransportButton(
             iconRes = R.drawable.more_horiz,
             contentDescription = stringResource(R.string.more_options),
             iconSize = 20.dp,
-            touchSize = 40.dp,
+            touchSize = SheetChromeTarget,
             foregroundColor = foregroundColor.copy(alpha = 0.75f),
             onClick = onOverflowClick,
             modifier =
@@ -90,12 +106,15 @@ internal fun AppleMusicLyricsFooter(
             iconRes = R.drawable.close,
             contentDescription = stringResource(R.string.close),
             iconSize = 20.dp,
-            touchSize = 40.dp,
+            touchSize = SheetChromeTarget,
             foregroundColor = foregroundColor.copy(alpha = 0.75f),
             onClick = onCloseClick,
         )
     }
 }
+
+/** One control's tap target in the sheet's chrome row: the accessibility floor, so the icons never shrink. */
+private val SheetChromeTarget = 48.dp
 
 @Composable
 internal fun LyricsTransportButton(
