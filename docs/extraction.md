@@ -109,8 +109,11 @@ the desktop Echo tier answers null.
   through NewPipe's JavaScript player. Its one BotGuard mint is optional and bounded well inside the
   tier budget, so a stalled minting endpoint leaves untokened extraction its time.
 - Every remote locator, including a header-free one, is fetched through the host lease: bounded 64 KiB probe and
-  4 MiB ranged chunks, a browser `User-Agent` when the resolver names none, and socket timeouts. Only a local file
-  still opens through FFmpeg's own reader (the C fallback also sets `rw_timeout` and a browser agent).
+  4 MiB ranged chunks, a browser `User-Agent` when the resolver names none, and socket timeouts. Two paths keep
+  FFmpeg's own reader: a local file, and a header-free HLS/DASH manifest URL, because only FFmpeg's demuxer can follow
+  a playlist's child segments (the C fallback also sets `rw_timeout` and a browser agent). A manifest that carries
+  headers is still leased, so credentials never ride a bare URL; it cannot follow children through the lease, which is
+  the pre-existing limitation for authenticated manifests.
 - A YouTube locator now carries the URL's `expire` parameter as its authorization window, so the queue's bounded
   recovery re-resolves it on `401/403/404/410/416` or an expired lease instead of treating a dead URL as terminal.
 

@@ -44,21 +44,38 @@ internal fun engineSourceOf(locator: PlaybackLocator): String? = when (locator) 
 
 /**
  * What the engine opens for [locator], or null when it cannot open it. Every deck that opens a source goes through
- * here, so the same locator always names the same source. Only a local file keeps the engine's own reader. Every
- * remote resource is read through [NativeStreamLease], even when it carries no headers and no known expiry: the lease
- * supplies the client's User-Agent, bounded ranged requests and socket timeouts, while FFmpeg's own reader would send
- * its `Lavf/...` agent with no timeout at all. The spectral probe keeps [engineSourceOf]'s string form because it only
- * needs a short bounded decode.
+ * here, so the same locator always names the same source. A local file keeps the engine's own reader, and so does a
+ * header-free media manifest: only FFmpeg's HLS/DASH demuxer can follow a playlist's child segments, while the lease's
+ * custom AVIO deliberately refuses child requests. Every other remote resource is read through [NativeStreamLease],
+ * even when it carries no headers and no known expiry: the lease supplies the client's User-Agent, bounded ranged
+ * requests and socket timeouts, while FFmpeg's own reader would send its `Lavf/...` agent with no timeout at all. The
+ * direct fallback sets `rw_timeout` and a browser agent in C as well. The spectral probe keeps [engineSourceOf]'s
+ * string form because it only needs a short bounded decode.
  */
 internal fun engineSourceOpen(
     locator: PlaybackLocator,
     telegram: TelegramFileProvider?,
 ): EngineSource? = when (locator) {
     is PlaybackLocator.LocalFile -> engineSourceOf(locator)?.let { EngineSource.Direct(it) }
-    is PlaybackLocator.Remote -> NativeStreamLease.forRemote(locator)?.let { EngineSource.Leased(it) }
+    is PlaybackLocator.Remote ->
+        if (locator.keepsEngineManifestReader()) {
+            engineSourceOf(locator)?.let { EngineSource.Direct(it) }
+        } else {
+            NativeStreamLease.forRemote(locator)?.let { EngineSource.Leased(it) }
+        }
     is PlaybackLocator.DeezerEncrypted -> engineSourceForDeezerTrack(locator)
     is PlaybackLocator.TelegramFile -> engineSourceForTelegramTrack(locator, telegram)
     is PlaybackLocator.PreparedPlaintext -> engineSourceForPreparedPlaintext(locator)
+}
+
+/** True for a header-free manifest URL: FFmpeg's own reader is the only one that can follow HLS/DASH children. */
+private fun PlaybackLocator.Remote.keepsEngineManifestReader(): Boolean =
+    headers.isEmpty() && expiresAtEpochMs == null && isManifestUrl(url)
+
+private fun isManifestUrl(url: String): Boolean {
+    val path = url.substringBefore('?').substringBefore('#').lowercase()
+    return path.endsWith(".m3u8") || path.endsWith(".mpd") ||
+        path.contains("/manifest/hls") || path.contains("/manifest/dash")
 }
 
 /**
