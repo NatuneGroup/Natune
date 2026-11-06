@@ -97,6 +97,8 @@ class QueueDevicePlaybackPort(
             when (intent) {
                 DeviceCommandIntent.Play -> queue.player.play()
                 DeviceCommandIntent.Pause -> queue.player.pause()
+                DeviceCommandIntent.Next, DeviceCommandIntent.Previous ->
+                    return notAllowed("The queue does not expose a resolved successor")
                 is DeviceCommandIntent.Seek -> queue.player.seekTo(intent.positionMs)
                 is DeviceCommandIntent.Select -> queue.select(intent.occurrenceId, intent.positionMs)
                 is DeviceCommandIntent.ReplaceQueue ->
