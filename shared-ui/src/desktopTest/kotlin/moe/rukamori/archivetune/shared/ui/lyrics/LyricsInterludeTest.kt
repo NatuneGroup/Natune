@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,13 +25,34 @@ class LyricsInterludeTest {
     @Test
     fun theSwellRisesOverTheLast1500ms() {
         val interlude = LyricsInterlude(0L, 10_000L)
-        assertEquals(0f, LyricsInterludeMotion.endSwell(interlude, 8_400))
-        assertEquals(LyricsInterludeMotion.END_SWELL_FROM, LyricsInterludeMotion.endSwell(interlude, 8_500), 0.001f)
+        // Outside its window the swell is a neutral factor of 1, so it can be multiplied into the breath
+        // without a jump; the previous shape returned 0 out there and started at 1.05 inside, which made
+        // the dots snap 5 % larger on the frame the window opened.
+        assertEquals(1f, LyricsInterludeMotion.endSwell(interlude, 8_400), 0.001f)
+        assertEquals(1f, LyricsInterludeMotion.endSwell(interlude, 8_500), 0.001f)
         val middle = LyricsInterludeMotion.endSwell(interlude, 9_250)
         assertTrue(
-            middle > LyricsInterludeMotion.END_SWELL_FROM && middle < LyricsInterludeMotion.END_SWELL_TO,
-            "the swell lerps through the window, got $middle",
+            middle > 1f && middle < LyricsInterludeMotion.END_SWELL_TO,
+            "the swell eases through the window, got $middle",
         )
-        assertEquals(0f, LyricsInterludeMotion.endSwell(interlude, 10_000))
+        assertEquals(
+            LyricsInterludeMotion.END_SWELL_TO,
+            LyricsInterludeMotion.endSwell(interlude, 9_999),
+            0.01f,
+        )
+    }
+
+    @Test
+    fun theDotsScaleIsContinuousAcrossTheSwellWindow() {
+        val interlude = LyricsInterlude(0L, 10_000L)
+        var previous = LyricsInterludeMotion.scale(interlude, 0L, reduceMotion = false)
+        for (position in 0L..10_000L step 16L) {
+            val scale = LyricsInterludeMotion.scale(interlude, position, reduceMotion = false)
+            assertTrue(
+                abs(scale - previous) < 0.02f,
+                "the dots jumped at $position: $previous -> $scale",
+            )
+            previous = scale
+        }
     }
 }
