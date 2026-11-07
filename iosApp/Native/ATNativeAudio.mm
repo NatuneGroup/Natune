@@ -536,7 +536,7 @@ int at_audio_play(at_audio_output *p) {
         // The system still refuses the session (a call in progress). Keep the listener's intent and start only on an
         // approved ShouldResume; the blend path guards its nodes before reaching this call, so no queued PCM starts.
         p->resume_after_interruption.store(true);
-        return 1;
+        return AT_AUDIO_PLAY_DEFERRED;
     }
     return start_output(p) ? 1 : 0;
 }
