@@ -478,16 +478,13 @@ fun LyricsV2(
                 hasWordTiming -> 16L
                 else -> 50L
             }
-        // For the high-frequency TTML path, drive the poll from the choreographer frame clock
-        // instead of a fixed `delay(16)`. When the device is under GPU pressure (most commonly
-        // because a Spotify Canvas video is compositing on a TextureView alongside the lyrics),
-        // the frame clock naturally drops to 30/24 fps; `delay(16)` would keep firing at 60 Hz
-        // and pile up recompositions on top of the slow frames, which is what makes the karaoke
-        // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
-        // the actual frame rate so the two stay in lock-step.
         // Word-timed rows (TTML *and* enhanced LRC) sweep continuously, so drive their live frames
-        // from the choreographer at display refresh. Line-only rows change a few times a minute and
-        // park between deadlines. A dance with the wrong coarse poll read as a sluggish 20-30 Hz sweep.
+        // from the choreographer frame clock at display refresh instead of a fixed `delay(16)`.
+        // Under GPU pressure (for example a Spotify Canvas video compositing alongside the lyrics)
+        // the frame clock naturally drops to 30/24 fps; `delay(16)` would keep firing at 60 Hz and
+        // pile up recompositions on top of the slow frames, which is what makes the karaoke fill lag
+        // behind the audio. `withFrameNanos` ties the poll to the real frame rate. Line-only rows
+        // change state a few times a minute, so they park between deadlines instead.
         val useFrameClock = !v2AnimationsDisabled && hasWordTiming
         // Between word and line boundaries the drawn state is static: while playing, sleep to the
         // next deadline; while paused or dragging, the coarse poll is enough to catch seeks.
