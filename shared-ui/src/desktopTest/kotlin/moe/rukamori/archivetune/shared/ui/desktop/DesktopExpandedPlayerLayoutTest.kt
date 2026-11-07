@@ -39,6 +39,8 @@ class DesktopExpandedPlayerLayoutTest {
         onNodeWithTag("desktop-expanded-column").assertWidthIsEqualTo(648.dp)
         // 1430 - 2 x 32 padding - 32 gap - 648 leaves the lyrics the rest of the row instead of a second 667 dp half.
         onNodeWithTag("desktop-expanded-lyrics").assertWidthIsEqualTo(686.dp)
+        // The sleeve keeps the reference's 392 dp square inside that column rather than filling it.
+        onNodeWithTag("artwork-track@1").assertWidthIsEqualTo(392.dp)
     }
 
     @Test
