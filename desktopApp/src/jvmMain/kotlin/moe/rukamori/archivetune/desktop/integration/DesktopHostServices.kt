@@ -77,9 +77,9 @@ class DesktopHostServices(
                     }
                 }.getOrNull()
             } catch (error: Exception) {
-                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
+                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${unavailableReason(error)}")
             } catch (error: LinkageError) {
-                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
+                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${unavailableReason(error)}")
             }
         }
         // On macOS the native session binds NSApp's main window, which only exists once the AWT window is
@@ -95,23 +95,23 @@ class DesktopHostServices(
         visibility = if (linux) try {
             LinuxWindowVisibility(window, windowActivity::nativeActivity)
         } catch (error: Exception) {
-            reportUnavailable("X11 visibility: ${error.javaClass.simpleName}"); null
+            reportUnavailable("X11 visibility: ${unavailableReason(error)}"); null
         } catch (error: LinkageError) {
-            reportUnavailable("X11 visibility: ${error.javaClass.simpleName}"); null
+            reportUnavailable("X11 visibility: ${unavailableReason(error)}"); null
         } else null
         workspace = if (linux && HyprlandWorkspaceVisibility.supported()) try {
             HyprlandWorkspaceVisibility((window as? Frame)?.title, windowActivity::nativeWorkspaceHidden)
         } catch (error: Exception) {
-            reportUnavailable("Hyprland visibility: ${error.javaClass.simpleName}"); null
+            reportUnavailable("Hyprland visibility: ${unavailableReason(error)}"); null
         } catch (error: LinkageError) {
-            reportUnavailable("Hyprland visibility: ${error.javaClass.simpleName}"); null
+            reportUnavailable("Hyprland visibility: ${unavailableReason(error)}"); null
         } else null
         appearance = if (linux) try {
             LinuxAppearanceTheme(onDark = { dark -> darkTheme.value = dark })
         } catch (error: Exception) {
-            reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
+            reportUnavailable("Desktop appearance: ${unavailableReason(error)}"); null
         } catch (error: LinkageError) {
-            reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
+            reportUnavailable("Desktop appearance: ${unavailableReason(error)}"); null
         } else null
         outputLifecycle = DesktopOutputLifecycle(
             snapshots = controller.snapshot,
@@ -122,7 +122,7 @@ class DesktopHostServices(
         collector = scope.launch {
             combine(controller.snapshot, metadata, transport, ::Triple).collect { (snapshot, display, state) ->
                 try { integration?.update(snapshot, display, state) }
-                catch (error: Exception) { reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}") }
+                catch (error: Exception) { reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${unavailableReason(error)}") }
             }
         }
     }
@@ -144,3 +144,23 @@ class DesktopHostServices(
         integration?.close()
     }
 }
+
+/**
+ * One line naming why a host service could not start. The class name alone hid a real defect: a
+ * `NoClassDefFoundError` names the type whose *dependency* was missing only in its message ("Could not initialize
+ * class ..."), and the interesting one was the cause (`ClassNotFoundException: com.sun.security.auth.module.UnixSystem`).
+ * The chain is flattened to one line so the diagnostic log keeps one record per service.
+ */
+internal fun unavailableReason(error: Throwable): String {
+    val parts = mutableListOf<String>()
+    var current: Throwable? = error
+    while (current != null && parts.size < 4) {
+        val message = current.message?.replace(WHITESPACE, " ")?.trim()?.takeIf(String::isNotEmpty)
+        parts += if (message == null) current.javaClass.simpleName else "${current.javaClass.simpleName}: $message"
+        val next = current.cause
+        current = if (next === current) null else next
+    }
+    return parts.joinToString(" <- ")
+}
+
+private val WHITESPACE = Regex("\\s+")

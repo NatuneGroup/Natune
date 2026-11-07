@@ -52,6 +52,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopHostServices
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.desktop.integration.linux.LinuxWindowGeometry
+import moe.rukamori.archivetune.desktop.integration.linux.reconciledWindowSize
 import moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChrome
 import moe.rukamori.archivetune.desktop.playback.DesktopEnginePrewarm
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
@@ -150,6 +152,8 @@ internal fun DesktopSessionWindowRoot(
     // The window is branded before its first visible frame: AWT otherwise shows the JDK's default window icon in the
     // title bar, the taskbar and Alt-Tab while the packaged launcher carries the app's own icon.
     LaunchedEffect(window) { DesktopWindowIcon.applyTo(window) }
+    // The pixels Compose does not paint belong to the app's background, not to the toolkit's black.
+    DesktopWindowBackground(window, isSystemInDarkTheme())
     // The engine's dlopen, and its Windows closure preload, costs the first play 50-300 ms. Starting the
     // warm from this effect keeps that off the first frame: the effect runs after composition, and the
     // load itself runs on the prewarm's own IO dispatcher. A host without the library skips the load and
@@ -279,6 +283,33 @@ internal fun DesktopMountedRoot(
     LaunchedEffect(window, effectiveDark) { WindowsWindowChrome.apply(window, effectiveDark) }
     // Logs the renderer Skiko settled on and turns blur off when it fell back to CPU rasterisation.
     LaunchedEffect(window) { DesktopRendererDiagnostics.observe(window) }
+    // AWT's X11 peer keeps whatever size the app asked for when the compositor ignores that request, while the X
+    // window is the size the compositor chose. Compose then lays the whole UI out for the AWT size, paints it, and
+    // never touches the rest of the window, which stays the window background. The server's own geometry is the only
+    // authority on the size on screen, so it is read back and re-applied.
+    DisposableEffect(window) {
+        if (!DesktopWindowFramePolicy.isLinux()) return@DisposableEffect onDispose { }
+        val tracker = runCatching {
+            LinuxWindowGeometry(window) { server ->
+                val target = reconciledWindowSize(window.size, server)
+                if (target != null) {
+                    DesktopDiagnosticLog.host(
+                        "window geometry: server ${server.width}x${server.height} against AWT " +
+                            "${window.width}x${window.height}; resynced",
+                        DiagnosticLevel.WARNING,
+                    )
+                    // After this poll returns: the first one runs from the composition that created the tracker.
+                    EventQueue.invokeLater { window.setSize(target) }
+                }
+            }
+        }.onFailure { failure ->
+            DesktopDiagnosticLog.host(
+                "window geometry: unavailable (${failure.javaClass.simpleName})",
+                DiagnosticLevel.INFO,
+            )
+        }.getOrNull()
+        onDispose { tracker?.close() }
+    }
     // Poppins covers Latin and Devanagari only; one line records which system font answered for the other scripts, so a
     // glyph-box report starts from evidence instead of a guess.
     LaunchedEffect(window) {
