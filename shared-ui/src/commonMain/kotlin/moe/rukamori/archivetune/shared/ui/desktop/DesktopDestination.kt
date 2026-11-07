@@ -23,12 +23,22 @@ enum class DesktopDestination(
     val label: StringResource,
     val icon: DrawableResource,
     val selectedIcon: DrawableResource,
+    /**
+     * The rail's own label: a 104 dp item fits a word rather than a sentence, so a destination whose name is longer
+     * than its column carries its short form here. [label] stays the accessibility name.
+     */
+    val railLabel: StringResource = label,
 ) {
     Home(Res.string.m4_home, Res.drawable.m4_icon_home_outlined, Res.drawable.m4_icon_home_filled),
     Library(Res.string.m4_library, Res.drawable.m4_icon_library_outlined, Res.drawable.m4_icon_library_filled),
     History(Res.string.m4_history, Res.drawable.m4_icon_history, Res.drawable.m4_icon_history),
     Statistics(Res.string.m4_statistics, Res.drawable.m6_icon_stats, Res.drawable.m6_icon_stats),
-    Together(Res.string.m4_listen_together, Res.drawable.m6_icon_listen_together, Res.drawable.m6_icon_listen_together);
+    Together(
+        Res.string.m4_listen_together,
+        Res.drawable.m6_icon_listen_together,
+        Res.drawable.m6_icon_listen_together,
+        railLabel = Res.string.desktop_shell_rail_together,
+    );
 
     /** Reselecting the destination the rail already shows returns to its root, as clicking a selected tab does. */
     fun open(navigation: ShellNavigation) {
