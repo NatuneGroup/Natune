@@ -677,7 +677,12 @@ fun LyricsScreen(
                     .consumeUnhandledPointerInput(),
         )
 
-        val compactHeight = PlayerWindowLayout.isCompact(maxHeight.value)
+        // The arrangement below is read from inside the CompositionLocalProvider and Column
+        // lambdas, whose scope markers hide this BoxWithConstraintsScope; capture the sheet's
+        // bounds here, where the receiver is still unambiguous.
+        val boxMaxWidth = maxWidth
+        val boxMaxHeight = maxHeight
+        val compactHeight = PlayerWindowLayout.isCompact(boxMaxHeight.value)
         CompositionLocalProvider(
             LocalLyricsScrollListener provides { scrolling ->
                 if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
@@ -703,7 +708,7 @@ fun LyricsScreen(
                             .padding(horizontal = LyricsSheetSidePadding),
                 )
 
-                if (PlayerWindowLayout.usesWideArrangement(maxWidth.value, maxHeight.value)) {
+                if (PlayerWindowLayout.usesWideArrangement(boxMaxWidth.value, boxMaxHeight.value)) {
                     // One Row for both controls states: the lyrics pane is composed in a single
                     // slot and the controls only animate their share of the row away. Swapping
                     // whole subtrees per state (the AnimatedContent this replaces) rebuilt the

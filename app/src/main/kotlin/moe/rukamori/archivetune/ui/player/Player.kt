@@ -1505,6 +1505,10 @@ fun BottomSheetPlayer(
                                 playerDesignStyle in NumberedSeekDoubleTapStyles,
                     ),
         ) {
+        // The thumbnail below is sized against the player's own box from inside nested Box/Column
+        // lambdas, whose scope markers hide this BoxWithConstraintsScope; capture it here.
+        val boxMaxWidth = maxWidth
+        val boxMaxHeight = maxHeight
         if (!state.isCollapsed &&
             !aodModeEnabled &&
             playerDesignStyle.rendersSharedBackground(storedPlayerBackground)
@@ -2138,7 +2142,7 @@ fun BottomSheetPlayer(
                         ) {
                             // The smaller side of the pane, not 40% of the device screen width: in
                             // a pop-up window that square was taller than the window itself.
-                            val thumbnailSize = minOf(maxWidth, maxHeight) * 0.4f
+                            val thumbnailSize = minOf(boxMaxWidth, boxMaxHeight) * 0.4f
                             Thumbnail(
                                 sliderPositionProvider = { sliderPosition },
                                 modifier = Modifier.size(thumbnailSize),

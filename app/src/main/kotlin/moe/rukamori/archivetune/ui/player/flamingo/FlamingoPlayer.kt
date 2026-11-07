@@ -910,8 +910,12 @@ fun FlamingoPlayerContent(
                         }
                     },
         ) {
+            // The stage fractions and the controls column are read from inside nested Box/Column
+            // lambdas, whose scope markers hide this BoxWithConstraintsScope; capture the player's
+            // own height here, where the receiver is still unambiguous.
+            val boxMaxHeight = maxHeight
             // A floating pop-up is "portrait" yet only a few hundred dp tall: split its box.
-            val stages = PlayerWindowLayout.stackedStages(maxHeight.value)
+            val stages = PlayerWindowLayout.stackedStages(boxMaxHeight.value)
             FlamingoWrapper {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -937,7 +941,7 @@ fun FlamingoPlayerContent(
                             if (!landscape && !videoShowing && canvasVisualActive) {
                                 val stageFraction =
                                     sharpStageHeight?.let {
-                                        (it / maxHeight).coerceIn(0.1f, 1f)
+                                        (it / boxMaxHeight).coerceIn(0.1f, 1f)
                                     } ?: 0.55f
                                 val frostFraction =
                                     (1f - FlamingoSharpStageFadeStart * stageFraction).coerceIn(0.2f, 1f)
@@ -1358,7 +1362,7 @@ fun FlamingoPlayerContent(
                                             showVolumeBar = showVolumeBar,
                                             volume = volume,
                                             onVolumeChange = onVolumeChange,
-                                            availableHeight = maxHeight - contentBottomPadding,
+                                            availableHeight = boxMaxHeight - contentBottomPadding,
                                             nowPage = { nowPageLambda.value },
                                             onLyrics = {
                                                 nowPage = if (nowPageLambda.value == FlamingoPage.Lyric) {
@@ -1837,7 +1841,7 @@ fun FlamingoPlayerContent(
                                                 },
                                                 onSliderValueChange = onSliderValueChange,
                                                 onSliderValueChangeFinished = onSliderValueChangeFinished,
-                                                availableHeight = maxHeight,
+                                                availableHeight = boxMaxHeight,
                                                 modifier = Modifier.padding(top = stages.topGap),
                                             )
                                         }
