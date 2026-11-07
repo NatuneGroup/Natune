@@ -42,16 +42,28 @@ class PlayerWindowLayoutTest {
 
     @Test
     fun theModeOnlyEverGrowsWithTheWindow() {
-        var previous = PlayerWindowLayout.modeFor(0f)
+        var previous = PlayerWindowLayout.modeFor(0f).roomOrdinal()
         var height = 10f
         while (height <= 1_200f) {
             val mode = PlayerWindowLayout.modeFor(height)
-            assertTrue("mode went backwards at " + height + " dp", mode.ordinal >= previous.ordinal)
-            previous = mode
+            assertTrue("mode went backwards at " + height + " dp", mode.roomOrdinal() >= previous)
+            previous = mode.roomOrdinal()
             height += 10f
         }
-        assertEquals(PlayerWindowMode.REGULAR, previous)
+        assertEquals(PlayerWindowMode.REGULAR, PlayerWindowLayout.modeFor(1_200f))
     }
+
+    /**
+     * The modes ranked by how much room their arrangement needs, so this test does not depend on the
+     * order the enum happens to declare them in (it lists the common case first, which is not the
+     * order of the sizes).
+     */
+    private fun PlayerWindowMode.roomOrdinal(): Int =
+        when (this) {
+            PlayerWindowMode.SHORT -> 0
+            PlayerWindowMode.COMPACT -> 1
+            PlayerWindowMode.REGULAR -> 2
+        }
 
     @Test
     fun aTallPhoneStaysStacked() {

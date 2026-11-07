@@ -88,7 +88,8 @@ class LyricsBackgroundVocalParseTest {
             </tt>
             """.trimIndent()
         val words = LyricsUtils.parseTtml(ttml).single().words.orEmpty()
-        assertEquals(listOf("hold ", "on"), words.map { it.text })
+        // TTMLParser trims each span's text, so the words are the span text without its padding.
+        assertEquals(listOf("hold", "on"), words.map { it.text })
         assertTrue(words.none { it.isBackground })
     }
 
