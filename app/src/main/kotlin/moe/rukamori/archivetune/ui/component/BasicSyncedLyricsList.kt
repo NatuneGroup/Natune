@@ -222,6 +222,7 @@ internal fun BasicSyncedLyricsList(
             val distance = EnhancedLyricsMotion.distance(index, activeIndex)
             BasicSyncedLyricLine(
                 line = line,
+                index = index,
                 isActive = index == activeIndex,
                 depth = EnhancedLyricsMotion.depthOf(distance, reduceMotion = animationsDisabled),
                 settle = settle,
@@ -261,6 +262,7 @@ internal fun BasicSyncedLyricsList(
 @Composable
 private fun BasicSyncedLyricLine(
     line: ISyncedLine,
+    index: Int,
     isActive: Boolean,
     depth: EnhancedDepth,
     settle: EnhancedLineSettle,
@@ -334,7 +336,7 @@ private fun BasicSyncedLyricLine(
                     scaleY = depthScale * activePop
                     alpha = lineAlpha * depthAlpha
                     transformOrigin = TransformOrigin(if (endAligned) 1f else 0f, 0.5f)
-                    translationY = settle.offsetPx(settleDelayMs)
+                    translationY = settle.offsetPx(index, settleDelayMs)
                 }
                 .then(
                     if (depthBlur > EnhancedLyricsMotion.BLUR_VISIBLE_DP) {
