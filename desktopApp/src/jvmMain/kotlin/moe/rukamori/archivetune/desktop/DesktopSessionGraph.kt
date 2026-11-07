@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.foundation.lazy.LazyListState
 import io.ktor.client.HttpClient
 import java.nio.file.Files
 import java.nio.file.Path
@@ -121,6 +122,11 @@ class DesktopSessionGraph internal constructor(
     val transport: StateFlow<DesktopTransportState>,
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */
     val textOrder: Comparator<String>,
+    /**
+     * The settings window's category-list scroll position. It lives on the graph rather than in the page composition, so
+     * opening one settings page after another never sends the reader back to the top of the category list.
+     */
+    val settingsNavScroll: LazyListState = LazyListState(),
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
     internal val libraryContent: LibraryContentOwner,
     /** The YouTube resolve owner; the source chooser's refresh drops its searched-id cache entry. */
