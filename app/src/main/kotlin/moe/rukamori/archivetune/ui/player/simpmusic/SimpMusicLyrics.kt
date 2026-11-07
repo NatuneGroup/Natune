@@ -195,9 +195,6 @@ fun SimpMusicLyrics(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics) || isTtml(lyrics)) }
-    // Word timing, not the container, decides the lead and the frame cadence: enhanced LRC with per-word
-    // stamps is word-timed too and must not be pushed ahead by the LRC lead.
-    val hasWordTiming = remember(entries) { LyricsRenderTiming.hasWordTiming(entries) }
 
     // Parsed off the composition thread for the same reason the other two renderers do it: a
     // word-synced TTML file is an XML parse plus an object per syllable, and paying that in
@@ -233,6 +230,9 @@ fun SimpMusicLyrics(
             }
     }
     val entries = parsed.orEmpty()
+    // Word timing, not the container, decides the lead and the frame cadence: enhanced LRC with per-word
+    // stamps is word-timed too and must not be pushed ahead by the LRC lead.
+    val hasWordTiming = remember(entries) { LyricsRenderTiming.hasWordTiming(entries) }
     val sourceLanguageHints = remember(lyrics, entries) {
         LyricsUtils.sourceLanguageHints(lyrics, entries)
     }
