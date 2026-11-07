@@ -48,6 +48,11 @@ fun main(args: Array<String>) {
     // A window close hides to the tray only when the mounted window allows it; any other close takes the explicit exit.
     val closeRequests = DesktopCloseRequests()
     val savedWindow = DesktopWindowBounds.load(instanceDirectory)
+    // The frame is fixed before the window exists: an X11 window cannot lose its decoration later, and the Windows
+    // procedure decides at creation whether the app paints the caption.
+    val frameMode = DesktopWindowFramePolicy.resolve(
+        rememberedSystemFrame = DesktopWindowFramePolicy.read(instanceDirectory),
+    )
     var windowState: WindowState? = null
     try { application {
         val state = rememberWindowState(
@@ -60,6 +65,7 @@ fun main(args: Array<String>) {
             onCloseRequest = { closeRequests.request { exitApplication() } },
             title = DesktopStrings["app_name"],
             state = state,
+            undecorated = DesktopWindowFramePolicy.requiresUndecorated(frameMode),
         ) {
             val density = LocalDensity.current.density
             LaunchedEffect(window, density) { DesktopWindowBounds.applyMinimumSize(window, density) }
@@ -67,7 +73,7 @@ fun main(args: Array<String>) {
                 DesktopLaunchIntake.attachWindow(window)
                 onDispose { DesktopLaunchIntake.detachWindow(window) }
             }
-            DesktopSessionWindowRoot(window, sessions, closeRequests, state) { exitApplication() }
+            DesktopSessionWindowRoot(this, window, sessions, closeRequests, state, frameMode) { exitApplication() }
         }
     } } finally {
         windowState?.let { DesktopWindowBounds.save(instanceDirectory, it) }

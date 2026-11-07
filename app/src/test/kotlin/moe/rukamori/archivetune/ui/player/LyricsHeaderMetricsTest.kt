@@ -5,38 +5,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The lyrics header's width budget: the title and artist take every dp the artwork and the three
- * buttons do not, so the marquee viewport is a readable title instead of the six characters three
- * fixed 48 dp targets left over on a phone.
+ * The lyrics header's width budget: the title and artist take every dp the artwork does not, because the
+ * sheet's controls no longer sit in this row. Three 48 dp targets here left a phone about 100 dp for a
+ * name — the complaint that there was no space for it, while the row still read as spaced out.
  */
 class LyricsHeaderMetricsTest {
-    /** A 360 dp phone row inside the sheet's 28 dp side padding. */
-    private val phoneRowDp = 360f - 28f * 2
+    /** A 360 dp phone row inside the sheet's 16 dp side padding. */
+    private val phoneRowDp = 360f - 16f * 2
 
     @Test
-    fun theTitleAndArtistKeepTheRestOfAPhoneRow() {
+    fun theNameKeepsMostOfAPhoneRow() {
         val text = LyricsHeaderMetrics.textWidth(phoneRowDp)
-        // Fixed 72 dp artwork plus three 48 dp targets left 58 dp of this row; the header now keeps
-        // enough for the title itself, and the artist marquees the remainder.
-        assertTrue("text width was " + text + " dp", text >= 95f)
+        // The three-target header left 100 dp of this row; the row has only the artwork and one gap now.
+        assertTrue("text width was " + text + " dp", text >= 200f)
         assertTrue(text < phoneRowDp)
     }
 
     @Test
     fun theRowIsPartitionedExactlySoNothingOverlaps() {
-        for (width in listOf(240f, 304f, 355f, 420f, 544f, 744f)) {
-            val occupied = LyricsHeaderMetrics.artworkSize(width) + LyricsHeaderMetrics.CHROME_DP + LyricsHeaderMetrics.textWidth(width)
+        for (width in listOf(240f, 320f, 328f, 420f, 544f, 744f)) {
+            val occupied =
+                LyricsHeaderMetrics.artworkSize(width) +
+                    LyricsHeaderMetrics.CHROME_DP +
+                    LyricsHeaderMetrics.textWidth(width)
             assertEquals(width, occupied, 0.001f)
         }
     }
 
     @Test
-    fun theArtworkGivesWayBeforeTheTapTargetsDo() {
-        // A 48 dp target is the accessibility floor, so the artwork shrinks instead.
-        assertTrue(LyricsHeaderMetrics.ICON_TARGET_DP >= 48f)
-        assertTrue(LyricsHeaderMetrics.artworkSize(240f) < LyricsHeaderMetrics.artworkSize(744f))
-        assertEquals(LyricsHeaderMetrics.ARTWORK_MIN_DP, LyricsHeaderMetrics.artworkSize(200f), 0.001f)
-        assertEquals(LyricsHeaderMetrics.ARTWORK_MAX_DP, LyricsHeaderMetrics.artworkSize(1_000f), 0.001f)
+    fun theArtworkIsATileNotAThumbnail() {
+        // Not "a bit bigger": the tile was a 64 dp thumbnail on a phone, and it was called really small.
+        val phone = LyricsHeaderMetrics.artworkSize(phoneRowDp)
+        assertTrue("artwork was " + phone + " dp", phone >= 88f)
+        assertTrue(phone > 64f)
+        assertEquals(
+            LyricsHeaderMetrics.ARTWORK_MIN_DP,
+            LyricsHeaderMetrics.artworkSize(200f),
+            0.001f,
+        )
+        assertEquals(
+            LyricsHeaderMetrics.ARTWORK_MAX_DP,
+            LyricsHeaderMetrics.artworkSize(1_000f),
+            0.001f,
+        )
     }
 
     @Test
@@ -53,8 +64,51 @@ class LyricsHeaderMetricsTest {
 
     @Test
     fun aDegenerateRowNeverClaimsNegativeRoom() {
-        for (width in listOf(0f, 40f, 120f)) {
+        // The tile's 72 dp floor plus its gap is where the name row runs out: below that the text
+        // column is flat zero rather than negative. 120 dp is past it — the floor leaves 36 dp of
+        // name there, which the partition test above pins down.
+        for (width in listOf(0f, 40f, 80f)) {
             assertEquals(0f, LyricsHeaderMetrics.textWidth(width), 0.001f)
         }
+        assertEquals(36f, LyricsHeaderMetrics.textWidth(120f), 0.001f)
+    }
+
+    @Test
+    fun theOnlyChromeInTheNameRowIsTheArtworkGap() {
+        // The controls live in the sheet's chrome row (LyricsScreenFooter), which is outside the
+        // auto-hiding transport, so this row spends nothing on tap targets.
+        assertEquals(LyricsHeaderMetrics.ARTWORK_GAP_DP, LyricsHeaderMetrics.CHROME_DP, 0.001f)
+    }
+
+    @Test
+    fun aShortWindowHeaderShrinksTheTileAndKeepsTheName() {
+        // The same row in a pop-up window: the header must not eat the list's room, but the title
+        // still has to read — so the tile gives way first.
+        val compactTile = LyricsHeaderMetrics.artworkSize(phoneRowDp, compact = true)
+        val fullTile = LyricsHeaderMetrics.artworkSize(phoneRowDp)
+        assertTrue("compact tile was " + compactTile + " dp", compactTile < fullTile)
+        assertTrue("compact tile was " + compactTile + " dp", compactTile >= 48f)
+        assertTrue(
+            "compact text width was " + LyricsHeaderMetrics.textWidth(phoneRowDp, compact = true),
+            LyricsHeaderMetrics.textWidth(phoneRowDp, compact = true) >=
+                LyricsHeaderMetrics.textWidth(phoneRowDp),
+        )
+    }
+
+    @Test
+    fun theCompactRowIsPartitionedExactlyToo() {
+        for (width in listOf(160f, 240f, 328f, 420f, 744f)) {
+            val occupied =
+                LyricsHeaderMetrics.artworkSize(width, compact = true) +
+                    LyricsHeaderMetrics.artworkGapDp(compact = true) +
+                    LyricsHeaderMetrics.textWidth(width, compact = true)
+            assertEquals(width, occupied, 0.001f)
+        }
+        assertEquals(8f, LyricsHeaderMetrics.artworkGapDp(compact = true), 0.001f)
+        assertEquals(
+            LyricsHeaderMetrics.ARTWORK_GAP_DP,
+            LyricsHeaderMetrics.artworkGapDp(compact = false),
+            0.001f,
+        )
     }
 }

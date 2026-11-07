@@ -565,6 +565,7 @@ val AmazonAudioQualityKey = StringPreferenceKey("amazonAudioQuality")
 val JioSaavnEnabledKey = BooleanPreferenceKey("enableSaavnStreaming")
 val SaavnAudioQualityKey = StringPreferenceKey("saavnAudioQuality")
 val WebClientPoTokenEnabledKey = BooleanPreferenceKey("webClientPoTokenEnabled")
+val DesktopPoTokenHelperEnabledKey = BooleanPreferenceKey("desktopPoTokenHelperEnabled")
 val PoTokenGvsKey = StringPreferenceKey("poTokenGvs")
 val PoTokenPlayerKey = StringPreferenceKey("poTokenPlayer")
 val PoTokenSourceUrlKey = StringPreferenceKey("poTokenSourceUrl")
@@ -721,3 +722,29 @@ val DisableAnimatedArtworkOnMobileDataKey = BooleanPreferenceKey("disableAnimate
 // Metrolist 14.0.0-rc6 port. The palette style by enum name. Unset or unknown reads as the default palette, which is
 // today's look.
 val ThemePaletteStyleKey = StringPreferenceKey("themePaletteStyle")
+
+// Device Connect: live LAN playback only. The paired-device index holds public metadata; every pair secret
+// lives in SecureCredentialStore under the "deviceconnect" provider and never enters a backup or sync document.
+val DeviceConnectEnabledKey = BooleanPreferenceKey("deviceConnectEnabled")
+val DeviceConnectDeviceIdKey = StringPreferenceKey("deviceConnectDeviceId")
+val DeviceConnectDeviceNameKey = StringPreferenceKey("deviceConnectDeviceName")
+val DeviceConnectAllowVpnKey = BooleanPreferenceKey("deviceConnectAllowVpn")
+val DeviceConnectDefaultDeviceKey = StringPreferenceKey("deviceConnectDefaultDeviceId")
+val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevices")
+
+// Desktop window behavior. Both keys stay stored on every host; only the desktop shell reads them, and a host
+// without that shell keeps the value for a later desktop run and for a backup round trip. The on-disk names follow
+// the snake_case desktop keys already stored (local_songs_*, poolAccounts*), because a name is a migration.
+// The shell paints its own Windows title bar and Linux caption unless this is on; Wayland and macOS always keep the
+// system title bar because an app-drawn caption cannot drive those compositors. AWT cannot add or remove a decoration
+// on a live window, so the desktop host mirrors this value and applies a change at the next launch.
+val DesktopSystemWindowFrameKey = BooleanPreferenceKey("desktop_system_window_frame")
+// Closing the window hides it to the tray instead of quitting the process.
+val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")
+// The ARGB of the last sleeve the desktop tinted its surfaces with. It is read before the first frame so a launching
+// window opens in its own tonal family instead of Material's stock default, and rewritten whenever the sleeve changes.
+val DesktopArtworkSeedKey = LongPreferenceKey("desktop_artwork_seed")
+
+/** The stored window-chrome choice; unset means the shell draws its own caption. */
+val PreferenceSnapshot.desktopSystemWindowFrame: Boolean
+    get() = this[DesktopSystemWindowFrameKey, false]

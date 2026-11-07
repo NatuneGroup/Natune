@@ -119,6 +119,8 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
+import moe.rukamori.archivetune.shared.ui.settings.AndroidOnlySettingsAnchors
+import moe.rukamori.archivetune.shared.ui.settings.LocalUnsupportedSettingsAnchors
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
@@ -411,7 +413,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/account", YouTubeAccountRoute, YouTubeLoginRoute, IosYouTubeOAuthRoute,
-    "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
+    "settings/integration", "settings/integrations/device_connect", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
 
@@ -420,7 +422,11 @@ private val IOS_SETTINGS_ROUTES = setOf(
 internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: ArchiveRoute, navigation: ShellNavigation) {
     // This shell draws its own navigation chrome, so no system back gesture exists: the host supplies the pop.
     val back: () -> Unit = { navigation.back() }
-    CompositionLocalProvider(LocalSettingsBack provides back) {
+    CompositionLocalProvider(
+        LocalSettingsBack provides back,
+        // The shared pages stay mounted; only rows whose readers are Android-only are omitted here.
+        LocalUnsupportedSettingsAnchors provides AndroidOnlySettingsAnchors.all,
+    ) {
         IosSettingsRouteBody(host, owners, route, navigation)
     }
 }
@@ -454,6 +460,8 @@ private fun IosSettingsRouteBody(
                 navigate = navigate,
                 onFailure = onFailure,
                 scrollTo = scrollTo,
+                // The root never takes key focus on this host, so a shortcut table here could never fire.
+                keyboardShortcuts = false,
             )
             "settings/tidal" -> {
                 val health by owners.tidalInstanceHealth.collectAsState()
@@ -646,6 +654,7 @@ private fun IosSettingsRouteBody(
                     scrollTo = scrollTo,
                 )
             }
+            "settings/integrations/device_connect" -> IosDeviceConnectSettingsPage(owners.graph)
             IosListenTogetherSettingsRoute -> IosListenTogetherSettingsPage(
                 owner = owners.graph.listenTogether,
                 controller = owners.controller,
@@ -857,6 +866,7 @@ private fun IosDeveloperSettingsPage(
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
+        androidDebugSections = false,
     )
 }
 

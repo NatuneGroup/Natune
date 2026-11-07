@@ -66,6 +66,7 @@ import moe.rukamori.archivetune.ui.screens.search.OnlineSearchProviderArgument
 import moe.rukamori.archivetune.ui.screens.search.OnlineSearchResultRoute
 import moe.rukamori.archivetune.ui.screens.search.OnlineSearchResultRoutePrefix
 import moe.rukamori.archivetune.ui.screens.search.SearchScreen
+import moe.rukamori.archivetune.ui.screens.spotifyhome.SpotifyHomeScreen
 import moe.rukamori.archivetune.ui.screens.settings.AboutScreen
 import moe.rukamori.archivetune.ui.screens.settings.AccountSettings
 import moe.rukamori.archivetune.ui.screens.settings.AiIntegrationSettings
@@ -92,6 +93,7 @@ import moe.rukamori.archivetune.ui.screens.settings.HiddenPlaylistsScreen
 import moe.rukamori.archivetune.ui.screens.settings.IconScreen
 import moe.rukamori.archivetune.ui.screens.settings.IntegrationScreen
 import moe.rukamori.archivetune.ui.screens.settings.ListenTogetherSettings
+import moe.rukamori.archivetune.ui.screens.settings.DeviceConnectSettings
 import moe.rukamori.archivetune.ui.screens.settings.InternetSettings
 import moe.rukamori.archivetune.ui.screens.settings.TidalSettings
 import moe.rukamori.archivetune.ui.screens.settings.QobuzSettings
@@ -699,6 +701,9 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable(route = "settings/integrations/listen_together") {
         ListenTogetherSettings(navController, scrollBehavior)
+    }
+    composable(route = "settings/integrations/device_connect") {
+        DeviceConnectSettings(navController)
     }
     composable(
         route = "settings/tidal?scrollTo={scrollTo}",

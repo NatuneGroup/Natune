@@ -122,26 +122,25 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         )
         own("lyrics_animations", "lyrics", "lyrics_animations")
         own("appearance_player", "lyrics", "lyrics_background_style")
-        // The lyrics translator shipped alongside the Discord experiments and still lives there.
         // Listen Together lives on its own settings leaf (no scrollTo support).
         own("listen_together", "integration", "listen_together", "listen_together_screen")
-        own("discord_experimental", "lyrics", "translate_lyrics", "enable_translator")
 
         // Source enable/quality switches moved from Playback to the dedicated Sources page.
         own(
             "sources", "playback",
             "preferred_sources", "auto_choose_playback_client", "player_stream_client",
             "check_source", "spotify_catalog_source", "tidal_enable", "tidal_account_first",
-            "tidal_audio_quality", "tidal_animated_covers", "tidal_manage_instances",
+            "tidal_audio_quality", "tidal_manage_instances",
             "qobuz_enable", "qobuz_audio_quality", "qobuz_backup_enable", "qobuz_manage_instances",
             "deezer_enable", "deezer_audio_quality", "jiosaavn_enable", "jiosaavn_audio_quality",
-            "applemusic_enable", "amazon_source_enable", "qq_music_enable", "qq_music_account",
+            "applemusic_enable", "amazon_enable", "qq_music_enable", "qq_music_account", "spotify_stream_enable",
             "youtube_source_enable",
         )
         own("ytdlp", "playback", "ytdlp")
         own("sources", "deezer", "deezer_enable", "deezer_audio_quality")
         own("qobuz", "sources", "qobuz")
         own("tidal", "sources", "tidal")
+        own("tidal", "sources", "tidal_animated_covers", "tidal_artwork_fallback")
 
         // Appearance is one page in three sections. The section owners stay so each row (and the
         // lyrics-indexed background row) keeps resolving; all three open the one page.
@@ -149,31 +148,29 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
             "appearance_theme", "appearance",
             "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette",
             "color_source", "palette_picker", "theme_creator", "app_icon", "disable_animations",
-            "splash_overlay_enabled", "apple_music_menus", "apple_music_search_bar", "apple_music_palette",
+            "splash_overlay_enabled", "apple_music_search_bar", "apple_music_palette",
             "hide_status_bar", "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur",
             "backdrop_blur_amount", "font_preference", "use_system_font", "custom_font",
             "liquid_glass_effects", "wallpaper_permission",
         )
         own(
             "appearance_player", "appearance",
-            "player_design_style", "player_menu_style", "player_background_style", "lyrics_background_style",
-            "mini_player_background_style", "player_buttons_style", "player_slider_style",
+            "player_design_style", "player_menu_style", "player_background_style", "mini_player_background_style",
+            "player_slider_style",
             "show_player_volume_bar", "hide_player_thumbnail", "crop_thumbnail_to_square",
             "thumbnail_corner_radius", "customized_background", "album_canvas_enabled",
-            "apple_music_animated_artwork", "disable_animated_artwork_on_mobile_data", "simpmusic_lyrics",
+            "disable_animated_artwork_on_mobile_data", "simpmusic_lyrics",
         )
         own(
             "appearance_interface", "appearance",
-            "home_screen_style", "minimal_home_mode", "default_open_tab", "search_bar_position",
+            "minimal_home_mode", "default_open_tab", "search_bar_position",
             "hide_search_bar_while_scrolling", "back_animation_style",
-            "tablet_mode", "navigation_bar_style", "navigation_bar_settings", "hide_scrollbar",
+            "tablet_mode", "navigation_bar_settings", "hide_scrollbar",
             "grid_layout", "default_lib_chips", "extras", "app_language",
         )
 
         // Appearance rows that were moved out to their own pages.
-        own("navigation_bar", "appearance", "frosted_nav_bar", "liquid_glass_nav_bar", "hide_navigation_bar_labels",
-            "navigation_bar_hide_on_scroll",
-        )
+        own("navigation_bar", "appearance", "hide_navigation_bar_labels", "navigation_bar_hide_on_scroll")
         own("appearance_extras", "appearance", "show_home_category_chips")
         own("playback", "appearance", "swipe_sensitivity")
         own("behavior", "appearance", "force_high_refresh_rate")
@@ -210,6 +207,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
             "behavior" -> "settings/privacy"
             "integration" -> "settings/integration"
             "listen_together" -> "settings/integrations/listen_together"
+            "device_connect" -> "settings/integrations/device_connect"
             "internet" -> "settings/internet"
             "storage" -> "settings/storage"
             "downloads" -> "settings/downloads"

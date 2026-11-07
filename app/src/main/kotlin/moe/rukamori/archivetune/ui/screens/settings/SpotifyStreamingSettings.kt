@@ -65,7 +65,6 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamAccountNameKey
-import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethodKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
@@ -86,7 +85,6 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
-import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -99,7 +97,6 @@ fun SpotifyStreamingSettings(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val (enabledRaw, onEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
     val (spDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
     val (accountName, _) = rememberPreference(SpotifyStreamAccountNameKey, "")
     val (userId, _) = rememberPreference(SpotifyStreamUserIdKey, "")
@@ -120,7 +117,6 @@ fun SpotifyStreamingSettings(
             SpotifyStreamEngine.UNOFFICIAL -> spDc.isNotBlank()
             SpotifyStreamEngine.LIBRESPOT -> librespotSignedIn
         }
-    val enabled = enabledRaw && signedIn
     var showLogin by remember { mutableStateOf(false) }
     var verifying by remember { mutableStateOf(false) }
     var librespotVerifying by remember { mutableStateOf(false) }
@@ -156,15 +152,6 @@ fun SpotifyStreamingSettings(
             } finally {
                 librespotVerifying = false
             }
-        }
-    }
-
-    // The toggle flips only its own flag. Spotify sits in the source order like every other
-    // source now; the user positions it in "Preferred sources", and while signed out the
-    // resolver treats the source as disabled anyway.
-    val onEnabledChange: (Boolean) -> Unit = { next ->
-        if (!next || signedIn) {
-            onEnabledChangeRaw(next)
         }
     }
 
@@ -412,24 +399,6 @@ fun SpotifyStreamingSettings(
                         },
                         isValueEnabled = { it != SpotifyStreamEngine.LIBRESPOT || librespotSelectable },
                         onValueSelected = onEngineChange,
-                    )
-                }
-
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("spotify_stream_enabled"),
-                        title = { Text(stringResource(R.string.spotify_stream_enabled)) },
-                        description =
-                            when {
-                                signedIn -> stringResource(R.string.spotify_stream_enabled_desc)
-                                engine == SpotifyStreamEngine.LIBRESPOT ->
-                                    stringResource(R.string.spotify_stream_needs_librespot)
-                                else -> stringResource(R.string.spotify_stream_needs_account)
-                            },
-                        icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
-                        checked = enabled,
-                        onCheckedChange = onEnabledChange,
-                        isEnabled = signedIn || enabledRaw,
                     )
                 }
 

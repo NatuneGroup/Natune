@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.player.ActionButton
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerArtworkPager
@@ -163,7 +164,12 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
             }
             PlayerArtworkPager(
                 c,
-                Modifier.fillMaxSize().playerSeekDoubleTap(c, c.preferences.style in doubleTapSeekStyles),
+                if (LocalDesktopLayout.current) {
+                    Modifier.widthIn(max = 392.dp).fillMaxHeight()
+                        .playerSeekDoubleTap(c, c.preferences.style in doubleTapSeekStyles)
+                } else {
+                    Modifier.fillMaxSize().playerSeekDoubleTap(c, c.preferences.style in doubleTapSeekStyles)
+                },
             )
         }
     }

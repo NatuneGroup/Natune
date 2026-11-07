@@ -38,6 +38,14 @@ class ShellPolicyTest {
         val compact = PreferenceSnapshot.of(NavigationBarCompactBehaviorKey to "ALWAYS_COMPACT")
         assertEquals(ShellLayout.CompactRow, shellLayout(400f, false, compact, topLevel = false))
     }
+    @Test fun settingsAndFullSearchKeepThisShellChromeFree() {
+        // This shell is the phone chrome. The desktop host draws its own scaffold (see DesktopShellTest), which keeps
+        // the rail and the player bar on every route, Settings included.
+        assertEquals(ShellLayout.Hidden, shellLayout(1440f, false, PreferenceSnapshot.EMPTY, settingsRoute = true))
+        assertEquals(ShellLayout.Hidden, shellLayout(1440f, false, PreferenceSnapshot.EMPTY, searchActive = true))
+        val apple = PreferenceSnapshot.of(AppleMusicExperienceKey to true)
+        assertEquals(ShellLayout.CompactRow, shellLayout(1440f, false, apple))
+    }
     @Test fun navigatingBackRestoresTheExactDestinationAndTab() {
         val nav = ShellNavigation(ShellTab.Home)
         nav.open("online_playlist/PL1")

@@ -112,9 +112,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
-import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
-import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -148,14 +146,11 @@ import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils
-import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
@@ -167,8 +162,6 @@ import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
-import kotlin.math.roundToInt
-import kotlin.math.roundToLong
 
 private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
@@ -180,9 +173,6 @@ private const val MANUAL_SCROLL_TIMEOUT_MS = 4500L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
 private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
 private const val LYRIC_FIRST_FOCUS_EMPTY_FRAMES = 6
-private const val SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS = 80L
-private const val SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS = 180L
-private const val SMOOTH_PLAYBACK_DRIFT_CORRECTION = 0.55f
 // Sentinels for the first-focus collector: the user took over the list, or no line index is
 // published yet.
 private const val LYRIC_FOCUS_TARGET_MANUAL = -2
@@ -192,15 +182,6 @@ private const val LYRIC_FOCUS_TARGET_PENDING = -1
 private const val LYRIC_FIRST_FOCUS_FADE_MS = 200
 // Hard ceiling on how long the lines may stay hidden waiting for that placement.
 private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
-// A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
-// the library will accept rather than a share of the line's duration — see
-// buildWrappingKaraokeSyllables.
-
-// How long a line-synced line may keep focus after its own timestamp before it hands over to the
-// interlude dots. A shorter gap to the next line simply holds the line until that line starts.
-private const val LINE_SYNCED_MAX_FOCUS_HOLD_MS = 5_000L
-// The last line has no successor to butt against, so give it a fixed window.
-private const val LINE_SYNCED_TRAILING_LINE_DURATION_MS = 4_000L
 // Minimum position jump in either direction (in ms) that we treat as a "reset"
 // trigger — large enough to ride through ExoPlayer's normal position jitter
 // (which is well under 200ms even on a stuttering device) and minor playback
@@ -532,11 +513,19 @@ fun LyricsEnhanced(
         remember(player) {
             mutableLongStateOf(player.currentPosition.coerceAtLeast(0L))
         }
+    // What the pane draws from. The loop anchors this clock once per frame and the pane projects it at
+    // draw time, so a frame shows the position of the instant it is painted at rather than the value
+    // the frame before it published. See LyricsPositionProjection.
+    val drawClock = remember(player) { EnhancedLyricsDrawClock() }
+    // Bumped once per frame the loop wants drawn; it is the draw-phase subscription, so an unchanged
+    // parked frame asks for no frame at all.
+    val frameTick = remember(player) { mutableIntStateOf(0) }
     val playbackSyncPosition: () -> Int =
-        remember {
+        remember(drawClock, frameTick) {
             {
+                frameTick.intValue
                 (
-                    playbackPositionMs.longValue +
+                    drawClock.positionMs() +
                         latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value +
                         LYRIC_VISUAL_TUNING_OFFSET_MS
@@ -602,6 +591,13 @@ fun LyricsEnhanced(
 
     LaunchedEffect(lyricsSessionKey) {
         playbackPositionMs.longValue = player.currentPosition.coerceAtLeast(0L)
+        // A new track starts from its own position instead of projecting from the last one's anchor.
+        drawClock.anchor(
+            positionMs = playbackPositionMs.longValue,
+            atNanos = System.nanoTime(),
+            speed = latestPlaybackSpeed.value,
+            advancing = false,
+        )
         isManualScrolling = false
         lastManualScrollTime = 0L
         isSelectionModeActive = false
@@ -660,6 +656,10 @@ fun LyricsEnhanced(
                 // playbackPositionMs.longValue (we already have the value in
                 // `rawPosition` / `nextPosition`).
                 val effectivePositionMs: Long
+                // The anchor the pane projects at draw time, and whether it keeps advancing from there.
+                var drawAnchorPositionMs = 0L
+                var drawAnchorNanos = 0L
+                var drawAdvancing = false
                 // Between word and line boundaries the drawn state is static, so the loop parks until the next deadline.
                 var parkMs = 0L
                 val idleFeedEstimateMs =
@@ -680,12 +680,16 @@ fun LyricsEnhanced(
                         playbackPositionMs.longValue = rawPosition
                     }
                     effectivePositionMs = idleFeedEstimateMs
+                    drawAnchorPositionMs = playbackPositionMs.longValue
+                    drawAnchorNanos = System.nanoTime()
                 } else if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
                     anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
                     if (playbackPositionMs.longValue != rawPosition) {
                         playbackPositionMs.longValue = rawPosition
                     }
+                    drawAnchorPositionMs = rawPosition
+                    drawAnchorNanos = System.nanoTime()
                     effectivePositionMs =
                         (rawPosition + latestLyricsSyncOffset.value.toLong() +
                             latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
@@ -702,30 +706,29 @@ fun LyricsEnhanced(
                         anchorPlayerPositionMs = rawPosition
                     }
 
-                    val elapsedMs = ((frameNanos - anchorFrameNanos) / 1_000_000f) * latestPlaybackSpeed.value
-                    val projectedPosition = anchorPlayerPositionMs + elapsedMs.roundToLong()
-                    val driftMs = rawPosition - projectedPosition
+                    // Shared with the pane's own projection (LyricsPositionProjection), so the position
+                    // the loop indexes and the position the frame paints come from one curve.
+                    val elapsedNanos = frameNanos - anchorFrameNanos
+                    val projectedPosition =
+                        LyricsPositionProjection.project(anchorPlayerPositionMs, elapsedNanos, latestPlaybackSpeed.value)
+                    if (LyricsPositionProjection.shouldReanchor(rawPosition, projectedPosition)) {
+                        anchorPlayerPositionMs = rawPosition
+                        anchorFrameNanos = frameNanos
+                    }
                     val nextPosition =
-                        when {
-                            driftMs > SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS ||
-                                driftMs < -SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS -> {
-                                anchorPlayerPositionMs = rawPosition
-                                anchorFrameNanos = frameNanos
-                                rawPosition
-                            }
-
-                            driftMs != 0L -> {
-                                projectedPosition + (driftMs * SMOOTH_PLAYBACK_DRIFT_CORRECTION).roundToLong()
-                            }
-
-                            else -> {
-                                projectedPosition
-                            }
-                        }.coerceAtLeast(0L)
+                        LyricsPositionProjection
+                            .corrected(anchorPlayerPositionMs, frameNanos - anchorFrameNanos, latestPlaybackSpeed.value, rawPosition)
+                            .coerceAtLeast(0L)
 
                     if (playbackPositionMs.longValue != nextPosition) {
                         playbackPositionMs.longValue = nextPosition
                     }
+                    // The anchor is this frame's own vsync instant, so whatever the draw phase does
+                    // with it — before or after this continuation runs — the projection lands on the
+                    // position of the instant it paints.
+                    drawAnchorPositionMs = nextPosition
+                    drawAnchorNanos = frameNanos
+                    drawAdvancing = true
                     effectivePositionMs =
                         (nextPosition + latestLyricsSyncOffset.value.toLong() +
                             latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
@@ -768,6 +771,15 @@ fun LyricsEnhanced(
                         }
                     }
                 }
+                // One subscription for the whole pane: the frame after this publishes paints from the
+                // anchor it just set, and a parked iteration still repaints the frame it published.
+                drawClock.anchor(
+                    positionMs = drawAnchorPositionMs,
+                    atNanos = drawAnchorNanos,
+                    speed = latestPlaybackSpeed.value,
+                    advancing = drawAdvancing,
+                )
+                frameTick.intValue++
                 if (parkMs > 0L) delay(parkMs)
             }
         }
@@ -1602,26 +1614,6 @@ private fun ISyncedLine.lineText(): String =
 
 private fun ISyncedLine.selectionKey(text: String = lineText()): String = "$start:$end:${text.hashCode()}"
 
-private fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): List<KaraokeSyllable> =
-    mapIndexed { index, word ->
-        val start = word.startTime.toMilliseconds()
-        val nextStart = getOrNull(index + 1)?.startTime?.toMilliseconds()
-        val rawEnd = word.endTime.toMilliseconds()
-        val end =
-            nextStart
-                ?.let { minOf(rawEnd, it) }
-                ?: rawEnd
-
-        KaraokeSyllable(
-            content = word.text,
-            start = start,
-            end = end.coerceAtLeast(start + MIN_KARAOKE_SYLLABLE_DURATION_MS),
-            phonetic = phonetics.getOrNull(index),
-        )
-    }
-
-private fun Double.toMilliseconds(): Int = (this * 1000.0).roundToInt().coerceAtLeast(0)
-
 /**
  * AI supplies line readings, not timed-word alignment.
  */
@@ -1637,101 +1629,6 @@ private fun aiRomanizationMap(
     }
     return map
 }
-
-private fun buildSyncedLyrics(
-    entries: List<LyricsEntry>,
-    romanizationMap: Map<Int, LyricsPhonetics>,
-): SyncedLyrics {
-    if (entries.isEmpty()) return SyncedLyrics(emptyList())
-    val lines = mutableListOf<ISyncedLine>()
-
-    entries.forEachIndexed { index, entry ->
-        if (entry.time < 0L) return@forEachIndexed
-        if (entry.isInstrumental) return@forEachIndexed
-        if (entry.text.isBlank() && entry.words.isNullOrEmpty()) return@forEachIndexed
-
-        if (entry.words != null && hasTrueWordSync(entry)) {
-            val translation = providedTranslationTextForEntry(entry)
-            val mainWords = entry.words!!.filter { !it.isBackground }
-            val bgWords = entry.words!!.filter { it.isBackground }
-            val alignment =
-                when (entry.agent?.lowercase()) {
-                    "v2" -> KaraokeAlignment.End
-                    else -> KaraokeAlignment.Start
-                }
-
-            val wordsForMain = if (mainWords.isNotEmpty()) mainWords else entry.words!!
-            val wordPhonetics = romanizationMap[index]?.words.orEmpty()
-            val mainSyllables = wordsForMain.toKaraokeSyllables(wordPhonetics)
-
-            val lineStart = mainSyllables.first().start
-            val lineEnd = mainSyllables.last().end
-            if (lineEnd <= lineStart) return@forEachIndexed
-
-            val accompanimentLines =
-                if (mainWords.isNotEmpty() && bgWords.isNotEmpty()) {
-                    val bgSyllables = bgWords.toKaraokeSyllables(emptyList())
-                    val bgStart = bgSyllables.first().start
-                    val bgEnd = bgSyllables.last().end
-                    if (bgEnd > bgStart) {
-                        listOf(
-                            KaraokeLine.AccompanimentKaraokeLine(
-                                syllables = bgSyllables,
-                                translation = null,
-                                alignment = alignment,
-                                start = bgStart,
-                                end = bgEnd,
-                                phonetic = null,
-                            ),
-                        )
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-
-            lines.add(
-                KaraokeLine.MainKaraokeLine(
-                    syllables = mainSyllables,
-                    translation = translation,
-                    alignment = alignment,
-                    start = lineStart,
-                    end = lineEnd,
-                    phonetic = romanizationMap[index]?.line.takeIf { wordPhonetics.isEmpty() },
-                    accompanimentLines = accompanimentLines,
-                ),
-            )
-        } else {
-            val nextEntry = entries.getOrNull(index + 1)
-            // LRC has no line ends, so a line is sung until the next one starts. Only a real instrumental break ends
-            // a line early, because the interlude dots draw the silence between a line's end and the next start.
-            val lineEnd =
-                if (nextEntry != null && nextEntry.time > entry.time) {
-                    val handOver = entry.time + LINE_SYNCED_MAX_FOCUS_HOLD_MS
-                    if (nextEntry.time - handOver >= enhancedLineSyncedBreakMs) {
-                        // The silence after the hold is at least the dots' minimum break, so the dots draw there.
-                        handOver.toInt()
-                    } else {
-                        nextEntry.time.toInt()
-                    }
-                } else {
-                    (entry.time + LINE_SYNCED_TRAILING_LINE_DURATION_MS).toInt()
-                }
-            lines.add(
-                buildLineSyncedLrcLine(
-                    entry = entry,
-                    romanizedText = romanizationMap[index]?.line,
-                    start = entry.time.toInt(),
-                    end = lineEnd,
-                ),
-            )
-        }
-    }
-
-    return SyncedLyrics(lines = lines)
-}
-
 
 /**
  * Renders exactly one karaoke line cluster — the joined phonetic (romanisation) row above, the
@@ -1878,5 +1775,3 @@ private fun SingleActiveLineCluster(
         }
     }
 }
-
-

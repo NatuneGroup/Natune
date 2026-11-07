@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +20,8 @@ import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.component.ProfileMenuState
+import moe.rukamori.archivetune.shared.ui.desktop.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
 import moe.rukamori.archivetune.shared.ui.player.*
@@ -30,6 +33,10 @@ import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
 import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
+import moe.rukamori.archivetune.shared.ui.theme.artworkPaletteSeed
+import moe.rukamori.archivetune.shared.ui.theme.artworkSurfaceScheme
+import moe.rukamori.archivetune.shared.ui.theme.desktopArtworkSeed
+import moe.rukamori.archivetune.shared.ui.theme.desktopFirstFrameScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.savedPaletteSeed
 import org.jetbrains.compose.resources.stringResource
@@ -67,6 +74,12 @@ class ArchiveTuneHostBindings(
     val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
     /** Loads the persisted custom font file into a family; a host without one falls back to the default family. */
     val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
+    /**
+     * Draws the signed-in account's picture into a frame the shell hands it, the desktop title bar's avatar and the
+     * profile menu's header. Null, or a blank uri, keeps the account icon: a host without an image loader must not
+     * promise a picture it cannot fetch.
+     */
+    val accountAvatar: (@Composable (uri: String, modifier: Modifier) -> Unit)? = null,
     /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
     val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
@@ -94,6 +107,11 @@ fun ArchiveTuneRoot(
      * Android and iOS leave it off and keep their platform back.
      */
     rootKeyFocus: Boolean = false,
+    /**
+     * Desktop opts in: the shell draws the desktop chrome (window title bar, labelled rail, docked panes, player bar)
+     * around the same pages. Android and iOS leave it off and keep their current shell geometry.
+     */
+    desktopShell: Boolean = false,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -105,7 +123,17 @@ fun ArchiveTuneRoot(
         val saved by host.settings.snapshots.collectAsState()
         val preferences = saved
         if (preferences == null) {
-            ArchiveTuneTheme { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            // The frame before the persisted read completes is still a desktop frame: it paints the desktop's own seed
+            // rather than Material's stock scheme, so the window never flashes a palette it will not keep.
+            val firstFrame = archiveTuneDefaultColorScheme(isSystemInDarkTheme())
+            ArchiveTuneTheme(
+                darkTheme = isSystemInDarkTheme(),
+                colorScheme = if (desktopShell) {
+                    desktopFirstFrameScheme(null, isSystemInDarkTheme(), ThemePaletteStyle.AUTOMATIC)
+                } else {
+                    firstFrame
+                },
+            ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         } else {
             val progress by host.podcastProgress.collectAsState(emptyList())
             val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
@@ -140,7 +168,8 @@ fun ArchiveTuneRoot(
                 moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
                 ArchiveTuneLoadedRoot(
-                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea, rootKeyFocus,
+                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea,
+                    rootKeyFocus, desktopShell,
                 )
             }
         }
@@ -158,15 +187,20 @@ private fun ArchiveTuneLoadedRoot(
     systemDark: Boolean,
     safeArea: SafeAreaPadding,
     rootKeyFocus: Boolean,
+    desktopShell: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
+        // The desktop columns: rail labels, the two docked panes and the expanded player. Phone hosts never read it.
+        val desktopShellState = remember { DesktopShellState() }
         var expanded by remember { mutableStateOf(false) }
         var shortcutsVisible by remember { mutableStateOf(false) }
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
         // consumed, so returning to the tab later does not take focus from the user.
         var searchFocusRequested by remember { mutableStateOf(false) }
+        // The desktop top bar owns the global search field; Ctrl+K asks it for focus instead of opening the Search page.
+        val desktopSearchFocus = remember { DesktopSearchFocus() }
         // Handed to the page content, so a focused search field silences the unmodified shortcuts while typing.
         val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
@@ -182,8 +216,14 @@ private fun ArchiveTuneLoadedRoot(
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
             }
         }
-        val goBack = {
+        // Every back gesture goes through this one handler: the native one (Alt+Left, a mouse back button), Escape and
+        // the keyboard's Back action. On the desktop the expanded player and the panes are the innermost layers, so
+        // they close before the route changes; the phone shell keeps its sheet first, exactly as before.
+        val goBack: () -> Unit = {
             when {
+                desktopShell && desktopShellState.expandedPlayer -> desktopShellState.expandedPlayer = false
+                desktopShell && (desktopShellState.queueOpen || desktopShellState.lyricsOpen) ->
+                    desktopShellState.closePanes()
                 expanded && interaction.back() -> Unit
                 expanded -> expanded = false
                 !navigation.back() -> host.onBackAtRoot()
@@ -210,14 +250,34 @@ private fun ArchiveTuneLoadedRoot(
         val policy = opticalPolicy(preferences, opticalCapabilities, resumed, visible,
             playerExpanded = expanded, lyricsExpanded = expanded && interaction.fullscreenLyrics)
         val darkTheme = darkThemeFor(preferences[DarkModeKey], systemDark)
-        // A palette is rebuilt only when its seed, style or dark flag changes. Without a saved palette the scheme is
-        // the default one, so the default look does not change.
+        val nativeState by host.playerControls.state.collectAsState()
+        // A palette is rebuilt only when its seed, style or dark flag changes. On desktop, with Dynamic theme on and no
+        // saved custom colour, the current sleeve seeds the scheme so the page, rail and top bar carry its tonal family.
+        // The sleeve's colour is remembered, so the *first* frame of the next launch is already in that family instead
+        // of starting on Material's default and repainting once the feed has art; with no sleeve remembered yet the
+        // desktop's own seed stands in, so the window never opens in stock purple.
         val paletteSeed = preferences.savedPaletteSeed()
         val paletteStyle = preferences.themePaletteStyle()
-        val colorScheme = remember(paletteSeed, paletteStyle, darkTheme) {
-            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) } ?: archiveTuneDefaultColorScheme(darkTheme)
+        val desktopDynamic = desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null
+        val liveArtworkSeed = if (desktopDynamic) artworkPaletteSeed(nativeState.palette) else null
+        val storedArtworkSeed = if (desktopDynamic) preferences.desktopArtworkSeed() else null
+        val artworkSeed = liveArtworkSeed ?: storedArtworkSeed
+        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme, desktopDynamic) {
+            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
+                ?: artworkSurfaceScheme(artworkSeed, darkTheme, paletteStyle)
+                ?: if (desktopDynamic) {
+                    desktopFirstFrameScheme(null, darkTheme, paletteStyle)
+                } else {
+                    archiveTuneDefaultColorScheme(darkTheme)
+                }
         }
-        val nativeState by host.playerControls.state.collectAsState()
+        // Remember the sleeve for the next launch. The write is skipped when nothing changed, and a failed write only
+        // costs the next launch its remembered colour, never this one its palette.
+        LaunchedEffect(desktopDynamic, liveArtworkSeed, storedArtworkSeed) {
+            if (!desktopDynamic || liveArtworkSeed == null || liveArtworkSeed == storedArtworkSeed) return@LaunchedEffect
+            val argb = liveArtworkSeed.toArgb().toLong()
+            runCatching { host.settings.edit { set(DesktopArtworkSeedKey, argb) } }
+        }
         var rememberedMute by remember { mutableStateOf<Float?>(null) }
         fun handleKeymap(action: KeymapAction): Boolean {
             val player = host.queue.player
@@ -252,8 +312,12 @@ private fun ArchiveTuneLoadedRoot(
                 }
                 KeymapAction.Back -> goBack()
                 KeymapAction.Search -> {
-                    navigation.select(ShellTab.Search, toRoot = true)
-                    searchFocusRequested = true
+                    if (desktopShell) {
+                        desktopSearchFocus.requestFocus()
+                    } else {
+                        navigation.select(ShellTab.Search, toRoot = true)
+                        searchFocusRequested = true
+                    }
                 }
                 KeymapAction.Home -> navigation.select(ShellTab.Home, toRoot = true)
                 KeymapAction.Library -> navigation.select(ShellTab.Library, toRoot = true)
@@ -265,13 +329,28 @@ private fun ArchiveTuneLoadedRoot(
                 KeymapAction.NewReleases -> navigation.open("new_release")
                 KeymapAction.Charts -> navigation.open("charts_screen")
                 KeymapAction.Settings -> navigation.open("settings")
-                KeymapAction.NowPlaying -> expanded = true
-                KeymapAction.Queue -> {
+                KeymapAction.NowPlaying -> if (desktopShell) {
+                    desktopShellState.expandedPlayer = true
+                } else {
+                    expanded = true
+                }
+                KeymapAction.Queue -> if (desktopShell) {
+                    desktopShellState.toggle(DesktopPane.Queue)
+                } else {
                     expanded = true
                     interaction.panel = PlayerPanel.QUEUE
                 }
-                KeymapAction.TogglePlayer -> expanded = !expanded
-                KeymapAction.FullscreenLyrics -> { expanded = true; interaction.fullscreenLyrics = !interaction.fullscreenLyrics }
+                KeymapAction.TogglePlayer -> if (desktopShell) {
+                    desktopShellState.expandedPlayer = !desktopShellState.expandedPlayer
+                } else {
+                    expanded = !expanded
+                }
+                KeymapAction.FullscreenLyrics -> if (desktopShell) {
+                    desktopShellState.toggle(DesktopPane.Lyrics)
+                } else {
+                    expanded = true
+                    interaction.fullscreenLyrics = !interaction.fullscreenLyrics
+                }
                 KeymapAction.ToggleFullscreen -> host.toggleWindowFullscreen?.invoke() ?: return false
                 KeymapAction.Help -> shortcutsVisible = true
             }
@@ -295,46 +374,144 @@ private fun ArchiveTuneLoadedRoot(
         ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
             fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
+            CompositionLocalProvider(LocalDesktopLayout provides desktopShell) {
             ProvideBackdropSources(policy) { pageSource ->
-                // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
-                // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
+                // One page host for both shells: only the columns around the page differ. Lyrics and queue surfaces
+                // stay mounted while a desktop pane or the expanded player shows them, so their scroll owner survives
+                // opening and closing the pane.
+                val surfaceOpen = expanded || (desktopShell && (desktopShellState.expandedPlayer || desktopShellState.lyricsOpen))
+                val slots = host.playerSlots(surfaceOpen, active, interaction)
+                val page: @Composable (Modifier) -> Unit = { pageModifier ->
+                    CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                        ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
+                            host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
+                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
+                            searchFocusRequested = searchFocusRequested,
+                            onSearchFocusConsumed = { searchFocusRequested = false },
+                            modifier = pageModifier)
+                    }
+                }
+                fun playPause() {
+                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
+                }
+                fun desktopPlayerAction(action: PlayerAction) =
+                    dispatchNativePlayerAction(host.queue.player, host.playerControls, action)
+                fun seekTo(targetMs: Long) = host.queue.player.seekTo(targetMs)
+                fun setVolume(volume: Float) = host.playerControls.setVolume(volume.coerceIn(0f, 1f))
+                // The background is drawn before the safe-area padding, so the strips keep the app's own colour. The
+                // padding is physical and consumes the bar insets, so no screen below reserves them a second time; the
+                // host's reading is published here for the surfaces that must paint edge to edge themselves.
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-                    .safeAreaPadding(safeArea)
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
-                    ArchiveTuneShell(navigation, preferences,
-                        onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
-                        television = television, contentModifier = pageSource,
-                        miniPlayer = {
-                            if (current != null) ArchiveMiniPlayer(
-                                current = current,
-                                playback = playback,
-                                nativeState = nativeState,
-                                artwork = host.artwork,
-                                motion = policy.motion,
-                                onExpand = { expanded = true },
-                                onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
-                                onPlayPause = {
-                                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                                },
-                                onSeekTo = { targetMs -> host.queue.player.seekTo(targetMs) },
-                                onAction = { action -> dispatchNativePlayerAction(host.queue.player, host.playerControls, action) },
-                                onVolumeChange = { volume -> host.playerControls.setVolume(volume.coerceIn(0f, 1f)) },
-                            )
-                        },
-                    ) {
+                    CompositionLocalProvider(LocalHostSafeArea provides safeArea) {
+                    Box(Modifier.fillMaxSize().safeAreaPadding(safeArea)) {
+                    if (desktopShell) {
+                        // The whole desktop shell reports text focus through the one counter the shortcut layer
+                        // reads, so the title bar search field suppresses unmodified shortcuts like any page field.
                         CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
-                            ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
-                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
-                                searchFocusRequested = searchFocusRequested,
-                                onSearchFocusConsumed = { searchFocusRequested = false })
+                            // The title bar's account area: the signed-in identity the phone top bar shows, read from
+                            // the one settings snapshot, and the window's own navigation for the menu's rows.
+                            val account = remember(preferences) { preferences.youTubeIdentity() }
+                            val listenTogetherInTopBar = preferences[ListenTogetherInTopBarKey, false]
+                            val profileMenuHost = remember(navigation) { desktopProfileMenuHost(navigation) }
+                            DesktopShell(
+                                navigation = navigation,
+                                state = desktopShellState,
+                                titleBar = {
+                                    DesktopTitleBar(
+                                        title = stringResource(Res.string.app_name),
+                                        searchFocus = desktopSearchFocus,
+                                        railExpanded = desktopShellState.railExpanded,
+                                        onToggleRail = { desktopShellState.toggleRail() },
+                                        onSubmitSearch = { query ->
+                                            navigation.select(ShellTab.Search, toRoot = true)
+                                            navigation.open(ArchiveRoutes.search(query, ContentProvider.YOUTUBE))
+                                        },
+                                        onOpenSettings = { navigation.open("settings") },
+                                        // The desktop runs its update check on the Settings page, so the window has
+                                        // no "an update is offered" state to put on the button yet.
+                                        settingsBadge = false,
+                                        profileMenu = DesktopProfileMenu(
+                                            state = ProfileMenuState(
+                                                accountName = account.name.takeIf { it.isNotBlank() },
+                                                hasUnreadNews = unreadNews,
+                                                // The title bar's own settings button covers Settings, so the menu
+                                                // leaves that row out as the phone's home top bar does.
+                                                showSettings = false,
+                                                showListenTogether = listenTogetherInTopBar,
+                                            ),
+                                            host = profileMenuHost,
+                                            imageUrl = account.imageUrl,
+                                            avatar = host.accountAvatar,
+                                        ),
+                                    )
+                                },
+                                playerBar = {
+                                    if (current != null) {
+                                        DesktopPlayerBar(
+                                            current = current,
+                                            playback = playback,
+                                            nativeState = nativeState,
+                                            artwork = host.artwork,
+                                            motion = policy.motion,
+                                            panes = desktopShellState,
+                                            onExpand = { desktopShellState.expandedPlayer = true },
+                                            onPlayPause = ::playPause,
+                                            onSeekTo = ::seekTo,
+                                            onAction = ::desktopPlayerAction,
+                                            onVolumeChange = ::setVolume,
+                                        )
+                                    } else {
+                                        // An empty queue keeps the bar's slot, so the page never jumps.
+                                        Spacer(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight))
+                                    }
+                                },
+                                queuePane = { paneModifier -> slots.queue(paneModifier) },
+                                lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
+                                content = { pageModifier -> page(pageSource.then(pageModifier)) },
+                            )
+                            if (desktopShellState.expandedPlayer && current != null) {
+                                DesktopExpandedPlayer(
+                                    state = desktopPlayerState(current, playback, nativeState, policy.motion),
+                                    slots = slots,
+                                    onClose = { desktopShellState.expandedPlayer = false },
+                                    onPlayPause = ::playPause,
+                                    onSeekTo = ::seekTo,
+                                    onAction = ::desktopPlayerAction,
+                                    onVolumeChange = ::setVolume,
+                                )
+                            }
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                ArchiveTuneShell(navigation, preferences,
+                                onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
+                                television = television, contentModifier = pageSource,
+                                miniPlayer = {
+                                    if (current != null) ArchiveMiniPlayer(
+                                        current = current,
+                                        playback = playback,
+                                        nativeState = nativeState,
+                                        artwork = host.artwork,
+                                        motion = policy.motion,
+                                        onExpand = { expanded = true },
+                                        onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
+                                        onPlayPause = ::playPause,
+                                        onSeekTo = ::seekTo,
+                                        onAction = ::desktopPlayerAction,
+                                        onVolumeChange = ::setVolume,
+                                    )
+                                    },
+                                ) { page(Modifier) }
+                            }
                         }
                     }
-                    // Keep the interaction owner above style dispatch; a saved style edit cannot reset
-                    // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
-                    val slots = host.playerSlots(expanded, active, interaction)
-                    if (expanded && current != null) BoundBottomSheetPlayer(
+                    }
+                    // A player that must paint the strips itself draws outside the root's padding and reserves the
+                    // host's inset around its own controls through LocalHostSafeArea.
+                    if (!desktopShell && expanded && current != null) BoundBottomSheetPlayer(
                         queue = host.queue,
                         settings = host.settings,
                         actionScope = host.actionScope,
@@ -349,7 +526,9 @@ private fun ArchiveTuneLoadedRoot(
                         interaction = interaction,
                     )
                     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
+                    }
                 }
+            }
             }
         }
 }

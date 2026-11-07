@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -77,8 +79,34 @@ internal class DesktopPlayerControls(
         desktopNativeState(queue, playback, preferences, isLiked, handoff)
     }
 
-    override val state: StateFlow<PlayerNativeState> = combine(observed, spatialFont) { native, font ->
-        native.copy(spatialFont = font)
+    /**
+     * The sleeve seed for the artwork-tinted theme, read from the current queue entry. Only the occurrence's URI is
+     * observed; the image is loaded once per change and reduced to a few dominant colours. A network or decode failure
+     * keeps the default scheme instead of publishing a guessed palette.
+     */
+    private val palette: Flow<List<Color>> = graph.queue.state
+        .map { queue -> queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }?.item?.artworkUri }
+        .distinctUntilChanged()
+        .flatMapLatest { uri ->
+            flow {
+                emit(
+                    if (uri == null) {
+                        emptyList()
+                    } else {
+                        try {
+                            graph.artworkLoader.load(uri)?.let(::desktopArtworkPalette).orEmpty()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    },
+                )
+            }
+        }
+
+    override val state: StateFlow<PlayerNativeState> = combine(observed, spatialFont, palette) { native, font, colors ->
+        native.copy(spatialFont = font, palette = colors)
     }.stateIn(
         graph.scope,
         SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS),

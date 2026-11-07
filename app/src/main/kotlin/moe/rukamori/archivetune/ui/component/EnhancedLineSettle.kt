@@ -66,11 +66,13 @@ internal class EnhancedLineSettle(private val listState: LazyListState) {
      * The vertical offset in px of a row that waits [delayMs] before it moves. The move is measured against the live
      * position of the sung line, so the offset is right on the frame the list moves and never lags a layout pass.
      */
-    fun offsetPx(delayMs: Long): Float {
+    fun offsetPx(rowIndex: Int, delayMs: Long): Float {
         val index = primaryIndex
         if (index < 0 || elapsedMs >= EnhancedLineSettleMotion.DURATION_MS) return 0f
         val nowTop = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset ?: return 0f
-        return EnhancedLineSettleMotion.offsetPx((fromTopPx - nowTop).toFloat(), elapsedMs, delayMs)
+        val displacement = (fromTopPx - nowTop).toFloat()
+        val delay = EnhancedLineSettleMotion.delayFor(rowIndex, index, displacement, delayMs)
+        return EnhancedLineSettleMotion.offsetPx(displacement, elapsedMs, delay)
     }
 }
 
@@ -100,14 +102,26 @@ private const val NANOS_PER_MS = 1_000_000L
 
 /**
  * The glide curve, kept apart from the state so its timing can be checked without a composition. A critically damped
- * spring released from rest is `x(t) = x0 * (1 + w t) * e^(-w t)`, with no overshoot. [ANGULAR_FREQUENCY] is the square root
- * of `Spring.StiffnessLow`, the stiffness the depth change uses too, so the two motions share their timing.
+ * spring released from rest is `x(t) = x0 * (1 + w t) * e^(-w t)`, with no overshoot. [ANGULAR_FREQUENCY] is the square
+ * root of `Spring.StiffnessMedium`, the stiffness the row's depth change uses too, so the two motions share their
+ * timing: the ripple a line change makes and the fade of the rows it passes settle together, in about 400 ms rather
+ * than the ~1 s the softest spring took.
  */
 internal object EnhancedLineSettleMotion {
     /** The longest a glide runs: the largest stagger delay plus the time the spring needs to come to rest. */
     const val DURATION_MS = 1_000L
 
-    private const val ANGULAR_FREQUENCY = 14.142136f
+    private const val ANGULAR_FREQUENCY = 38.729835f
+
+    /**
+     * The delay row [rowIndex] actually waits. Every row travels the same distance, so a row that started later than
+     * the row ahead of it in the direction of travel would close on it: the sung line rising into the line above. Rows
+     * ahead of the sung line therefore move with it, and only the rows trailing it ripple, which only ever widens a gap.
+     */
+    fun delayFor(rowIndex: Int, primaryIndex: Int, displacementPx: Float, staggerMs: Long): Long {
+        val leading = if (displacementPx > 0f) rowIndex < primaryIndex else rowIndex > primaryIndex
+        return if (leading) 0L else staggerMs
+    }
 
     fun offsetPx(displacementPx: Float, elapsedMs: Long, delayMs: Long): Float {
         val seconds = (elapsedMs - delayMs).coerceAtLeast(0L) / 1_000f

@@ -87,18 +87,19 @@ class BasicSyncedLyricsListTest {
     @Test
     fun theInterludeSwellRisesOverTheLast1500ms() {
         val interlude = EnhancedInterlude(0L, 10_000L)
-        assertEquals(0f, EnhancedInterludeMotion.endSwell(interlude, 8_400))
-        assertEquals(
-            EnhancedInterludeMotion.END_SWELL_FROM,
-            EnhancedInterludeMotion.endSwell(interlude, 8_500),
-            0.001f,
-        )
+        // A neutral factor of 1 outside the window, so the swell multiplies into the breath with no snap
+        // on the frame its window opens (it used to start at 1.05 inside and 0 outside).
+        assertEquals(1f, EnhancedInterludeMotion.endSwell(interlude, 8_400), 0.001f)
+        assertEquals(1f, EnhancedInterludeMotion.endSwell(interlude, 8_500), 0.001f)
         val middle = EnhancedInterludeMotion.endSwell(interlude, 9_250)
         assertTrue(
-            "the swell lerps through the window, got $middle",
-            middle > EnhancedInterludeMotion.END_SWELL_FROM &&
-                middle < EnhancedInterludeMotion.END_SWELL_TO,
+            "the swell eases through the window, got $middle",
+            middle > 1f && middle < EnhancedInterludeMotion.END_SWELL_TO,
         )
-        assertEquals(0f, EnhancedInterludeMotion.endSwell(interlude, 10_000))
+        assertEquals(
+            EnhancedInterludeMotion.END_SWELL_TO,
+            EnhancedInterludeMotion.endSwell(interlude, 9_999),
+            0.01f,
+        )
     }
 }

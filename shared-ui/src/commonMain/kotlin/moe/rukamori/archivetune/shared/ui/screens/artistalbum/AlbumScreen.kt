@@ -59,10 +59,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.ui.glass.BackdropScene
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import org.jetbrains.compose.resources.stringResource
 
 private val AlbumHeroMinHeight = 460.dp
@@ -441,9 +443,11 @@ private fun AlbumHero(
         ) {
             Text(
                 text = album.title,
-                style = MaterialTheme.typography.headlineLarge,
+                // The hero wears the same page-title scale as every other desktop page; only the phone keeps the larger
+                // headline, where the hero *is* the page header.
+                style = if (LocalDesktopLayout.current) DesktopType.pageTitle() else MaterialTheme.typography.headlineLarge,
                 color = heroContentColor,
-                fontWeight = FontWeight.Bold,
+                fontWeight = if (LocalDesktopLayout.current) null else FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

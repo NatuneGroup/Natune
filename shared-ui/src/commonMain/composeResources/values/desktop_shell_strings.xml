@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Desktop shell chrome: the title bar, the navigation rail, the side panes and the player bar. -->
+    <string name="desktop_shell_collapse_rail">Collapse navigation</string>
+    <string name="desktop_shell_expand_rail">Expand navigation</string>
+    <string name="desktop_shell_search_placeholder">Search music</string>
+    <string name="desktop_shell_search_hint">Ctrl+K</string>
+    <string name="desktop_shell_open_player">Open player</string>
+    <string name="desktop_shell_close_player">Close player</string>
+    <string name="desktop_shell_mini_player">Mini player</string>
+    <string name="desktop_shell_queue_pane">Queue</string>
+    <string name="desktop_shell_lyrics_pane">Lyrics</string>
+    <string name="desktop_shell_close_pane">Close %1$s</string>
+    <string name="desktop_shell_resize_pane">Resize %1$s</string>
+    <string name="desktop_shell_window_minimize">Minimize</string>
+    <string name="desktop_shell_window_maximize">Maximize</string>
+    <string name="desktop_shell_window_restore">Restore</string>
+    <string name="desktop_shell_window_close">Close</string>
+    <string name="desktop_shell_volume">Volume</string>
+    <string name="desktop_shell_lyrics_empty">No lyrics for this track</string>
+    <string name="desktop_shell_lyrics_empty_hint">No provider had lyrics for this track. Check the enabled providers in Settings, or search again.</string>
+    <string name="desktop_shell_lyrics_failed">Lyrics could not be loaded</string>
+    <string name="desktop_shell_lyrics_failed_hint">The lyrics lookup did not finish. Your library and queue are unchanged.</string>
+    <string name="desktop_shell_lyrics_retry">Try again</string>
+    <string name="desktop_shell_position">Playback position</string>
+    <string name="desktop_shell_player_artwork">Sleeve</string>
+    <!-- The rail's own labels: a 104 dp item fits a word, so a destination with a longer name gets its short form. -->
+    <string name="desktop_shell_rail_together">Together</string>
+</resources>

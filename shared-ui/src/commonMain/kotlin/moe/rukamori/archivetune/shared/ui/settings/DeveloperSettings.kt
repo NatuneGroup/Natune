@@ -25,6 +25,8 @@ fun DeveloperSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** Android's debug lines and nerd stats have no shared renderer; a host without them keeps their sections off. */
+    androidDebugSections: Boolean = true,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -43,10 +45,10 @@ fun DeveloperSettings(
             if (acousticExpanded) {
                 item(key = "acoustic_quality_section") { acousticQualitySection(resumed) }
             }
-            if (preferences[InlineDevShowDiscordDebugKey, false]) {
+            if (androidDebugSections && preferences[InlineDevShowDiscordDebugKey, false]) {
                 item(key = "discord_debug_section") { discordDebugSection() }
             }
-            if (playerAvailable && preferences[InlineDevShowNerdStatsKey, false]) {
+            if (androidDebugSections && playerAvailable && preferences[InlineDevShowNerdStatsKey, false]) {
                 item(key = "nerd_stats_section") { nerdStatsSection() }
             }
         },

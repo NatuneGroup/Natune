@@ -24,10 +24,13 @@ import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImport
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackSelfCheck
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
+import moe.rukamori.archivetune.desktop.potoken.desktopLocalPoTokenHelper
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
+import moe.rukamori.archivetune.desktop.provider.DesktopResolvedStreamCache
 import moe.rukamori.archivetune.desktop.provider.DesktopSourceAdmissions
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
@@ -95,6 +98,7 @@ import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
+import moe.rukamori.archivetune.shared.domain.settings.DesktopPoTokenHelperEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -211,10 +215,23 @@ internal suspend fun assembleDesktopSessionOwners(
         pool = playbackPool,
     )
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
-    // as Android's BotGuardTokenGenerator object feeds every resolver there.
+    // as Android's BotGuardTokenGenerator object feeds every resolver there. On a build with empty
+    // BotGuard keys the managed helper supplies the tokens; its own switch defaults on so a stock
+    // install is not left untokened. An explicitly configured BotGuard deployment mints by default;
+    // a blank build leaves the stored web-client preference in charge.
+    val localPoTokenHelperEnabled: () -> Boolean = {
+        vault.snapshots.value?.get(DesktopPoTokenHelperEnabledKey) ?: true
+    }
     val poTokens = DesktopPoTokenOwner(
         http = http,
-        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: DesktopCredentials.botGuardConfigured },
+        localHelper = desktopLocalPoTokenHelper(
+            scope = scope,
+            instanceDirectory = directory,
+            enabled = localPoTokenHelperEnabled,
+            log = ::desktopDiagnostic,
+        ),
+        localHelperEnabled = localPoTokenHelperEnabled,
     )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
@@ -222,6 +239,11 @@ internal suspend fun assembleDesktopSessionOwners(
         search = youtubeTransport,
         signIn = { vault.snapshots.value.youTubeSignIn() },
         poTokens = poTokens,
+        // A resolved googlevideo URL is reused only for the same video, quality, account and route, and only while its
+        // own `expire` still leaves the engine room to read it. A rotating pool cannot name the route that will read a
+        // cached URL, so it answers null and the resolver caches nothing for the length of that rotation.
+        cache = DesktopResolvedStreamCache(),
+        networkScope = { network.routeScope() },
     )
     // The shipped app warms BotGuard once the auth state names a session, so a cold mint never
     // lands inside a bounded tier; the same warm runs off the graph scope and stays a no-op while
@@ -629,6 +651,12 @@ internal suspend fun assembleDesktopSessionOwners(
         }
     }
     network.start(scope)
+    // The startup playback self-check. The engine warm answers whether the library loaded; this adds the output device
+    // and the attestation path, so a host that cannot make a sound names which of the three failed in the window
+    // instead of playing nothing on the first press of play.
+    scope.launch {
+        DesktopPlaybackSelfCheck(attestation = { poTokens.attestationStatus() }, report = graph::notify).run()
+    }
     lastFm.start()
     lyrics.start()
     listenerPresence.start()

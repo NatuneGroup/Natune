@@ -80,12 +80,14 @@ interface ProfileMenuHost {
     fun openSettings()
 }
 
-/** One profile row: its icon, its label, whether it carries the unread dot, and what a tap does. */
+/** One profile row: its stable id, its icon, its label, whether it carries the unread dot, and what a tap does. */
 data class ProfileMenuItem(
     val icon: DrawableResource,
     val label: StringResource,
     val showBadge: Boolean = false,
     val onClick: () -> Unit,
+    /** A host-independent name for the row, so a host that lists the menu as a dropdown can tag and identify it. */
+    val id: String = "",
 )
 
 /**
@@ -102,6 +104,7 @@ fun profileMenuItems(
             ProfileMenuItem(
                 icon = Res.drawable.m6_icon_history,
                 label = Res.string.m6_profile_history,
+                id = "history",
                 onClick = {
                     onDismiss()
                     host.openHistory()
@@ -112,6 +115,7 @@ fun profileMenuItems(
             ProfileMenuItem(
                 icon = Res.drawable.m6_icon_newspaper,
                 label = Res.string.m6_profile_news,
+                id = "news",
                 showBadge = state.hasUnreadNews,
                 onClick = {
                     onDismiss()
@@ -123,6 +127,7 @@ fun profileMenuItems(
             ProfileMenuItem(
                 icon = Res.drawable.m6_icon_new_release,
                 label = Res.string.m6_profile_new_release_albums,
+                id = "new_releases",
                 onClick = {
                     onDismiss()
                     host.openNewReleases()
@@ -133,6 +138,7 @@ fun profileMenuItems(
             ProfileMenuItem(
                 icon = Res.drawable.m6_icon_stats,
                 label = Res.string.m6_profile_lastfm_dashboard,
+                id = "lastfm",
                 onClick = {
                     onDismiss()
                     host.openLastFmDashboard()
@@ -143,6 +149,7 @@ fun profileMenuItems(
             ProfileMenuItem(
                 icon = Res.drawable.m6_icon_mic,
                 label = Res.string.m6_profile_music_recognition,
+                id = "recognition",
                 onClick = {
                     onDismiss()
                     host.openMusicRecognition()
@@ -154,6 +161,7 @@ fun profileMenuItems(
                 ProfileMenuItem(
                     icon = Res.drawable.m6_icon_listen_together,
                     label = Res.string.m6_profile_listen_together,
+                    id = "listen_together",
                     onClick = {
                         onDismiss()
                         host.openListenTogether()
@@ -166,6 +174,7 @@ fun profileMenuItems(
                 ProfileMenuItem(
                     icon = Res.drawable.m6_icon_settings,
                     label = Res.string.m6_profile_settings,
+                    id = "settings",
                     showBadge = state.showSettingsBadge,
                     onClick = {
                         onDismiss()

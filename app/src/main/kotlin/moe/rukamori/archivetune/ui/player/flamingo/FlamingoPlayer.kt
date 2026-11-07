@@ -7,11 +7,10 @@
  * Player design ported from Flamingo (yos.music.player) ui/pages/NowPlaying.kt — GPLv3,
  * https://github.com/shouryadixitisverycool/Flamingo
  *
- * Layout: album page (artwork 0.595 of height + title row + action buttons),
- * in-page state machine Album / Lyric / PlayingList with a shared-element
- * artwork morph into the compact PlayingBar header, cross-fade page transitions
- * (300ms), queue overlay fade at 114dp, auto-hiding controls (2500ms on the
- * lyrics page), 19.5/18.5sp title typography, and the floating-light background.
+ * Layout: album page (artwork stage, title row and action buttons split against the player's own
+ * box — see PlayerWindowLayout — so a short pop-up window still fits), in-page state machine
+ * Album / Lyric / PlayingList with a shared-element morph into the compact PlayingBar header,
+ * 300ms cross-fades, a 114dp queue fade, 2500ms auto-hide, 19.5/18.5sp title type, floating light.
  */
 
 package moe.rukamori.archivetune.ui.player.flamingo
@@ -230,7 +229,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.ui.platform.LocalConfiguration
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.InlineVideoPlayer
 import moe.rukamori.archivetune.ui.player.LocalVideoPlaybackFailed
@@ -263,6 +261,7 @@ import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.playerControlMotion
 import moe.rukamori.archivetune.ui.player.PlayerCoverImage
+import moe.rukamori.archivetune.ui.player.PlayerWindowLayout
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 private const val AnimDurationMillis = 300
@@ -895,13 +894,11 @@ fun FlamingoPlayerContent(
         val glassLayerActive = showAnchoredLyricsMenu || translationPopupOpen || artistPickerOpen
 
         // Upstream drives this popup's glass with a per-frame record request: a kyant Backdrop only
-        // re-records when something invalidates the source layer's draw, and video frames land
-        // inside the TextureView without invalidating Compose, so without the ticker the popup blur
-        // stays a frozen snapshot taken when the layer attached. This fork's backdrop has no
-        // requestRecord and nothing else in the app drives one, so the ticker is dropped: Flamingo's
-        // popup glass samples the same way every other glass surface here does.
+        // re-records when the source layer's draw is invalidated, and video frames land inside the
+        // TextureView without doing that. This fork's backdrop has no requestRecord and nothing
+        // else drives one, so the ticker is dropped and the glass samples like any other surface.
 
-        Box(
+        BoxWithConstraints(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -913,6 +910,12 @@ fun FlamingoPlayerContent(
                         }
                     },
         ) {
+            // The stage fractions and the controls column are read from inside nested Box/Column
+            // lambdas, whose scope markers hide this BoxWithConstraintsScope; capture the player's
+            // own height here, where the receiver is still unambiguous.
+            val boxMaxHeight = maxHeight
+            // A floating pop-up is "portrait" yet only a few hundred dp tall: split its box.
+            val stages = PlayerWindowLayout.stackedStages(boxMaxHeight.value)
             FlamingoWrapper {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -936,10 +939,9 @@ fun FlamingoPlayerContent(
                             )
 
                             if (!landscape && !videoShowing && canvasVisualActive) {
-                                val configuration = LocalConfiguration.current
                                 val stageFraction =
                                     sharpStageHeight?.let {
-                                        (it / configuration.screenHeightDp.dp).coerceIn(0.1f, 1f)
+                                        (it / boxMaxHeight).coerceIn(0.1f, 1f)
                                     } ?: 0.55f
                                 val frostFraction =
                                     (1f - FlamingoSharpStageFadeStart * stageFraction).coerceIn(0.2f, 1f)
@@ -1255,7 +1257,7 @@ fun FlamingoPlayerContent(
                                 val landscapeArtworkSize =
                                     (maxWidth - 96.dp)
                                         .coerceAtMost(maxHeight * 0.68f)
-                                        .coerceAtLeast(220.dp)
+                                        .coerceAtLeast(minOf(220.dp, maxWidth - 96.dp))
 
                                 Box(
                                     modifier =
@@ -1360,6 +1362,7 @@ fun FlamingoPlayerContent(
                                             showVolumeBar = showVolumeBar,
                                             volume = volume,
                                             onVolumeChange = onVolumeChange,
+                                            availableHeight = boxMaxHeight - contentBottomPadding,
                                             nowPage = { nowPageLambda.value },
                                             onLyrics = {
                                                 nowPage = if (nowPageLambda.value == FlamingoPage.Lyric) {
@@ -1466,7 +1469,7 @@ fun FlamingoPlayerContent(
                                                     Column(
                                                         Modifier
                                                             .padding(top = topInset + 22.dp)
-                                                            .fillMaxHeight(0.595f),
+                                                            .fillMaxHeight(stages.artworkFraction),
                                                     ) {
                                                         FlamingoAlbum(
                                                             modifier = albumSharedBounds,
@@ -1685,7 +1688,7 @@ fun FlamingoPlayerContent(
                         ) {
                             Box(
                                 Modifier
-                                    .fillMaxHeight(0.437f)
+                                    .fillMaxHeight(stages.controlsFraction)
                                     .fillMaxWidth(),
                             ) {
                                 FlamingoWrapper {
@@ -1838,8 +1841,8 @@ fun FlamingoPlayerContent(
                                                 },
                                                 onSliderValueChange = onSliderValueChange,
                                                 onSliderValueChangeFinished = onSliderValueChangeFinished,
-                                                modifier = Modifier
-                                                    .padding(top = 52.dp),
+                                                availableHeight = boxMaxHeight,
+                                                modifier = Modifier.padding(top = stages.topGap),
                                             )
                                         }
                                     }
@@ -3956,6 +3959,7 @@ private fun BluetoothDevice.aliasCompat(): String? {
 
 @Composable
 private fun FlamingoPlayerControl(
+    availableHeight: Dp,
     isPlayingLambda: () -> Boolean,
     playbackState: Int,
     positionProvider: () -> Long,
@@ -4246,7 +4250,7 @@ private fun FlamingoPlayerControl(
             }
 
             FlamingoWrapper {
-                if (showVolumeBar) {
+                if (showVolumeBar && PlayerWindowLayout.showsVolumeRow(availableHeight.value)) {
                     FlamingoVolumeSlider(
                         volume = volume,
                         onVolumeChange = onVolumeChange,

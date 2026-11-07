@@ -47,4 +47,19 @@ class PoolRefreshPolicyTest {
     fun clockRollbackDoesNotTriggerAnEarlyRefresh() {
         assertFalse(PoolRefreshPolicy.shouldRefresh(9_999L, 10_000L, PoolRefreshPolicy.PARTIAL_CACHE_INTERVAL_MS, force = false))
     }
+
+    @Test
+    fun theJitteredIntervalStaysWithinTenPercentOfTheBase() {
+        for (seed in listOf(0L, 1L, 12_345L, 1_700_000_000_000L)) {
+            for (hasEveryService in listOf(true, false)) {
+                val base = PoolRefreshPolicy.intervalMs(hasEveryService)
+                val jittered = PoolRefreshPolicy.jitteredIntervalMs(hasEveryService, seed)
+                assertTrue("seed=$seed", jittered in (base - base / 10)..(base + base / 10))
+            }
+        }
+        // Different installs must not land on the same instant.
+        assertTrue(
+            PoolRefreshPolicy.jitteredIntervalMs(true, 1L) != PoolRefreshPolicy.jitteredIntervalMs(true, 2L),
+        )
+    }
 }

@@ -7,6 +7,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import kotlin.concurrent.Volatile
 import kotlin.io.encoding.Base64
@@ -34,6 +35,12 @@ import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
+import moe.rukamori.archivetune.shared.data.provider.PoolDiscoveryFeed
+import moe.rukamori.archivetune.shared.data.provider.PoolDiscoveryPayload
+import moe.rukamori.archivetune.shared.data.provider.PoolDiscoveryStore
+import moe.rukamori.archivetune.shared.data.provider.PoolReportBudget
+import moe.rukamori.archivetune.shared.data.provider.PoolResponse
+import moe.rukamori.archivetune.shared.data.provider.VaultPoolDiscoveryStore
 import moe.rukamori.archivetune.shared.data.stream.aes.AesGcm
 import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
@@ -124,7 +131,10 @@ class IosPlaybackPool(
     @Volatile private var appleMusic: List<AppleMusicPoolAccount> = emptyList()
     @Volatile private var amazon: List<AmazonPoolAccount> = emptyList()
     @Volatile private var lastAttemptAtMs = 0L
-    private val discovered = HashMap<String, Pair<List<String>, Long>>()
+    @Volatile private var feedEtag: String? = null
+
+    /** One persisted discovery feed per service: six-hour jittered cadence, ETag, refusal backoff. */
+    private val discoveryFeeds = HashMap<String, PoolDiscoveryFeed>()
     private val cooldownUntil = HashMap<String, Long>()
     private val reportedAt = HashMap<String, Long>()
     private val expiredReLeaseAt = HashMap<String, Long>()
@@ -132,6 +142,9 @@ class IosPlaybackPool(
 
     /** The shared dead-report policy: recover-then-retry once, dedupe per account per window. */
     val deadReports = PoolDeadReporter(nowMs)
+
+    /** Reports are capped under the server's own 20-per-5-minutes bucket; the excess is dropped. */
+    private val reportBudget = PoolReportBudget(nowMs)
 
     /** The Playback Pool switch, on by default as on Android, and only while a deployment is configured. */
     fun enabled(): Boolean = configured && (preferences()?.get(UsePoolAccountsKey) ?: true)
@@ -207,23 +220,38 @@ class IosPlaybackPool(
 
     /**
      * Community instances from the pool's `/api/discovery/<service>` feed, normalized and without
-     * dead `.squid.wtf` hosts. A fetch is reused for [DISCOVERY_INTERVAL_MS]; a failed one answers
-     * the previous list.
+     * dead `.squid.wtf` hosts. The shared feed reuses the persisted list for six jittered hours,
+     * revalidates with its ETag, and keeps the previous list through a failed or refused fetch.
      */
     suspend fun discoveredInstances(service: String): List<String> {
         if (!enabled()) return emptyList()
         if (baseUrl == null) return emptyList()
-        val cached = discovered[service]
-        val now = nowMs()
-        if (cached != null && cached.second > 0L && now - cached.second < DISCOVERY_INTERVAL_MS) return cached.first
-        discovered[service] = (cached?.first ?: emptyList()) to now
-        val body = fetch("/api/discovery/$service")
-        if (body == null || body.first != 200 || !enabled()) return cached?.first ?: emptyList()
-        // Only the TIDAL feed drops squid.wtf hosts. squid.wtf is a working Qobuz proxy, as on Android.
-        val urls = parseDiscoveredInstances(body.second, dropSquidWtf = service == TIDAL)
-            .mapNotNull(::normalizeInstanceUrl).distinct()
-        discovered[service] = urls to now
-        return urls
+        return discoveryFeed(service).instances().mapNotNull(::normalizeInstanceUrl).distinct()
+    }
+
+    /** The persisted discovery home, separate per service, shared with this host's resolvers. */
+    fun discoveryStore(service: String): PoolDiscoveryStore =
+        VaultPoolDiscoveryStore(vault, CredentialKey("archivepool", CredentialScope.PLAYBACK_POOL, "discovery-$service-v1"))
+
+    private suspend fun discoveryFeed(service: String): PoolDiscoveryFeed {
+        mapLock.withLock { discoveryFeeds[service] }?.let { return it }
+        return mapLock.withLock {
+            discoveryFeeds.getOrPut(service) {
+                PoolDiscoveryFeed(
+                    service = service,
+                    nowMs = nowMs,
+                    candidateFeeds = {
+                        baseUrl?.let { base -> ArchivePoolEndpoints.candidates(base).map { "$it/api/discovery/$service" } }.orEmpty()
+                    },
+                    request = { url, headers -> get(url, headers) },
+                    // Only the TIDAL feed drops squid.wtf hosts. squid.wtf is a working Qobuz proxy, as on Android.
+                    parse = { body -> PoolDiscoveryPayload.urls(body, dropSquidWtf = service == TIDAL) },
+                    enabled = ::enabled,
+                    readKey = { readKey },
+                    store = discoveryStore(service),
+                )
+            }
+        }
     }
 
     suspend fun tidalInstances(): List<String> = discoveredInstances(TIDAL)
@@ -269,6 +297,7 @@ class IosPlaybackPool(
                     put("id", id)
                     put("report", type)
                 }.toString()
+                if (!reportBudget.allow()) return@launch
                 val response = ArchivePoolEndpoints.acrossEndpoints(baseUrl, report = true) { base ->
                     try {
                         withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
@@ -278,7 +307,11 @@ class IosPlaybackPool(
                                     contentType(ContentType.Application.Json)
                                     setBody(body)
                                 }
-                            reply.status.value to if (reply.status.value in 200..299) reply.bodyAsText() else ""
+                            PoolResponse(
+                                status = reply.status.value,
+                                body = if (reply.status.value in 200..299) reply.bodyAsText() else "",
+                                retryAfterMs = PoolResponse.retryAfterMs(reply.headers[HttpHeaders.RetryAfter]),
+                            )
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -286,8 +319,8 @@ class IosPlaybackPool(
                         null
                     }
                 } ?: return@launch
-                if (response.first !in 200..299) return@launch
-                val root = parseObject(response.second) ?: return@launch
+                if (response.status !in 200..299) return@launch
+                val root = parseObject(response.body) ?: return@launch
                 if ((root["ok"] as? JsonPrimitive)?.booleanOrNull == true && enabled()) mergeReplacement(root, service, id)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -309,10 +342,10 @@ class IosPlaybackPool(
             deezer = emptyList()
             appleMusic = emptyList()
             amazon = emptyList()
-            discovered.clear()
             loaded = true
             persist()
         }
+        mapLock.withLock { discoveryFeeds.values.toList() }.forEach { it.forget() }
     }
 
     /**
@@ -333,12 +366,13 @@ class IosPlaybackPool(
             if (authBackoff.blocked(nowMs())) return@withLock hasAccounts()
             if (!shouldRefresh(nowMs(), lastAttemptAtMs, refreshIntervalMs(), force)) return@withLock hasAccounts()
             lastAttemptAtMs = nowMs()
-            var result = fetch("/api/accounts")
-            if (result?.first == 404) result = fetch("/api/sources")
-            val root = result?.takeIf { it.first == 200 }?.second?.let(::parseObject)
+            var result = feed("/api/accounts")
+            if (result?.status == 404) result = feed("/api/sources")
+            val root = result?.takeIf { it.status == 200 }?.body?.let(::parseObject)
             when {
                 root != null && enabled() -> {
                     authBackoff.reset()
+                    feedEtag = result?.etag ?: feedEtag
                     val decrypt = decryptorFor(root)
                     val nextTidal = parseTidal(accountsArray(root, TIDAL), decrypt)
                     val nextQobuz = parseQobuz(accountsArray(root, QOBUZ), decrypt)
@@ -358,12 +392,20 @@ class IosPlaybackPool(
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
-                result.first == 401 -> {
-                    authBackoff.onAuthRejected(nowMs(), keyHash)
-                    log("Playback Pool rejected the read key (HTTP 401)")
+                result.status == 304 -> {
+                    // The stored accounts are current; revalidating costs no body and earns no backoff.
+                    authBackoff.reset()
                 }
-                result.first == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
-                else -> log("Playback Pool feed returned HTTP ${result.first}")
+                result.status == 401 || result.status == 403 -> {
+                    authBackoff.onAuthRejected(nowMs(), keyHash)
+                    log("Playback Pool rejected the read key (HTTP ${result.status})")
+                }
+                result.status == 429 || result.status == 503 -> {
+                    authBackoff.onThrottled(nowMs(), keyHash, result.retryAfterMs)
+                    log("Playback Pool refused the feed (HTTP ${result.status}); backing off")
+                }
+                result.status == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
+                else -> log("Playback Pool feed returned HTTP ${result.status}")
             }
             persist()
             hasAccounts()
@@ -402,6 +444,7 @@ class IosPlaybackPool(
                 vault.read(CACHE_KEY)?.let(::parseObject)?.let { cached ->
                     val passthrough: (String) -> String? = { it }
                     lastAttemptAtMs = (cached["attemptAt"] as? JsonPrimitive)?.longOrNull ?: 0L
+                    feedEtag = (cached["feedEtag"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
                     authBackoff.restore(
                         (cached["authFailAt"] as? JsonPrimitive)?.longOrNull ?: 0L,
                         (cached["authBackoffMs"] as? JsonPrimitive)?.longOrNull ?: 0L,
@@ -428,6 +471,7 @@ class IosPlaybackPool(
     private suspend fun persist() {
         val document = buildJsonObject {
             put("attemptAt", lastAttemptAtMs)
+            feedEtag?.let { put("feedEtag", it) }
             put("authFailAt", authBackoff.failedAtMs)
             put("authBackoffMs", authBackoff.windowMs)
             put("authKeyHash", authBackoff.failedKeyHash)
@@ -513,18 +557,32 @@ class IosPlaybackPool(
         }
     }
 
-    private suspend fun fetch(path: String): Pair<Int, String>? =
-        ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
-            try {
-                withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-                    val response = http.get("$base$path") { poolHeaders() }
-                    response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+    /** The account feed across the deployments; its stored ETag revalidates instead of re-downloading. */
+    private suspend fun feed(path: String): PoolResponse? {
+        val etag = feedEtag
+        return ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
+            get("$base$path", if (etag == null) emptyMap() else mapOf("If-None-Match" to etag))
+        }
+    }
+
+    private suspend fun get(url: String, headers: Map<String, String> = emptyMap()): PoolResponse? =
+        try {
+            withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
+                val response = http.get(url) {
+                    poolHeaders()
+                    headers.forEach { (key, value) -> header(key, value) }
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
+                PoolResponse(
+                    status = response.status.value,
+                    body = if (response.status.value == 200) response.bodyAsText() else "",
+                    retryAfterMs = PoolResponse.retryAfterMs(response.headers[HttpHeaders.RetryAfter]),
+                    etag = response.headers["ETag"],
+                )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
         }
 
     private fun io.ktor.client.request.HttpRequestBuilder.poolHeaders() {
@@ -612,7 +670,6 @@ class IosPlaybackPool(
         private const val CLIENT_KEY_DOMAIN = "archivepool-client:"
         private const val FULL_INTERVAL_MS = 24L * 60L * 60L * 1000L
         private const val PARTIAL_INTERVAL_MS = 5L * 60L * 60L * 1000L
-        private const val DISCOVERY_INTERVAL_MS = 30L * 60L * 1000L
         private const val ACCOUNT_COOLDOWN_MS = 10L * 60L * 1000L
         private const val REPORT_DEDUPE_MS = PoolDeadReportPolicy.REPORT_DEDUPE_MS
         private const val REQUEST_TIMEOUT_MS = 10_000L
@@ -652,35 +709,6 @@ class IosPlaybackPool(
                 ((json.parseToJsonElement(text) as? JsonObject)?.get("exp") as? JsonPrimitive)?.longOrNull
             }.getOrNull() ?: return false
             return exp * 1000L <= nowMs
-        }
-
-        /**
-         * A discovery payload: an object of URL arrays (`streaming`, `instances`, then `api`),
-         * a plain array of URLs or objects with `url`/`host`, or whitespace-separated URLs.
-         */
-        internal fun parseDiscoveredInstances(body: String, dropSquidWtf: Boolean = true): List<String> {
-            val trimmed = body.trim().takeIf { it.isNotEmpty() } ?: return emptyList()
-            val element = runCatching { json.parseToJsonElement(trimmed) }.getOrNull()
-            when (element) {
-                is JsonObject -> {
-                    val urls = listOf("streaming", "instances", "api").flatMap { key -> urlsOf(element[key] as? JsonArray) }
-                        .filterNot { dropSquidWtf && it.contains(".squid.wtf", ignoreCase = true) }
-                    if (urls.isNotEmpty()) return urls
-                }
-                is JsonArray -> urlsOf(element).takeIf { it.isNotEmpty() }?.let { return it }
-                else -> Unit
-            }
-            return trimmed.split('\n', '\r', ' ', ',').map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-        }
-
-        private fun urlsOf(array: JsonArray?): List<String> = array.orEmpty().mapNotNull { item ->
-            when (item) {
-                is JsonPrimitive -> item.contentOrNull?.takeIf { it.isNotBlank() }
-                is JsonObject -> listOf("url", "host").firstNotNullOfOrNull { key ->
-                    (item[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
-                }
-                else -> null
-            }
         }
 
         /** `scheme://host[:port]` for an https or http URL with a dotted host, or null. A bare host takes https. */

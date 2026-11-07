@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -82,9 +83,16 @@ ae_device *ae_device_open(uint32_t rate, int null_backend, ae_device_pull pull, 
     }
 
     /* The null backend opens without hardware, delivers silence and reports success on init and start alike. A
-       device that fell through to it is a broken output, not a working one, so it is refused instead of started. */
+       device that fell through to it is a broken output, not a working one, so it is refused instead of started.
+       The message names what a user can act on: the host has no reachable sound backend, so the application cannot
+       make a sound until one exists. miniaudio on Linux reaches ALSA by dlopen-ing libasound.so.2, so a container,
+       a sandbox, a VM without a passed-through device or a session with no ALSA bridge lands here. */
     if (!null_backend && d->device.pContext && d->device.pContext->backend == ma_backend_null) {
-        set_error(error, error_len, "no audio output backend is available: the silent null backend was refused");
+        set_error(error, error_len,
+                  "no audio output backend is available: the silent null backend was refused. This host exposes no "
+                  "usable sound device to the application (on Linux that usually means libasound.so.2 is missing or "
+                  "no PipeWire/PulseAudio device is published; in a container or virtual machine it usually means no "
+                  "sound device was passed through).");
         ma_device_uninit(&d->device);
         free(d);
         return NULL;
@@ -108,4 +116,19 @@ void ae_device_close(ae_device *d) {
     }
     ma_device_uninit(&d->device);
     free(d);
+}
+
+/* A probe renders silence; it only asks the platform whether a device can be opened and started at all. */
+static void silence_pull(void *user, float *out, uint32_t frames) {
+    (void)user;
+    memset(out, 0, (size_t)frames * 2u * sizeof(float));
+}
+
+int ae_device_probe(uint32_t rate, char *error, size_t error_len) {
+    ae_device *d = ae_device_open(rate, 0, silence_pull, NULL, error, error_len);
+    if (!d) {
+        return -1;
+    }
+    ae_device_close(d);
+    return 0;
 }

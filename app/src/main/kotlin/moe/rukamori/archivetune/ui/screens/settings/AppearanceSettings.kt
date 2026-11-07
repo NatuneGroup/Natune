@@ -45,7 +45,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,13 +79,8 @@ import moe.rukamori.archivetune.constants.SearchBarPositionKey
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppFontPreference
-import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
 import moe.rukamori.archivetune.constants.BackAnimationStyle
 import moe.rukamori.archivetune.constants.BackAnimationStyleKey
-import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
-import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
-import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
-import moe.rukamori.archivetune.constants.AppleMusicTitleMarqueeKey
 import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.AlbumCanvasEnabledKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
@@ -103,8 +97,6 @@ import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
-import moe.rukamori.archivetune.constants.MetrolistPresentationKey
-import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.constants.HideScrollbarKey
@@ -118,8 +110,6 @@ import moe.rukamori.archivetune.constants.toPlaylistTagPreference
 import moe.rukamori.archivetune.constants.toPlaylistTagOrder
 import moe.rukamori.archivetune.constants.toLibraryFilterPreference
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.constants.HomeScreenStyle
-import moe.rukamori.archivetune.constants.HomeScreenStyleKey
 import moe.rukamori.archivetune.constants.ActiveHomeSourcesKey
 import moe.rukamori.archivetune.constants.HomeSource
 import moe.rukamori.archivetune.ui.screens.HomeScreensDialog
@@ -129,19 +119,16 @@ import moe.rukamori.archivetune.ui.screens.activeHomeSources
 import moe.rukamori.archivetune.ui.screens.homeSourceAvailable
 import moe.rukamori.archivetune.ui.screens.qqHomeSourceAvailable
 import moe.rukamori.archivetune.constants.MinimalHomeModeKey
-import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
-import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
+import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
+import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
 import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
-import moe.rukamori.archivetune.constants.PlayerButtonsStyle
-import moe.rukamori.archivetune.constants.PlayerButtonsStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
-import moe.rukamori.archivetune.shared.ui.player.MetrolistPresentation
 import moe.rukamori.archivetune.constants.PlayerStyleSetting
 import moe.rukamori.archivetune.constants.honors
 import moe.rukamori.archivetune.constants.PureBlackKey
@@ -149,12 +136,10 @@ import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.constants.SliderStyleKey
 import moe.rukamori.archivetune.constants.TabletModeEnabledKey
-import moe.rukamori.archivetune.constants.TikTokMainLyricsEnabledKey
 import moe.rukamori.archivetune.constants.WallpaperExtractionFailedKey
 import moe.rukamori.archivetune.constants.UiScaleFactorKey
 import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.restartState
-import moe.rukamori.archivetune.ui.component.restartEnumState
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.LibraryChipOrderDialog
@@ -388,19 +373,6 @@ private fun appearanceThemeRows(
                 }
             }
 
-            item {
-                PreferenceEntry(
-                    modifier = positions.modifierFor("liquid_glass_nav_bar_link"),
-                    title = { Text(stringResource(R.string.liquid_glass_nav_bar)) },
-                    description = stringResource(R.string.liquid_glass_nav_bar_desc),
-                    icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                    onClick = {
-                        navController.navigate(
-                            "settings/appearance/navigation_bar?scrollTo=liquid_glass_nav_bar",
-                        )
-                    },
-                )
-            }
             item { LiquidGlassCustomisationEntry(navController, positions) }
         }
 
@@ -697,26 +669,12 @@ private fun appearancePlayerRows(
 ): AppearanceRows {
     val (playerDesignStyle, onPlayerDesignStyleChange) =
         prefs.enumState(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
-    val (appleMusicAnimatedArtwork, onAppleMusicAnimatedArtworkChange) =
-        prefs.state(AppleMusicAnimatedArtworkKey, defaultValue = true)
     val (disableAnimatedArtworkOnMobileData, onDisableAnimatedArtworkOnMobileDataChange) =
         prefs.state(DisableAnimatedArtworkOnMobileDataKey, defaultValue = false)
-    val (appleMusicBackdropWander, onAppleMusicBackdropWanderChange) =
-        prefs.state(AppleMusicBackdropWanderKey, defaultValue = true)
-    val (appleMusicPauseScale, onAppleMusicPauseScaleChange) =
-        prefs.state(AppleMusicPauseScaleKey, defaultValue = true)
-    val (appleMusicTitleMarquee, onAppleMusicTitleMarqueeChange) =
-        prefs.state(AppleMusicTitleMarqueeKey, defaultValue = true)
-    val (appleMusicSeekGrow, onAppleMusicSeekGrowChange) =
-        prefs.state(AppleMusicSeekGrowKey, defaultValue = true)
-    val (tikTokMainLyrics, onTikTokMainLyricsChange) =
-        prefs.state(TikTokMainLyricsEnabledKey, defaultValue = false)
     // Defaults must match the reads in FlamingoPlayerContent, or the switch shows a state the
     // player is not in.
     val (flamingoBackgroundEffect, onFlamingoBackgroundEffectChange) =
         prefs.state(FlamingoBackgroundEffectKey, defaultValue = false)
-    val (metrolistPresentation, onMetrolistPresentationChange) =
-        prefs.enumState(MetrolistPresentationKey, defaultValue = MetrolistPresentation.MODERN)
     val (showPlayerVolumeBar, onShowPlayerVolumeBarChange) =
         prefs.playerVolumeVisibility(playerDesignStyle)
     val (hidePlayerThumbnail, onHidePlayerThumbnailChange) =
@@ -738,8 +696,6 @@ private fun appearancePlayerRows(
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
-    val (playerButtonsStyle, onPlayerButtonsStyleChange) =
-        prefs.enumState(PlayerButtonsStyleKey, defaultValue = PlayerButtonsStyle.DEFAULT)
     val (sliderStyle, onSliderStyleChange) = prefs.enumState(SliderStyleKey, defaultValue = SliderStyle.Standard)
     val spotifySignedIn = prefs.homeSourceAvailable()
     val qqSignedIn = prefs.qqHomeSourceAvailable()
@@ -866,95 +822,6 @@ private fun appearancePlayerRows(
                 }
             }
             item { PlayerMenuStyleSetting(prefs = prefs, modifier = positions.modifierFor("player_menu_style")) }
-        // Only for the TikTok style: the strip reserves a fixed slot under the artwork on
-        // that page and nowhere else.
-        if (playerDesignStyle == PlayerDesignStyle.TIKTOK) {
-            item {
-                Column(modifier = positions.modifierFor("tiktok_main_lyrics")) {
-                    SwitchPreference(
-                        title = { Text(stringResource(R.string.tiktok_main_lyrics)) },
-                        description = stringResource(R.string.tiktok_main_lyrics_desc),
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = tikTokMainLyrics,
-                        onCheckedChange = onTikTokMainLyricsChange,
-                    )
-                }
-            }
-        }
-
-        // Only for the Apple Music style: these switches gate effects that only exist in
-        // that style's player. Hidden rather than disabled — a permanently greyed row is
-        // a worse explanation than no row.
-        if (playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC) {
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("apple_music_animated_artwork"),
-                    title = { Text(stringResource(R.string.apple_music_animated_artwork)) },
-                    description = stringResource(R.string.apple_music_animated_artwork_desc),
-                    icon = { Icon(painterResource(R.drawable.animation), null) },
-                    checked = appleMusicAnimatedArtwork,
-                    onCheckedChange = onAppleMusicAnimatedArtworkChange,
-                )
-            }
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("apple_music_backdrop_wander"),
-                    title = { Text(stringResource(R.string.apple_music_backdrop_wander)) },
-                    description = stringResource(R.string.apple_music_backdrop_wander_desc),
-                    icon = { Icon(painterResource(R.drawable.blur_on), null) },
-                    checked = appleMusicBackdropWander,
-                    onCheckedChange = onAppleMusicBackdropWanderChange,
-                )
-            }
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("apple_music_pause_scale"),
-                    title = { Text(stringResource(R.string.apple_music_pause_scale)) },
-                    description = stringResource(R.string.apple_music_pause_scale_desc),
-                    icon = { Icon(painterResource(R.drawable.motion_photos_on), null) },
-                    checked = appleMusicPauseScale,
-                    onCheckedChange = onAppleMusicPauseScaleChange,
-                )
-            }
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("apple_music_title_marquee"),
-                    title = { Text(stringResource(R.string.apple_music_title_marquee)) },
-                    description = stringResource(R.string.apple_music_title_marquee_desc),
-                    icon = { Icon(painterResource(R.drawable.text_fields), null) },
-                    checked = appleMusicTitleMarquee,
-                    onCheckedChange = onAppleMusicTitleMarqueeChange,
-                )
-            }
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("apple_music_seek_grow"),
-                    title = { Text(stringResource(R.string.apple_music_seek_grow)) },
-                    description = stringResource(R.string.apple_music_seek_grow_desc),
-                    icon = { Icon(painterResource(R.drawable.sliders), null) },
-                    checked = appleMusicSeekGrow,
-                    onCheckedChange = onAppleMusicSeekGrowChange,
-                )
-            }
-        }
-
-        // Only for the Metrolist style: the Modern/Vintage presentation switch is that style's
-        // own look choice, hidden for other styles like the same row on the other hosts.
-        if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
-            item {
-                Column(modifier = positions.modifierFor("metrolist_presentation")) {
-                    EnumListPreference(
-                        title = { Text(stringResource(R.string.metrolist_presentation)) },
-                        description = stringResource(R.string.metrolist_presentation_desc),
-                        icon = { Icon(painterResource(R.drawable.palette), null) },
-                        selectedValue = metrolistPresentation,
-                        onValueSelected = onMetrolistPresentationChange,
-                        valueText = { metrolistPresentationLabel(it) },
-                    )
-                }
-            }
-        }
-
         // The floating-light decoration is native, not a second background preference.
         if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
             item {
@@ -1127,25 +994,6 @@ private fun appearancePlayerRows(
         }
 
         item {
-            Column(modifier = positions.modifierFor("player_buttons_style")) {
-                EnumListPreference(
-                    title = { Text(stringResource(R.string.player_buttons_style)) },
-                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.BUTTONS_STYLE),
-                    icon = { Icon(painterResource(R.drawable.palette), null) },
-                    selectedValue = playerButtonsStyle,
-                    onValueSelected = onPlayerButtonsStyleChange,
-                    isEnabled = playerDesignStyle.supportsSharedButtons,
-                    valueText = {
-                        when (it) {
-                            PlayerButtonsStyle.DEFAULT -> stringResource(R.string.default_style)
-                            PlayerButtonsStyle.SECONDARY -> stringResource(R.string.secondary_color_style)
-                        }
-                    },
-                )
-            }
-        }
-
-        item {
             Column(modifier = positions.modifierFor("player_slider_style")) {
                 PreferenceEntry(
                     title = { Text(stringResource(R.string.player_slider_style)) },
@@ -1206,8 +1054,6 @@ private fun appearanceInterfaceRows(
         prefs.enumState(DefaultOpenTabKey, defaultValue = NavigationTab.HOME)
     val (hideScrollbar, onHideScrollbarChange) = prefs.state(HideScrollbarKey, defaultValue = false)
     val (minimalHomeMode, onMinimalHomeModeChange) = prefs.state(MinimalHomeModeKey, defaultValue = false)
-    val (homeScreenStyle, onHomeScreenStyleChange) =
-        prefs.enumState(HomeScreenStyleKey, defaultValue = HomeScreenStyle.Default)
     val (defaultChip, onDefaultChipChange) =
         prefs.enumState(key = ChipSortTypeKey, defaultValue = LibraryFilter.LIBRARY)
     val (libraryChipOrderPreference, onLibraryChipOrderChange) =
@@ -1253,40 +1099,21 @@ private fun appearanceInterfaceRows(
     val extrasTitle = stringResource(R.string.extras)
 
     return { positions ->
-        // The three settings that decide what the Home tab shows were scattered through
-        // "Misc" between tablet mode, the scrollbar toggle and the library chips. They are
-        // one decision — which home you get — so they read as one group.
+        // Which Home tab the app opens on is one decision, so it reads as one group.
         preferenceGroup(
             modifier = positions.modifierFor("home_screen", AppearanceSection.INTERFACE.anchor),
             title = homeTitle,
         ) {
             item {
-                EnumListPreference(
-                    modifier = positions.modifierFor("home_screen_style"),
-                    title = { Text(stringResource(R.string.home_screen_style)) },
-                    description = stringResource(R.string.home_screen_style_desc),
+                SwitchPreference(
+                    modifier = positions.modifierFor("minimal_home_mode"),
+                    title = { Text(stringResource(R.string.minimal_home_mode)) },
+                    description = stringResource(R.string.minimal_home_mode_desc),
                     icon = { Icon(painterResource(R.drawable.home_outlined), null) },
-                    selectedValue = homeScreenStyle,
-                    onValueSelected = onHomeScreenStyleChange,
-                    valueText = {
-                        when (it) {
-                            HomeScreenStyle.DEFAULT -> stringResource(R.string.home_screen_style_default)
-                            HomeScreenStyle.RUKAMORI -> stringResource(R.string.home_screen_style_rukamori)
-                        }
-                    },
+                    checked = minimalHomeMode,
+                    onCheckedChange = onMinimalHomeModeChange,
                 )
-        }
-
-        item {
-            SwitchPreference(
-                modifier = positions.modifierFor("minimal_home_mode"),
-                title = { Text(stringResource(R.string.minimal_home_mode)) },
-                description = stringResource(R.string.minimal_home_mode_desc),
-                icon = { Icon(painterResource(R.drawable.home_outlined), null) },
-                checked = minimalHomeMode,
-                onCheckedChange = onMinimalHomeModeChange,
-            )
-        }
+            }
 
         item {
             Column(modifier = positions.modifierFor("default_open_tab")) {

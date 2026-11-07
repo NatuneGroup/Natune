@@ -10,6 +10,13 @@ package moe.rukamori.archivetune.desktop.playback
 internal object PlaybackEngineNative {
     @JvmStatic external fun abiVersion(): Int
 
+    /**
+     * Opens a real output device at [sampleRate], starts it and closes it again. Null means the host can make a sound;
+     * a string is the refusal the first play would report, so the window can tell the user before they press play.
+     * This is the one binding that does not need an engine handle.
+     */
+    @JvmStatic external fun probeOutputDevice(sampleRate: Int): String?
+
     @JvmStatic external fun create(
         outputMode: Int,
         backend: Int,

@@ -46,6 +46,7 @@ Portions of the port come from:
 | [rukamori/core](https://github.com/rukamori/core) → [vossgraves/core](https://github.com/vossgraves/core) | Rukamori, forked by vossgraves | The InnerTube client (`core` submodule), a NewPipeExtractor-based fork without `NetworkGatekeeper`. |
 | [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | The icon pack for the icon switcher, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark, and the media obfuscator (the `deobfuscator` submodule; upstream `rukamori/morideobfuscator`). |
 | [4nx3b/lyrics](https://github.com/4nx3b/lyrics) | 4nx3b | The `lyrics` submodule: enhanced and word-synced LRC parsing and the lyrics providers. |
+| [JmDNS](https://github.com/jmdns/jmdns) | JmDNS contributors | Desktop Device Connect discovery (`org.jmdns:jmdns:3.6.4`, Apache-2.0). Not modified; linked only in `shared-data`'s JVM source set. |
 
 ## Icon artwork licence (CC-BY-SA-4.0)
 
@@ -67,7 +68,7 @@ media-info glyphs). Each copied file keeps the header comment
 
 | Project | Author | What this repository takes from it |
 | --- | --- | --- |
-| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`), the settings glass cards (`ui/theme/YumaModifiers.kt`) and the shared Spotify home layout. |
+| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | GPL-3.0. The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`), the settings glass cards (`ui/theme/YumaModifiers.kt`), the shared Spotify home layout, and the Spotify home page itself: `ui/screens/spotifyhome/*` transcribed file for file from commit `6eb6438` — the two quick-pick grids, the four typed shelves (two rows of track tiles, then artist, album and playlist rails), their dimensions, colours and press feedback, into `app/.../ui/screens/spotifyhome/`. |
 | [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | Navigation-bar and pill appearance work, the BitChord navigation bar (`ui/component/BitChordNavBar.kt`), player-style refinements, the playlist UI, several performance fixes (frosted-backdrop gating, activity-level refresh rate, menu z-order), the media info screen, and the SukiSU liquid glass port: the Liquid Glass customisation page and tuning keys, the throttled glass backdrop. |
 | [BitChord](https://github.com/kushagrasinghx/BitChord) | kushagrasinghx | The floating bottom bar whose glyph set, glass edge, stretch-squash selection pill and drag gesture the navigation bar reproduces; the BitChord home presentation and the lyrics HTTP and payload layer, re-implemented in the shared modules. | The automix analysis pipeline in `shared-domain/.../automix/` (compact feature analysis, cache policy, transition models) derives from the same port, which itself derives from Orchard (AGPL-3.0-or-later, combined into this GPL-3.0-or-later work per AGPLv3 section 13). |
 | [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | SukiSU-Ultra authors | GPL-3.0. The SukiSU liquid glass components in `ui/component/sukisu/`, reached through 4nx3b/ArchiveTune's port. The About page no longer uses SukiSU surfaces. |
@@ -114,6 +115,22 @@ Packaged desktop distributions carry their notice texts from
 app bundles the same QuickJS notice and the Apache-2.0 licence text it names as app resources
 from `iosApp/ArchiveTune/Notices/`.
 Each notice travels with the binary it covers.
+
+## Local PO token helper
+
+The desktop host can download and run the standalone
+[bgutil-ytdlp-pot-provider-rs](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs) server
+(`v0.8.1`, [release](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/tag/v0.8.1))
+to mint YouTube PO tokens when a build carries no BotGuard credentials. The project is
+GPL-3.0 (Copyright © jim60105 and contributors); the corresponding source is the tagged upstream
+repository.
+
+The binary is **not bundled or shipped**: `desktopApp` downloads the asset matching the host
+OS/architecture on first use from that official GitHub release, verifies it against a compiled-in
+SHA-256, and runs it only on `127.0.0.1`. The pinned digests are the release's own asset digests
+(also recomputed from the downloaded Linux x64 asset) and are recorded in
+`desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/potoken/BgutilSidecarRelease.kt`.
+Nothing in the helper path sends telemetry.
 
 ## Japanese romanization data
 
