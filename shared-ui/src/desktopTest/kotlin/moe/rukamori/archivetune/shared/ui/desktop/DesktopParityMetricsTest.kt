@@ -62,4 +62,46 @@ class DesktopParityMetricsTest {
         assertEquals(392.dp, DesktopShellMetrics.expandedArtworkMax)
         assertTrue(DesktopShellMetrics.expandedArtworkMax <= DesktopShellMetrics.expandedPlayerColumnWidth)
     }
+
+    /**
+     * The sidebar is the reference app's 104 dp column, not a second page: on its capture the page surface starts at
+     * x = 104 and the first two indicator pills are centred on x = 48, which is the centre of the 96 dp item column the
+     * 8 dp trailing gap leaves. Each item is the M3 pill with the glyph in it and a one-line label under it, on the
+     * reference's 68 dp pitch.
+     */
+    @Test
+    fun theRailIsTheReferenceOneHundredFourDpSidebar() {
+        assertEquals(104.dp, DesktopShellMetrics.railExpandedWidth)
+        assertEquals(104.dp, desktopRailWidth(expanded = true))
+        assertEquals(88.dp, DesktopShellMetrics.railCollapsedWidth)
+        assertEquals(88.dp, desktopRailWidth(expanded = false))
+        assertEquals(8.dp, DesktopShellMetrics.railTrailingGap)
+        // The item column the pills centre on: 104 - 8 = 96 dp.
+        assertEquals(96.dp, DesktopShellMetrics.railExpandedWidth - DesktopShellMetrics.railTrailingGap)
+        // The pill is the M3 rail indicator: 56 x 32 dp, fully rounded, around a 24 dp glyph.
+        assertEquals(56.dp, DesktopShellMetrics.railItemIndicatorWidth)
+        assertEquals(32.dp, DesktopShellMetrics.railItemIndicatorHeight)
+        assertEquals(DesktopShellMetrics.railItemIndicatorHeight / 2, DesktopShellMetrics.railItemCorner)
+        assertEquals(24.dp, DesktopShellMetrics.railItemIcon)
+        assertTrue(
+            DesktopShellMetrics.railItemIndicatorWidth <= DesktopShellMetrics.railExpandedWidth -
+                DesktopShellMetrics.railTrailingGap,
+            "the pill fits the item column",
+        )
+        // Pill, label gap and one 12 sp / 16 dp label line fit the 60 dp item, and consecutive pills are 68 dp apart.
+        assertTrue(
+            DesktopShellMetrics.railItemIndicatorHeight + DesktopShellMetrics.railItemLabelGap + 16.dp <=
+                DesktopShellMetrics.railItemHeight,
+        )
+        assertEquals(
+            68.dp,
+            DesktopShellMetrics.railItemHeight + DesktopShellMetrics.railItemSpacing,
+            "the reference's item pitch",
+        )
+        // Five items and their spacing fit the row the 800 x 500 minimum window leaves between the two bars.
+        val railRow = 500.dp - DesktopShellMetrics.titleBarHeight - DesktopShellMetrics.playerBarHeight
+        val items = DesktopShellMetrics.railItemHeight * DesktopDestination.entries.size +
+            DesktopShellMetrics.railItemSpacing * (DesktopDestination.entries.size - 1) + 16.dp
+        assertTrue(items <= railRow, "five destinations take $items dp of the $railRow dp rail row")
+    }
 }

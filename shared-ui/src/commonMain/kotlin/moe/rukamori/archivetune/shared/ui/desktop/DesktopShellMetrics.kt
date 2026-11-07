@@ -12,12 +12,32 @@ import kotlin.math.max
  * which column exists, and the pages below only lay out inside the width it reports through `BoxWithConstraints`.
  */
 object DesktopShellMetrics {
-    /** Wide rail with icon above a small label; the collapsed rail keeps only the icon. */
-    val railExpandedWidth = 180.dp
-    val railCollapsedWidth = 96.dp
-    val railItemHeight = 64.dp
+    /**
+     * The sidebar, measured on the reference app's own capture: 104 dp from the window edge to the page surface, with
+     * the icon above a one-line label. It is a destination list, not a second column, so the width is fixed by the
+     * label and the indicator pill instead of growing with the window.
+     */
+    val railExpandedWidth = 104.dp
+    /** The icon-only rail: the reference's 80 dp column plus the same trailing gap, so a collapse saves the labels. */
+    val railCollapsedWidth = 88.dp
+    /**
+     * The gap between the item column and the page surface. The reference centres its items on the 96 dp column and
+     * starts the page 8 dp later, so the rail's footprint reads as 104 dp while the icons stay on 96.
+     */
+    val railTrailingGap = 8.dp
+    /**
+     * One rail item: the indicator pill, the label gap and the label line, with [railItemSpacing] between items so the
+     * next pill starts 68 dp below the previous one, as it does in the reference capture.
+     */
+    val railItemHeight = 60.dp
+    val railItemSpacing = 8.dp
     val railItemCorner = 16.dp
-    val railItemIcon = 22.dp
+    val railItemIcon = 24.dp
+    /** The indicator pill behind the icon: 56 x 32 dp, fully rounded, and only as wide as the glyph needs. */
+    val railItemIndicatorWidth = 56.dp
+    val railItemIndicatorHeight = 32.dp
+    /** The gap between the pill and the label's 12 sp line. */
+    val railItemLabelGap = 4.dp
 
     /**
      * The window's own top band: the app mark, the window buttons and the search, above the rail and the page.
@@ -147,8 +167,8 @@ data class DesktopPaneSlot(val pane: DesktopPane, val width: Dp, val placement: 
  * follow the layout instead of a closed pane counting as open. A window shorter than
  * [DesktopShellMetrics.paneDockMinHeight] never docks: the active pane covers the page.
  *
- * Two 360 dp panes do not fit at 1200 x 720 even though the width class says "two panes": 180 rail + 560 page + 6 + 360
- * leaves 94 dp, so the second pane covers the page while the first stays docked.
+ * Two 360 dp panes do not fit at 1200 x 720 even though the width class says "two panes": 104 rail + 560 page + 6 + 360
+ * leaves 170 dp, so the second pane covers the page while the first stays docked.
  */
 fun desktopPaneSlots(
     windowWidth: Dp,
@@ -186,11 +206,15 @@ fun desktopPaneSlots(
     return if (covering == null) docked else docked + overlay(covering)
 }
 
-/** The rail is labelled from 840 dp and while the window is tall enough for two-line items. */
+/** The rail is labelled from 840 dp and while the window is tall enough for a pill and a label line. */
 fun desktopRailExpanded(windowWidth: Dp, windowHeight: Dp, userExpanded: Boolean): Boolean =
     userExpanded &&
         windowWidth >= 840.dp &&
         desktopHeightClass(windowHeight) != DesktopHeightClass.Compact
+
+/** The rail's footprint beside the page: 104 dp with labels, 88 dp as icons only. */
+fun desktopRailWidth(expanded: Boolean): Dp =
+    if (expanded) DesktopShellMetrics.railExpandedWidth else DesktopShellMetrics.railCollapsedWidth
 
 /** The search field's width for the window it sits in; it keeps room for the rail toggle and the window buttons. */
 fun desktopSearchFieldWidth(windowWidth: Dp): Dp = if (windowWidth < DesktopShellMetrics.searchTightWindowWidth) {

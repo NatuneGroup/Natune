@@ -24,4 +24,6 @@
     <string name="desktop_shell_lyrics_retry">Try again</string>
     <string name="desktop_shell_position">Playback position</string>
     <string name="desktop_shell_player_artwork">Sleeve</string>
+    <!-- The rail's own labels: a 104 dp item fits a word, so a destination with a longer name gets its short form. -->
+    <string name="desktop_shell_rail_together">Together</string>
 </resources>

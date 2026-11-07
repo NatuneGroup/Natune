@@ -11,11 +11,7 @@ import kotlin.test.assertTrue
 class DesktopShellLayoutTest {
     /** The slots the shell would draw for [open], with the rail the shell would give that window. */
     private fun slots(windowWidth: Dp, windowHeight: Dp, vararg open: DesktopPane): List<DesktopPaneSlot> {
-        val railWidth = if (desktopRailExpanded(windowWidth, windowHeight, userExpanded = true)) {
-            DesktopShellMetrics.railExpandedWidth
-        } else {
-            DesktopShellMetrics.railCollapsedWidth
-        }
+        val railWidth = desktopRailWidth(desktopRailExpanded(windowWidth, windowHeight, userExpanded = true))
         return desktopPaneSlots(
             windowWidth = windowWidth,
             windowHeight = windowHeight,
@@ -76,30 +72,30 @@ class DesktopShellLayoutTest {
     /** The budget spends the real widths: rail, page minimum, each pane and its divider. */
     @Test
     fun thePaneBudgetSpendsTheRealWidths() {
-        // 800 x 500: 800 - 96 rail - 560 page leaves 144 dp, not enough for a 280 dp pane.
+        // 800 x 500: 800 - 88 rail - 560 page leaves 152 dp, not enough for a 280 dp pane.
         assertEquals(
             listOf(DesktopPanePlacement.Overlay),
             slots(800.dp, 500.dp, DesktopPane.Queue, DesktopPane.Lyrics).map { it.placement },
         )
 
-        // 1080 x 720: 1080 - 180 rail - 560 page = 340 dp, so the queue docks narrowed to 334 dp and the newest pane
-        // (the lyrics) covers the page.
+        // 1080 x 720: 1080 - 104 rail - 560 page = 416 dp, so the queue keeps its 360 dp and the newest pane (the
+        // lyrics) covers the page.
         val narrow = slots(1080.dp, 720.dp, DesktopPane.Queue, DesktopPane.Lyrics)
         assertEquals(listOf(DesktopPanePlacement.Docked, DesktopPanePlacement.Overlay), narrow.map { it.placement })
-        assertEquals(334.dp, narrow.first().width)
+        assertEquals(360.dp, narrow.first().width)
         assertEquals(DesktopPane.Lyrics, narrow.last().pane)
 
-        // 1200 x 720: the width class says two panes, the widths do not (180 + 560 + 6 + 360 leaves 94 dp).
+        // 1200 x 720: the width class says two panes, the widths do not (104 + 560 + 6 + 360 leaves 170 dp).
         val desktop = slots(1200.dp, 720.dp, DesktopPane.Queue, DesktopPane.Lyrics)
         assertEquals(listOf(DesktopPanePlacement.Docked, DesktopPanePlacement.Overlay), desktop.map { it.placement })
         assertEquals(360.dp, desktop.first().width)
 
-        // 1440 x 900: the lyrics narrow to 328 dp so both dock and the page keeps exactly its 560 dp.
+        // 1440 x 900: the 104 dp rail leaves room for both panes at their default width and the page keeps 604 dp.
         val comfortable = slots(1440.dp, 900.dp, DesktopPane.Queue, DesktopPane.Lyrics)
         assertEquals(listOf(DesktopPanePlacement.Docked, DesktopPanePlacement.Docked), comfortable.map { it.placement })
-        assertEquals(listOf(360.dp, 328.dp), comfortable.map { it.width })
+        assertEquals(listOf(360.dp, 360.dp), comfortable.map { it.width })
 
-        // 1920 x 1080: both keep their default width and the page keeps 1008 dp.
+        // 1920 x 1080: both keep their default width and the page keeps 1088 dp.
         val wide = slots(1920.dp, 1080.dp, DesktopPane.Queue, DesktopPane.Lyrics)
         assertEquals(listOf(360.dp, 360.dp), wide.map { it.width })
         assertEquals(listOf(DesktopPanePlacement.Docked, DesktopPanePlacement.Docked), wide.map { it.placement })
@@ -115,11 +111,7 @@ class DesktopShellLayoutTest {
             1920.dp to 1080.dp,
         )
         windows.forEach { (width, height) ->
-            val railWidth = if (desktopRailExpanded(width, height, userExpanded = true)) {
-                DesktopShellMetrics.railExpandedWidth
-            } else {
-                DesktopShellMetrics.railCollapsedWidth
-            }
+            val railWidth = desktopRailWidth(desktopRailExpanded(width, height, userExpanded = true))
             val docked = slots(width, height, DesktopPane.Queue, DesktopPane.Lyrics)
                 .filter { it.placement == DesktopPanePlacement.Docked }
             val used = docked.map { it.width.value }.sum() +
