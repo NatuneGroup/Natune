@@ -2329,7 +2329,7 @@ private fun InstrumentalBreakRow(
                     textColor = textColor,
                     inactiveAlpha = inactiveAlpha,
                 )
-                InterludeDots(textColor = textColor)
+                InterludeDots(textColor = textColor, currentPosition = playbackPositionProvider)
             }
         } else {
         InstrumentalBreakItem(
