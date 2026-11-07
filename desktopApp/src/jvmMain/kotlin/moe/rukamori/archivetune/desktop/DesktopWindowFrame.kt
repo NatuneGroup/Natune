@@ -43,6 +43,7 @@ import moe.rukamori.archivetune.shared.domain.settings.desktopSystemWindowFrame
 import moe.rukamori.archivetune.shared.ui.desktop.DesktopShellMetrics
 import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopWindowControls
 import moe.rukamori.archivetune.shared.ui.desktop.desktopSearchFieldWidth
+import moe.rukamori.archivetune.shared.ui.desktop.desktopTitleBarActionsFit
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -146,9 +147,15 @@ private fun PublishWindowsHitTest(windowState: WindowState) {
         val searchLeft = (center - searchWidth / 2 - padding).coerceAtLeast(0)
         val searchRight = (center + searchWidth / 2 + padding).coerceAtMost(width)
         val buttonsLeft = (width - padding - px(DesktopShellMetrics.captionButtonWidth * 3)).coerceAtLeast(0)
-        // The window buttons end the title bar, and the rail toggle sits immediately left of them, inside the caption
-        // strip. It is a client region like the search field: a click on it must reach Compose, not drag the window.
-        val railToggleRight = buttonsLeft
+        // The window buttons end the title bar, and the settings and account buttons sit immediately left of them,
+        // inside the caption strip. They are client regions like the search field: a click on one must reach Compose,
+        // not drag the window. The title bar drops them on a window too narrow for them, and this test follows it.
+        val actionsShown = desktopTitleBarActionsFit(
+            (width / density).dp,
+            hasWindowControls = true,
+        )
+        val actionsLeft = if (actionsShown) (buttonsLeft - px(DesktopShellMetrics.titleBarActionsWidth)).coerceAtLeast(0) else buttonsLeft
+        val railToggleRight = actionsLeft
         val railToggleLeft = (railToggleRight - px(DesktopShellMetrics.titleBarRailToggleWidth)).coerceAtLeast(0)
         val caption = buildList {
             if (searchLeft > 0) add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CAPTION, 0, 0, searchLeft, bar))
@@ -158,10 +165,13 @@ private fun PublishWindowsHitTest(windowState: WindowState) {
         }
         WindowsCustomFrame.publish(
             caption = caption,
-            clientHoles = listOf(
-                WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, searchLeft, 0, searchRight, bar),
-                WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, railToggleLeft, 0, railToggleRight, bar),
-            ),
+            clientHoles = buildList {
+                add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, searchLeft, 0, searchRight, bar))
+                add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, railToggleLeft, 0, railToggleRight, bar))
+                if (actionsShown) {
+                    add(WindowsCustomFrame.CaptionArea(WindowsCustomFrame.CLIENT, actionsLeft, 0, buttonsLeft, bar))
+                }
+            },
         )
     }
 }

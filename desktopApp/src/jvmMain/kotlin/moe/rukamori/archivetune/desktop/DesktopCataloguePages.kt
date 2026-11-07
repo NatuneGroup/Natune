@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.domain.settings.HideAiMixKey
 import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
+import moe.rukamori.archivetune.shared.domain.settings.youTubeIdentity
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
@@ -128,8 +129,8 @@ internal fun desktopHomePage(
         page = page,
         loadMore = feed::loadMore,
         retry = feed::reload,
-        // The anonymous greeting line; the desktop account name is not resolved for the feed header yet.
-        accountName = "",
+        // The signed-in account the top bar's avatar shows; a signed-out window keeps the anonymous greeting line.
+        accountName = preferences?.youTubeIdentity()?.name.orEmpty(),
         activeIds = emptySet(),
         playing = snapshot?.playWhenReady == true,
         refreshing = feed.refreshing,

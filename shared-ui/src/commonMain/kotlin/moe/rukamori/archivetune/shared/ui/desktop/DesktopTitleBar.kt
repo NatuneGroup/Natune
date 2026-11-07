@@ -58,8 +58,8 @@ import org.jetbrains.compose.resources.stringResource
 val LocalDesktopWindowControls = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
 /**
- * The window's top strip: the app mark and the navigation toggle at the left, one search field across the middle and
- * the host's own trailing slot for the window buttons at the right.
+ * The window's top strip: the app mark and the navigation toggle at the left, one search field across the middle, the
+ * settings and account buttons the host binds at the right, and the host's own trailing slot for the window buttons.
  *
  * Search lives here on every page, including Settings, because the whole window has one search: entering a query
  * opens the search page with that query and keeps the current page one Back away. The host owns the window buttons,
@@ -75,7 +75,15 @@ fun DesktopTitleBar(
     modifier: Modifier = Modifier,
     leading: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit = {},
+    /** The settings destination, or null on a host with no title bar settings entry. */
+    onOpenSettings: (() -> Unit)? = null,
+    /** The phone top bar's update dot, shown on the settings button when the host has an update to offer. */
+    settingsBadge: Boolean = false,
+    /** The account button and the menu it opens; null hides the account area entirely. */
+    profileMenu: DesktopProfileMenu? = null,
 ) {
+    // Read once: the window buttons decide whether the actions fit, and the layout scopes below are nested.
+    val windowControls = LocalDesktopWindowControls.current
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier
@@ -118,7 +126,16 @@ fun DesktopTitleBar(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         DesktopRailToggle(railExpanded, onToggleRail)
                         trailing()
-                        LocalDesktopWindowControls.current?.invoke()
+                        // A narrow window drops these rather than clipping them against the caption: the trailing
+                        // column is a quarter of the bar and the host's window buttons end it.
+                        if (desktopTitleBarActionsFit(titleBarWidth, hasWindowControls = windowControls != null)) {
+                            DesktopTitleBarActions(
+                                settingsBadge = settingsBadge,
+                                onOpenSettings = onOpenSettings,
+                                profile = profileMenu,
+                            )
+                        }
+                        windowControls?.invoke()
                     }
                 }
             }

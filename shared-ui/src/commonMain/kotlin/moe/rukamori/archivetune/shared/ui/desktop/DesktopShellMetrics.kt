@@ -33,6 +33,10 @@ object DesktopShellMetrics {
      * frame publishes it as a client region, so the click reaches Compose instead of dragging the window.
      */
     val titleBarRailToggleWidth = 48.dp
+    /** The settings and account buttons beside the rail toggle: a 40 dp touch target each, a 28 dp avatar inside it. */
+    val titleBarActionButton = 40.dp
+    val titleBarActionsWidth = 80.dp
+    val titleBarAvatar = 28.dp
 
     /** Linux and the Windows fallback paint their own caption strip; Windows' native frame is 48 dp in total. */
     val captionHeight = 32.dp
@@ -169,6 +173,25 @@ fun desktopSearchFieldWidth(windowWidth: Dp): Dp = if (windowWidth < DesktopShel
     DesktopShellMetrics.searchFieldNarrowWidth
 } else {
     DesktopShellMetrics.searchFieldWideWidth
+}
+
+/**
+ * Whether the title bar can carry its settings and account buttons. The bar is one 1:2:1 row, so the trailing column is
+ * a quarter of the window; the buttons are drawn only while that column still holds the rail toggle, the two 40 dp
+ * actions and the host's own window buttons. Narrower than that, they would be clipped against the caption — and on a
+ * self-drawn frame they would sit under the caption's drag region instead of receiving the click, which is why the
+ * frame's hit test asks this same function instead of measuring the buttons a second time.
+ */
+fun desktopTitleBarActionsFit(windowWidth: Dp, hasWindowControls: Boolean): Boolean {
+    val trailingColumn = (
+        windowWidth.value -
+            DesktopShellMetrics.titleBarPadding.value * 2f -
+            DesktopShellMetrics.titleBarSearchGap.value * 2f
+        ) / 4f
+    val needed = DesktopShellMetrics.titleBarRailToggleWidth.value +
+        DesktopShellMetrics.titleBarActionsWidth.value +
+        if (hasWindowControls) DesktopShellMetrics.captionButtonWidth.value * 3f else 0f
+    return trailingColumn >= needed
 }
 
 /** The overlay pane's width: it may cover the page, but it always leaves the rail and a strip of page visible. */
