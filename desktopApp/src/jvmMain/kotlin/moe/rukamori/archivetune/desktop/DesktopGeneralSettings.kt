@@ -78,7 +78,7 @@ internal fun DesktopGeneralSettingsPage(
         LiquidGlassSettingsRoute -> LiquidGlassSettings(
             controller, DesktopOpticalCapabilities.blur, DesktopOpticalCapabilities.refraction, onFailure, scrollTo,
         )
-        "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows() }
+        "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows(desktop = true) }
         "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }
         "settings/player" -> PlaybackSettings(
             controller = controller,
