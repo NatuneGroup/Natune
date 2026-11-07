@@ -58,24 +58,24 @@ class DesktopShellResizeTest {
         }
     }
 
-    /** The page surface's bottom edge, in window dp, for a window [height] tall. */
-    private fun pageBottom(height: Dp): Dp = height - DesktopShellMetrics.playerBarHeight - Space.xs
-
-    /** Every bottom edge in the window, measured against the window's own [height]. */
+    /**
+     * Every bottom edge in the window, measured against the scaffold's own bounds. The test scene is smaller than the
+     * 1030 dp window the PC report had, so `requiredSize` overflows it and the scaffold is placed above the scene's
+     * top edge: the page and the player bar are checked against the scaffold, not against the scene's origin.
+     */
     private fun ComposeUiTest.assertWindowLayout(height: Dp) {
-        onNodeWithTag("desktop-shell").getUnclippedBoundsInRoot().let { bounds ->
-            assertEquals(height.value, bounds.bottom.value, 0.5f, "the scaffold is the window")
-        }
+        val shell = onNodeWithTag("desktop-shell").getUnclippedBoundsInRoot()
+        assertEquals(height.value, (shell.bottom - shell.top).value, 0.5f, "the scaffold is the window")
         onNodeWithTag("desktop-content-surface").getUnclippedBoundsInRoot().let { bounds ->
             assertEquals(
-                pageBottom(height).value,
+                (shell.bottom - DesktopShellMetrics.playerBarHeight - Space.xs).value,
                 bounds.bottom.value,
                 0.5f,
                 "the page fills a ${height.value} dp window",
             )
         }
         onNodeWithTag("test-player-bar").getUnclippedBoundsInRoot().let { bounds ->
-            assertEquals(height.value, bounds.bottom.value, 0.5f, "the player bar sits on the window's bottom edge")
+            assertEquals(shell.bottom.value, bounds.bottom.value, 0.5f, "the player bar sits on the window's bottom edge")
         }
     }
 
