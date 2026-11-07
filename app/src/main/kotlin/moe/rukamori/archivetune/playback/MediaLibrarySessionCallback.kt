@@ -90,6 +90,10 @@ class MediaLibrarySessionCallback
         private var pendingSearchJob: Job? = null
         private val onlineSearchItemCache = LruCache<String, MediaItem>(256) // a long Auto session runs many searches
         private val spotifyPlaylistItemCache = LruCache<String, List<MediaItem>>(8) // one entry can hold a whole playlist
+        private val browseChildrenCache = AutoBrowseChildrenCache<MediaItem>()
+
+        fun invalidateBrowseChildren() = browseChildrenCache.clear()
+
         var toggleLike: () -> Unit = {}
         var toggleStartRadio: () -> Unit = {}
         var toggleLibrary: () -> Unit = {}
@@ -117,17 +121,6 @@ class MediaLibrarySessionCallback
                 putBoolean(EXTRA_CONTENT_STYLE_SUPPORTED, true)
                 putInt(EXTRA_CONTENT_STYLE_PLAYABLE_HINT, playableHint)
             }
-
-        private fun List<MediaItem>.paged(
-            page: Int,
-            pageSize: Int,
-        ): List<MediaItem> {
-            if (page < 0 || pageSize <= 0) return this
-            val from = page.toLong() * pageSize.toLong()
-            if (from >= size) return emptyList()
-            val to = min(from + pageSize, size.toLong()).toInt()
-            return subList(from.toInt(), to)
-        }
 
         override fun onConnect(
             session: MediaSession,
@@ -396,7 +389,7 @@ class MediaLibrarySessionCallback
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
             scope.future(Dispatchers.IO) {
-                val items =
+                val load: suspend () -> List<MediaItem> = {
                     when (parentId) {
                         MusicService.ROOT -> {
                             listOfNotNull(
@@ -649,8 +642,11 @@ class MediaLibrarySessionCallback
                             }
                         }
                     }
+                }
+                // The queue folder mirrors the live player, so it is never served from a snapshot.
+                val items = if (parentId == MusicService.QUEUE) load() else browseChildrenCache.children(parentId, page, load)
 
-                LibraryResult.ofItemList(items.paged(page, pageSize), params)
+                LibraryResult.ofItemList(items.autoBrowsePage(page, pageSize), params)
             }
 
         override fun onGetItem(
