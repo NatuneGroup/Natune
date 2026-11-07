@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,8 @@ import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.artworkPaletteSeed
 import moe.rukamori.archivetune.shared.ui.theme.artworkSurfaceScheme
+import moe.rukamori.archivetune.shared.ui.theme.desktopArtworkSeed
+import moe.rukamori.archivetune.shared.ui.theme.desktopFirstFrameScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.savedPaletteSeed
 import org.jetbrains.compose.resources.stringResource
@@ -113,7 +116,17 @@ fun ArchiveTuneRoot(
         val saved by host.settings.snapshots.collectAsState()
         val preferences = saved
         if (preferences == null) {
-            ArchiveTuneTheme { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            // The frame before the persisted read completes is still a desktop frame: it paints the desktop's own seed
+            // rather than Material's stock scheme, so the window never flashes a palette it will not keep.
+            val firstFrame = archiveTuneDefaultColorScheme(isSystemInDarkTheme())
+            ArchiveTuneTheme(
+                darkTheme = isSystemInDarkTheme(),
+                colorScheme = if (desktopShell) {
+                    desktopFirstFrameScheme(null, isSystemInDarkTheme(), ThemePaletteStyle.AUTOMATIC)
+                } else {
+                    firstFrame
+                },
+            ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         } else {
             val progress by host.podcastProgress.collectAsState(emptyList())
             val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
@@ -232,19 +245,31 @@ private fun ArchiveTuneLoadedRoot(
         val darkTheme = darkThemeFor(preferences[DarkModeKey], systemDark)
         val nativeState by host.playerControls.state.collectAsState()
         // A palette is rebuilt only when its seed, style or dark flag changes. On desktop, with Dynamic theme on and no
-        // saved custom colour, the current sleeve seeds the scheme so the page, rail and top bar carry its tonal family;
-        // turning Dynamic theme off (or a host with no artwork palette) keeps the default scheme unchanged.
+        // saved custom colour, the current sleeve seeds the scheme so the page, rail and top bar carry its tonal family.
+        // The sleeve's colour is remembered, so the *first* frame of the next launch is already in that family instead
+        // of starting on Material's default and repainting once the feed has art; with no sleeve remembered yet the
+        // desktop's own seed stands in, so the window never opens in stock purple.
         val paletteSeed = preferences.savedPaletteSeed()
         val paletteStyle = preferences.themePaletteStyle()
-        val artworkSeed = if (desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null) {
-            artworkPaletteSeed(nativeState.palette)
-        } else {
-            null
-        }
-        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme) {
+        val desktopDynamic = desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null
+        val liveArtworkSeed = if (desktopDynamic) artworkPaletteSeed(nativeState.palette) else null
+        val storedArtworkSeed = if (desktopDynamic) preferences.desktopArtworkSeed() else null
+        val artworkSeed = liveArtworkSeed ?: storedArtworkSeed
+        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme, desktopDynamic) {
             paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
                 ?: artworkSurfaceScheme(artworkSeed, darkTheme, paletteStyle)
-                ?: archiveTuneDefaultColorScheme(darkTheme)
+                ?: if (desktopDynamic) {
+                    desktopFirstFrameScheme(null, darkTheme, paletteStyle)
+                } else {
+                    archiveTuneDefaultColorScheme(darkTheme)
+                }
+        }
+        // Remember the sleeve for the next launch. The write is skipped when nothing changed, and a failed write only
+        // costs the next launch its remembered colour, never this one its palette.
+        LaunchedEffect(desktopDynamic, liveArtworkSeed, storedArtworkSeed) {
+            if (!desktopDynamic || liveArtworkSeed == null || liveArtworkSeed == storedArtworkSeed) return@LaunchedEffect
+            val argb = liveArtworkSeed.toArgb().toLong()
+            runCatching { host.settings.edit { set(DesktopArtworkSeedKey, argb) } }
         }
         var rememberedMute by remember { mutableStateOf<Float?>(null) }
         fun handleKeymap(action: KeymapAction): Boolean {

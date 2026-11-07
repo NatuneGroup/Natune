@@ -70,8 +70,10 @@ fun DesktopExpandedPlayer(
     modifier: Modifier = Modifier,
 ) {
     val artworkModifier = Modifier
-        .fillMaxWidth()
+        // The cap has to be the outer constraint: a fillMaxWidth first would pin the sleeve to the column measure and
+        // the cap would never apply. The reference player centres a 392 dp square in its 648 dp column.
         .widthIn(max = DesktopShellMetrics.expandedArtworkMax)
+        .fillMaxWidth()
         .aspectRatio(1f)
         .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
     Surface(
@@ -84,22 +86,31 @@ fun DesktopExpandedPlayer(
             val twoColumns = maxHeight >= DesktopShellMetrics.expandedTwoColumnMinHeight
             val content: @Composable (Modifier) -> Unit = { columnModifier ->
                 if (twoColumns) {
-                    Row(
+                    // The reference layout is not a 50/50 split: the player keeps its own 648 dp measure and the lyrics
+                    // take the rest of the row. The measure narrows only when the window cannot carry both columns.
+                    BoxWithConstraints(
                         columnModifier.fillMaxSize().padding(DesktopShellMetrics.expandedPlayerPadding),
-                        horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.expandedPlayerPadding),
                     ) {
-                        DesktopPlayerColumn(
-                            state, slots, artworkModifier, Modifier.weight(1f).fillMaxHeight(),
-                            onPlayPause, onSeekTo, onAction, onVolumeChange,
-                        )
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
-                                .background(MaterialTheme.colorScheme.surfaceContainer)
-                                .testTag("desktop-expanded-lyrics"),
-                        ) { slots.lyrics(Modifier.fillMaxSize()) }
+                        val playerColumn = desktopExpandedPlayerColumnWidth(maxWidth)
+                        Row(
+                            Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.expandedPlayerPadding),
+                        ) {
+                            Box(Modifier.width(playerColumn).fillMaxHeight().testTag("desktop-expanded-column")) {
+                                DesktopPlayerColumn(
+                                    state, slots, artworkModifier, Modifier.fillMaxSize(),
+                                    onPlayPause, onSeekTo, onAction, onVolumeChange,
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .testTag("desktop-expanded-lyrics"),
+                            ) { slots.lyrics(Modifier.fillMaxSize()) }
+                        }
                     }
                 } else {
                     Column(
@@ -160,7 +171,9 @@ private fun DesktopPlayerColumn(
 ) {
     Column(
         columnModifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        // The reference player left-aligns its metadata to the column measure and centres only the sleeve and the
+        // transport, so the title reads as the start of the column rather than as a caption under the artwork.
+        horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -184,8 +197,9 @@ private fun DesktopPlayerColumn(
         }
         DesktopExpandedSeek(state, onSeekTo)
         Row(
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterHorizontally),
         ) {
             PlayerIcon(
                 symbol = PlayerSymbol.SHUFFLE,

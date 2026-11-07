@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -70,6 +72,9 @@ private data class SettingsNavItem(
  * the current settings route instead of pushing a page, which keeps one settings entry on the navigation stack.
  *
  * [selectedRoute] is the route the page currently shows; [detail] is that page. Phone hosts never compose this.
+ *
+ * [navScroll] is hoisted by the host on purpose: a desktop window keeps the reader's place in the category list while
+ * they open page after page, and the list is otherwise re-laid-out from the top as soon as the detail changes.
  */
 @Composable
 fun SettingsTwoPane(
@@ -78,6 +83,7 @@ fun SettingsTwoPane(
     onSelect: (String) -> Unit,
     fallbackTitle: String,
     modifier: Modifier = Modifier,
+    navScroll: LazyListState = rememberLazyListState(),
     detail: @Composable () -> Unit,
 ) {
     var filter by rememberSaveable { mutableStateOf("") }
@@ -127,6 +133,7 @@ fun SettingsTwoPane(
                 onFilter = { filter = it },
                 onClearFilter = { filter = ""; focusManager.clearFocus() },
                 onSelect = onSelect,
+                scroll = navScroll,
             )
             Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -160,6 +167,7 @@ private fun SettingsNavigationPane(
     onFilter: (String) -> Unit,
     onClearFilter: () -> Unit,
     onSelect: (String) -> Unit,
+    scroll: LazyListState,
 ) {
     Column(
         Modifier.width(width).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceContainerLow)
@@ -172,7 +180,10 @@ private fun SettingsNavigationPane(
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
         )
         var lastGroup: String? = null
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = Space.xs)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = Space.xs).testTag("settings-nav-list"),
+            state = scroll,
+        ) {
             items.forEach { item ->
                 val header = item.group
                 if (header != null && header.anchor != lastGroup) {
