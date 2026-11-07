@@ -134,8 +134,13 @@ class DesktopShellLayoutTest {
 
     @Test
     fun theSearchFieldNarrowsAtTightWidths() {
-        assertEquals(DesktopShellMetrics.searchFieldNarrowWidth, desktopSearchFieldWidth(900.dp))
-        assertEquals(DesktopShellMetrics.searchFieldWideWidth, desktopSearchFieldWidth(1280.dp))
+        // The reference app's measures: 390 dp while the window has room for it, 280 dp below the tight width.
+        assertEquals(390.dp, DesktopShellMetrics.searchFieldWideWidth)
+        assertEquals(280.dp, DesktopShellMetrics.searchFieldNarrowWidth)
+        assertEquals(280.dp, desktopSearchFieldWidth(900.dp))
+        assertEquals(390.dp, desktopSearchFieldWidth(1280.dp))
+        assertEquals(280.dp, desktopSearchFieldWidth(DesktopShellMetrics.searchTightWindowWidth - 1.dp))
+        assertEquals(390.dp, desktopSearchFieldWidth(DesktopShellMetrics.searchTightWindowWidth))
     }
 
     @Test
