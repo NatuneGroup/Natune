@@ -212,11 +212,11 @@ private fun SettingsNavigationPane(
             onClear = onClearFilter,
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
         )
-        Box(Modifier.weight(1f).fillMaxWidth().testTag("settings-nav-list")) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             val scrollbar = LocalDesktopListScrollbar.current
             var lastGroup: String? = null
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = Space.xs),
+                Modifier.fillMaxSize().padding(horizontal = Space.xs).testTag("settings-nav-list"),
                 state = scroll,
             ) {
                 items.forEach { item ->

@@ -2,7 +2,7 @@ package moe.rukamori.archivetune.shared.ui.lyrics
 
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.Composable
@@ -161,7 +161,8 @@ private fun LazyListState.itemTopOrNull(index: Int): Int? =
  * Keep the short duration but front-load it so the follow responds on the very frame the line changes.
  */
 internal const val AUTO_SCROLL_MS = 280
-internal val AUTO_SCROLL_EASE = FastOutSlowInEasing
+// FastOutSlowIn still holds the first tenth nearly still (~3%); a pure decelerate curve moves at once.
+internal val AUTO_SCROLL_EASE = LinearOutSlowInEasing
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
 private suspend fun LazyListState.awaitViewportHeight(): Int {
