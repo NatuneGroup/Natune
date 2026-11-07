@@ -22,6 +22,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuHost
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuState
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.DesktopSearchFocus
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.navigation.writeM4Screenshot
@@ -160,19 +162,38 @@ class DesktopTitleBarTest {
     fun theAccountMenuRowsOpenTheDesktopRoutes() {
         val navigation = ShellNavigation()
         val host = desktopProfileMenuHost(navigation)
-        host.openHistory()
-        assertEquals(HISTORY_ROUTE, navigation.route)
-        host.openNewReleases()
-        assertEquals("new_release", navigation.route)
-        host.openSettings()
-        assertEquals("settings", navigation.route)
-        host.openListenTogether()
-        assertEquals("listen_together_from_topbar", navigation.route)
-        host.openNews()
-        assertEquals("news", navigation.route)
-        host.openLastFmDashboard()
-        assertEquals("lastfm_dashboard", navigation.route)
-        host.openMusicRecognition()
-        assertEquals("music_recognition", navigation.route)
+        // Every row, the route it opens and the destination that route has to resolve to. The
+        // assertion runs the shell's own resolve(), so a row whose route the resolver rejects fails
+        // here instead of throwing when the window renders the page.
+        fun assertOpens(open: () -> Unit, route: String, destination: ArchiveDestination) {
+            open()
+            assertEquals(route, navigation.route)
+            val resolved =
+                requireNotNull(ArchiveRoutes.resolve(navigation.route)) {
+                    "the account menu opened ${navigation.route}, which is not an ArchiveTune route"
+                }
+            assertEquals(destination, resolved.destination)
+        }
+        assertOpens(host::openHistory, HISTORY_ROUTE, ArchiveDestination.HISTORY)
+        assertOpens(host::openNewReleases, "new_release", ArchiveDestination.RELEASES)
+        assertOpens(host::openSettings, "settings", ArchiveDestination.SETTINGS)
+        assertOpens(
+            host::openListenTogether,
+            "listen_together_from_topbar",
+            ArchiveDestination.LISTEN_TOGETHER,
+        )
+        assertOpens(host::openNews, "news", ArchiveDestination.NEWS)
+        // This host has no standalone Last.fm destination: it mounts the dashboard as a settings
+        // page, so the row opens that settings route.
+        assertOpens(
+            host::openLastFmDashboard,
+            ArchiveRoutes.LASTFM_DASHBOARD_ROUTE,
+            ArchiveDestination.SETTINGS,
+        )
+        assertOpens(
+            host::openMusicRecognition,
+            ArchiveRoutes.musicRecognition(),
+            ArchiveDestination.MUSIC_RECOGNITION,
+        )
     }
 }
