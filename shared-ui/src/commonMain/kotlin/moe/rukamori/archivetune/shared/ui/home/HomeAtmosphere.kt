@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,10 +114,26 @@ fun HomeAtmosphereBackground(
  * [HomeAtmosphereBackground] it always draws, light and dark alike, so the Classic feed and the Spotify surface keep
  * the baseline glow. It has its own name because both overloads default every parameter; sharing one name would leave a
  * bare call to overload specificity.
+ *
+ * A desktop page is a flat sheet, not a washed one. The desktop shell draws the page on its own surface inside a rail and
+ * a top bar of `surfaceContainer`, so a radial wash plus a bottom shade reads there as a separate, muddy panel beside
+ * them: the reference desktop app draws the page and the rail as two tonal steps of one family instead. This function
+ * therefore paints the scheme's own `surface` flat on a desktop host, exactly the colour of the content surface around
+ * it, and keeps the wash for the phone hosts that show the page full screen.
  */
 @Composable
 fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
     val surface = MaterialTheme.colorScheme.surface
+    if (LocalDesktopLayout.current) {
+        // Flat, and the same colour as the shell's content surface, so the page never looks tinted against the rail.
+        Box(
+            modifier
+                .fillMaxSize()
+                .background(surface)
+                .testTag("home-atmosphere-flat"),
+        )
+        return
+    }
     val dark = surface.luminance() < 0.5f
     // The base comes from the theme rather than a colour of its own, so the top-fade scrim keyed to the page colour keeps
     // matching, and a pure-black page has nothing to mismatch with.
@@ -127,13 +144,10 @@ fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
             surface
         }
     val glow = if (dark) 0.17f else 0.12f
-    // On desktop the wash is the artwork-seeded scheme's own family, not a fixed violet/teal/blue that would fight the
-    // sleeve tint. Phone hosts keep the baseline wash exactly.
-    val desktop = LocalDesktopLayout.current
-    val violet = if (desktop) MaterialTheme.colorScheme.primary else Color(0xFF7B4DFF)
-    val teal = if (desktop) MaterialTheme.colorScheme.secondary else Color(0xFF00B8A9)
-    val blue = if (desktop) MaterialTheme.colorScheme.tertiary else Color(0xFF2E6BFF)
-    val washGlow = if (desktop) glow * 0.55f else glow
+    // The phone hosts keep the baseline wash exactly, in its fixed violet/teal/blue.
+    val violet = Color(0xFF7B4DFF)
+    val teal = Color(0xFF00B8A9)
+    val blue = Color(0xFF2E6BFF)
     Box(
         modifier =
             modifier
@@ -142,9 +156,6 @@ fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
                 .drawWithCache {
                     val w = size.width
                     val h = size.height
-                    val violet = Color(0xFF7B4DFF)
-                    val teal = Color(0xFF00B8A9)
-                    val blue = Color(0xFF2E6BFF)
                     val topWash =
                         if (dark) {
                             Brush.verticalGradient(
@@ -161,19 +172,19 @@ fun HomeClassicAtmosphereBackground(modifier: Modifier = Modifier) {
                         }
                     val violetBrush =
                         Brush.radialGradient(
-                            colors = listOf(violet.copy(alpha = washGlow), Color.Transparent),
+                            colors = listOf(violet.copy(alpha = glow), Color.Transparent),
                             center = Offset(w * 0.12f, h * 0.10f),
                             radius = w * 0.62f,
                         )
                     val tealBrush =
                         Brush.radialGradient(
-                            colors = listOf(teal.copy(alpha = washGlow * 0.8f), Color.Transparent),
+                            colors = listOf(teal.copy(alpha = glow * 0.8f), Color.Transparent),
                             center = Offset(w * 0.98f, h * 0.30f),
                             radius = w * 0.55f,
                         )
                     val blueBrush =
                         Brush.radialGradient(
-                            colors = listOf(blue.copy(alpha = washGlow * 0.85f), Color.Transparent),
+                            colors = listOf(blue.copy(alpha = glow * 0.85f), Color.Transparent),
                             center = Offset(w * 0.18f, h * 0.92f),
                             radius = w * 0.70f,
                         )

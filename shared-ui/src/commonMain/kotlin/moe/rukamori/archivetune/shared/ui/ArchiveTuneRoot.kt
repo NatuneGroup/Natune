@@ -20,6 +20,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.component.ProfileMenuState
 import moe.rukamori.archivetune.shared.ui.desktop.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
@@ -73,6 +74,12 @@ class ArchiveTuneHostBindings(
     val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
     /** Loads the persisted custom font file into a family; a host without one falls back to the default family. */
     val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
+    /**
+     * Draws the signed-in account's picture into a frame the shell hands it, the desktop title bar's avatar and the
+     * profile menu's header. Null, or a blank uri, keeps the account icon: a host without an image loader must not
+     * promise a picture it cannot fetch.
+     */
+    val accountAvatar: (@Composable (uri: String, modifier: Modifier) -> Unit)? = null,
     /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
     val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
@@ -403,6 +410,11 @@ private fun ArchiveTuneLoadedRoot(
                         // The whole desktop shell reports text focus through the one counter the shortcut layer
                         // reads, so the title bar search field suppresses unmodified shortcuts like any page field.
                         CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                            // The title bar's account area: the signed-in identity the phone top bar shows, read from
+                            // the one settings snapshot, and the window's own navigation for the menu's rows.
+                            val account = remember(preferences) { preferences.youTubeIdentity() }
+                            val listenTogetherInTopBar = preferences[ListenTogetherInTopBarKey, false]
+                            val profileMenuHost = remember(navigation) { desktopProfileMenuHost(navigation) }
                             DesktopShell(
                                 navigation = navigation,
                                 state = desktopShellState,
@@ -416,6 +428,23 @@ private fun ArchiveTuneLoadedRoot(
                                             navigation.select(ShellTab.Search, toRoot = true)
                                             navigation.open(ArchiveRoutes.search(query, ContentProvider.YOUTUBE))
                                         },
+                                        onOpenSettings = { navigation.open("settings") },
+                                        // The desktop runs its update check on the Settings page, so the window has
+                                        // no "an update is offered" state to put on the button yet.
+                                        settingsBadge = false,
+                                        profileMenu = DesktopProfileMenu(
+                                            state = ProfileMenuState(
+                                                accountName = account.name.takeIf { it.isNotBlank() },
+                                                hasUnreadNews = unreadNews,
+                                                // The title bar's own settings button covers Settings, so the menu
+                                                // leaves that row out as the phone's home top bar does.
+                                                showSettings = false,
+                                                showListenTogether = listenTogetherInTopBar,
+                                            ),
+                                            host = profileMenuHost,
+                                            imageUrl = account.imageUrl,
+                                            avatar = host.accountAvatar,
+                                        ),
                                     )
                                 },
                                 playerBar = {
