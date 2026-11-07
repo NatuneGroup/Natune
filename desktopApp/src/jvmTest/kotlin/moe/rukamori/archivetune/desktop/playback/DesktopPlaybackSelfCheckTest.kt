@@ -11,6 +11,23 @@ import moe.rukamori.archivetune.desktop.potoken.DesktopAttestationStatus
 class DesktopPlaybackSelfCheckTest {
     private val logged = mutableListOf<String>()
     private val reported = mutableListOf<String>()
+    private val requestedKeys = mutableListOf<String>()
+
+    // The production texts are Compose resources. Injecting their exact templates here keeps the assertions on the
+    // user-visible text deterministic and lets the tests prove which resource key each blocker asks for.
+    private val fakeStrings = mapOf(
+        "playback_engine_missing" to
+            "Natune cannot play audio: this build has no playback engine. Reinstall Natune.",
+        "playback_engine_failed" to
+            "Natune cannot play audio: the playback engine did not load. Reinstall Natune. Detail: {detail}",
+        "playback_output_unavailable" to "Natune cannot play audio: {detail}",
+        "playback_attestation_unavailable" to "YouTube playback may be refused on this network: {detail}",
+    )
+
+    private fun desktopStrings(key: String): String {
+        requestedKeys += key
+        return fakeStrings[key] ?: error("no desktop string resource for $key")
+    }
 
     private fun prewarm(
         present: Boolean = true,
@@ -33,6 +50,7 @@ class DesktopPlaybackSelfCheckTest {
         attestation = { attestation },
         log = { logged += it },
         report = { reported += it },
+        strings = ::desktopStrings,
         engineTimeoutMs = 1_000L,
     )
 
@@ -55,6 +73,7 @@ class DesktopPlaybackSelfCheckTest {
             attestation = { error("attestation must not run without an engine") },
             log = { logged += it },
             report = { reported += it },
+            strings = ::desktopStrings,
         ).run()
 
         assertFalse(health.audible)
@@ -111,6 +130,7 @@ class DesktopPlaybackSelfCheckTest {
                 attestation = { error("a headless host has no provider to ask") },
                 log = { logged += it },
                 report = { reported += it },
+                strings = ::desktopStrings,
                 engineTimeoutMs = 1_000L,
             ).run()
 
@@ -118,5 +138,54 @@ class DesktopPlaybackSelfCheckTest {
         assertTrue(health.blockers.isEmpty())
         assertTrue(reported.isEmpty())
         assertTrue(logged.isEmpty())
+    }
+
+    @Test
+    fun everyBlockerReadsItsMessageFromAResourceKey() = runTest {
+        // Engine missing names one key, a device refusal names another; neither message is an inline literal.
+        DesktopPlaybackSelfCheck(
+            engine = prewarm(present = false),
+            probeOutput = { error("must not probe without an engine") },
+            attestation = { error("must not attest without an engine") },
+            log = { logged += it },
+            report = { reported += it },
+            strings = ::desktopStrings,
+        ).run()
+        assertTrue(requestedKeys.contains("playback_engine_missing"))
+        assertTrue(reported.single().startsWith("Natune cannot play audio: this build has no playback engine"))
+
+        requestedKeys.clear()
+        reported.clear()
+        check(prewarm(), output = "no sound card").run()
+        assertTrue(requestedKeys.contains("playback_output_unavailable"))
+        assertEquals("Natune cannot play audio: no sound card", reported.single())
+    }
+
+    @Test
+    fun theFailedEngineMessageSubstitutesTheSanitizedDetail() = runTest {
+        val health = check(prewarm(failWith = "libarchivetune_engine.so: undefined symbol")).run()
+
+        assertTrue(requestedKeys.contains("playback_engine_failed"))
+        val blocker = health.blockers.single() as DesktopPlaybackBlocker.EngineFailed
+        assertEquals("libarchivetune_engine.so: undefined symbol", blocker.detail)
+        assertTrue(blocker.message.endsWith("Detail: libarchivetune_engine.so: undefined symbol"))
+    }
+
+    @Test
+    fun aNativeLinkageFailureInTheOutputProbeBecomesAVisibleBlocker() = runTest {
+        // The probe can fail with a LinkageError when a JNI symbol is missing. It must produce a user-visible
+        // blocker, not escape the self-check coroutine with no notice at all.
+        val health = DesktopPlaybackSelfCheck(
+            engine = prewarm(),
+            probeOutput = { throw UnsatisfiedLinkError("no symbol") },
+            log = { logged += it },
+            report = { reported += it },
+            strings = ::desktopStrings,
+        ).run()
+
+        val blocker = health.blockers.single() as DesktopPlaybackBlocker.OutputUnavailable
+        assertTrue(blocker.detail.contains("the output probe is unavailable"))
+        assertTrue(blocker.message.startsWith("Natune cannot play audio:"))
+        assertEquals(blocker.message, reported.single())
     }
 }
