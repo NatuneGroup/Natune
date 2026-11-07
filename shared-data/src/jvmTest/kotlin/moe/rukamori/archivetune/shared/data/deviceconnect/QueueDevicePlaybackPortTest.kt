@@ -8,9 +8,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.yield
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -56,7 +57,7 @@ class QueueDevicePlaybackPortTest {
             val port = FakePlaybackPort()
             val player = MusicPlayerController(port, scope)
             port.publish(snapshot())
-            yield()
+            awaitPlayerSnapshot(player)
             val queue = FakeQueue(player, listOf(occurrence, second))
             val adapter = QueueDevicePlaybackPort(queue)
             val captured = assertNotNull(adapter.capture())
@@ -76,7 +77,7 @@ class QueueDevicePlaybackPortTest {
             val port = FakePlaybackPort()
             val player = MusicPlayerController(port, scope)
             port.publish(snapshot())
-            yield()
+            awaitPlayerSnapshot(player)
             val queue = FakeQueue(player, listOf(occurrence, second))
             val adapter = QueueDevicePlaybackPort(queue)
             val local = DevicePlaybackSnapshot(
@@ -103,7 +104,7 @@ class QueueDevicePlaybackPortTest {
             val port = FakePlaybackPort()
             val player = MusicPlayerController(port, scope)
             port.publish(snapshot())
-            yield()
+            awaitPlayerSnapshot(player)
             val queue = FakeQueue(player, listOf(occurrence, second))
             val adapter = QueueDevicePlaybackPort(queue, repeatMode = { QueueRepeatMode.OFF })
             assertNull(
@@ -141,6 +142,16 @@ class QueueDevicePlaybackPortTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    /**
+     * Waits until [MusicPlayerController] has accepted the snapshot the fake port published. The
+     * controller observes its port from [Dispatchers.Default], so a bare `yield()` on the `runBlocking`
+     * thread only spins this coroutine's own event loop and does not give that collector a chance to
+     * run; on a loaded machine [QueueDevicePlaybackPort.capture] then still saw a null player snapshot.
+     */
+    private suspend fun awaitPlayerSnapshot(player: MusicPlayerController) {
+        withTimeout(5_000) { player.snapshot.first { it != null } }
     }
 
     private fun snapshot() = PlaybackSnapshot(
