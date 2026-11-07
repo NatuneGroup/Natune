@@ -107,9 +107,16 @@ internal fun SweptBackgroundLine(
                         drawText(layout, color = if (passed) palette.passed else palette.dim)
                         return@drawBehind
                     }
+                    // No locatable word ranges: keep the old fully-lit subline rather than a dim
+                    // block.
+                    val timed = words.orEmpty()
+                    if (timed.none { it.range != null }) {
+                        drawText(layout, color = palette.bright)
+                        return@drawBehind
+                    }
                     val fraction =
                         LyricsBackgroundSweep.sungFraction(
-                            words.orEmpty(),
+                            timed,
                             text.length,
                             clock.feedMs.longValue,
                             minSweepMs,
