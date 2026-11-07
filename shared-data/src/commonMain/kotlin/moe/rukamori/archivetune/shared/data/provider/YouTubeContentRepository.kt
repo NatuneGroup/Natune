@@ -322,9 +322,14 @@ private fun ContentRequest.toBrowse(): YouTubeBrowse {
         ContentSurface.PLAYLIST -> {
             val playlist = parent?.takeIf { it.kind == ContentKind.PLAYLIST } ?: throw UnsupportedContentOperation()
             val normalized = FinitePlaylistIds.normalize(playlist.id)
-            // Radio and mix ids are endless and need the watch-next transport, not a finite playlist browse.
-            if (!FinitePlaylistIds.isFinite(normalized)) throw UnsupportedContentOperation()
-            YouTubeBrowse.Playlist(normalized)
+            // Radio and mix ids are endless watch queues, not finite playlist browses: YouTube Music's "Presenting …"
+            // mixes, artist mixes and the automix all arrive as RD… ids. The watch-next endpoint serves their first
+            // page and their continuations, so the same route opens them instead of refusing the page.
+            if (!FinitePlaylistIds.isFinite(normalized)) {
+                YouTubeBrowse.WatchNext(playlistId = normalized)
+            } else {
+                YouTubeBrowse.Playlist(normalized)
+            }
         }
         ContentSurface.ALBUM -> {
             val album = parent?.takeIf { it.kind == ContentKind.ALBUM } ?: throw UnsupportedContentOperation()
