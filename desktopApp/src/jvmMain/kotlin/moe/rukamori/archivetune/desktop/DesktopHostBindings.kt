@@ -127,6 +127,8 @@ internal fun desktopHostBindings(
         },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
+        // The window's account avatar reads the same picture the account settings page stores, through that client.
+        accountAvatar = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         // Feed dates are epoch seconds, the unit the Android host stores and formats.
         formatNewsDate = { epochSeconds -> dates.format(Date(epochSeconds * 1_000L)) },
