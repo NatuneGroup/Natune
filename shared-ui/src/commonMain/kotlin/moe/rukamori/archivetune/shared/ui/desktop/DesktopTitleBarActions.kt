@@ -237,7 +237,9 @@ private fun DesktopProfileMenuList(
 /**
  * The routes the account menu's rows open, through the window's one navigation owner. The routes
  * are the ones the desktop keymap already uses, so a menu row and its shortcut land on the same
- * page.
+ * page. Every value here has to be a route [ArchiveRoutes.resolve] accepts and this host mounts, so
+ * the Last.fm dashboard row opens [ArchiveRoutes.LASTFM_DASHBOARD_ROUTE]: the settings route the
+ * desktop host mounts, not the phone's own dashboard destination.
  */
 fun desktopProfileMenuHost(navigation: ShellNavigation): ProfileMenuHost =
     object : ProfileMenuHost {
@@ -254,7 +256,7 @@ fun desktopProfileMenuHost(navigation: ShellNavigation): ProfileMenuHost =
         }
 
         override fun openLastFmDashboard() {
-            navigation.open("lastfm_dashboard")
+            navigation.open(ArchiveRoutes.LASTFM_DASHBOARD_ROUTE)
         }
 
         override fun openMusicRecognition() {
