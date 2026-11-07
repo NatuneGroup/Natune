@@ -229,7 +229,8 @@ internal fun YTItem.toCatalogueEntry(): YouTubeEntry =
             )
         is PlaylistItem ->
             YouTubeEntry(
-                kind = ContentKind.PLAYLIST,
+                // A podcast show arrives playlist-shaped; its id prefix names the show page it opens.
+                kind = if (isYouTubePodcastShowId(id)) ContentKind.PODCAST else ContentKind.PLAYLIST,
                 id = id,
                 title = title,
                 subtitle = author?.name ?: songCountText.orEmpty(),
