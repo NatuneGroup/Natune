@@ -280,7 +280,11 @@ compose.desktop {
             vendor = "Natune contributors"
             copyright = "GPL-3.0; contributors: see git history"
             licenseFile.set(rootProject.file("LICENSE"))
-            modules("java.sql", "java.net.http", "jdk.unsupported", "jdk.crypto.ec")
+            // jdk.security.auth carries com.sun.security.auth.module.UnixSystem, which dbus-java's SASL EXTERNAL
+            // handshake reads the peer's uid with. Without it every D-Bus client fails with
+            // NoClassDefFoundError at connect, so system integration, the tray and the portal appearance theme are
+            // all unavailable in the packaged app.
+            modules("java.sql", "java.net.http", "jdk.unsupported", "jdk.crypto.ec", "jdk.security.auth")
             appResourcesRootDir.set(layout.buildDirectory.dir("distribution-resources"))
             linux {
                 iconFile.set(project.file("packaging/archivetune.png"))
