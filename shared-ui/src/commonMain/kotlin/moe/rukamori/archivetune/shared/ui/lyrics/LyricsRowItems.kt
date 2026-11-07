@@ -114,6 +114,9 @@ internal fun LyricsRowItem(
     Column(
         Modifier
             .fillMaxWidth()
+            // The glide rides outside the row's softening: a translated row keeps the same blurred layer instead of
+            // paying for a new one on every frame of the change.
+            .then(if (settle != null) Modifier.lyricsSettle(settle, row.index, staggerMs) else Modifier)
             .then(
                 if (depthEnabled) {
                     Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion, staggerMs = staggerMs)
@@ -121,7 +124,6 @@ internal fun LyricsRowItem(
                     Modifier
                 },
             )
-            .then(if (settle != null) Modifier.lyricsSettle(settle, row.index, staggerMs) else Modifier)
             .then(Modifier.lyricsActiveScale(active, activeScale, animate = !reduceMotion, alignment))
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
