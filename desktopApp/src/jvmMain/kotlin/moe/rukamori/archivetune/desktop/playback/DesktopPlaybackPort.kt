@@ -73,6 +73,7 @@ import moe.rukamori.archivetune.shared.domain.transition.TwoDeckTransitionSchedu
  *   commits the accounts, so every admission and cookie read sees one owner. Null refuses every native occurrence
  *   rather than read it under an account the port cannot check.
  * @param cookies The store's cookie reads, matched by each admitted entry scope. Null sends no account cookie.
+ * @param commandFailureText User-facing reason for a command the playback thread could not apply; never a path or credential.
  */
 class DesktopPlaybackPort(
     private val backend: EngineBackend = EngineBackend.DEFAULT,
@@ -80,6 +81,7 @@ class DesktopPlaybackPort(
     pollIntervalMs: Long = DEFAULT_POLL_INTERVAL_MS,
     private val accounts: AcceptedAccountReader? = null,
     private val cookies: ScopedCookieSource? = null,
+    private val commandFailureText: () -> String = { DEFAULT_COMMAND_FAILURE_TEXT },
 ) : PlaybackPort {
     private val executor = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "archivetune-playback").apply { isDaemon = true }
@@ -190,7 +192,9 @@ class DesktopPlaybackPort(
     }
 
     override fun submit(command: PlaybackCommand) {
-        submitTask { applyCommand(command) }
+        // A failed Load names its occurrence; other commands fall back to the active session.
+        val request = (command as? PlaybackCommand.Load)?.request
+        submitTask(request) { applyCommand(command) }
     }
 
     /**
@@ -624,8 +628,11 @@ class DesktopPlaybackPort(
                     TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST },
                 )
             }
-        } catch (error: IllegalStateException) {
-            fail(request, PlaybackFailureReason.OUTPUT_FAILED, error.message ?: "the audio output did not start")
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
+            // The loader throws IllegalStateException; a missing JNI symbol throws a LinkageError. Both mean no sound.
+            fail(request, PlaybackFailureReason.OUTPUT_FAILED, engineCreateFailureMessage(error))
             null
         }
 
@@ -660,13 +667,20 @@ class DesktopPlaybackPort(
 
     private fun activeEngine(): NativePlaybackEngine? = mixer?.deck(activeIndex())
 
-    private fun submitTask(task: () -> Unit) {
+    // Internal so a test can drive the guard without a native engine. Every command is guarded, and the poll is
+    // rescheduled in a finally so a thrown command can never stop the clock permanently.
+    internal fun submitTask(request: PlaybackRequest? = null, task: () -> Unit) {
         if (closed.get()) return
         try {
             executor.execute {
-                task()
-                // A command can start playback, so read at once and return to the fast rate without waiting out an idle delay.
-                pollTick()
+                try {
+                    guardedPlaybackCommand(request, commandFailureText,
+                        { sessions[activeIndex()]?.request ?: suspendedSession?.request },
+                        { failed, reason, message -> fail(failed, reason, message) }, task)
+                } finally {
+                    // A command can start playback; read at once even when it failed.
+                    pollTick()
+                }
             }
         } catch (_: RejectedExecutionException) {
             // close() won the race, so the task arrived after the port stopped.
@@ -737,8 +751,11 @@ class DesktopPlaybackPort(
                 if (state.hasSource && (state.isBuffering || (state.playWhenReady && !state.isEnded))) busy = true
             }
             busy
-        } catch (error: RuntimeException) {
-            System.err.println("playback poll skipped: ${error.message}")
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
+            // A LinkageError must not stop the reads. Class name only: a native message can carry a path.
+            System.err.println("playback poll skipped: ${error.javaClass.simpleName}")
             true
         }
     }
@@ -848,8 +865,10 @@ class DesktopPlaybackPort(
         val positionUs = suspendedPositionUs
         val fresh = try {
             NativeTwoDeckMixer.create(backend)
-        } catch (error: IllegalStateException) {
-            fail(session.request, PlaybackFailureReason.OUTPUT_FAILED, error.message ?: "the audio output did not start")
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
+            fail(session.request, PlaybackFailureReason.OUTPUT_FAILED, engineCreateFailureMessage(error))
             return
         }
         suspendedSession = null
@@ -917,13 +936,11 @@ class DesktopPlaybackPort(
         stallWatchdogs[index].reset()
         val fresh = try {
             NativeTwoDeckMixer.create(backend)
-        } catch (error: IllegalStateException) {
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
             mapper.stopped(nowNanos)?.let { publishedSnapshot.value = it }
-            fail(
-                session.request,
-                PlaybackFailureReason.OUTPUT_FAILED,
-                error.message ?: "the audio output did not start",
-            )
+            fail(session.request, PlaybackFailureReason.OUTPUT_FAILED, engineCreateFailureMessage(error))
             return
         }
         mixer = fresh
@@ -956,21 +973,6 @@ class DesktopPlaybackPort(
     private fun fail(request: PlaybackRequest, reason: PlaybackFailureReason, message: String) {
         publishedFailures.tryEmit(PlaybackFailure(request.occurrenceId, reason, message, attemptId = request.attemptId))
     }
-
-    /**
-     * Why [locator] would not open. A prepared view that is spent, expired or from another host is an open failure,
-     * because the remedy is to prepare the occurrence again. Any other locator is one this engine does not take.
-     */
-    private fun refusalOf(locator: PlaybackLocator): Pair<PlaybackFailureReason, String> =
-        if (locator is PlaybackLocator.PreparedPlaintext) {
-            PlaybackFailureReason.OPEN_FAILED to
-                "the prepared audio is spent, expired or not from this host; prepare it again"
-        } else {
-            PlaybackFailureReason.UNSUPPORTED_LOCATOR to "the engine cannot open this kind of source"
-        }
-
-    /** The host lease behind a leased source, or null for a direct local file. */
-    private fun EngineSource.leaseOrNull(): NativeStreamLease? = (this as? EngineSource.Leased)?.lease
 
     private companion object {
         const val DEFAULT_POLL_INTERVAL_MS = 20L
