@@ -68,6 +68,16 @@ fun ArchiveTuneTheme(
 internal fun archiveTuneDefaultColorScheme(darkTheme: Boolean): ColorScheme =
     if (darkTheme) darkColorScheme() else lightColorScheme()
 
+/**
+ * The window's own background, for the hosts that own the pixels Compose does not paint: the strip an in-flight
+ * resize has not repainted yet and whatever the compositor cuts out of a rounded window corner. The toolkit's
+ * default there is black, which reads as a hole in the window; the app's background colour reads as the page.
+ *
+ * It follows the default scheme rather than a saved wallpaper palette because it is only ever visible for a frame or
+ * in a corner, and the dark and light backgrounds are what the window is surrounded by either way.
+ */
+fun archiveTuneWindowBackground(darkTheme: Boolean): Color = archiveTuneDefaultColorScheme(darkTheme).background
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal object DisabledArchiveTuneMotion : MotionScheme {
     override fun <T> defaultSpatialSpec(): FiniteAnimationSpec<T> = snap()
