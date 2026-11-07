@@ -741,6 +741,9 @@ val DeviceConnectPairedDevicesKey = StringPreferenceKey("deviceConnectPairedDevi
 val DesktopSystemWindowFrameKey = BooleanPreferenceKey("desktop_system_window_frame")
 // Closing the window hides it to the tray instead of quitting the process.
 val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")
+// The ARGB of the last sleeve the desktop tinted its surfaces with. It is read before the first frame so a launching
+// window opens in its own tonal family instead of Material's stock default, and rewritten whenever the sleeve changes.
+val DesktopArtworkSeedKey = LongPreferenceKey("desktop_artwork_seed")
 
 /** The stored window-chrome choice; unset means the shell draws its own caption. */
 val PreferenceSnapshot.desktopSystemWindowFrame: Boolean

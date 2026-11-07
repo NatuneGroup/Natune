@@ -681,4 +681,5 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         ThemePaletteStyleKey,
         DesktopSystemWindowFrameKey,
         DesktopHideToTrayKey,
+        DesktopArtworkSeedKey,
     )

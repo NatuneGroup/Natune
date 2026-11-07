@@ -866,6 +866,9 @@ private fun DesktopSettingsRouteBody(
             },
             fallbackTitle = stringResource(Res.string.m6_settings_home_group_settings),
             modifier = Modifier.fillMaxSize().padding(LocalShellContentPadding.current),
+            // The category list keeps its place while the reader opens page after page; the state is the graph's, not
+            // this composition's, so a route change cannot reset it.
+            navScroll = graph.settingsNavScroll,
         ) {
             Box(Modifier.fillMaxSize()) {
                 settingsPage(detailPath)

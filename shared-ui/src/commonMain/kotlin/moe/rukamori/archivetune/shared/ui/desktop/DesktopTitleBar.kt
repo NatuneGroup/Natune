@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,12 +59,22 @@ import org.jetbrains.compose.resources.stringResource
 val LocalDesktopWindowControls = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
 /**
- * The window's top strip: the app mark and the navigation toggle at the left, one search field across the middle and
+ * The window-drag surface for the platforms where the app paints its own caption. The host supplies the pointer handling
+ * (drag to move, double click to maximize) and the bar applies it to the empty stretches of the top band only, so a press
+ * on the search field, the rail toggle or a window button stays a press.
+ */
+val LocalDesktopWindowDrag = staticCompositionLocalOf<(Modifier) -> Modifier> { { it } }
+
+/**
+ * The window's top band: the app mark and the navigation toggle at the left, one search field across the middle and
  * the host's own trailing slot for the window buttons at the right.
  *
+ * It is one 56 dp band on every host. A platform that paints its own caption supplies its window buttons through
+ * [LocalDesktopWindowControls] and its drag handling through [LocalDesktopWindowDrag] instead of drawing a second strip
+ * above this one, so the window's chrome is as tall as the reference app's top bar and no taller.
+ *
  * Search lives here on every page, including Settings, because the whole window has one search: entering a query
- * opens the search page with that query and keeps the current page one Back away. The host owns the window buttons,
- * so this bar is also what a Windows custom frame and a Linux caption share.
+ * opens the search page with that query and keeps the current page one Back away.
  */
 @Composable
 fun DesktopTitleBar(
@@ -76,6 +87,7 @@ fun DesktopTitleBar(
     leading: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit = {},
 ) {
+    val windowDrag = LocalDesktopWindowDrag.current
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier
@@ -93,7 +105,8 @@ fun DesktopTitleBar(
                 horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.titleBarSearchGap),
             ) {
                 Row(
-                    Modifier.weight(1f),
+                    // The empty stretch around the mark is the first place a drag can start the window move.
+                    Modifier.weight(1f).fillMaxHeight().then(windowDrag(Modifier)),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {
@@ -107,14 +120,18 @@ fun DesktopTitleBar(
                     )
                     leading()
                 }
-                Box(Modifier.weight(2f), contentAlignment = Alignment.Center) {
+                Box(
+                    // The band beside the field is the second drag target: the field itself keeps its own presses.
+                    Modifier.weight(2f).fillMaxHeight().then(windowDrag(Modifier)),
+                    contentAlignment = Alignment.Center,
+                ) {
                     DesktopSearchField(
                         width = desktopSearchFieldWidth(titleBarWidth),
                         focus = searchFocus,
                         onSubmit = onSubmitSearch,
                     )
                 }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         DesktopRailToggle(railExpanded, onToggleRail)
                         trailing()

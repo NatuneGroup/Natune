@@ -68,7 +68,7 @@ fun DesktopShell(
         val windowHeight = maxHeight
         val density = LocalDensity.current
         val railExpanded = desktopRailExpanded(windowWidth, windowHeight, state.railExpanded)
-        val railWidth = if (railExpanded) DesktopShellMetrics.railExpandedWidth else DesktopShellMetrics.railCollapsedWidth
+        val railWidth = desktopRailWidth(railExpanded)
         val open = PaneOrder.filter { state.isOpen(it) }.map { DesktopPaneRequest(it, state.width(it)) }
         // One budget for the whole window: which panes are drawn, how wide they are and whether they sit beside the
         // page or over it. The pixels a drag reports are converted here, once, so the pane state stays in dp.

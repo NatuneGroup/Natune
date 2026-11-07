@@ -63,10 +63,12 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.ui.glass.BackdropScene
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import androidx.compose.runtime.saveable.rememberSaveable
 import org.jetbrains.compose.resources.stringResource
 
@@ -532,9 +534,10 @@ private fun ArtistHero(
         ) {
             Text(
                 text = name,
-                style = MaterialTheme.typography.headlineLarge,
+                // Same page-title scale as every other desktop page; the phone keeps the larger hero headline.
+                style = if (LocalDesktopLayout.current) DesktopType.pageTitle() else MaterialTheme.typography.headlineLarge,
                 color = heroContentColor,
-                fontWeight = FontWeight.Bold,
+                fontWeight = if (LocalDesktopLayout.current) null else FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

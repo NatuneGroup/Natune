@@ -57,7 +57,7 @@ import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The bottom player bar, shaped like the reference desktop app's: a full-window strip, a slim seek track along its
+ * The bottom player bar, shaped like the reference desktop app's: a 72 dp full-window strip, a slim seek track along its
  * top edge, and one row under it with the sleeve and titles at the left, the transport in the middle and the panels,
  * volume and expand action at the right.
  *
@@ -243,8 +243,9 @@ fun DesktopPlayerBar(
 }
 
 /**
- * The seek track along the bar's top edge: a drag or a tap seeks, and a cancel restores the live position. The bar is
- * thin on purpose so the transport row stays at 72 dp in an 800 x 500 window.
+ * The seek track along the bar's top edge: a drag or a tap seeks, and a cancel restores the live position. It is a 6 dp
+ * band inside the reference app's 72 dp bar, so the strip reads as a hairline over the transport while it stays a pointer
+ * target, and the transport row keeps 66 dp in an 800 x 500 window.
  */
 @Composable
 private fun DesktopSeekTrack(
