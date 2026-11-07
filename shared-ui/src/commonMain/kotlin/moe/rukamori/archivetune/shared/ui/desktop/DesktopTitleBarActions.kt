@@ -43,9 +43,9 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The account area of the desktop title bar: the shared profile menu's model and navigation, plus the account picture.
- * The picture is a host callback because only the host owns an image loader; a null [avatar] or a blank [imageUrl] draws
- * the account icon instead.
+ * The account area of the desktop title bar: the shared profile menu's model and navigation, plus
+ * the account picture. The picture is a host callback because only the host owns an image loader; a
+ * null [avatar] or a blank [imageUrl] draws the account icon instead.
  */
 class DesktopProfileMenu(
     val state: ProfileMenuState,
@@ -55,10 +55,11 @@ class DesktopProfileMenu(
 )
 
 /**
- * The settings and account buttons at the right of the title bar, before the host's window buttons. The account button
- * carries the 28 dp avatar of the Android top bar inside a 40 dp touch target, and its menu is the shared profile menu's
- * rows in a dropdown anchored to it, the shape the reference desktop app uses, so the desktop never opens a second
- * window for a menu. The settings button is the title bar's own way to Settings, so the menu leaves that row out.
+ * The settings and account buttons at the right of the title bar, before the host's window buttons.
+ * The account button carries the 28 dp avatar of the Android top bar inside a 40 dp touch target,
+ * and its menu is the shared profile menu's rows in a dropdown anchored to it, the shape the
+ * reference desktop app uses, so the desktop never opens a second window for a menu. The settings
+ * button is the title bar's own way to Settings, so the menu leaves that row out.
  */
 @Composable
 fun DesktopTitleBarActions(
@@ -74,23 +75,32 @@ fun DesktopTitleBarActions(
         if (profile != null) {
             Box {
                 DesktopAccountButton(profile, active = menuOpen, onClick = { menuOpen = true })
-                DesktopProfileMenuList(profile, expanded = menuOpen, onDismiss = { menuOpen = false })
+                DesktopProfileMenuList(
+                    profile,
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                )
             }
         }
     }
 }
 
-/** The settings glyph in a 40 dp circle, with the update dot the phone top bar shows when a newer build is offered. */
+/**
+ * The settings glyph in a 40 dp circle, with the update dot the phone top bar shows when a newer
+ * build is offered.
+ */
 @Composable
 private fun DesktopSettingsButton(badge: Boolean, onClick: () -> Unit) {
     Box(modifier = Modifier.size(DesktopShellMetrics.titleBarActionButton)) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f))
-                .clickable(role = Role.Button, onClick = onClick)
-                .testTag("desktop-settings-button"),
+            modifier =
+                Modifier.fillMaxSize()
+                    .clip(CircleShape)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                    )
+                    .clickable(role = Role.Button, onClick = onClick)
+                    .testTag("desktop-settings-button"),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -102,12 +112,12 @@ private fun DesktopSettingsButton(badge: Boolean, onClick: () -> Unit) {
         }
         if (badge) {
             Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-                    .size(10.dp)
-                    .background(MaterialTheme.colorScheme.error, CircleShape)
-                    .testTag("desktop-settings-badge"),
+                modifier =
+                    Modifier.align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = 2.dp)
+                        .size(10.dp)
+                        .background(MaterialTheme.colorScheme.error, CircleShape)
+                        .testTag("desktop-settings-badge"),
             )
         }
     }
@@ -115,39 +125,47 @@ private fun DesktopSettingsButton(badge: Boolean, onClick: () -> Unit) {
 
 /** The account avatar button: a 28 dp circle on `primaryContainer`, like the phone top bar's. */
 @Composable
-private fun DesktopAccountButton(profile: DesktopProfileMenu, active: Boolean, onClick: () -> Unit) {
+private fun DesktopAccountButton(
+    profile: DesktopProfileMenu,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
-        modifier = Modifier
-            .size(DesktopShellMetrics.titleBarActionButton)
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .testTag("desktop-account-button"),
+        modifier =
+            Modifier.size(DesktopShellMetrics.titleBarActionButton)
+                .clip(CircleShape)
+                .clickable(role = Role.Button, onClick = onClick)
+                .testTag("desktop-account-button"),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             modifier = Modifier.size(DesktopShellMetrics.titleBarAvatar),
             shape = CircleShape,
-            color = if (active) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.primaryContainer
-            },
+            color =
+                if (active) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer
+                },
         ) {
             val avatar = profile.avatar
             val image = profile.imageUrl
             if (avatar != null && !image.isNullOrBlank()) {
-                Box(Modifier.fillMaxSize().clip(CircleShape)) { avatar(image, Modifier.fillMaxSize()) }
+                Box(Modifier.fillMaxSize().clip(CircleShape)) {
+                    avatar(image, Modifier.fillMaxSize())
+                }
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(
                         painter = painterResource(Res.drawable.m6_icon_account),
                         contentDescription = stringResource(Res.string.m6_profile_account),
                         modifier = Modifier.size(20.dp),
-                        tint = if (active) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        },
+                        tint =
+                            if (active) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            },
                     )
                 }
             }
@@ -155,19 +173,29 @@ private fun DesktopAccountButton(profile: DesktopProfileMenu, active: Boolean, o
     }
 }
 
-/** The shared profile menu's rows, in the shared order and with the shared badges, anchored under the avatar. */
+/**
+ * The shared profile menu's rows, in the shared order and with the shared badges, anchored under
+ * the avatar.
+ */
 @Composable
-private fun DesktopProfileMenuList(profile: DesktopProfileMenu, expanded: Boolean, onDismiss: () -> Unit) {
+private fun DesktopProfileMenuList(
+    profile: DesktopProfileMenu,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(min = 220.dp).testTag("desktop-account-menu"),
     ) {
-        // The account row the dialog draws as its header, so a signed-in listener sees whose menu this is.
+        // The account row the dialog draws as its header, so a signed-in listener sees whose menu
+        // this is.
         val accountName = profile.state.accountName
         if (!accountName.isNullOrBlank()) {
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("desktop-account-menu-name"),
+                modifier =
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("desktop-account-menu-name"),
             ) {
                 Text(
                     text = accountName,
@@ -185,56 +213,59 @@ private fun DesktopProfileMenuList(profile: DesktopProfileMenu, expanded: Boolea
             }
             HorizontalDivider()
         }
-        profileMenuItems(state = profile.state, host = profile.host, onDismiss = onDismiss).forEach { item ->
-            DropdownMenuItem(
-                text = { Text(stringResource(item.label)) },
-                leadingIcon = {
-                    BadgedBox(badge = { if (item.showBadge) Badge() }) {
-                        Icon(
-                            painter = painterResource(item.icon),
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                },
-                onClick = item.onClick,
-                modifier = Modifier.testTag("desktop-account-menu-${item.id}"),
-            )
-        }
+        profileMenuItems(state = profile.state, host = profile.host, onDismiss = onDismiss)
+            .forEach { item ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(item.label)) },
+                    leadingIcon = {
+                        BadgedBox(badge = { if (item.showBadge) Badge() }) {
+                            Icon(
+                                painter = painterResource(item.icon),
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    },
+                    onClick = item.onClick,
+                    modifier = Modifier.testTag("desktop-account-menu-${item.id}"),
+                )
+            }
     }
 }
 
 /**
- * The routes the account menu's rows open, through the window's one navigation owner. The routes are the ones the
- * desktop keymap already uses, so a menu row and its shortcut land on the same page.
+ * The routes the account menu's rows open, through the window's one navigation owner. The routes
+ * are the ones the desktop keymap already uses, so a menu row and its shortcut land on the same
+ * page.
  */
-fun desktopProfileMenuHost(navigation: ShellNavigation): ProfileMenuHost = object : ProfileMenuHost {
-    override fun openHistory() {
-        navigation.open(HISTORY_ROUTE)
-    }
+fun desktopProfileMenuHost(navigation: ShellNavigation): ProfileMenuHost =
+    object : ProfileMenuHost {
+        override fun openHistory() {
+            navigation.open(HISTORY_ROUTE)
+        }
 
-    override fun openNews() {
-        navigation.open("news")
-    }
+        override fun openNews() {
+            navigation.open("news")
+        }
 
-    override fun openNewReleases() {
-        navigation.open("new_release")
-    }
+        override fun openNewReleases() {
+            navigation.open("new_release")
+        }
 
-    override fun openLastFmDashboard() {
-        navigation.open("lastfm_dashboard")
-    }
+        override fun openLastFmDashboard() {
+            navigation.open("lastfm_dashboard")
+        }
 
-    override fun openMusicRecognition() {
-        navigation.open(ArchiveRoutes.musicRecognition())
-    }
+        override fun openMusicRecognition() {
+            navigation.open(ArchiveRoutes.musicRecognition())
+        }
 
-    override fun openListenTogether() {
-        navigation.open("listen_together_from_topbar")
-    }
+        override fun openListenTogether() {
+            navigation.open("listen_together_from_topbar")
+        }
 
-    override fun openSettings() {
-        navigation.open("settings")
+        override fun openSettings() {
+            navigation.open("settings")
+        }
     }
-}

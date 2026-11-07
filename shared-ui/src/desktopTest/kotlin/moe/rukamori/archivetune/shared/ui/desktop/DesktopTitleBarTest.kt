@@ -13,8 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -27,9 +27,9 @@ import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.navigation.writeM4Screenshot
 
 /**
- * The title bar's account area: the settings button and the account avatar the Android top bar draws, and the shared
- * profile menu the avatar opens. The menu is a dropdown anchored to the avatar, so the test finds its rows in the same
- * scene it clicked in.
+ * The title bar's account area: the settings button and the account avatar the Android top bar
+ * draws, and the shared profile menu the avatar opens. The menu is a dropdown anchored to the
+ * avatar, so the test finds its rows in the same scene it clicked in.
  */
 @OptIn(ExperimentalTestApi::class)
 class DesktopTitleBarTest {
@@ -83,15 +83,17 @@ class DesktopTitleBarTest {
                         onSubmitSearch = {},
                         settingsBadge = true,
                         onOpenSettings = settings,
-                        profileMenu = DesktopProfileMenu(
-                            state = ProfileMenuState(
-                                accountName = "Listener",
-                                hasUnreadNews = true,
-                                showListenTogether = true,
-                                showSettings = false,
+                        profileMenu =
+                            DesktopProfileMenu(
+                                state =
+                                    ProfileMenuState(
+                                        accountName = "Listener",
+                                        hasUnreadNews = true,
+                                        showListenTogether = true,
+                                        showSettings = false,
+                                    ),
+                                host = rows,
                             ),
-                            host = rows,
-                        ),
                     )
                 }
             }
@@ -112,7 +114,8 @@ class DesktopTitleBarTest {
         onNodeWithTag("desktop-account-menu").assertIsDisplayed()
         onNodeWithTag("desktop-account-menu-name").assertIsDisplayed()
         onNodeWithTag("desktop-title-bar").writeM4Screenshot("desktop-title-bar-account.png")
-        onNodeWithTag("desktop-account-menu").writeM4Screenshot("desktop-title-bar-account-menu.png")
+        onNodeWithTag("desktop-account-menu")
+            .writeM4Screenshot("desktop-title-bar-account-menu.png")
         onNodeWithTag("desktop-account-menu-history").assertIsDisplayed()
         onNodeWithTag("desktop-account-menu-news").assertIsDisplayed()
         onNodeWithTag("desktop-account-menu-listen_together").assertIsDisplayed()
@@ -141,8 +144,13 @@ class DesktopTitleBarTest {
         // Without window buttons the 800 dp bar still has room for both actions.
         onNodeWithTag("desktop-settings-button").assertIsDisplayed()
         onNodeWithTag("desktop-account-button").assertIsDisplayed()
-        // A host that draws its own three caption buttons needs the room they take, so the bar drops the actions.
-        runOnIdle { controls = { Row { Box(Modifier.width(138.dp).height(32.dp).testTag("caption-buttons")) } } }
+        // A host that draws its own three caption buttons needs the room they take, so the bar
+        // drops the actions.
+        runOnIdle {
+            controls = {
+                Row { Box(Modifier.width(138.dp).height(32.dp).testTag("caption-buttons")) }
+            }
+        }
         onNodeWithTag("caption-buttons").assertIsDisplayed()
         onNodeWithTag("desktop-settings-button").assertDoesNotExist()
         onNodeWithTag("desktop-account-button").assertDoesNotExist()
