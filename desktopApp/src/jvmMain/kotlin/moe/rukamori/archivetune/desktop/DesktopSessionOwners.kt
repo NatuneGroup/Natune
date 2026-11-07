@@ -22,6 +22,7 @@ import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
 import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackSelfCheck
@@ -156,7 +157,13 @@ internal suspend fun assembleDesktopSessionOwners(
         offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
     )
     // One port reads the accounts and cookies the settings UI writes, so every admission sees the same owner.
-    val playback = DesktopPlaybackPort(accounts = sourceAdmissions, cookies = sourceAdmissions)
+    // A command the playback thread cannot apply publishes one PlaybackFailure; its message is the user-visible,
+    // localized reason from resources so a broken command never looks like a play button that does nothing.
+    val playback = DesktopPlaybackPort(
+        accounts = sourceAdmissions,
+        cookies = sourceAdmissions,
+        commandFailureText = { DesktopStrings["playback_failed"] },
+    )
     vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
     val player = MusicPlayerController(playback, scope)
     // The opt-in "remember speed and pitch" restore: without the flag the port keeps neutral parameters.
