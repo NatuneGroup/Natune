@@ -70,8 +70,10 @@ fun DesktopExpandedPlayer(
     modifier: Modifier = Modifier,
 ) {
     val artworkModifier = Modifier
-        .fillMaxWidth()
+        // The cap has to be the outer constraint: a fillMaxWidth first would pin the sleeve to the column measure and
+        // the cap would never apply. The reference player centres a 392 dp square in its 648 dp column.
         .widthIn(max = DesktopShellMetrics.expandedArtworkMax)
+        .fillMaxWidth()
         .aspectRatio(1f)
         .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
     Surface(
