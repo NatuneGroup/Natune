@@ -121,6 +121,9 @@ internal sealed interface EngineSource {
     class Leased(val lease: NativeStreamLease) : EngineSource
 }
 
+/** The host lease behind a leased source, or null for a direct local file. */
+internal fun EngineSource.leaseOrNull(): NativeStreamLease? = (this as? EngineSource.Leased)?.lease
+
 /**
  * Releases a source that no deck accepted. Once the engine accepts a leased source it closes it, so this is only for
  * the refusals that come before that hand-over, which would otherwise leave the lease without an owner.
