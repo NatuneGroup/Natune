@@ -141,12 +141,17 @@ fun appearanceInterfaceSettingsRows(
     add(SettingsRow.Action("extras", Res.string.m6_extras, { navigate("settings/appearance/extras") }))
 }
 
-fun appearanceExtrasSettingsRows(): List<SettingsRow> = listOf(
-    SettingsRow.Toggle("show_home_category_chips", Res.string.m6_home_categories, ShowHomeCategoryChipsKey, false),
-    SettingsRow.Toggle("show_tags_in_library", Res.string.m6_library_tags, ShowTagsInLibraryKey, false),
-    SettingsRow.Toggle("hide_liked_songs_card", Res.string.m6_hide_liked, HideLikedSongsCardKey, false),
-    SettingsRow.Toggle("hide_offline_card", Res.string.m6_hide_offline, HideOfflineCardKey, false),
-    SettingsRow.Toggle("hide_cached_card", Res.string.m6_hide_cached, HideCachedCardKey, false),
-    SettingsRow.Toggle("hide_local_files_card", Res.string.m6_hide_local, HideLocalFilesCardKey, false),
-    SettingsRow.Toggle("hide_top50_card", Res.string.m6_hide_top50, HideTop50CardKey, false),
-)
+fun appearanceExtrasSettingsRows(
+    /** Desktop's library renderer has no tag chip to show, so the row writes a key nothing reads there. */
+    desktop: Boolean = false,
+): List<SettingsRow> = buildList {
+    add(SettingsRow.Toggle("show_home_category_chips", Res.string.m6_home_categories, ShowHomeCategoryChipsKey, false))
+    if (!desktop) {
+        add(SettingsRow.Toggle("show_tags_in_library", Res.string.m6_library_tags, ShowTagsInLibraryKey, false))
+    }
+    add(SettingsRow.Toggle("hide_liked_songs_card", Res.string.m6_hide_liked, HideLikedSongsCardKey, false))
+    add(SettingsRow.Toggle("hide_offline_card", Res.string.m6_hide_offline, HideOfflineCardKey, false))
+    add(SettingsRow.Toggle("hide_cached_card", Res.string.m6_hide_cached, HideCachedCardKey, false))
+    add(SettingsRow.Toggle("hide_local_files_card", Res.string.m6_hide_local, HideLocalFilesCardKey, false))
+    add(SettingsRow.Toggle("hide_top50_card", Res.string.m6_hide_top50, HideTop50CardKey, false))
+}
