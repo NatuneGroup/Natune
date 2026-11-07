@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.innertube.models.ArtistItem
 import moe.rukamori.archivetune.innertube.models.BrowseEndpoint
 import moe.rukamori.archivetune.innertube.models.EpisodeItem
 import moe.rukamori.archivetune.innertube.models.PlaylistItem
+import moe.rukamori.archivetune.innertube.models.PODCAST_SHOW_BROWSE_PREFIX
 import moe.rukamori.archivetune.innertube.models.PodcastItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
@@ -41,6 +42,9 @@ class AndroidYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTran
         when (browse) {
             is YouTubeBrowse.Playlist -> playlistPage(browse.playlistId, continuation)
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
+            // The Android host reads a show through PodcastRepository and never constructs the shared catalogue, so
+            // no page request for a show reaches this transport; it refuses rather than parsing the page as a list.
+            is YouTubeBrowse.Podcast -> throw UnsupportedContentOperation()
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.Section -> sectionPage(browse)
             is YouTubeBrowse.ArtistItems -> artistItemsPage(browse, continuation)
@@ -232,7 +236,9 @@ private fun YTItem.toEntry(): YouTubeEntry =
             )
         is PlaylistItem ->
             YouTubeEntry(
-                kind = ContentKind.PLAYLIST,
+                // YouTube files a podcast show as a playlist-shaped row; the id's own MPSP prefix names the show,
+                // whose page carries episodes rather than the playlist shape a playlist page would parse.
+                kind = if (id.startsWith(PODCAST_SHOW_BROWSE_PREFIX)) ContentKind.PODCAST else ContentKind.PLAYLIST,
                 id = id,
                 title = title,
                 subtitle = author?.name ?: songCountText.orEmpty(),
