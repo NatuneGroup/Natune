@@ -155,13 +155,16 @@ class DeviceHandshakeState(
     fun canAcceptPairRequest(): Boolean = phase == DeviceHandshakePhase.HELLO_RECEIVED
 
     /** Only the initiator, and only after it asked for approval. */
-    fun canAcceptPairApprove(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_APPROVAL
+    fun canAcceptPairApprove(): Boolean =
+        phase == DeviceHandshakePhase.AWAITING_PAIR_APPROVAL && role == DeviceConnectRole.INITIATOR
 
     /** Only the responder, and only after the user approved its pairing prompt. */
-    fun canAcceptPairCommit(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT
+    fun canAcceptPairCommit(): Boolean =
+        phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT && role == DeviceConnectRole.RESPONDER
 
     /** Only the initiator, and only after it sent the pair commitment. */
-    fun canAcceptAuthResult(): Boolean = phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT
+    fun canAcceptAuthResult(): Boolean =
+        phase == DeviceHandshakePhase.AWAITING_PAIR_COMMIT && role == DeviceConnectRole.INITIATOR
 
     /** The only phases from which a verified proof may authenticate the connection. */
     fun canAuthenticate(): Boolean =
