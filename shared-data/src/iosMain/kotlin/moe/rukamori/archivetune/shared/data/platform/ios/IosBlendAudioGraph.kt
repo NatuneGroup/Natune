@@ -102,9 +102,10 @@ internal class IosBlendAudioGraph private constructor(
         if (interrupted) {
             // Native play reclaims the session: an interruption end is never guaranteed.
             // Refused, the deck stays paused until an approved end; granted, rebuild for the route.
-            at_audio_play(current.output)
+            val reclaim = at_audio_play(current.output)
+            if (reclaim == 0) return false
             incoming?.let { at_audio_play(it.output) }
-            if (!current.nativeState().playWhenReady) return true
+            if (reclaim == AT_AUDIO_PLAY_DEFERRED.toInt() || !current.nativeState().playWhenReady) return true
             interrupted = false
             graphDirty = true
         }
