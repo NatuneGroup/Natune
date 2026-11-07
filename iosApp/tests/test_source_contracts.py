@@ -221,6 +221,21 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("session.invalidateAndCancel()", artwork)
         self.assertIn("HTTPCookieStorage = null", artwork)
 
+    def test_remote_seeks_use_one_bounded_shared_policy(self):
+        controls = (KOTLIN / "IosNowPlaying.kt").read_text()
+        policy = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/playback/NowPlayingSeekPolicy.kt").read_text()
+        # The scrubber sends an absolute position in seconds; the interval skip sends a relative one.
+        # Both must go through the shared millisecond policy, not a raw * 1000 cast that can wrap, and
+        # must share the on-screen controls' duration/overflow bounds.
+        self.assertIn("nowPlayingSeekTargetMs", controls)
+        self.assertEqual(2, controls.count("nowPlayingSeekTargetMs("))
+        self.assertIn("fun nowPlayingSeekTargetMs(", policy)
+        self.assertIn("deltaSeconds * 1_000.0", policy)
+        self.assertIn("coerceIn(0.0, upper)", policy)
+        self.assertIn("durationMs?.takeIf { it > 0L }", policy)
+        # A live stream with no positive duration is unbounded, not clamped to zero.
+        self.assertNotIn("coerceIn(0L, duration)", controls)
+
     def test_long_form_playback_restores_the_previous_route_sharing_policy(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()
         self.assertEqual(2, audio.count("routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio"))
