@@ -54,6 +54,7 @@ internal fun MusicService.refreshAutomotiveLibrary() {
                 .decode(dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"))
                 .size
         }.getOrDefault(0)
+    runCatching { mediaLibrarySessionCallback.invalidateBrowseChildren() }
     runCatching {
         mediaSession.notifyChildrenChanged(MusicService.ROOT, AUTOMOTIVE_ROOT_ITEM_COUNT, null)
         mediaSession.notifyChildrenChanged(MusicService.QUEUE, player.mediaItemCount, null)
