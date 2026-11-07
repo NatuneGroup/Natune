@@ -53,6 +53,10 @@ kotlin {
             implementation(libs.dbus.java.core)
             implementation(libs.dbus.java.transport.native.unixsocket)
             implementation("net.java.dev.jna:jna:5.17.0")
+            // The Win32 and X11 bindings the per-operating-system window frame is written against:
+            // WinDef/WinUser/Advapi32Util/WinReg for the Windows frame and X11 for the Linux drag. The core
+            // artifact above carries none of them, so the frame did not compile without this.
+            implementation("net.java.dev.jna:jna-platform:5.17.0")
             // The TDLight binding behind the Telegram file adapter. Integration registers this project in the root
             // settings; its native library and notices are staged by stageDesktopNativeResources.
             implementation(project(":desktopApp:tdlight-jvm"))

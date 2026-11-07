@@ -43,7 +43,7 @@ import moe.rukamori.archivetune.shared.domain.settings.desktopSystemWindowFrame
 import moe.rukamori.archivetune.shared.ui.desktop.DesktopShellMetrics
 import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopWindowControls
 import moe.rukamori.archivetune.shared.ui.desktop.desktopSearchFieldWidth
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 /**
