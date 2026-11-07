@@ -10,9 +10,9 @@ import org.jetbrains.compose.resources.StringResource
  *
  * The phone hosts keep [settingsHomeRows]; nothing here is shared with the Android single-column list.
  *
- * Rows whose reader is a page command rather than a route carry no [SettingsRow.Action.navRoute] and stay out of the
- * two-pane navigation, which lists routes only. [DesktopIntegrationsRoute] is the one command route: the window catches
- * it and opens the separate integrations overlay instead of replacing the page.
+ * Command rows ([DesktopIntegrationsRoute], [DesktopEqualizerRoute], [DesktopShortcutsRoute] and
+ * [DesktopConnectedDevicesRoute]) still carry a [SettingsRow.Action.navRoute] so the two-pane navigation can list and
+ * search for them; the window catches each and opens its overlay/sheet instead of replacing the page.
  */
 const val DesktopIntegrationsRoute = "settings/integrations"
 
@@ -29,8 +29,15 @@ const val DesktopEqualizerRoute = "settings/player/equalizer"
 const val DesktopShortcutsRoute = "settings/shortcuts"
 
 /**
- * One row per group, in the order the settings overlay draws them. [openIntegrations], [openEqualizer] and
- * [openShortcuts] are commands the window owns; everything else navigates.
+ * The command route for the Connected devices sheet. The window catches it and opens the Device Connect
+ * sheet over the current page instead of replacing it, the same way [DesktopEqualizerRoute] opens the
+ * equalizer. Keeping it a route means the two-pane navigation can list and search for it.
+ */
+const val DesktopConnectedDevicesRoute = "settings/integrations/connected_devices"
+
+/**
+ * One row per group, in the order the settings overlay draws them. [openIntegrations], [openEqualizer],
+ * [openShortcuts] and [openConnectedDevices] are commands the window owns; everything else navigates.
  *
  * Developer pages carry [SettingsRow.Action.hidden], so they only appear once the user searches for them, as Metrolist's
  * Devtools page does.
@@ -40,6 +47,8 @@ fun desktopSettingsNavRows(
     openIntegrations: () -> Unit,
     openEqualizer: () -> Unit,
     openShortcuts: () -> Unit,
+    /** Opens the Device Connect "Connected devices" sheet over whatever page is showing. */
+    openConnectedDevices: () -> Unit = {},
 ): List<SettingsRow> {
     fun entry(anchor: String, title: StringResource, description: StringResource, route: String, hidden: Boolean = false) =
         SettingsRow.Action(
@@ -150,6 +159,24 @@ fun desktopSettingsNavRows(
                 run = openIntegrations,
                 description = Res.string.m6_settings_desktop_connected_services_desc,
                 navRoute = DesktopIntegrationsRoute,
+            ),
+        )
+        // Cross-device playback. The Connected devices sheet is the player-facing handoff/remote-control
+        // surface; the Device Connect page owns pairing, enabling and the device name. Both are top-level
+        // so a desktop user can find device sync without digging into the integrations overlay.
+        add(
+            SettingsRow.Action(
+                anchor = "connected_devices",
+                title = Res.string.m9_device_connect_connected_devices,
+                run = openConnectedDevices,
+                description = Res.string.m9_device_connect_connected_subtitle,
+                navRoute = DesktopConnectedDevicesRoute,
+            ),
+        )
+        add(
+            entry(
+                "device_connect", Res.string.m9_device_connect_title,
+                Res.string.m6_settings_home_device_connect_desc, "settings/integrations/device_connect",
             ),
         )
         add(
@@ -278,8 +305,9 @@ fun desktopSettingsNavListRows(
     openIntegrations: () -> Unit,
     openEqualizer: () -> Unit,
     openShortcuts: () -> Unit,
+    openConnectedDevices: () -> Unit = {},
 ): List<SettingsRow> =
-    desktopSettingsNavRows(navigate, openIntegrations, openEqualizer, openShortcuts)
+    desktopSettingsNavRows(navigate, openIntegrations, openEqualizer, openShortcuts, openConnectedDevices)
         .filterNot { row -> row is SettingsRow.Action && row.hidden }
 
 /**
