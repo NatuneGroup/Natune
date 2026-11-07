@@ -154,6 +154,7 @@ internal object TtmlParser {
         val words = mutableListOf<ParsedWord>()
         val lineText = StringBuilder()
         parseSpanElements(paragraph, words, lineText, startTime, endTime, false, timingContext)
+        words.lastOrNull()?.let { last -> words[words.lastIndex] = last.copy(text = last.text.trimEnd()) }
 
         if (lineText.isEmpty()) {
             val directText = paragraph.directTextContent().trim()
@@ -322,11 +323,18 @@ internal object TtmlParser {
                                         lineEndTime = lineEndTime,
                                         fallback = lineEndTime,
                                     ).coerceAtLeast(wordStartTime)
-                                val trimmedText = wordText.trim()
-                                if (trimmedText.isNotEmpty()) {
+                                // Renderers join word texts verbatim, so a space inside the span ("Hello ")
+                                // is the only word boundary and must survive; it is kept as a trailing space.
+                                val spacedText = wordText.replace(whitespaceRegex, " ")
+                                if (spacedText.startsWith(' ') && words.isNotEmpty() && !words.last().text.endsWith(' ')) {
+                                    val lastWord = words.last()
+                                    words[words.lastIndex] = lastWord.copy(text = lastWord.text + " ")
+                                }
+                                val wordTextWithBoundary = spacedText.trimStart()
+                                if (wordTextWithBoundary.isNotBlank()) {
                                     words.add(
                                         ParsedWord(
-                                            text = trimmedText,
+                                            text = wordTextWithBoundary,
                                             startTime = wordStartTime,
                                             endTime = wordEndTime,
                                             isBackground = isBgSpan,
