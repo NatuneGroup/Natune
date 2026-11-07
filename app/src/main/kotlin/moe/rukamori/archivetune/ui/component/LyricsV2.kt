@@ -151,6 +151,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.insertInstrumentalBreaks
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
+import moe.rukamori.archivetune.lyrics.LyricsRenderTiming
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
@@ -166,13 +167,7 @@ import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
-/** Lead time offset for LRC-style line-synced lyrics (ms). */
-private const val LRC_LEAD_MS = 300L
-
-/** Lead time offset for TTML word-synced lyrics (ms). */
-private const val TTML_LEAD_MS = 0L
-
-private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
+private const val LYRIC_VISUAL_TUNING_OFFSET_MS = LyricsRenderTiming.VISUAL_TUNING_OFFSET_MS
 
 /**
  * Minimum duration (ms) for the per-word letter-by-letter sweep animation.
@@ -308,7 +303,6 @@ fun LyricsV2(
         }
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics!!) || isTtml(lyrics!!)) }
-    val isTtmlFormat = remember(lyrics) { lyrics != null && isTtml(lyrics!!) }
 
     // Parsed off the composition thread — same reason as LyricsEnhanced: a word-synced TTML file
     // is an XML parse plus one object per syllable, and running it in composition put the whole
@@ -440,7 +434,11 @@ fun LyricsV2(
         }
     }
 
-    val leadMs = if (isTtmlFormat) TTML_LEAD_MS else LRC_LEAD_MS
+    // The lead follows the timing shape, not the container: enhanced LRC with word stamps lines up
+    // with the audio like TTML and takes no LRC lead (which ran its sweep ~450 ms ahead). The same
+    // shape decides whether the loop needs a display-refresh frame clock for the karaoke sweep.
+    val hasWordTiming = remember(entriesWithWords) { LyricsRenderTiming.hasWordTiming(entriesWithWords) }
+    val leadMs = remember(entriesWithWords) { LyricsRenderTiming.leadMsFor(entriesWithWords) }
     // Hold the position in an explicit MutableState so we can expose a stable provider lambda
     // that reads the current value. The lambda identity is stable across position updates, so
     // passing it to child composables never by itself triggers their recomposition — only the
@@ -470,14 +468,14 @@ fun LyricsV2(
     // Read only from the auto-scroll coroutine, never in composition.
     var lastSeekUptimeMs by remember { mutableLongStateOf(Long.MIN_VALUE / 2) }
 
-    LaunchedEffect(entriesWithWords, isSynced, leadMs, lyricsSyncOffset) {
+    LaunchedEffect(entriesWithWords, isSynced, leadMs, hasWordTiming, lyricsSyncOffset) {
         if (!isSynced || entriesWithWords.isEmpty()) return@LaunchedEffect
         // 16 ms recomposes every visible word ~60×/s; with animations disabled a coarser tick is
         // indistinguishable (fills snap anyway) and much cheaper.
         val pollIntervalMs =
             when {
                 v2AnimationsDisabled -> 100L
-                isTtmlFormat -> 16L
+                hasWordTiming -> 16L
                 else -> 50L
             }
         // For the high-frequency TTML path, drive the poll from the choreographer frame clock
@@ -487,7 +485,10 @@ fun LyricsV2(
         // and pile up recompositions on top of the slow frames, which is what makes the karaoke
         // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
         // the actual frame rate so the two stay in lock-step.
-        val useFrameClock = !v2AnimationsDisabled && isTtmlFormat
+        // Word-timed rows (TTML *and* enhanced LRC) sweep continuously, so drive their live frames
+        // from the choreographer at display refresh. Line-only rows change a few times a minute and
+        // park between deadlines. A dance with the wrong coarse poll read as a sluggish 20-30 Hz sweep.
+        val useFrameClock = !v2AnimationsDisabled && hasWordTiming
         // Between word and line boundaries the drawn state is static: while playing, sleep to the
         // next deadline; while paused or dragging, the coarse poll is enough to catch seeks.
         val schedule = LyricsDeadlineSchedule.of(entriesWithWords, MIN_SWEEP_MS)

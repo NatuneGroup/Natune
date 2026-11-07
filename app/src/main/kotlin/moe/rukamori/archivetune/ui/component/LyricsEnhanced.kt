@@ -151,6 +151,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
+import moe.rukamori.archivetune.lyrics.LyricsRenderTiming
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
@@ -163,9 +164,7 @@ import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
-private const val LRC_LEAD_MS = 300L
-private const val TTML_LEAD_MS = 0L
-private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
+private const val LYRIC_VISUAL_TUNING_OFFSET_MS = LyricsRenderTiming.VISUAL_TUNING_OFFSET_MS
 
 /** The slowest idle re-poll. */
 private const val IDLE_POLL_MS = 250L
@@ -503,7 +502,9 @@ fun LyricsEnhanced(
         }
     }
 
-    val leadMs = if (isTtmlFormat) TTML_LEAD_MS else LRC_LEAD_MS
+    // The lead follows the timing shape, not the container: enhanced LRC with per-word stamps lines
+    // up with the audio like TTML, so it takes no LRC lead (which used to run its sweep ~450 ms early).
+    val leadMs = remember(lyricsEntries) { LyricsRenderTiming.leadMsFor(lyricsEntries) }
 
     val latestSliderPositionProvider = rememberUpdatedState(sliderPositionProvider)
     val latestLyricsSyncOffset = rememberUpdatedState(lyricsSyncOffset)
@@ -1740,12 +1741,23 @@ private fun SingleActiveLineCluster(
                     )
                 }
 
-                KaraokeSweepText(
-                    syllables = line.syllables,
-                    currentPosition = currentPosition,
-                    textColor = textColor,
-                    textStyle = normalTextStyle,
-                )
+                // Only a row with real per-word spans may sweep. A line-synced LRC row is published as a
+                // KaraokeLine just to hang its reading on, with every syllable pegged at the line start;
+                // sweeping those lit the whole line at one instant. Gate the single-active strip too.
+                if (line.hasWordTiming()) {
+                    KaraokeSweepText(
+                        syllables = line.syllables,
+                        currentPosition = currentPosition,
+                        textColor = textColor,
+                        textStyle = normalTextStyle,
+                    )
+                } else {
+                    Text(
+                        text = line.lineText(),
+                        style = normalTextStyle,
+                        color = textColor,
+                    )
+                }
 
                 if (showTranslation) {
                     TranslationStack(
