@@ -53,6 +53,7 @@ import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSyncControls
 import moe.rukamori.archivetune.shared.ui.navigation.ExternalLink
+import moe.rukamori.archivetune.shared.ui.desktop.DesktopLyricsBody
 import moe.rukamori.archivetune.shared.ui.navigation.ExternalLinks
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.capabilities
@@ -301,7 +302,9 @@ private fun desktopPlayerSlots(
         canvas.setVisible(expanded && active && style.capabilities.artworkCanvas)
     }
     val lyrics = playerLyricsSlots(
-        lines = document?.lines.orEmpty().takeIf { matching }.orEmpty(),
+        // The document belongs to the queue occurrence on screen, so its lines stay readable while playback has not
+        // started or has failed: the player snapshot is the highlight clock, not a condition for showing the text.
+        lines = document?.lines.orEmpty(),
         sessionKey = sessionKey,
         playback = graph.player.snapshot,
         romanization = romanization,
@@ -314,7 +317,7 @@ private fun desktopPlayerSlots(
         ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
-        credits = if (matching) document?.credits else null,
+        credits = document?.credits,
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
@@ -326,11 +329,20 @@ private fun desktopPlayerSlots(
         lyrics = { modifier ->
             Column(modifier) {
                 val ref = current?.item?.ref
+                val currentDocument = document
                 LyricsSyncControls(
                     storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
                     { if (ref != null) tools.offsets.reset(ref) }, enabled = matching && ref != null,
                 )
-                Box(Modifier.weight(1f)) { lyrics.full(Modifier.fillMaxSize()) }
+                Box(Modifier.weight(1f)) {
+                    // The document's own state decides what the surface shows: the renderer with lines, and a named
+                    // state with a retry otherwise. Without this an ordinary miss drew the same empty box as a read
+                    // still in flight.
+                    DesktopLyricsBody(
+                        document = currentDocument,
+                        onRetry = graph.lyrics::retry,
+                    ) { bodyModifier -> lyrics.full(bodyModifier.fillMaxSize()) }
+                }
             }
         },
         compactLyrics = lyrics.compact,
