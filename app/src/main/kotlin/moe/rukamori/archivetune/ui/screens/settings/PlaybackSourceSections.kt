@@ -73,13 +73,10 @@ import moe.rukamori.archivetune.constants.QobuzAudioQualityKey
 import moe.rukamori.archivetune.constants.QobuzEnabledKey
 import moe.rukamori.archivetune.constants.QobuzBackupEnabledKey
 import moe.rukamori.archivetune.constants.TidalAccountFirstKey
-import moe.rukamori.archivetune.constants.TidalAnimatedCoversEnabledKey
 import moe.rukamori.archivetune.constants.TidalAudioQuality
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
-import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AutoChoosePlaybackClientKey
-import moe.rukamori.archivetune.constants.AudioQualityKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
@@ -219,8 +216,6 @@ internal fun PlaybackSourceSections(
         rememberEnumPreference(TidalAudioQualityKey, TidalAudioQuality.FLAC)
 
     // YouTube-specific playback state
-    val (ytAudioQuality, onYtAudioQualityChange) =
-        rememberEnumPreference(AudioQualityKey, defaultValue = AudioQuality.AUTO)
     val (playerStreamClient, onPlayerStreamClientChange) =
         rememberEnumPreference(PlayerStreamClientKey, defaultValue = PlayerStreamClient.WEB_REMIX)
     val (autoChoosePlaybackClient, onAutoChoosePlaybackClientChange) =
@@ -236,10 +231,6 @@ internal fun PlaybackSourceSections(
     val (qobuzBackupEnabled, onQobuzBackupEnabledChange) = rememberPreference(QobuzBackupEnabledKey, false)
     val (appleMusicQuality, onAppleMusicQualityChange) =
         rememberEnumPreference(AppleMusicQualityKey, AppleMusicQuality.LOSSLESS)
-    // The Tidal artwork-fetching toggle lives in Player Settings → Artwork (same key).
-    val (animatedCovers, onAnimatedCoversChange) =
-        rememberPreference(TidalAnimatedCoversEnabledKey, false)
-
     val sourceOrder =
         remember(sourceOrderRaw) {
             AudioSourceConfig.parseOrder(sourceOrderRaw.ifBlank { null })
@@ -375,23 +366,6 @@ internal fun PlaybackSourceSections(
             )
         }
         item {
-            EnumListPreference(
-                title = { Text(stringResource(R.string.audio_quality)) },
-                description = stringResource(R.string.audio_quality_description),
-                icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                selectedValue = ytAudioQuality,
-                onValueSelected = onYtAudioQualityChange,
-                valueText = {
-                    when (it) {
-                        AudioQuality.HIGHEST -> stringResource(R.string.audio_quality_max)
-                        AudioQuality.HIGH -> stringResource(R.string.audio_quality_high)
-                        AudioQuality.AUTO -> stringResource(R.string.audio_quality_auto)
-                        AudioQuality.LOW -> stringResource(R.string.audio_quality_low)
-                    }
-                },
-            )
-        }
-        item {
             SwitchPreference(
                 modifier = positions.modifierFor("auto_choose_playback_client"),
                 title = { Text(stringResource(R.string.auto_choose_playback_client)) },
@@ -498,17 +472,6 @@ internal fun PlaybackSourceSections(
                         TidalAudioQuality.HI_RES_LOSSLESS -> stringResource(R.string.tidal_quality_hires)
                     }
                 },
-            )
-        }
-
-        item {
-            SwitchPreference(
-                modifier = positions.modifierFor("tidal_animated_covers"),
-                title = { Text(stringResource(R.string.tidal_animated_covers)) },
-                description = stringResource(R.string.tidal_animated_covers_description),
-                checked = animatedCovers,
-                onCheckedChange = onAnimatedCoversChange,
-                isEnabled = tidalEnabled,
             )
         }
 

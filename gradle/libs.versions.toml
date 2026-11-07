@@ -22,6 +22,7 @@ media3 = "1.10.1"
 room = "2.8.4"
 hilt = "2.60.1"
 ktor = "3.5.1"
+jmdns = "3.6.4"
 ksp = "2.3.10"
 jsoup = "1.22.2"
 re2j = "1.8"
@@ -117,6 +118,14 @@ innertubexVersion = "v0.11.2"
 # The key stays separate only so a host can diverge again if a regression ever forces a split;
 # today every module runs the same v0.11.2 and there is no cross-module drift.
 innertubexDesktopVersion = "v0.11.2"
+# The desktop host alone is on v0.11.5 (tag at 0.11.5): WEB_REMIX-first selection with the library's own
+# ClientHealthTracker cooldowns, TVHTML5_SAMSUNG, late SABR tokens, and the fixes that stop a DRM format
+# from being handed out when cookies are present. Android and iOS keep v0.11.2 on purpose: their playback
+# path is unchanged by this branch.
+innertubexDesktopAppVersion = "v0.11.5"
+# The pattern-based signature/`n` interpreter InnerTubeX compiles against. Natune never calls it directly;
+# it is declared so the desktop host's copy is the 0.1.4 build that v0.11.5 is written for.
+quackjsVersion = "0.1.4"
 bouncyCastle = "1.85"
 translator = "1.1.1"
 rhino = "1.9.1"
@@ -231,6 +240,7 @@ ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
 ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktor" }
 ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
+jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
@@ -260,7 +270,8 @@ quickjs-kt = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjsKt"
 dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
 dbus-java-transport-native-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
 innertubex = { module = "com.github.MetrolistGroup.innertubex:innertubex", version.ref = "innertubexVersion" }
-innertubex-desktop = { module = "com.github.MetrolistGroup.innertubex:innertubex-desktop", version.ref = "innertubexDesktopVersion" }
+innertubex-desktop = { module = "com.github.MetrolistGroup.innertubex:innertubex-desktop", version.ref = "innertubexDesktopAppVersion" }
+quackjs = { module = "com.github.MetrolistGroup.quackjs:quackjs", version.ref = "quackjsVersion" }
 innertubex-iosarm64 = { module = "com.github.MetrolistGroup.innertubex:innertubex-iosarm64", version.ref = "innertubexDesktopVersion" }
 innertubex-iossimulatorarm64 = { module = "com.github.MetrolistGroup.innertubex:innertubex-iossimulatorarm64", version.ref = "innertubexDesktopVersion" }
 bcpg = { module = "org.bouncycastle:bcpg-jdk18on", version.ref = "bouncyCastle" }

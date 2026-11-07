@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -19,9 +20,14 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChipRow
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.navigation.desktopHomeCardWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
+import moe.rukamori.archivetune.shared.ui.theme.Space
+import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
 
 /** A presentation choice only, never serialized as a new replacement for HomeScreenStyle. */
@@ -61,11 +67,38 @@ fun HomePageHeader(
     onSource: (HomeSource) -> Unit,
     headerActions: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    /** Desktop density: tighter vertical padding, with the account greeting on the title line instead of a hero block. */
+    compact: Boolean = false,
+    welcome: String? = null,
 ) {
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(Res.string.m4_home), style = MaterialTheme.typography.headlineLarge)
-            headerActions()
+        // The desktop Home has no page title: the selected rail destination names the page and the search lives in the
+        // top bar, exactly as the reference layout does. Phone hosts keep the title row.
+        if (!LocalDesktopLayout.current) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = if (compact) Space.xs else Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
+                Spacer(Modifier.weight(1f))
+                if (!welcome.isNullOrBlank()) {
+                    Text(
+                        welcome,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                }
+                headerActions()
+            }
+        } else {
+            // No page title on desktop, but the host's destination menu must stay reachable. The row carries no vertical
+            // padding of its own: the desktop feed's budget above the first sleeve is spent on content, not on chrome.
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm), horizontalArrangement = Arrangement.End) {
+                headerActions()
+            }
         }
         HomeSourceSwitcher(source, availableSources, onSource)
     }
@@ -116,33 +149,67 @@ fun HomeScreen(
     val pullState = rememberPullToRefreshState()
     // Before the first shelves arrive the skeleton stands in for them, and the status line would only repeat its loading.
     val initialLoad = shelves.isEmpty() && pageState.loading
-    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (blurEffects) {
-            // Muzo keeps its own quieter wash; every other Home look draws the baseline backdrop, which is always on.
-            if (design == HomeFeedDesign.Muzo) HomeAtmosphereBackground() else HomeClassicAtmosphereBackground()
+    val desktop = LocalDesktopLayout.current
+    val welcomeLine =
+        if (accountName.isBlank()) stringResource(Res.string.m4_home_welcome_line_anonymous)
+        else stringResource(Res.string.m4_home_welcome_line, accountName)
+    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // The desktop feed reads denser than the phone carousel: larger sleeves and a tighter section rhythm, while the
+        // phone composition below is byte-for-byte the same arrangement it had before.
+        val cardWidth = if (desktop) desktopHomeCardWidth(maxWidth) else HomeShelfCardWidth
+        // The desktop feed is measured against the reference's first-sleeve budget: four dp between sections instead of
+        // the phone's eighteen leaves the third shelf above the player bar on a 1430 x 861 window.
+        val sectionSpacing = when {
+            design == HomeFeedDesign.BitChord -> 26.dp
+            desktop -> Space.xxs
+            else -> 18.dp
         }
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = { onRefresh?.invoke() },
-            state = pullState,
-            enabled = onRefresh != null,
-            indicator = {},
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            LazyColumn(Modifier.fillMaxSize().testTag("home-feed"), state = listState,
-                contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(if (design == HomeFeedDesign.BitChord) 26.dp else 18.dp)) {
-                item(key = "m4-home-header") { HomePageHeader(source, availableSources, onSource, headerActions) }
-                item(key = "m4-home-greeting") { HomeWelcomeHeader(accountName) }
-                if (showChips && chips.isNotEmpty()) {
-                    item(key = "m4-home-chips") {
-                        HomeVariantChipRow(chips = chips, selectedKey = selectedChipKey, onSelect = selectChip)
+        CompositionLocalProvider(LocalHomeShelfCardWidth provides cardWidth) {
+            if (blurEffects) {
+                // Muzo keeps its own quieter wash; every other Home look draws the baseline backdrop, which is always on.
+                if (design == HomeFeedDesign.Muzo) HomeAtmosphereBackground() else HomeClassicAtmosphereBackground()
+            }
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { onRefresh?.invoke() },
+                state = pullState,
+                enabled = onRefresh != null,
+                indicator = {},
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                LazyColumn(Modifier.fillMaxSize().testTag("home-feed"), state = listState,
+                    contentPadding = contentPadding,
+                    verticalArrangement = Arrangement.spacedBy(sectionSpacing)) {
+                    item(key = "m4-home-header") {
+                        HomePageHeader(
+                            source, availableSources, onSource, headerActions,
+                            compact = desktop, welcome = welcomeLine.takeIf { desktop },
+                        )
                     }
-                }
+                    if (desktop) {
+                        // Chips sit directly under the title on desktop, so the first shelf starts above the fold.
+                        if (showChips && chips.isNotEmpty()) {
+                            item(key = "m4-home-chips") {
+                                HomeVariantChipRow(chips = chips, selectedKey = selectedChipKey, onSelect = selectChip)
+                            }
+                        }
+                    } else {
+                        item(key = "m4-home-greeting") { HomeWelcomeHeader(accountName) }
+                        if (showChips && chips.isNotEmpty()) {
+                            item(key = "m4-home-chips") {
+                                HomeVariantChipRow(chips = chips, selectedKey = selectedChipKey, onSelect = selectChip)
+                            }
+                        }
+                    }
                 items(shelves, key = { "m4-home-shelf-${it.key}" }) { shelf ->
                     Column {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(shelf.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                shelf.title,
+                                style = if (LocalDesktopLayout.current) DesktopType.sectionTitle()
+                                else MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f),
+                            )
                             shelf.more?.let { more ->
                                 TextButton(more, Modifier.testTag("shelf-more-${shelf.key}")) {
                                     Text(stringResource(Res.string.m4_more))
@@ -197,5 +264,6 @@ fun HomeScreen(
             distanceFraction = { pullState.distanceFraction },
             modifier = Modifier.align(Alignment.TopCenter),
         )
+        }
     }
 }

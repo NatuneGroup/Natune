@@ -73,7 +73,53 @@ internal object EnhancedLrcWords {
                 ),
             )
         }
-        return words.takeIf { it.size >= 2 }
+        return words.mapBackgroundRuns().takeIf { it.size >= 2 }
+    }
+
+    /**
+     * Marks the words a line wraps in parentheses as background vocals, the same rule the Android
+     * parser applies: TTML states this with `ttm:role="x-bg"`, and the enhanced-LRC providers that
+     * mirror it write the backing vocal inline in round brackets. Only a run that opens at a word's own
+     * start and closes at a word's own end counts; an unbalanced open bracket marks the rest of the
+     * line, because that is what a truncated provider means.
+     *
+     * A line whose words all sit inside brackets is a sung lead phrase such as "(I know)", not a backing
+     * voice under one, and it stays lead: only a run with lead words outside it is marked. The rule runs
+     * on the enhanced-LRC word-stamp shape alone — an explicit provider role has already been applied by
+     * the TTML reader, and a plain LRC line keeps its parentheses as text.
+     */
+    fun List<LyricsWord>.mapBackgroundRuns(): List<LyricsWord> {
+        if (isEmpty()) return this
+        val bracketed = bracketDepth()
+        // The whole line in brackets: the source's own phrasing, so the line keeps its lead words.
+        if (bracketed.all { it }) return this
+        var changed = false
+        val marked =
+            mapIndexed { index, word ->
+                if (bracketed[index] && !word.isBackground) {
+                    changed = true
+                    word.copy(isBackground = true)
+                } else {
+                    word
+                }
+            }
+        return if (changed) marked else this
+    }
+
+    /**
+     * Which words sit inside a bracket run, by the same rule the marking uses: a word opens a run when
+     * its own text starts with `(`, and closes it when its own text ends with `)`.
+     */
+    private fun List<LyricsWord>.bracketDepth(): List<Boolean> {
+        var depth = 0
+        return map { word ->
+            val opens = word.text.trimStart().startsWith('(')
+            val closes = word.text.trimEnd().endsWith(')')
+            val inside = depth > 0 || opens
+            if (opens) depth++
+            if (closes && depth > 0) depth--
+            inside
+        }
     }
 
     /**

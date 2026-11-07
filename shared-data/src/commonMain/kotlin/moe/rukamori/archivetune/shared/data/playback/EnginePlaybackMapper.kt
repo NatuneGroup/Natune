@@ -73,10 +73,15 @@ class EnginePlaybackMapper(
 
     /**
      * The failure for the current load, reported once. Returns null when the read shows no error,
-     * belongs to another load, or the failure was already reported. [message] is only evaluated
-     * when a failure is actually reported, so polling a healthy engine never reads error text.
+     * belongs to another load, or the failure was already reported. [httpStatus] and [message] are
+     * only evaluated when a failure is actually reported, so polling a healthy engine never reads
+     * error text or the lease's recorded status.
      */
-    fun failure(state: EnginePlaybackState, message: () -> String): PlaybackFailure? {
+    fun failure(
+        state: EnginePlaybackState,
+        httpStatus: () -> Int? = { null },
+        message: () -> String,
+    ): PlaybackFailure? {
         val current = request ?: return null
         if (state.loadGeneration != engineLoadGeneration ||
             state.errorCode == EnginePlaybackState.ERROR_NONE ||
@@ -85,7 +90,15 @@ class EnginePlaybackMapper(
             return null
         }
         failureReported = true
-        return PlaybackFailure(current.occurrenceId, reasonFor(state.errorCode), message(), attemptId = current.attemptId)
+        return PlaybackFailure(
+            current.occurrenceId,
+            reasonFor(state.errorCode),
+            message(),
+            // The native code collapses a refused read into one error code; the lease still knows the status that
+            // caused it, and the recovery classifier prefers it over the wording of the message.
+            httpStatus = httpStatus(),
+            attemptId = current.attemptId,
+        )
     }
 
     /**

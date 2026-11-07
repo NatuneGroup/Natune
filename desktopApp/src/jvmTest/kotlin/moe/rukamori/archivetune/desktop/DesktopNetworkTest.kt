@@ -175,6 +175,72 @@ class DesktopNetworkTest {
         }
     }
 
+    /**
+     * A resolved googlevideo URL is only reusable for the address that minted it. The direct route and a saved static
+     * proxy therefore have to name themselves, and a proxy scope may never carry the credentials that reach it.
+     */
+    @Test fun theDirectRouteAndASavedProxyEachNameThemselvesWithoutCredentials() = runBlocking<Unit> {
+        val direct = DesktopNetworkOwner { PreferenceSnapshot.EMPTY }
+        try {
+            direct.applyNetworkSettings(PreferenceSnapshot.EMPTY)
+            assertEquals(DIRECT_ROUTE_SCOPE, direct.routeScope())
+        } finally {
+            direct.close()
+        }
+
+        val preferences = PreferenceSnapshot.of(
+            ProxyEnabledKey to true, ProxyHostKey to "proxy.example", ProxyPortKey to 8080,
+            ProxyUsernameKey to "proxy-user", ProxyPasswordKey to "proxy-secret",
+        )
+        val proxied = DesktopNetworkOwner { preferences }
+        try {
+            proxied.applyNetworkSettings(preferences)
+            assertEquals("HTTP:proxy.example:8080", proxied.routeScope())
+            assertFalse(proxied.routeScope().orEmpty().contains("proxy-user"))
+            assertFalse(proxied.routeScope().orEmpty().contains("proxy-secret"))
+        } finally {
+            proxied.close()
+        }
+    }
+
+    /**
+     * A pool of one route always hands out that route, so a cached URL can be keyed on it; a larger pool hands each
+     * request a different egress, so no scope can say where a cached URL would be read and the caller must not cache.
+     */
+    @Test fun onlyASingleRoutePoolNamesTheEgressARotationUses() {
+        val empty = DesktopRotatingProxySelector()
+        assertNull(empty.singleRoute())
+
+        val single = DesktopRotatingProxySelector()
+        single.loadProxies(listOf("only.example" to 3128))
+        assertEquals("only.example:3128", single.singleRoute())
+        assertEquals("only.example:3128", single.singleRoute())
+
+        val rotating = DesktopRotatingProxySelector()
+        rotating.loadProxies(listOf("first.example" to 8080, "second.example" to 8080))
+        assertNull(rotating.singleRoute())
+
+        // The pool the app starts from is cleared, and a cleared pool names no route either.
+        rotating.loadProxies(emptyList())
+        assertNull(rotating.singleRoute())
+    }
+
+    /**
+     * The scope the resolver cache keys on: the direct route, a static proxy's endpoint, a single-route rotation, and —
+     * for a rotation that moves between egresses — nothing at all, which is what makes the cache bypass itself.
+     */
+    @Test fun theRouteScopeNamesTheEgressAndIsNullWhenRotationMovesBetweenThem() {
+        val configured = config(proxy("static.example"))
+
+        assertEquals(DIRECT_ROUTE_SCOPE, desktopRouteScope(configured = null, rotating = false, singleRotationRoute = null))
+        assertEquals("HTTP:static.example:8080", desktopRouteScope(configured, rotating = false, singleRotationRoute = null))
+        // A pool of one route is named even though a static proxy is also saved: rotation is what the requests use.
+        assertEquals("rotation:only.example:3128", desktopRouteScope(configured, rotating = true, singleRotationRoute = "only.example:3128"))
+        // A pool that rotates between routes knows no egress for the media read, so nothing may be cached.
+        assertNull(desktopRouteScope(configured, rotating = true, singleRotationRoute = null))
+        assertNull(desktopRouteScope(configured = null, rotating = true, singleRotationRoute = null))
+    }
+
     private fun proxy(host: String): Proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(host, 8080))
     private fun config(proxy: Proxy, bypass: Boolean = false) = DesktopProxyConfig(proxy, null, null, bypass)
     private fun fixed(proxy: Proxy) = object : ProxySelector() {

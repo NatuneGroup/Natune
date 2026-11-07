@@ -32,6 +32,7 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
         when (browse) {
             is YouTubeBrowse.Playlist -> playlistPage(browse.playlistId, continuation)
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
+            is YouTubeBrowse.Podcast -> podcastPage(browse.browseId, continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.Section -> catalogueSectionPage(browse)
             is YouTubeBrowse.ArtistItems -> catalogueArtistItemsPage(browse, continuation)
@@ -48,6 +49,18 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
             val page = YouTube.playlistContinuation(continuation, playlistId).getOrThrow()
             YouTubeEntryPage(page.songs.map { it.toSongEntry() }, page.continuation)
         }
+
+    /**
+     * A podcast show page: the show's own browse, answered with its episodes. The show id arrives with its `MPSP`
+     * prefix, and the first page and every appended page read the same request the Android podcast page reads. The
+     * episode shelf carries its own cursor, so a show longer than one page keeps paging.
+     */
+    private suspend fun podcastPage(browseId: String, continuation: String?): YouTubeEntryPage {
+        val normalized = browseId.takeIf { it.startsWith(YOUTUBE_PODCAST_SHOW_PREFIX) } ?: "$YOUTUBE_PODCAST_SHOW_PREFIX$browseId"
+        val response = CoreYouTubePodcastBrowse.read(normalized.takeIf { continuation == null }, continuation)
+        val page = if (continuation == null) youTubePodcastPage(response) else youTubePodcastContinuationPage(response)
+        return YouTubeEntryPage(page.entries, page.continuation)
+    }
 
     private suspend fun albumPage(browseId: String, continuation: String?): YouTubeEntryPage {
         // The album page carries its whole song list, so a token for it is foreign and is refused rather than ignored.
@@ -213,7 +226,9 @@ private fun YTItem.toEntry(): YouTubeEntry =
             )
         is PlaylistItem ->
             YouTubeEntry(
-                kind = ContentKind.PLAYLIST,
+                // YouTube files a podcast show as a playlist-shaped row; the id's own prefix names the show, which
+                // opens its episode page rather than a playlist the provider never had.
+                kind = if (isYouTubePodcastShowId(id)) ContentKind.PODCAST else ContentKind.PLAYLIST,
                 id = id,
                 title = title,
                 subtitle = author?.name ?: songCountText.orEmpty(),

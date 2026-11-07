@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.shared.data.provider.AppleMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.AudioResolution
 import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
 import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
+import moe.rukamori.archivetune.shared.data.provider.NoPoolDiscoveryStore
 import moe.rukamori.archivetune.shared.data.provider.IosJioSaavnUrlDecoder
 import moe.rukamori.archivetune.shared.data.provider.IosQobuzRequestDigest
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonAuthorization
@@ -413,6 +414,7 @@ private class IosDeezerSource(
         poolEnabled = { pool?.enabled() == true },
         sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
         sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+        discoveryStore = pool?.discoveryStore(IosPlaybackPool.DEEZER) ?: NoPoolDiscoveryStore,
     )
     private val instanceRepository = KtorDeezerRepository(
         http,
@@ -596,6 +598,7 @@ private class IosQobuzSource(
         poolEnabled = { pool?.enabled() == true },
         sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
         sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+        discoveryStore = pool?.discoveryStore(IosPlaybackPool.QOBUZ) ?: NoPoolDiscoveryStore,
     )
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {

@@ -78,12 +78,15 @@ class DesktopInnerTubeXTierTest {
     }
 
     @Test
-    fun boundedRangeAndHlsStreamsAreRefused() {
+    fun aRangeOnlyStreamIsAcceptedAndHlsIsRefused() {
         runBlocking {
-            assertFailsWith<DesktopInnerTubeXException> {
+            // A client that requires a bounded range is a client this host can read: the engine leases the media
+            // through HttpRangeSource, which only ever asks for a bounded range, so the range-only refusal is gone
+            // (see the class KDoc). HLS is still refused, because a leased source refuses FFmpeg's child requests.
+            val rangeOnly =
                 DesktopInnerTubeXTier(http, FakeExtractor(stream(boundedRange = true)))
                     .resolve("dQw4w9WgXcQ", DesktopYouTubeAudioQuality.AUTO, trusted = true)
-            }
+            assertIs<PreparedAudio.Progressive>(rangeOnly)
             assertFailsWith<DesktopInnerTubeXException> {
                 DesktopInnerTubeXTier(http, FakeExtractor(stream(url = "https://manifest.googlevideo.com/api/manifest/hls_playlist")))
                     .resolve("dQw4w9WgXcQ", DesktopYouTubeAudioQuality.AUTO, trusted = true)

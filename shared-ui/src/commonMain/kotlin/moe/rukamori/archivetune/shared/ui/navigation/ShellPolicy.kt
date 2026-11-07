@@ -14,8 +14,9 @@ fun shellLayout(
     topLevel: Boolean = true,
     settingsRoute: Boolean = false,
 ): ShellLayout {
-    if (searchActive || settingsRoute) return ShellLayout.Hidden
-    // The Apple Music bar itself owns its one-row geometry, not the preset indicator.
+    if (searchActive) return ShellLayout.Hidden
+    if (settingsRoute) return ShellLayout.Hidden
+    // The Apple Music one-row bar is a phone geometry; every other host keeps the rail whichever pill style is stored.
     if (preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) return ShellLayout.CompactRow
     if (television) return ShellLayout.TvRail
     if (widthDp >= 840f || preferences[TabletModeEnabledKey, false]) return ShellLayout.Rail

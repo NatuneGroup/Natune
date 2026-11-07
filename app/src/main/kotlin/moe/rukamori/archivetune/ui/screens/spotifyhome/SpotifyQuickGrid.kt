@@ -1,0 +1,166 @@
+/*
+ * Ported from YumaPlayer's Spotify home, MuwMx/YumaPlayer at 6eb6438 (GPL-3.0),
+ * ui/screens/spotifyhome/SpotifyQuickGrid.kt. See docs/CREDITS.md.
+ */
+
+package moe.rukamori.archivetune.ui.screens.spotifyhome
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import moe.rukamori.archivetune.ui.screens.settings.SettingsDimensions
+import moe.rukamori.archivetune.ui.theme.glassBorder
+import moe.rukamori.archivetune.ui.theme.yumaClickable
+
+@Composable
+internal fun <T> SpotifyQuickGrid(
+    items: List<T>,
+    maxItems: Int = 8,
+    columns: Int = 2,
+    itemContent: @Composable (T) -> Unit,
+) {
+    val displayItems = items.take(maxItems)
+    if (displayItems.isEmpty()) return
+
+    val rows = displayItems.chunked(columns)
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+    ) {
+        rows.forEachIndexed { rowIndex, rowItems ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                rowItems.forEach { item ->
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        itemContent(item)
+                    }
+                }
+                val emptyCells = columns - rowItems.size
+                repeat(emptyCells) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+            if (rowIndex < rows.lastIndex) {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+/**
+ * One cell: a 56dp square thumbnail — a circle for artists, left-rounded otherwise — and a two-line
+ * title over the raised surface, edged with the glass stroke. [isResolving] draws Natune's spinner
+ * over the thumbnail; it is empty in the idle state, so the cell matches the reference exactly.
+ */
+@Composable
+internal fun SpotifyQuickGridCell(
+    title: String,
+    imageUrl: String?,
+    onClick: () -> Unit,
+    isArtist: Boolean,
+    isResolving: Boolean = false,
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val cardShape = RoundedCornerShape(SettingsDimensions.BadgeCornerRadius)
+
+    val imageRequest =
+        remember(imageUrl) {
+            val sizePx = with(density) { 56.dp.roundToPx() }
+            ImageRequest
+                .Builder(context)
+                .data(imageUrl)
+                .size(sizePx, sizePx)
+                .allowHardware(true)
+                .build()
+        }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .yumaClickable(onClick = onClick)
+                .clip(cardShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f))
+                .glassBorder(
+                    shape = cardShape,
+                    strokeWidth = SettingsDimensions.GlassBorderThickness,
+                    topAlpha = 0.20f,
+                    bottomAlpha = 0.08f,
+                    baseColor = Color.White,
+                    bottomColor = Color.Black,
+                ),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier =
+                    Modifier
+                        .size(56.dp)
+                        .clip(
+                            if (isArtist) {
+                                CircleShape
+                            } else {
+                                RoundedCornerShape(
+                                    topStart = SettingsDimensions.BadgeCornerRadius,
+                                    bottomStart = SettingsDimensions.BadgeCornerRadius,
+                                )
+                            },
+                        ),
+            )
+            if (isResolving) SpotifySelectionIndicator()
+        }
+        Text(
+            text = title,
+            style =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
+}

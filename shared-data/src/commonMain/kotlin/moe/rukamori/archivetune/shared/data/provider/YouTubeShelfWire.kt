@@ -469,6 +469,8 @@ private fun WireEndpoint?.toKind(): ContentKind? {
     return when {
         browseId.startsWith("MPRE") -> ContentKind.ALBUM
         browseId.startsWith("UC") || browseId.startsWith("FEMC") -> ContentKind.ARTIST
+        // A podcast show arrives playlist-shaped; its own prefix names the show page, not a playlist.
+        isYouTubePodcastShowId(browseId) -> ContentKind.PODCAST
         browseId.startsWith("VL") || browseId.startsWith("PL") || browseId.startsWith("FEmusic") -> ContentKind.PLAYLIST
         else -> null
     }

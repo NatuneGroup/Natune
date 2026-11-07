@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -82,7 +84,10 @@ internal fun ArchiveMiniPlayer(
         // take Space from every focused control inside the strip. The claim is per surface and leaves text fields alone.
         BoxWithConstraints(modifier.fillMaxWidth()) {
             val barWidth = maxWidth
+            // The desktop host draws its own player bar in the shell, so this bar is only ever composed by a phone
+            // host's bottom chrome; a narrow window keeps its compact single row.
             if (!isWideTransportBar(barWidth)) {
+                Column(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -119,6 +124,8 @@ internal fun ArchiveMiniPlayer(
                         size = 36.dp,
                         iconSize = 20.dp,
                     )
+                }
+                MiniPlayerProgressLine(playback, Modifier.fillMaxWidth())
                 }
             } else {
                 Row(
@@ -288,4 +295,26 @@ internal fun ArchiveMiniPlayer(
             }
         }
     }
+}
+
+/**
+ * The position line under the compact bar. A phone bar has no room for a seek slider, so the row above it is paired
+ * with a two-point line, as the reference phone bar does. It is drawn only for a seekable track with a known duration:
+ * a live stream, a preview or an unread native snapshot shows no position this UI did not observe.
+ */
+@Composable
+private fun MiniPlayerProgressLine(playback: PlaybackSnapshot?, modifier: Modifier = Modifier) {
+    val snapshot = playback ?: return
+    val duration = snapshot.durationMs ?: return
+    if (duration <= 0L || !snapshot.isSeekable) return
+    val fraction = (snapshot.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    LinearProgressIndicator(
+        progress = { fraction },
+        modifier = modifier.height(2.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        strokeCap = StrokeCap.Butt,
+        gapSize = 0.dp,
+        drawStopIndicator = {},
+    )
 }

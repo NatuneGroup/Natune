@@ -71,6 +71,7 @@ fun Modifier.glassBorder(
     topAlpha: Float = 0.20f,
     bottomAlpha: Float = 0.04f,
     baseColor: Color = Color.White,
+    bottomColor: Color = baseColor,
 ): Modifier =
     if (baseColor.isSpecified && baseColor != Color.Transparent) {
         border(
@@ -78,7 +79,7 @@ fun Modifier.glassBorder(
             brush =
                 Brush.verticalGradient(
                     0.0f to baseColor.copy(alpha = topAlpha),
-                    1.0f to baseColor.copy(alpha = bottomAlpha),
+                    1.0f to bottomColor.copy(alpha = bottomAlpha),
                 ),
             shape = shape,
         )

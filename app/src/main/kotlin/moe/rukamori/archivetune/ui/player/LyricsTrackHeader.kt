@@ -1,8 +1,6 @@
 package moe.rukamori.archivetune.ui.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,95 +12,109 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ripple
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.MarqueeText
 
 /**
- * The width budget of the lyrics header. The row is one line holding the artwork tile, the track's
- * title and artist, and three 48 dp targets. At fixed sizes that chrome is 302 dp of a 360 dp phone
- * row, so the title and artist were left about six characters — a clipped line of text sitting under
- * the buttons rather than a track title. The artwork therefore gives way with the row while the tap
- * targets stay 48 dp, and the title and artist keep every dp the chrome does not take, so the marquee
- * always has a readable viewport and the two can never overlap the buttons.
+ * The width budget of the lyrics header. The row is one line holding the artwork tile and the track's
+ * title and artist — and nothing else. The close, favourite and lyric-menu controls are not in this
+ * row: they are the sheet's chrome and live in its own row below the transport
+ * (`LyricsScreenFooter`), which is what gives the title the width it needs. Three 48 dp targets in
+ * this row left a phone about 100 dp for a name, and the name is what the row is for.
+ *
+ * What is left is the title/artist column, and a title that does not fit one line is allowed a second
+ * one rather than being cut off (see [LyricsHeaderTitle]); the artwork is a share of the row so a
+ * phone gets a tile that reads as artwork instead of a thumbnail.
  */
 internal object LyricsHeaderMetrics {
     /** The artwork tile's share of the row, clamped so it stays artwork and never a thumbnail. */
-    const val ARTWORK_SHARE = 0.13f
-    const val ARTWORK_MIN_DP = 40f
-    const val ARTWORK_MAX_DP = 72f
+    const val ARTWORK_SHARE = 0.28f
+    const val ARTWORK_MIN_DP = 72f
+    const val ARTWORK_MAX_DP = 104f
 
     /** The gap between the artwork and the title/artist column. */
-    const val ARTWORK_GAP_DP = 10f
+    const val ARTWORK_GAP_DP = 12f
 
-    /** The gap between the title/artist column and the button group. */
-    const val TRACK_GAP_DP = 6f
+    /** This row's end-to-end chrome, in dp, with the title and artist column left out. */
+    const val CHROME_DP = ARTWORK_GAP_DP
 
-    /** One icon button's tap target; the filled circle drawn inside it is smaller. */
-    const val ICON_TARGET_DP = 48f
-
-    /** The gap between two icon buttons: the three of them read as one group at the row's end. */
-    const val BUTTON_GAP_DP = 2f
-
-    /** Close, favourite and overflow: the three controls the lyrics header always carries. */
-    const val BUTTON_COUNT = 3
-
-    /** The header row's end-to-end chrome, in dp, with the title and artist column left out. */
-    const val CHROME_DP =
-        ARTWORK_GAP_DP + TRACK_GAP_DP + ICON_TARGET_DP * BUTTON_COUNT + BUTTON_GAP_DP * (BUTTON_COUNT - 1)
+    /**
+     * The short-window header keeps a tile — the title needs the width — but a tile of a few
+     * hundred dp of sheet height cannot afford 72-104 dp of it. 48-64 dp is still recognisably
+     * artwork, and the gap tightens with it.
+     */
+    const val COMPACT_ARTWORK_SHARE = 0.2f
+    const val COMPACT_ARTWORK_MIN_DP = 48f
+    const val COMPACT_ARTWORK_MAX_DP = 64f
+    const val COMPACT_ARTWORK_GAP_DP = 8f
 
     /** The artwork tile's edge for a row [rowWidthDp] wide. */
-    fun artworkSize(rowWidthDp: Float): Float =
-        (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
+    fun artworkSize(
+        rowWidthDp: Float,
+        compact: Boolean = false,
+    ): Float =
+        if (compact) {
+            (rowWidthDp * COMPACT_ARTWORK_SHARE).coerceIn(
+                COMPACT_ARTWORK_MIN_DP,
+                COMPACT_ARTWORK_MAX_DP,
+            )
+        } else {
+            (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
+        }
 
-    /** The width the title and artist keep once the artwork, its gaps and the buttons are taken out. */
-    fun textWidth(rowWidthDp: Float): Float =
-        (rowWidthDp - artworkSize(rowWidthDp) - CHROME_DP).coerceAtLeast(0f)
+    /** The gap that follows the artwork in a row [compact] tall or not. */
+    fun artworkGapDp(compact: Boolean): Float =
+        if (compact) COMPACT_ARTWORK_GAP_DP else ARTWORK_GAP_DP
+
+    /** The width the title and artist keep once the artwork and its gap are taken out. */
+    fun textWidth(
+        rowWidthDp: Float,
+        compact: Boolean = false,
+    ): Float =
+        (rowWidthDp - artworkSize(rowWidthDp, compact) - artworkGapDp(compact)).coerceAtLeast(0f)
 }
 
 /**
- * The lyrics sheet's header: the track's artwork, its title and artist, and the close, favourite and
- * overflow buttons. The sizes come from [LyricsHeaderMetrics] so the text column is measured against
- * the row's real width instead of against whatever three fixed targets leave over.
+ * The lyrics sheet's header: the track's artwork, its title and artist. The sizes come from
+ * [LyricsHeaderMetrics] so the text column is measured against the row's real width. The sheet's
+ * controls are not drawn here — see `LyricsScreenFooter`. [compact] is the short-window variant:
+ * a smaller tile and a tighter gap, so the list below keeps the room the header would have taken.
  */
 @Composable
 internal fun AppleMusicTrackHeader(
     mediaMetadata: MediaMetadata,
     foregroundColor: Color,
-    onMoreClick: () -> Unit,
-    onDismissClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    isLiked: Boolean = false,
-    onToggleLike: () -> Unit = {},
-    onMorePositioned: ((Rect) -> Unit)? = null,
+    compact: Boolean = false,
 ) {
     val artistText =
         remember(mediaMetadata.id, mediaMetadata.artists) {
             mediaMetadata.artists.joinToString { it.name }
         }
 
-    BoxWithConstraints(modifier.heightIn(min = 72.dp)) {
-        val artworkSize = LyricsHeaderMetrics.artworkSize(maxWidth.value).dp
+    BoxWithConstraints(modifier.heightIn(min = if (compact) 48.dp else 72.dp)) {
+        val artworkSize = LyricsHeaderMetrics.artworkSize(maxWidth.value, compact).dp
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier =
@@ -127,14 +139,14 @@ internal fun AppleMusicTrackHeader(
                 }
             }
 
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.ARTWORK_GAP_DP.dp))
+            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.artworkGapDp(compact).dp))
 
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                MarqueeText(
-                    text = mediaMetadata.title,
+                LyricsHeaderTitle(
+                    title = mediaMetadata.title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = foregroundColor,
                 )
@@ -144,84 +156,46 @@ internal fun AppleMusicTrackHeader(
                     color = foregroundColor.copy(alpha = 0.72f),
                 )
             }
-
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.TRACK_GAP_DP.dp))
-
-            // Close (cross) button: the lyrics sheet is dismissed without the system back gesture.
-            // It sits to the left of the favourite and overflow buttons, as upstream's lyrics bar does.
-            AppleMusicHeaderIconButton(
-                iconRes = R.drawable.close,
-                contentDescription = stringResource(R.string.close),
-                foregroundColor = foregroundColor,
-                onClick = onDismissClick,
-            )
-
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.BUTTON_GAP_DP.dp))
-
-            AppleMusicHeaderIconButton(
-                iconRes = if (isLiked) R.drawable.player_favorite else R.drawable.player_favorite_border,
-                contentDescription = stringResource(
-                    if (isLiked) R.string.action_remove_like else R.string.action_like,
-                ),
-                foregroundColor = foregroundColor,
-                onClick = onToggleLike,
-            )
-
-            Spacer(modifier = Modifier.width(LyricsHeaderMetrics.BUTTON_GAP_DP.dp))
-
-            AppleMusicHeaderIconButton(
-                iconRes = R.drawable.player_more_horiz,
-                contentDescription = stringResource(R.string.more_options),
-                foregroundColor = foregroundColor,
-                onClick = onMoreClick,
-                onPositioned = onMorePositioned,
-            )
         }
     }
 }
 
+/**
+ * The header's title. A title that fits its column keeps the app's one-line marquee; one that does not
+ * is given a second line instead of being cut off at the first — the sheet's text column is narrow by
+ * design, and a track title clipped to a few characters names nothing. The measurement is remembered on
+ * the title, the style and the column width, so a recomposition does not shape the text again.
+ */
 @Composable
-private fun AppleMusicHeaderIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    foregroundColor: Color,
-    onClick: () -> Unit,
-    onPositioned: ((Rect) -> Unit)? = null,
+private fun LyricsHeaderTitle(
+    title: String,
+    style: TextStyle,
+    color: Color,
 ) {
-    val target = LyricsHeaderMetrics.ICON_TARGET_DP.dp
-    Box(
-        modifier =
-            Modifier
-                .size(target)
-                .let { base ->
-                    if (onPositioned != null) {
-                        base.onGloballyPositioned { coords -> onPositioned(coords.boundsInRoot()) }
-                    } else {
-                        base
-                    }
-                }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = false, radius = target / 2),
-                    role = Role.Button,
-                    onClick = onClick,
-                ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(target * 0.75f)
-                    .clip(CircleShape)
-                    .background(foregroundColor.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription,
-                tint = foregroundColor,
-                modifier = Modifier.fillMaxSize(0.61f),
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints {
+        val density = LocalDensity.current
+        val widthPx = with(density) { maxWidth.roundToPx() }
+        // Laid out at the column's width with no line limit: a title that fits stays on one line, and one
+        // that does not reports the extra lines (or the width it could not use) here.
+        val measured =
+            remember(title, style, widthPx) {
+                measurer.measure(
+                    text = AnnotatedString(title),
+                    style = style,
+                    constraints = Constraints(maxWidth = widthPx),
+                )
+            }
+        if (measured.lineCount > 1 || measured.didOverflowWidth) {
+            Text(
+                text = title,
+                style = style,
+                color = color,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
+        } else {
+            MarqueeText(text = title, style = style, color = color)
         }
     }
 }

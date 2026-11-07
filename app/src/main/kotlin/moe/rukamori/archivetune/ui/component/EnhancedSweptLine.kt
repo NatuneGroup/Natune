@@ -253,7 +253,7 @@ private fun DrawScope.drawLiftedWord(
         withTransform({ translate(top = dropPx) }) {
             drawText(layout, color = palette.dim)
             drawIntoCanvas { canvas ->
-                canvas.saveLayer(window.translate(0f, -dropPx), Paint())
+                canvas.saveLayer(window.translate(0f, -dropPx), sweepLayerPaint)
                 drawText(layout, color = palette.bright)
                 val mask =
                     Brush.horizontalGradient(
@@ -297,7 +297,7 @@ private fun DrawScope.drawFeatheredSweep(
     val rects = LyricsSweepGeometry.clipRects(shaped.boxes, shaped.bands, positionMs, shaped.rtl, reduceMotion = false)
     if (rects.isEmpty()) return
     val layout = shaped.layout
-    val earlier = rects.dropLast(1)
+    val earlier = if (rects.size > 1) rects.subList(0, rects.size - 1) else emptyList()
     if (earlier.isNotEmpty()) {
         clipPath(rectPath(earlier)) { drawText(layout, color = palette.bright) }
     }
@@ -309,7 +309,7 @@ private fun DrawScope.drawFeatheredSweep(
     val feather = sweepFeather(box)
     val mask = Brush.horizontalGradient(fadeColors(shaped.rtl), startX = edge - feather, endX = edge + feather)
     drawIntoCanvas { canvas ->
-        canvas.saveLayer(Rect(0f, top, width, top + height), Paint())
+        canvas.saveLayer(Rect(0f, top, width, top + height), sweepLayerPaint)
         clipOutside(holes) { drawText(layout, color = palette.bright) }
         drawRect(brush = mask, topLeft = Offset(0f, top), size = Size(width, height), blendMode = BlendMode.DstIn)
         canvas.restore()
@@ -345,7 +345,7 @@ private fun DrawScope.drawEmphasizedWord(
     if (letterRun == null || letterRun.size != count) {
         clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.dim) }
         drawIntoCanvas { canvas ->
-            canvas.saveLayer(hole, Paint())
+            canvas.saveLayer(hole, sweepLayerPaint)
             clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.bright) }
             val mask = Brush.horizontalGradient(
                 fadeColors(shaped.rtl),
@@ -402,7 +402,7 @@ private fun DrawScope.drawEmphasizedWord(
                     endX = edgeLocal + feather / scale,
                 )
                 drawIntoCanvas { canvas ->
-                    canvas.saveLayer(window, Paint())
+                    canvas.saveLayer(window, sweepLayerPaint)
                     drawText(letter, color = palette.bright, topLeft = Offset(left, seat.top))
                     drawRect(
                         brush = mask,
@@ -472,6 +472,12 @@ private fun rectPath(rects: List<LyricsClipRect>): Path {
     }
     return path
 }
+
+/**
+ * The paint every sweep layer is saved with. It is never mutated, and the sweep draws on the UI thread only, so one
+ * instance serves every frame instead of a fresh [Paint] per saveLayer per frame.
+ */
+private val sweepLayerPaint = Paint()
 
 /** The feather runs toward the sweep's leading edge, so right-to-left text fades in from the other side. */
 private fun fadeColors(rtl: Boolean): List<Color> =

@@ -25,12 +25,18 @@ fun PlaybackSettings(
     deviceMuteSupported: Boolean = true,
     /** A host that shows the equalizer over its own window supplies the command; null keeps the row off the page. */
     onOpenEqualizer: (() -> Unit)? = null,
+    /**
+     * Desktop keeps one shell and one output engine: the queue has its own page, and the rows whose only readers are the
+     * Android service, wakelock, PIP or USB output are not offered. The stored values stay untouched for Android.
+     */
+    desktop: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     SettingsPage(playbackSettingsRows(preferences, bitPerfectSupported, bitPerfectSinkActive,
-        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported, onOpenEqualizer),
+        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported, onOpenEqualizer,
+        desktop),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { if (bitPerfectSinkActive && it.needsBitPerfectSinkRelease()) releaseBitPerfectSink() })
 }
@@ -49,6 +55,8 @@ fun playbackSettingsRows(
     onOpenEqualizer: (() -> Unit)? = null,
     // The retired engine switches are Android-only history; no host renders them, and their stored
     // values stay readable as preset-format input for the unified chain.
+    // Desktop moves the queue to its own page and leaves out the rows whose only readers are Android.
+    desktop: Boolean = false,
 ): List<SettingsRow> = buildList {
     val crossfade = preferences[CrossfadeEnabledKey, false]
     val offload = preferences[AudioOffload, false]
@@ -67,12 +75,17 @@ fun playbackSettingsRows(
     add(SettingsRow.Action("preferred_sources", Res.string.m6_source_settings, { navigate("settings/sources") }))
     add(SettingsRow.Action("lyrics", Res.string.m6_lyrics_settings, { navigate("settings/lyrics") }))
     add(SettingsRow.Toggle("enable_video_playback", Res.string.m6_video_playback, EnableVideoPlaybackKey, false))
-    add(SettingsRow.Toggle("enable_pip_mode", Res.string.m6_pip, EnablePipModeKey, false,
-        enabled = preferences[EnableVideoPlaybackKey, false],
-        description = Res.string.m6_video_required.takeUnless { preferences[EnableVideoPlaybackKey, false] }))
-    add(SettingsRow.Number("history_duration", Res.string.m6_history_duration, HistoryDuration, 30, 1..60,
-        read = { (it[HistoryDuration] ?: it[HISTORY_DURATION_LEGACY_FLOAT_KEY]?.takeIf(Float::isFinite)?.roundToInt() ?: 30).coerceIn(1, 60) },
-        write = { this[HistoryDuration] = it; this[HISTORY_DURATION_LEGACY_FLOAT_KEY] = null }))
+    if (!desktop) {
+        add(SettingsRow.Toggle("enable_pip_mode", Res.string.m6_pip, EnablePipModeKey, false,
+            enabled = preferences[EnableVideoPlaybackKey, false],
+            description = Res.string.m6_video_required.takeUnless { preferences[EnableVideoPlaybackKey, false] }))
+    }
+    // The desktop privacy page owns the history duration, next to the history switches that read it.
+    if (!desktop) {
+        add(SettingsRow.Number("history_duration", Res.string.m6_history_duration, HistoryDuration, 30, 1..60,
+            read = { (it[HistoryDuration] ?: it[HISTORY_DURATION_LEGACY_FLOAT_KEY]?.takeIf(Float::isFinite)?.roundToInt() ?: 30).coerceIn(1, 60) },
+            write = { this[HistoryDuration] = it; this[HISTORY_DURATION_LEGACY_FLOAT_KEY] = null }))
+    }
     add(SettingsRow.Toggle("crossfade", Res.string.m6_crossfade, CrossfadeEnabledKey, false,
         description = Res.string.m6_transition_exclusions,
         write = { setPlaybackOutputPreference(CrossfadeEnabledKey, it) }))
@@ -112,21 +125,25 @@ fun playbackSettingsRows(
     add(SettingsRow.Choice("audio_quality", Res.string.m6_audio_quality, AudioQualityKey, "AUTO", listOf(
         SettingsRow.Option("HIGHEST", Res.string.m6_highest), SettingsRow.Option("HIGH", Res.string.m6_high),
         SettingsRow.Option("AUTO", Res.string.m6_quality_auto), SettingsRow.Option("LOW", Res.string.m6_low))))
-    add(SettingsRow.Toggle("reject_suspected_upscaled_audio", Res.string.m6_reject_upscaled, RejectSuspectedUpscaledAudioKey, false,
-        enabled = !blocked, description = bypassReason, write = { setAuthenticityRejection(it) }))
-    add(SettingsRow.Toggle("audio_offload", Res.string.m6_audio_offload, AudioOffload, false,
-        enabled = !preferences[RejectSuspectedUpscaledAudioKey, false],
-        description = if (preferences[RejectSuspectedUpscaledAudioKey, false])
-            Res.string.m6_offload_unavailable_authenticity else Res.string.m6_offload_exclusions,
-        write = { setPlaybackOutputPreference(AudioOffload, it) }))
-    add(SettingsRow.Toggle("bit_perfect_usb", Res.string.m6_bit_perfect_usb, BitPerfectUsbOutputKey, false,
-        description = Res.string.m6_usb_exclusions,
-        enabled = bitPerfectSupported, read = { bitPerfectSupported && it[BitPerfectUsbOutputKey, false] },
-        write = { setPlaybackOutputPreference(BitPerfectUsbOutputKey, it) }))
-    add(SettingsRow.Toggle("usb_exclusive_audio", Res.string.m6_usb_exclusive, UsbExclusiveAudioKey, false,
-        description = Res.string.m6_usb_exclusions,
-        enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
-        write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
+    // Offload, USB and bit-perfect are the Android engine's routes; this host renders neither, so it offers no switch
+    // that could only write a preference nothing reads. The stored values stay untouched.
+    if (!desktop) {
+        add(SettingsRow.Toggle("reject_suspected_upscaled_audio", Res.string.m6_reject_upscaled, RejectSuspectedUpscaledAudioKey, false,
+            enabled = !blocked, description = bypassReason, write = { setAuthenticityRejection(it) }))
+        add(SettingsRow.Toggle("audio_offload", Res.string.m6_audio_offload, AudioOffload, false,
+            enabled = !preferences[RejectSuspectedUpscaledAudioKey, false],
+            description = if (preferences[RejectSuspectedUpscaledAudioKey, false])
+                Res.string.m6_offload_unavailable_authenticity else Res.string.m6_offload_exclusions,
+            write = { setPlaybackOutputPreference(AudioOffload, it) }))
+        add(SettingsRow.Toggle("bit_perfect_usb", Res.string.m6_bit_perfect_usb, BitPerfectUsbOutputKey, false,
+            description = Res.string.m6_usb_exclusions,
+            enabled = bitPerfectSupported, read = { bitPerfectSupported && it[BitPerfectUsbOutputKey, false] },
+            write = { setPlaybackOutputPreference(BitPerfectUsbOutputKey, it) }))
+        add(SettingsRow.Toggle("usb_exclusive_audio", Res.string.m6_usb_exclusive, UsbExclusiveAudioKey, false,
+            description = Res.string.m6_usb_exclusions,
+            enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
+            write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
+    }
 
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
     if (deviceMuteSupported) {
@@ -134,7 +151,9 @@ fun playbackSettingsRows(
         if (preferences[PauseOnDeviceMuteKey, false])
             add(SettingsRow.Number("device_mute_recovery_volume", Res.string.m6_mute_recovery, DeviceMutePlaybackRecoveryVolumeKey, 0, 0..100))
     }
-    add(SettingsRow.Toggle("bluetooth_auto_start", Res.string.m6_bluetooth_start, AutoStartOnBluetoothKey, false))
+    if (!desktop) {
+        add(SettingsRow.Toggle("bluetooth_auto_start", Res.string.m6_bluetooth_start, AutoStartOnBluetoothKey, false))
+    }
     add(SettingsRow.Action("archive_tune_canvas", Res.string.m6_canvas_settings, { navigate("settings/canvas") }))
     add(SettingsRow.Toggle("spotify_canvas", Res.string.m6_spotify_canvas, SpotifyCanvasKey, false))
     if (preferences[SpotifyCanvasKey, false]) add(SettingsRow.Text("canvas_resolvers", Res.string.m6_canvas_resolvers,
@@ -143,18 +162,22 @@ fun playbackSettingsRows(
     add(SettingsRow.Toggle("tidal_artwork_fallback", Res.string.m6_tidal_artwork, TidalArtworkFallbackEnabledKey, false,
         enabled = preferences[TidalEnabledKey, true]))
     add(SettingsRow.Action("artwork_priority", Res.string.m6_artwork_priority, arrangeArtworkProviders))
-    add(SettingsRow.Toggle("persistent_queue", Res.string.m6_persistent_queue, PersistentQueueKey, true))
-    add(SettingsRow.Toggle("infinite_queue", Res.string.queue_infinite, AutoLoadMoreKey, true,
-        description = Res.string.queue_infinite_description))
-    add(SettingsRow.Toggle("permanent_shuffle", Res.string.m6_permanent_shuffle, PermanentShuffleKey, false))
-    add(SettingsRow.Toggle("swipe_up_queue", Res.string.m6_swipe_queue, SwipeUpToOpenQueueKey, true))
-    add(SettingsRow.Toggle("queue_after_manual", Res.string.m6_queue_manual, QueueAddAfterManualKey, true))
-    add(SettingsRow.Toggle("swipe_to_song", Res.string.m6_swipe_song, SwipeToSongKey, true))
-    add(SettingsRow.Toggle("enable_swipe_thumbnail", Res.string.m6_swipe_thumbnail, SwipeThumbnailKey, true))
-    add(SettingsRow.Decimal("swipe_sensitivity", Res.string.m6_swipe_sensitivity, SwipeSensitivityKey, .73f, 0f..1f))
+    if (desktop) {
+        // The queue rows live on their own page, as in Metrolist's Player and audio page.
+        add(SettingsRow.Action("queue_page", Res.string.m6_settings_desktop_queue, { navigate(DesktopQueueRoute) },
+            description = Res.string.m6_settings_desktop_queue_desc))
+    } else {
+        addAll(queueSettingsRows())
+        add(SettingsRow.Toggle("swipe_up_queue", Res.string.m6_swipe_queue, SwipeUpToOpenQueueKey, true))
+        add(SettingsRow.Toggle("swipe_to_song", Res.string.m6_swipe_song, SwipeToSongKey, true))
+        add(SettingsRow.Toggle("enable_swipe_thumbnail", Res.string.m6_swipe_thumbnail, SwipeThumbnailKey, true))
+        add(SettingsRow.Decimal("swipe_sensitivity", Res.string.m6_swipe_sensitivity, SwipeSensitivityKey, .73f, 0f..1f))
+    }
     add(SettingsRow.Toggle("auto_skip_error", Res.string.m6_skip_error, AutoSkipNextOnErrorKey, false))
-    add(SettingsRow.Toggle("stop_task_clear", Res.string.m6_stop_task, StopMusicOnTaskClearKey, false))
-    add(SettingsRow.Toggle("wakelock", Res.string.m6_wakelock, WakelockKey, false))
+    if (!desktop) {
+        add(SettingsRow.Toggle("stop_task_clear", Res.string.m6_stop_task, StopMusicOnTaskClearKey, false))
+        add(SettingsRow.Toggle("wakelock", Res.string.m6_wakelock, WakelockKey, false))
+    }
     add(SettingsRow.Text("artist_separators", Res.string.m6_artist_separators, ArtistSeparatorsKey, default = ",;/&"))
     add(SettingsRow.Action("manage_playlist_tags", Res.string.m6_playlist_tags, managePlaylistTags))
 }

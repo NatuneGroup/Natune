@@ -90,6 +90,7 @@ import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
 import moe.rukamori.archivetune.constants.PermanentShuffleKey
 import moe.rukamori.archivetune.constants.PersistentQueueKey
 import moe.rukamori.archivetune.constants.SeekExtraSeconds
+import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
@@ -102,8 +103,6 @@ import moe.rukamori.archivetune.constants.SwipeToSongKey
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.constants.SwipeThumbnailKey
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
-import moe.rukamori.archivetune.constants.TidalArtworkFallbackEnabledKey
-import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.WakelockKey
 import moe.rukamori.archivetune.ui.component.ArtistSeparatorsDialog
 import moe.rukamori.archivetune.ui.component.CrossfadeSliderPreference
@@ -208,6 +207,11 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     }
     val usbExclusiveSupported = usbExclusiveAvailability != false
 
+    val (showCodecOnPlayer, onShowCodecOnPlayerChange) =
+        prefs.state(
+            ShowCodecOnPlayerKey,
+            defaultValue = true,
+        )
     val (seekExtraSeconds, onSeekExtraSeconds) =
         prefs.state(
             SeekExtraSeconds,
@@ -302,20 +306,6 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             CanvasResolverEndpointsKey,
             defaultValue = "",
         )
-    val (tidalEnabled, _) =
-        prefs.state(
-            TidalEnabledKey,
-            defaultValue = true,
-        )
-    // The Tidal artwork toggle defaults to false so users do not get unexpected Tidal network
-    // traffic; DataStore only stores values the user explicitly changed, so an explicit choice
-    // is preserved either way.
-    val (tidalArtworkEnabled, onTidalArtworkEnabledChange) =
-        prefs.state(
-            TidalArtworkFallbackEnabledKey,
-            defaultValue = false,
-        )
-
     // Artwork provider priority order. The user can rearrange the order in which artwork
     // providers are tried — whichever is on top gets the most priority. If the top provider
     // has no artwork for the current song, the resolver falls back to the next one, and so on.
@@ -494,6 +484,17 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 modifier = positions.modifierFor("low_data_mode"),
                 title = playerTitle,
             ) {
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("show_codec_on_player"),
+                        title = { Text(stringResource(R.string.display_codec_on_player)) },
+                        description = stringResource(R.string.description_display_codec_on_player),
+                        icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                        checked = showCodecOnPlayer,
+                        onCheckedChange = onShowCodecOnPlayerChange,
+                    )
+                }
+
                 item {
                     Column(modifier = positions.modifierFor("history_duration")) {
                         SliderPreference(
@@ -912,26 +913,6 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                     ),
                                 )
                             },
-                        )
-                    }
-                }
-
-                item {
-                    Column(modifier = positions.modifierFor("tidal_artwork_fallback")) {
-                        SwitchPreference(
-                            title = { Text(stringResource(R.string.tidal_artwork_fallback)) },
-                            description =
-                                stringResource(
-                                    if (tidalEnabled) {
-                                        R.string.tidal_artwork_fallback_description
-                                    } else {
-                                        R.string.tidal_artwork_fallback_unavailable
-                                    },
-                                ),
-                            icon = { Icon(painterResource(R.drawable.image), null) },
-                            checked = tidalArtworkEnabled,
-                            onCheckedChange = onTidalArtworkEnabledChange,
-                            isEnabled = tidalEnabled,
                         )
                     }
                 }

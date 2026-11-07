@@ -21,7 +21,6 @@ import kotlinx.io.readByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -37,6 +36,7 @@ class DeezerInstanceResolver(
     private val poolEnabled: () -> Boolean = { false },
     private val sourceProviderUrl: () -> String = { "" },
     private val sourceProviderKey: () -> String = { "" },
+    discoveryStore: PoolDiscoveryStore = NoPoolDiscoveryStore,
 ) {
     data class Stream(
         val url: String,
@@ -55,8 +55,18 @@ class DeezerInstanceResolver(
     @Volatile
     private var discovered: List<String> = emptyList()
 
-    @Volatile
-    private var discoveredAt = 0L
+    /** Six-hour jittered cadence, persisted list, ETag revalidation and refusal backoff. */
+    private val discoveryFeed =
+        PoolDiscoveryFeed(
+            service = "deezer",
+            nowMs = nowMs,
+            candidateFeeds = ::poolFeedUrls,
+            request = { url, headers -> exchange(url, HEALTH_TIMEOUT_MS, emptyList(), headers).toPoolResponse() },
+            parse = { body -> PoolDiscoveryPayload.urls(body) },
+            enabled = poolEnabled,
+            readKey = sourceProviderKey,
+            store = discoveryStore,
+        )
 
     private val cooldownUntil = mutableMapOf<String, Long>()
     private val workingShape = mutableMapOf<String, Shape>()
@@ -76,9 +86,9 @@ class DeezerInstanceResolver(
         userInstances = instances.mapNotNull(::normalize).distinct()
     }
 
-    fun invalidatePoolInstancesCache() {
+    suspend fun invalidatePoolInstancesCache() {
         discovered = emptyList()
-        discoveredAt = 0L
+        discoveryFeed.forget()
     }
 
     /**
@@ -86,8 +96,7 @@ class DeezerInstanceResolver(
      * cached pool entries, and a configured pool whose feed has not been fetched yet.
      */
     fun hasInstances(): Boolean =
-        userInstances.isNotEmpty() ||
-            (poolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrls().isNotEmpty())
+        userInstances.isNotEmpty() || (poolEnabled() && poolFeedUrls().isNotEmpty())
 
     suspend fun instances(): List<String> {
         val pool = if (poolEnabled()) discoverIfStale() else emptyList()
@@ -212,61 +221,13 @@ class DeezerInstanceResolver(
     private fun poolFeedUrls(): List<String> =
         ArchivePoolEndpoints.candidates(sourceProviderUrl()).map { "$it/api/instances/deezer" }
 
-    /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
+    /** The persisted/feed answer; a failed fetch keeps the previous list. Never throws. */
     private suspend fun discoverIfStale(): List<String> {
         if (!poolEnabled()) return emptyList()
-        val now = nowMs()
-        if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
-        val fetched =
-            runCatching {
-                val headers =
-                    sourceProviderKey()
-                        .takeIf { it.isNotBlank() }
-                        ?.let { mapOf("Authorization" to "Bearer $it") }
-                        ?: emptyMap()
-                for (url in poolFeedUrls()) {
-                    val reply =
-                        try {
-                            exchange(url, HEALTH_TIMEOUT_MS, emptyList(), headers)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: Exception) {
-                            continue
-                        }
-                    if (!poolEnabled()) return@runCatching emptyList()
-                    if (ArchivePoolEndpoints.isFailoverStatus(reply.status)) continue
-                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
-                    if (reply.status !in 200..299) return@runCatching emptyList()
-                    return@runCatching parseDiscovered(reply.body)
-                }
-                emptyList()
-            }.getOrElse {
-                if (it is CancellationException) throw it
-                emptyList()
-            }
-        if (fetched.isNotEmpty()) {
-            discovered = fetched
-        }
-        discoveredAt = nowMs()
+        val result = discoveryFeed.instances().mapNotNull(::normalize).distinct()
+        if (!poolEnabled()) return emptyList()
+        if (result.isNotEmpty()) discovered = result
         return discovered
-    }
-
-    /** Parses `{ "streaming": [...], "api": [...] }` — strings or `{url,baseUrl}` objects. */
-    private fun parseDiscovered(body: String): List<String> {
-        val root = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return emptyList()
-        val out = LinkedHashSet<String>()
-        for (key in listOf("streaming", "api")) {
-            val arr = root.array(key) ?: continue
-            for (item in arr) {
-                val value =
-                    when (item) {
-                        is JsonObject -> item.stringOrNull("url") ?: item.stringOrNull("baseUrl")
-                        else -> item.jsonPrimitive.content.takeIf { it.isNotBlank() && it != "null" }
-                    }
-                value?.let(::normalize)?.let(out::add)
-            }
-        }
-        return out.toList()
     }
 
     // region HTTP plumbing
@@ -275,7 +236,11 @@ class DeezerInstanceResolver(
         val body: String,
         val contentLength: Long?,
         val contentRange: String?,
-    )
+        val retryAfter: String? = null,
+        val etag: String? = null,
+    ) {
+        fun toPoolResponse(): PoolResponse = PoolResponse(status, body, PoolResponse.retryAfterMs(retryAfter), etag)
+    }
 
     private class HeadBytes(
         val status: Int,
@@ -303,6 +268,8 @@ class DeezerInstanceResolver(
                     body = response.bodyAsText(),
                     contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull(),
                     contentRange = response.headers[HttpHeaders.ContentRange],
+                    retryAfter = response.headers[HttpHeaders.RetryAfter],
+                    etag = response.headers["ETag"],
                 )
             }
         } ?: throw ProviderRequestTimeout()
@@ -336,7 +303,6 @@ class DeezerInstanceResolver(
         (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
 
     private companion object {
-        private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L
         private const val FAILURE_COOLDOWN_MS = 10 * 60 * 1000L
         private const val HEALTH_TIMEOUT_MS = 6_000L
         private const val USER_AGENT = "ArchiveTune-Android"

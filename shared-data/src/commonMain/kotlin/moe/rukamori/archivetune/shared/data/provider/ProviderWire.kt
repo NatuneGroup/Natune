@@ -100,7 +100,7 @@ internal class ProviderHttp(client: HttpClient) {
                 if (body != null) { contentType(ContentType.Application.Json); setBody(body.toString()) }
             }.execute { response ->
                 ProviderReply(response.status.value, response.readBoundedText(2 * 1024 * 1024),
-                    response.headers[HttpHeaders.RetryAfter])
+                    response.headers[HttpHeaders.RetryAfter], response.headers["ETag"])
             }
         } catch (cancel: CancellationException) { throw cancel }
         catch (failure: ProviderHttpFailure) { throw failure }
@@ -139,7 +139,10 @@ internal class ProviderHttp(client: HttpClient) {
     }
 }
 internal data class AudioProbe(val mime: String, val length: Long?, val sampleRate: Int?, val bitDepth: Int?)
-internal class ProviderReply(val status: Int, val body: String, val retryAfter: String?)
+internal class ProviderReply(val status: Int, val body: String, val retryAfter: String?, val etag: String? = null) {
+    /** The same answer with the two pool headers the discovery/feed client acts on decoded. */
+    fun toPoolResponse(): PoolResponse = PoolResponse(status, body, PoolResponse.retryAfterMs(retryAfter), etag)
+}
 
 data class ProviderTrackPage(val tracks: List<ProviderTrack>, val total: Long?, val hasMore: Boolean? = null)
 

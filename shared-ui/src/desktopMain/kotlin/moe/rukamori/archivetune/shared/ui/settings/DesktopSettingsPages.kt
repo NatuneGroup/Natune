@@ -110,6 +110,12 @@ private val countryOptions: List<Pair<String, String>> by lazy {
         Locale.getISOCountries().sorted().map { code -> code to Locale("", code).displayCountry }
 }
 
+/**
+ * Settings > Content on this host. Every filter is read by the desktop content policy or the desktop resolver, so no
+ * row writes a preference nothing consults: the catalogue language and country shape browse, hiding explicit content and
+ * video songs filters search and library lists, and age-restricted playback decides whether the resolver may ask for
+ * age-gate bypass clients.
+ */
 @Composable
 fun ContentSettings(
     controller: SettingsController,
@@ -133,6 +139,8 @@ fun ContentSettings(
                 }
             },
             SettingsRow.Toggle("hide_explicit", Res.string.m6_hide_explicit, HideExplicitKey, false),
+            SettingsRow.Toggle("hide_video", Res.string.m6_hide_video, HideVideoKey, false),
+            SettingsRow.Toggle("allow_age_restricted", Res.string.m6_allow_age_restricted, AllowAgeRestrictedKey, false),
         ),
         preferences = preferences,
         controller = controller,

@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.marquee.SettingsMarqueeText
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
+import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -47,6 +49,8 @@ fun SettingsPage(
     val scope = rememberCoroutineScope()
     val latestCommitted by rememberUpdatedState(onCommitted)
     val listState = rememberLazyListState()
+    // A host without a consumer for a row omits it; the stored preference and its anchor remain untouched.
+    val pageRows = rows.withoutUnsupportedRows(LocalUnsupportedSettingsAnchors.current)
     var editing by remember { mutableStateOf<String?>(null) }
     fun commit(change: PreferenceEditor.() -> Unit) {
         scope.launch {
@@ -55,8 +59,8 @@ fun SettingsPage(
             catch (_: Exception) { onFailure() }
         }
     }
-    LaunchedEffect(scrollTo, rows.map { it.anchor }) {
-        val index = rows.indexOfFirst { it.anchor == scrollTo }
+    LaunchedEffect(scrollTo, pageRows.map { it.anchor }) {
+        val index = pageRows.indexOfFirst { it.anchor == scrollTo }
         if (index >= 0) listState.scrollToItem(leadingItemCount + index)
     }
     val back = LocalSettingsBack.current
@@ -65,7 +69,7 @@ fun SettingsPage(
         if (back != null) SettingsBackHeader(back)
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
             leadingItems()
-            itemsIndexed(rows, key = { _, row -> row.anchor }) { index, row ->
+            itemsIndexed(pageRows, key = { _, row -> row.anchor }) { index, row ->
                 if (row is SettingsRow.Custom) {
                     row.content()
                     return@itemsIndexed
@@ -73,7 +77,8 @@ fun SettingsPage(
                 if (row is SettingsRow.Header) {
                     Text(
                         stringResource(row.title),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = if (LocalDesktopLayout.current) DesktopType.sectionTitle()
+                        else MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.testTag("setting:${row.anchor}")
                             .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp),
@@ -145,7 +150,7 @@ fun SettingsPage(
         }
     }
     // Re-resolve the active row so a style/capability change cannot leave a stale enabled dialog.
-    val row = rows.firstOrNull { it.anchor == editing && it.enabled }
+    val row = pageRows.firstOrNull { it.anchor == editing && it.enabled }
     LaunchedEffect(editing, row != null) { if (editing != null && row == null) editing = null }
     if (row is SettingsRow.Choice) {
         AlertDialog(

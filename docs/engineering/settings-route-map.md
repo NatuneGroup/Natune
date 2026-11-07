@@ -16,11 +16,11 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/hidden_playlists` | ✓ | ✓ | ✓ | D/iOS: lists hidden local playlists with Unhide over the shared library; the desktop Library always leaves them out, and the Playlists page leaves them out until its Show hidden toggle is on, as Android does |
 | `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS opens its own dialogs for the same four preferences |
 | `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
-| `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
+| `settings/appearance/player` | ✓ | — | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`); desktop does not mount it — the merged Appearance page already carries the player rows, so the alias would be a second entry to the same page |
 | `settings/appearance/interface` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_interface` (or its `scrollTo`) |
 | `settings/appearance/extras` | ✓ | ✓ | ✓ | |
 | `settings/appearance/lyrics_animations` | ✓ | ✓ | ✓ | |
-| `settings/appearance/navigation_bar` | ✓ | ✓ | ✓ | shared page hoisted from the iOS rows; the Liquid Glass and frosted rows report why they are disabled on each host |
+| `settings/appearance/navigation_bar` | ✓ | — | ✓ | shared page hoisted from the iOS rows; the Liquid Glass and frosted rows report why they are disabled on each host. Desktop does not mount it: the window has one fixed rail, and the stored nav-style keys are ignored there instead of being rewritten |
 | `settings/appearance/liquid_glass` | ✓ | ✓ | ✓ | shared tuning page over the same persisted keys; rows explain the off state (blur off, no refraction renderer, master switch off) |
 | `settings/appearance/aod_customized` | ✓ | — | ✓ | iOS mounts the shared AOD rows plus an honest note that this host has no such display; desktop keeps the route unmounted |
 | `settings/appearance/icon` | ✓ | — | — | launcher icon switcher, Android-only; the iOS route resolves to the honest unavailable page |
@@ -32,7 +32,8 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
 | `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; desktop installs and removes a user-chosen SpatialFlow TTF (no pinned download on desktop) and the SpatialFlow title uses it once installed; the on-device render is not verified yet; iOS reports the SpatialFlow font unavailable (no host font consumer) |
 | `settings/internet` | ✓ | ✓ | ✓ | iOS: the saved static proxy (HTTP or SOCKS, address and credentials) applies at launch to the session graph's Darwin engine and the uploads client, and a saved edit applies next launch; rotation is hidden (one `NSURLSession` per engine), DNS-over-HTTPS, the YouTube region and the stream bypass switch are hidden because no iOS path applies them, and the page states the limits |
-| `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported; the playlist-tag row opens `library/tags`, the real tag manager on iOS |
+| `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported; the playlist-tag row opens `library/tags`, the real tag manager on iOS. Desktop leaves out the rows whose only readers are the Android service, wakelock, PIP, metered or USB output, and moves the queue rows to `settings/player/queue` |
+| `settings/player/queue` | — | ✓ | — | desktop-only queue page: persistent queue, infinite queue, permanent shuffle, add-after-manual and the duplicate guard the desktop queue owner already reads |
 | `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (Python/yt-dlp absent on iOS by design) |
 | `settings/canvas` | ✓ | ✓ | ✓ | iOS: connectivity + provider probes and a real canvas store (bytes, cache limit, clear) |
 | `settings/sources` | ✓ | ✓ | ✓ | iOS: per-source reachability probes; Spotify reports unreachable because the host has no streaming transport |

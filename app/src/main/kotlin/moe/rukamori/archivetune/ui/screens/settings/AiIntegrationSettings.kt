@@ -115,12 +115,14 @@ import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.DeeplApiKeyKey
 import moe.rukamori.archivetune.constants.DeeplFormalityKey
-import moe.rukamori.archivetune.constants.HideAiMixKey
 import moe.rukamori.archivetune.constants.OpenRouterApiKeyKey
 import moe.rukamori.archivetune.constants.OpenRouterBaseUrlKey
 import moe.rukamori.archivetune.constants.OpenRouterModelKey
 import moe.rukamori.archivetune.constants.TranslateModeKey
 import moe.rukamori.archivetune.constants.TranslateLanguageKey
+import moe.rukamori.archivetune.constants.EnableTranslatorKey
+import moe.rukamori.archivetune.constants.TranslatorContextsKey
+import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EditTextPreference
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -150,7 +152,6 @@ fun AiIntegrationSettings(
         prefs.enumState(AiApiValidationStatusKey, AiApiValidationStatus.UNKNOWN)
     val (selectedModel, setSelectedModel) = prefs.state(AiSelectedModelKey, "")
     val (customModel, setCustomModel) = prefs.state(AiCustomModelKey, "")
-    val (hideAiMix, onHideAiMixChange) = prefs.state(HideAiMixKey, defaultValue = false)
     val (autoTranslateLyrics, onAutoTranslateLyricsChange) =
         prefs.state(AutoTranslateLyricsKey, defaultValue = false)
     // DeepL / OpenRouter / Mistral-specific preferences (ported from vivi-music).
@@ -160,7 +161,21 @@ fun AiIntegrationSettings(
     val (openRouterBaseUrl, setOpenRouterBaseUrl) = prefs.state(OpenRouterBaseUrlKey, "")
     val (openRouterModel, setOpenRouterModel) = prefs.state(OpenRouterModelKey, "openai/gpt-4o-mini")
     val (translateMode, setTranslateMode) = prefs.state(TranslateModeKey, "translate")
-    val (translateLanguage, setTranslateLanguage) = prefs.state(TranslateLanguageKey, "en")
+    // The manual presence translator moved here from the Discord experiments. TranslatorTargetLangKey is the live
+    // key (lyrics and Discord read it); TranslateLanguageKey is the old AI-page picker, kept as a read fallback and
+    // written alongside so an existing choice survives the merge.
+    val (translatorEnabled, onTranslatorEnabledChange) = prefs.state(EnableTranslatorKey, defaultValue = false)
+    val (translatorContexts, onTranslatorContextsChange) =
+        prefs.state(TranslatorContextsKey, defaultValue = "{song}, {artist}, {album}")
+    val (storedTranslatorTarget, setTranslatorTarget) = prefs.state(TranslatorTargetLangKey, "")
+    val (legacyTranslateLanguage, setTranslateLanguage) = prefs.state(TranslateLanguageKey, "")
+    val effectiveTranslatorTarget =
+        translatorTargetLanguage(storedTranslatorTarget, legacyTranslateLanguage)
+    val onTranslatorTargetLanguageChange: (String) -> Unit = { language ->
+        setTranslatorTarget(language)
+        setTranslateLanguage(language)
+    }
+    val translatorLanguages = remember(context) { TranslatorLanguages.load(context) }
     var showDeeplKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenRouterKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenRouterModelDialog by rememberSaveable { mutableStateOf(false) }
@@ -177,7 +192,6 @@ fun AiIntegrationSettings(
     var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showDeeplFormalityDialog by rememberSaveable { mutableStateOf(false) }
     var showTranslateModeDialog by rememberSaveable { mutableStateOf(false) }
-    var showTranslateLanguageDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { message ->
@@ -317,31 +331,6 @@ fun AiIntegrationSettings(
         }
     }
 
-    if (showTranslateLanguageDialog) {
-        var langField by remember { mutableStateOf(translateLanguage) }
-        DefaultDialog(
-            onDismiss = { showTranslateLanguageDialog = false },
-            title = { Text(stringResource(R.string.translate_language)) },
-            buttons = {
-                TextButton(onClick = { showTranslateLanguageDialog = false }) { Text(stringResource(R.string.cancel)) }
-                TextButton(
-                    onClick = {
-                        setTranslateLanguage(langField.trim())
-                        showTranslateLanguageDialog = false
-                    },
-                    enabled = langField.isNotBlank(),
-                ) { Text(stringResource(R.string.save)) }
-            },
-        ) {
-            OutlinedTextField(
-                value = langField,
-                onValueChange = { langField = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.translate_language_hint)) },
-            )
-        }
-    }
-
     // Mini-player aware bottom padding — keeps the last settings row from being
     // covered by the persistent mini player when a song is loaded. Other settings
     // screens (e.g. NavigationBarSettings) use the same pattern.
@@ -358,6 +347,7 @@ fun AiIntegrationSettings(
     // opening transition.
     val aiProviderSettingsTitle = stringResource(R.string.ai_provider_settings)
     val aiTranslationSettingsTitle = stringResource(R.string.ai_translation_settings)
+    val translatorOptionsTitle = stringResource(R.string.translator_options)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
@@ -579,17 +569,6 @@ fun AiIntegrationSettings(
 
             item {
                 SwitchPreference(
-                    modifier = positions.modifierFor("hide_ai_mix"),
-                    title = { Text(stringResource(R.string.hide_ai_mix)) },
-                    description = stringResource(R.string.hide_ai_mix_desc),
-                    icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
-                    checked = hideAiMix,
-                    onCheckedChange = onHideAiMixChange,
-                )
-            }
-
-            item {
-                SwitchPreference(
                     modifier = positions.modifierFor("auto_translate_lyrics"),
                     title = { Text(stringResource(R.string.auto_translate_lyrics)) },
                     description = stringResource(R.string.auto_translate_lyrics_desc),
@@ -751,16 +730,6 @@ fun AiIntegrationSettings(
                         )
                     }
                 }
-                // Translation target language + mode shared by DeepL/OpenRouter/Mistral.
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("translate_language"),
-                        title = { Text(stringResource(R.string.translate_language)) },
-                        description = translateLanguage,
-                        icon = { Icon(painterResource(R.drawable.translate), null) },
-                        onClick = { showTranslateLanguageDialog = true },
-                    )
-                }
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("translate_mode"),
@@ -771,6 +740,22 @@ fun AiIntegrationSettings(
                     )
                 }
             }
+        }
+
+        // The manual presence translator is independent of the AI chat/translation provider, so it stays reachable on
+        // a default install (AiProvider.NONE) as well as with DeepL/OpenRouter/Mistral selected.
+        preferenceGroup(title = translatorOptionsTitle) {
+            translatorSettingsRows(
+                positions = positions,
+                enabled = translatorEnabled,
+                onEnabledChange = onTranslatorEnabledChange,
+                contexts = translatorContexts,
+                onContextsChange = onTranslatorContextsChange,
+                targetLanguage = effectiveTranslatorTarget,
+                languageCodes = translatorLanguages.map { it.code },
+                languageNames = translatorLanguages.associate { it.code to it.name },
+                onTargetLanguageChange = onTranslatorTargetLanguageChange,
+            )
         }
     }
 
@@ -1222,3 +1207,12 @@ private fun ExcludedLanguagesDialog(
         }
     }
 }
+
+/** Keeps an existing AI-page target choice readable after the merge, without touching the live translator key. */
+internal fun translatorTargetLanguage(
+    storedTarget: String?,
+    legacyTranslateLanguage: String?,
+): String =
+    storedTarget?.takeIf(String::isNotBlank)
+        ?: legacyTranslateLanguage?.takeIf(String::isNotBlank)
+        ?: "ENGLISH"
