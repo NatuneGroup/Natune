@@ -94,8 +94,9 @@ fun HomePageHeader(
                 headerActions()
             }
         } else {
-            // No page title on desktop, but the host's destination menu must stay reachable.
-            Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xxs), horizontalArrangement = Arrangement.End) {
+            // No page title on desktop, but the host's destination menu must stay reachable. The row carries no vertical
+            // padding of its own: the desktop feed's budget above the first sleeve is spent on content, not on chrome.
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm), horizontalArrangement = Arrangement.End) {
                 headerActions()
             }
         }
@@ -156,9 +157,11 @@ fun HomeScreen(
         // The desktop feed reads denser than the phone carousel: larger sleeves and a tighter section rhythm, while the
         // phone composition below is byte-for-byte the same arrangement it had before.
         val cardWidth = if (desktop) desktopHomeCardWidth(maxWidth) else HomeShelfCardWidth
+        // The desktop feed is measured against the reference's first-sleeve budget: four dp between sections instead of
+        // the phone's eighteen leaves the third shelf above the player bar on a 1430 x 861 window.
         val sectionSpacing = when {
             design == HomeFeedDesign.BitChord -> 26.dp
-            desktop -> Space.xs
+            desktop -> Space.xxs
             else -> 18.dp
         }
         CompositionLocalProvider(LocalHomeShelfCardWidth provides cardWidth) {
