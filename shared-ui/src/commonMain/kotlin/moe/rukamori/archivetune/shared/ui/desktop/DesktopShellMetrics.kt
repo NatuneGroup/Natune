@@ -6,7 +6,7 @@ import kotlin.math.max
 
 /**
  * The desktop shell's geometry, taken from the reference desktop app so the window reads as one product on every
- * monitor: the labelled rail, the 48 dp title bar, the 88 dp player bar under both, and the 360 dp side panes.
+ * monitor: the labelled rail, the 56 dp top bar, the 72 dp player bar under both, and the 360 dp side panes.
  *
  * The numbers are plain dp, not adaptive elevations, because the whole window is measured here: the shell decides
  * which column exists, and the pages below only lay out inside the width it reports through `BoxWithConstraints`.
@@ -19,30 +19,38 @@ object DesktopShellMetrics {
     val railItemCorner = 16.dp
     val railItemIcon = 22.dp
 
-    /** The window's own top strip: search and window buttons, above the rail and the page. */
-    val titleBarHeight = 48.dp
+    /**
+     * The window's own top band: the app mark, the window buttons and the search, above the rail and the page.
+     *
+     * It is one band, not a caption strip above a search row: the platforms that paint their own caption supply their
+     * window buttons inline ([LocalDesktopWindowControls]) and the reference app's top bar is a single 56 dp row.
+     */
+    val titleBarHeight = 56.dp
     val titleBarPadding = 8.dp
     val titleBarSearchGap = 4.dp
     val searchFieldHeight = 36.dp
     /** Below this window width the search field takes its narrow size instead of the wide one. */
     val searchTightWindowWidth = 960.dp
     val searchFieldNarrowWidth = 280.dp
-    val searchFieldWideWidth = 420.dp
+    /** The reference app's search measure, which leaves the bar's ends for the mark and the window buttons. */
+    val searchFieldWideWidth = 390.dp
     /**
      * The rail toggle's touch target in the title bar: the 48 dp interactive minimum of its icon button. The Windows
      * frame publishes it as a client region, so the click reaches Compose instead of dragging the window.
      */
     val titleBarRailToggleWidth = 48.dp
 
-    /** Linux and the Windows fallback paint their own caption strip; Windows' native frame is 48 dp in total. */
-    val captionHeight = 32.dp
+    /** The caption buttons the app draws itself, inside the top band on Linux and the Windows custom frame. */
     val captionButtonWidth = 46.dp
     val captionButtonHeight = 32.dp
 
-    /** The bottom player: one full-window row with the seek track above the transport row. */
-    val playerBarHeight = 88.dp
-    val playerSeekTrackHeight = 16.dp
-    val playerControlsHeight = 72.dp
+    /**
+     * The bottom player: the reference app's 72 dp strip, one full-window row with a slim seek track above the transport.
+     * The seek is a 6 dp band so it stays draggable with a pointer, and the transport keeps the rest.
+     */
+    val playerBarHeight = 72.dp
+    val playerSeekTrackHeight = 6.dp
+    val playerControlsHeight = 66.dp
     val playerArtworkSize = 44.dp
     val playerVolumeWidth = 88.dp
 
@@ -65,14 +73,34 @@ object DesktopShellMetrics {
 
     /** The expanded player: artwork and controls beside the lyrics, capped so a 4K window does not stretch them. */
     val expandedPlayerMaxWidth = 1800.dp
+    /**
+     * The expanded player's content column, as the reference app measures it: a fixed 648 dp measure with the 392 dp
+     * artwork on it. The lyrics take the rest of the row instead of the two panes splitting it half and half, so the
+     * column keeps its measure at every window width the two-column layout fits.
+     */
+    val expandedPlayerColumnWidth = 648.dp
     val expandedArtworkMin = 320.dp
-    val expandedArtworkMax = 560.dp
+    val expandedArtworkMax = 392.dp
+    /** The lyrics column never narrows below this, or the sung lines wrap on every word. */
+    val expandedLyricsMinWidth = 280.dp
     val expandedPlayerPadding = 32.dp
     /** Below this height the expanded player stacks in a scrollable column instead of two side-by-side columns. */
     val expandedTwoColumnMinHeight = 560.dp
 
     /** A short window keeps its page and shows panes over it instead of beside it. */
     val paneDockMinHeight = 480.dp
+}
+
+/**
+ * The expanded player's own column for the width it shares with the lyrics: the reference 648 dp measure, narrowed only
+ * when the window cannot carry both the measure and [DesktopShellMetrics.expandedLyricsMinWidth].
+ */
+fun desktopExpandedPlayerColumnWidth(contentWidth: Dp): Dp {
+    val room = contentWidth.value - DesktopShellMetrics.expandedPlayerPadding.value -
+        DesktopShellMetrics.expandedLyricsMinWidth.value
+    return minOf(DesktopShellMetrics.expandedPlayerColumnWidth.value, room)
+        .coerceAtLeast(DesktopShellMetrics.expandedArtworkMin.value)
+        .dp
 }
 
 /**

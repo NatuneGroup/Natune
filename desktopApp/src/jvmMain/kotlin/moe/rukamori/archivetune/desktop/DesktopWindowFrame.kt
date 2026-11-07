@@ -5,7 +5,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -42,6 +40,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.desktopSystemWindowFrame
 import moe.rukamori.archivetune.shared.ui.desktop.DesktopShellMetrics
 import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopWindowControls
+import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopWindowDrag
 import moe.rukamori.archivetune.shared.ui.desktop.desktopSearchFieldWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -49,11 +48,11 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * The window's decoration, per operating system:
  *
- * - **Windows**: the non-client area is removed and the app's own title bar carries the caption buttons, with Snap
+ * - **Windows**: the non-client area is removed and the app's own top bar carries the caption buttons, with Snap
  *   Layouts over the maximize button, a Mica backdrop and the user's accent on the frame border.
- * - **Linux (X11)**: a 32 dp caption above the app, dragged and resized through `_NET_WM_MOVERESIZE` so the window
- *   manager keeps its own snapping and tiling; the search bar sits below it, which is the 80 dp strip the reference
- *   desktop app shows.
+ * - **Linux (X11)**: the app's own top bar carries the caption buttons inline and its empty stretches drag the window
+ *   through `_NET_WM_MOVERESIZE`, so the window manager keeps its own snapping and tiling. There is no caption strip
+ *   above the bar: the chrome is one band, as tall as the reference desktop app's top bar.
  * - **macOS and Wayland**: no Compose caption. macOS keeps its native title bar and Wayland keeps the compositor's
  *   frame, because neither offers a protocol an app-drawn caption can drive.
  *
@@ -73,17 +72,68 @@ fun FrameWindowScope.DesktopWindowFrame(
         mode == DesktopFrameMode.Custom && DesktopWindowFramePolicy.isWindows() ->
             WindowsFrame(systemDark, windowState, onRequestClose, content)
         mode == DesktopFrameMode.Custom && DesktopWindowFramePolicy.isLinux() ->
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) {
-                    LinuxCaptionBar(windowState, onRequestClose)
-                    Box(Modifier.weight(1f).fillMaxWidth()) { content() }
-                }
-                // The resize border sits above the app inside the caption's own 6 dp, so it never covers content.
-                LinuxResizeEdges()
-            }
+            LinuxFrame(windowState, onRequestClose, content)
         else -> content()
     }
 }
+
+/**
+ * Linux: no caption strip. The window buttons and the drag handling the old 32 dp caption owned are handed to the app's
+ * own top bar instead, so the window's chrome is one 56 dp band and the page starts that much higher.
+ */
+@Composable
+private fun FrameWindowScope.LinuxFrame(
+    windowState: WindowState,
+    onRequestClose: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(
+            LocalDesktopWindowControls provides {
+                DesktopCaptionButtons(
+                    maximized = windowState.placement == WindowPlacement.Maximized,
+                    onMinimize = { windowState.isMinimized = true },
+                    onToggleMaximize = {
+                        windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                            WindowPlacement.Floating
+                        } else {
+                            WindowPlacement.Maximized
+                        }
+                    },
+                    onClose = onRequestClose,
+                )
+            },
+            LocalDesktopWindowDrag provides { modifier -> modifier.windowDragHandle(window, windowState) },
+        ) { content() }
+        // The resize border sits above the app inside its own 6 dp, so it never covers content.
+        LinuxResizeEdges()
+    }
+}
+
+/**
+ * The drag surface the top bar applies to its empty stretches: press and move to move the window through the window
+ * manager, double click to toggle maximize. The compositor performs the whole move, so the app sends one request and lets
+ * go.
+ */
+private fun Modifier.windowDragHandle(window: Window, windowState: WindowState): Modifier =
+    this
+        .pointerInput(window) {
+            detectDragGestures(
+                onDragStart = { LinuxWindowDrag.startMove(window) },
+            ) { _, _ -> }
+        }
+        .pointerInput(windowState) {
+            detectTapGestures(
+                onDoubleTap = {
+                    windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                        WindowPlacement.Floating
+                    } else {
+                        WindowPlacement.Maximized
+                    }
+                },
+                onTap = { },
+            )
+        }
 
 /**
  * Windows: keeps the real window frame (Aero Snap and resizing stay native), removes its non-client area in the window
@@ -262,65 +312,6 @@ private fun CaptionButton(
                     drawLine(contentColor, Offset(w, 0f), Offset(0f, h), stroke.width)
                 }
             }
-        }
-    }
-}
-
-/**
- * Linux: the 32 dp caption above the title bar. The empty stretch drags and double-clicks to maximize; the right end
- * carries the same three buttons.
- */
-@Composable
-private fun FrameWindowScope.LinuxCaptionBar(
-    windowState: WindowState,
-    onRequestClose: () -> Unit,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(DesktopShellMetrics.captionHeight)
-            .testTag("desktop-caption-bar"),
-    ) {
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(window) {
-                        detectDragGestures(
-                            onDragStart = {
-                                // The compositor performs the whole move; the app sends one request and lets go.
-                                LinuxWindowDrag.startMove(window)
-                            },
-                        ) { _, _ -> }
-                    }
-                    .pointerInput(windowState) {
-                        detectTapGestures(
-                            onDoubleTap = {
-                                windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
-                                    WindowPlacement.Floating
-                                } else {
-                                    WindowPlacement.Maximized
-                                }
-                            },
-                            onTap = { },
-                        )
-                    }
-                    .testTag("desktop-caption-drag"),
-            )
-            DesktopCaptionButtons(
-                maximized = windowState.placement == WindowPlacement.Maximized,
-                onMinimize = { windowState.isMinimized = true },
-                onToggleMaximize = {
-                    windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
-                        WindowPlacement.Floating
-                    } else {
-                        WindowPlacement.Maximized
-                    }
-                },
-                onClose = onRequestClose,
-            )
         }
     }
 }
