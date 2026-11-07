@@ -642,6 +642,10 @@ fun AppleMusicPlayerContent(
             Modifier
                 .fillMaxSize(),
     ) {
+        // The controls column is handed the player's own height from inside nested Box/Column
+        // lambdas, whose scope markers hide this BoxWithConstraintsScope; capture it here, where
+        // the receiver is still unambiguous.
+        val boxMaxHeight = maxHeight
         val sharpArtworkHeight = if (landscape) maxHeight else maxHeight * 0.55f
         // The FULL player height — used as the artwork sizing reference so the
         // artwork stays a constant size whether the system navigation bar is
@@ -1057,7 +1061,7 @@ fun AppleMusicPlayerContent(
                             currentSongLiked = currentSongLiked,
                             volume = volume,
                             onVolumeChange = onVolumeChange,
-                            availableHeight = maxHeight - contentBottomPadding,
+                            availableHeight = boxMaxHeight - contentBottomPadding,
                             titleActions = titleActions,
                             onPlayPauseClick = onPlayPauseClick,
                             onMoreClick = onMoreClick,
@@ -1333,7 +1337,7 @@ fun AppleMusicPlayerContent(
                         currentSongLiked = currentSongLiked,
                         volume = volume,
                         onVolumeChange = onVolumeChange,
-                        availableHeight = maxHeight,
+                        availableHeight = boxMaxHeight,
                         titleActions = titleActions,
                         onPlayPauseClick = onPlayPauseClick,
                         onMoreClick = onMoreClick,
