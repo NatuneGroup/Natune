@@ -31,4 +31,21 @@ class IosPlaybackPollCadenceTest {
         val idleBackground = cadence.intervalMs(busy = false, blending = true)
         assertTrue(idleBackground >= idleActive)
     }
+
+    @Test
+    fun aPlayingBlendKeepsItsPumpRateInTheBackground() {
+        val cadence = IosPlaybackPollCadence()
+        val active = cadence.intervalMs(busy = true, blending = true)
+        cadence.appActive = false
+        assertEquals(active, cadence.intervalMs(busy = true, blending = true))
+        assertTrue(
+            active < IOS_BLEND_QUEUED_PCM_MS,
+            "the read must refill the blend decks before they run dry",
+        )
+    }
+
+    private companion object {
+        /** Eight 1,024-frame buffers at 48 kHz, the PCM one blend deck holds between reads. */
+        const val IOS_BLEND_QUEUED_PCM_MS = 8 * 1_024 * 1_000L / 48_000L
+    }
 }
