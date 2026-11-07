@@ -83,6 +83,9 @@ class IosSourceContractsTest(unittest.TestCase):
         play = audio.split("int at_audio_play", 1)[1].split("\n}", 1)[0]
         self.assertIn("if (!reclaim_interrupted_session(p))", play)
         self.assertIn("p->resume_after_interruption.store(true)", play)
+        self.assertIn("return AT_AUDIO_PLAY_DEFERRED;", play)
+        self.assertIn("return start_output(p) ? 1 : 0;", play)
+        self.assertNotIn("return 1;", play)
         pause = audio.split("void at_audio_pause", 1)[1].split("\n}", 1)[0]
         self.assertIn("p->resume_after_interruption.store(false)", pause)
         snapshot = audio.split("void at_audio_snapshot", 1)[1].split("\n}", 1)[0]
@@ -107,8 +110,13 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("if (!output->interrupted.exchange(false)) return;", ended)
         blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
         play = blend.split("fun play(): Boolean {", 1)[1].split("private fun startEngine", 1)[0]
-        self.assertIn("if (!current.nativeState().playWhenReady) return true", play)
+        reclaim = play.split("if (interrupted) {", 1)[1].split("interrupted = false", 1)[0]
+        self.assertIn("val reclaim = at_audio_play(current.output)", reclaim)
+        self.assertIn("if (reclaim == 0) return false", reclaim)
+        self.assertIn("if (reclaim == AT_AUDIO_PLAY_DEFERRED.toInt() || !current.nativeState().playWhenReady) return true", reclaim)
         self.assertIn("interrupted = false", play)
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn("#define AT_AUDIO_PLAY_DEFERRED 2", header)
         blend_ended = blend.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[1]
         self.assertIn("if (!interrupted) return@addObserverForName", blend_ended.split("val options", 1)[0])
 

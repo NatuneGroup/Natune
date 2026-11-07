@@ -21,6 +21,9 @@ void at_audio_destroy(at_audio_output *output);
 uint64_t at_audio_load(at_audio_output *output, const char *source, uint64_t start_us, int play);
 /* Header-bearing progressive audio: the engine reads the host lease. It copies io, and it closes the lease exactly once. */
 uint64_t at_audio_load_stream(at_audio_output *output, const ae_stream_io *io, uint64_t start_us, int play);
+/* 0 when the output failed to start, 1 when it is playing, AT_AUDIO_PLAY_DEFERRED when the system still refuses an
+ * interrupted session: the play intent is kept and output starts only on an approved interruption end. */
+#define AT_AUDIO_PLAY_DEFERRED 2
 int at_audio_play(at_audio_output *output);
 void at_audio_pause(at_audio_output *output);
 void at_audio_seek(at_audio_output *output, uint64_t position_us);
