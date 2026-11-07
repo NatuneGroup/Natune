@@ -56,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -102,6 +103,7 @@ import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
+import moe.rukamori.archivetune.lyrics.LyricsRenderTiming
 import moe.rukamori.archivetune.lyrics.LyricsUtils.insertInstrumentalBreaks
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
@@ -124,9 +126,7 @@ private fun pendingWordColor(inactiveColor: Color): Color =
     inactiveColor.copy(alpha = (inactiveColor.alpha * 2f).coerceAtMost(1f))
 
 /** Matches the lead the other two renderers apply, so all three sit on the same beat. */
-private const val LRC_LEAD_MS = 300L
-private const val TTML_LEAD_MS = 0L
-private const val VISUAL_TUNING_OFFSET_MS = 150L
+private const val VISUAL_TUNING_OFFSET_MS = LyricsRenderTiming.VISUAL_TUNING_OFFSET_MS
 
 /** The slowest the lyrics clock re-checks its feed while idle, and its cadence while paused. */
 private const val IDLE_POLL_MS = 250L
@@ -195,7 +195,9 @@ fun SimpMusicLyrics(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics) || isTtml(lyrics)) }
-    val isTtmlFormat = remember(lyrics) { lyrics != null && isTtml(lyrics) }
+    // Word timing, not the container, decides the lead and the frame cadence: enhanced LRC with per-word
+    // stamps is word-timed too and must not be pushed ahead by the LRC lead.
+    val hasWordTiming = remember(entries) { LyricsRenderTiming.hasWordTiming(entries) }
 
     // Parsed off the composition thread for the same reason the other two renderers do it: a
     // word-synced TTML file is an XML parse plus an object per syllable, and paying that in
@@ -286,12 +288,12 @@ fun SimpMusicLyrics(
     val latestSliderPositionProvider = rememberUpdatedState(sliderPositionProvider)
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(entries, isSynced, isTtmlFormat, lyricsSyncOffset, disableAnimations, lifecycleOwner) {
+    LaunchedEffect(entries, isSynced, hasWordTiming, lyricsSyncOffset, disableAnimations, lifecycleOwner) {
         if (!isSynced || entries.isEmpty()) return@LaunchedEffect
-        val leadMs = if (isTtmlFormat) TTML_LEAD_MS else LRC_LEAD_MS
-        // A word-timed line needs a fine tick to light one word at a time; a line-synced one
-        // changes state a few times a minute and a 50 ms poll is already far finer than it needs.
-        val pollMs = if (isTtmlFormat) 16L else 50L
+        val leadMs = LyricsRenderTiming.leadMsFor(entries)
+        // A word-timed line sweeps continuously and follows the display refresh; a line-synced one
+        // changes state a few times a minute and parks between deadlines at a coarse poll.
+        val pollMs = if (hasWordTiming) 16L else 50L
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             // Between word and line boundaries the drawn state is static: while playing, sleep to
             // the next deadline; while paused or dragging, the coarse poll still catches seeks.
@@ -304,8 +306,10 @@ fun SimpMusicLyrics(
                 val dragging = latestSliderPositionProvider.value() != null
                 if (dragging || !player.isPlaying) {
                     delay(pollMs.coerceAtLeast(PAUSED_POLL_MS))
-                } else if (isTtmlFormat && schedule.isLive(positionState.longValue)) {
-                    delay(pollMs)
+                } else if (hasWordTiming && schedule.isLive(positionState.longValue)) {
+                    // One position publish per display frame, tied to the choreographer rather than a
+                    // fixed delay(16) that piles up recompositions on slow frames.
+                    withFrameNanos { }
                 } else {
                     schedule.sleepUntilNext(positionState.longValue, playerConnection.playbackParameters.value.speed, pollMs, IDLE_POLL_MS)
                 }
