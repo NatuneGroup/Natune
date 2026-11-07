@@ -121,7 +121,7 @@ internal fun LyricsRowItem(
                     Modifier
                 },
             )
-            .then(if (settle != null) Modifier.lyricsSettle(settle, staggerMs) else Modifier)
+            .then(if (settle != null) Modifier.lyricsSettle(settle, row.index, staggerMs) else Modifier)
             .then(Modifier.lyricsActiveScale(active, activeScale, animate = !reduceMotion, alignment))
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
@@ -276,8 +276,8 @@ private fun Modifier.lyricsDepth(
  * The line-change glide. The row is drawn where it was before the list moved, and eases to its place after [staggerMs].
  * The offset is read in the draw phase, so a frame of the glide does not recompose the row.
  */
-private fun Modifier.lyricsSettle(settle: LyricsLineSettle, staggerMs: Long): Modifier =
-    graphicsLayer { translationY = settle.offsetPx(staggerMs) }
+private fun Modifier.lyricsSettle(settle: LyricsLineSettle, rowIndex: Int, staggerMs: Long): Modifier =
+    graphicsLayer { translationY = settle.offsetPx(rowIndex, staggerMs) }
 
 private const val ACTIVE_SCALE_MS = 100
 

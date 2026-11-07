@@ -45,10 +45,11 @@ fun DrawScope.drawGlyphGlow(
     paint.alpha = alpha.coerceIn(0f, 1f)
     drawIntoCanvas { canvas ->
         canvas.saveLayer(ink.inflate(reach), paint)
-        // The clip is applied before the scale, so only the ink this word or letter owns is enlarged:
-        // a neighbouring word can never be dragged into its bloom, and the rim may still reach past it.
-        clipRect(ink.left, ink.top, ink.right, ink.bottom) {
-            withTransform({ scale(scale, scale, ink.center) }) {
+        // The clip sits inside the scale, so it grows with the ink: only the ink this word or letter owns
+        // is enlarged, and its rim reaches past the cell. A clip outside the scale cut the enlarged copy
+        // at the cell's edges, so every emphasized letter drew as a lit tile.
+        withTransform({ scale(scale, scale, ink.center) }) {
+            clipRect(ink.left, ink.top, ink.right, ink.bottom) {
                 drawText(layout, color = color, topLeft = inkTopLeft)
             }
         }
