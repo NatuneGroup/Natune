@@ -102,7 +102,17 @@ class DesktopPlaybackSelfCheckTest {
 
     @Test
     fun aHeadlessProcessIsNotProbedAndReportsNoBlocker() = runTest {
-        val health = check(prewarm(headless = true), output = error("a headless host has no device to probe")).run()
+        // A process without a window has nothing to play to, so neither probe may run: both are lambdas that fail
+        // the test if the check calls them. (The helper above takes the probe's answer, not the probe.)
+        val health =
+            DesktopPlaybackSelfCheck(
+                engine = prewarm(headless = true),
+                probeOutput = { error("a headless host has no device to probe") },
+                attestation = { error("a headless host has no provider to ask") },
+                log = { logged += it },
+                report = { reported += it },
+                engineTimeoutMs = 1_000L,
+            ).run()
 
         assertFalse(health.audible)
         assertTrue(health.blockers.isEmpty())
