@@ -124,12 +124,11 @@ fun LyricsFullscreenRenderer(
     val activeRows by remember(scanner) { derivedStateOf { scanner.activeAt(clock.feedMs.longValue) } }
     val primary = activeRows.lastOrNull() ?: -1
     // A row reads as passed once the feed clears its end, not only once a later row is active — that keeps
-    // instrumental gaps and the outro after the last line honest.
-    val passedRows by remember(scanner) {
-        derivedStateOf {
-            val feed = clock.feedMs.longValue
-            buildSet { rows.forEach { row -> if (isPassedLyricRow(row, feed)) add(row.index) } }
-        }
+    // instrumental gaps and the outro after the last line honest. A cheap Int count answered by binary
+    // search replaces the Set that used to be rebuilt over every row on every frame of playback.
+    val passedCounter = remember(rows) { PassedRowCounter(rows) }
+    val passedCount by remember(passedCounter) {
+        derivedStateOf { passedCounter.countAt(clock.feedMs.longValue) }
     }
 
     val scrollOwner = rememberLyricsScrollOwner()
@@ -231,7 +230,7 @@ fun LyricsFullscreenRenderer(
                         active = row.index in activeRows,
                         // A timed row behind the lyric clock keeps the faded active colour; unsynced
                         // rows are static and never count as passed.
-                        passed = row.index in passedRows,
+                        passed = row.index < passedCount,
                         selected = row.index in selection.indices,
                         mainStyle = styles.main(alignment),
                         phoneticStyle = styles.phonetic(alignment),
