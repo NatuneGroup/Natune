@@ -42,6 +42,7 @@ class DesktopSettingsNavTest {
             "settings/privacy", "settings/crash_logs", "settings/storage", "settings/downloads",
             "settings/backup_restore", "settings/update", "settings/changelog", "settings/about", "settings/misc",
             "settings/logcat", "settings/appearance/lyrics_animations", DesktopIntegrationsRoute,
+            DesktopConnectedDevicesRoute, "settings/integrations/device_connect",
         ).forEach { route -> assertTrue(route in routes, "missing tree entry for $route") }
     }
 
@@ -131,5 +132,54 @@ class DesktopSettingsNavTest {
             listOf("pause_listen_history", "pause_search_history", "history_duration", "sync_yt_history"),
             desktopPrivacySettingsRows().map { it.anchor },
         )
+    }
+
+    @Test
+    fun connectedDevicesIsADiscoverableCommandThatDoesNotNavigate() {
+        var opened = 0
+        val rows = desktopSettingsNavRows(
+            navigate = {},
+            openIntegrations = {},
+            openEqualizer = {},
+            openShortcuts = {},
+            openConnectedDevices = { opened++ },
+        )
+        val row = rows.filterIsInstance<SettingsRow.Action>().single { it.anchor == "connected_devices" }
+        assertEquals(DesktopConnectedDevicesRoute, row.navRoute)
+        // A command row is listed (it has a route) but its tap opens the sheet, not a settings page.
+        row.run()
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun deviceConnectManagementIsAFirstClassIntegrationsEntry() {
+        val navigated = mutableListOf<String>()
+        val rows = desktopSettingsNavRows(
+            navigate = { navigated += it },
+            openIntegrations = {},
+            openEqualizer = {},
+            openShortcuts = {},
+        )
+        val row = rows.filterIsInstance<SettingsRow.Action>().single { it.anchor == "device_connect" }
+        assertEquals("settings/integrations/device_connect", row.navRoute)
+        row.run()
+        assertEquals(listOf("settings/integrations/device_connect"), navigated)
+        // It is a plain top-level entry, not a developer row hidden until search.
+        assertFalse(row.hidden)
+    }
+
+    @Test
+    fun listRowsStillCarryTheConnectedDevicesCommand() {
+        var opened = 0
+        val rows = desktopSettingsNavListRows(
+            navigate = {},
+            openIntegrations = {},
+            openEqualizer = {},
+            openShortcuts = {},
+            openConnectedDevices = { opened++ },
+        )
+        val row = rows.filterIsInstance<SettingsRow.Action>().single { it.anchor == "connected_devices" }
+        row.run()
+        assertEquals(1, opened)
     }
 }
