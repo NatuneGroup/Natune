@@ -70,6 +70,23 @@ data class HostLyricsDocument(
 }
 
 /**
+ * The occurrence a lyrics surface is showing: the player's, or the queue's before playback starts or after it failed.
+ * The owner follows the same pair in [HostLyrics.follow], so a surface and the lookup always name one track.
+ */
+fun activeLyricsOccurrence(playbackOccurrenceId: String?, queueOccurrenceId: String?): String? =
+    playbackOccurrenceId ?: queueOccurrenceId
+
+/**
+ * The published document, and only while it belongs to [activeOccurrenceId].
+ *
+ * A track change reaches the player before it reaches the lyrics owner, which keeps the previous track's finished
+ * document until it has read the new occurrence. Handing that document to a surface draws the old track's lines under
+ * the new track's title; resolving it against the occurrence on screen leaves the surface reading instead.
+ */
+fun HostLyricsDocument?.belongingTo(activeOccurrenceId: String?): HostLyricsDocument? =
+    this?.takeIf { activeOccurrenceId != null && occurrenceId == activeOccurrenceId }
+
+/**
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
  * occurrence the player reports, preloads the next ones in play order, and parses the winning document once. The
  * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are Android-only.
