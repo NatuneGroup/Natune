@@ -360,3 +360,54 @@ The single-active-line strip (TikTok main lyrics) has no list and no fade.
 - **Truncation.** A one-line strip with `TextOverflow.Ellipsis` ended most lyrics in
   a "…". The strips reserve two lines and hold that height whether they fill it or
   not; growing to fit would move the controls underneath every time the line changed.
+
+## Round 3: feel and word-sync fixes
+
+These follow the screenshot and feel reports after rounds 1-2. Every change keeps the Natune
+implementation; the ArchiveTune tree was consulted only as a behaviour/timing reference.
+
+- **Syllable tokens of one word are no longer split.** Enhanced LRC / TTML can hand a renderer
+  several syllables for a single word ("a" + "gain", "mo" + "ment"). `LyricsSublines.kt` now joins
+  syllable content **verbatim** through one shared helper (`joinSyllables` -> `JoinedSyllables` holding
+  the text and the range each syllable occupies); only whitespace the source put in `KaraokeSyllable.content`
+  survives. `KaraokeSweepText`, `joinSyllableContents` and `EnhancedSweptLine.joinWithRanges` all derive
+  from that one join, so the plain `Text`, the single-active strip and the swept line lay out the same
+  string and adjacent syllables of a word produce contiguous ranges — the karaoke sweep crosses them
+  without a hole while each syllable keeps its own timing. `app/.../LyricsSyllableJoinTest.kt` pins it.
+  The shared-UI renderer already used the source `LyricsLine.text` + word ranges verbatim.
+- **The sync lead follows the timing shape, not the container.** `LyricsRenderTiming` (`app/lyrics`)
+  picks `hasWordTiming`/`leadMsFor` from the parsed entries, matching shared `LyricsFeedTiming.leadMsFor`:
+  word-timed rows (TTML *and* enhanced LRC) take no lead, line-only rows keep the 300 ms LRC lead. Previously
+  `isTtml` decided, so enhanced LRC with word stamps got LRC lead 300 + visual tuning 150 = +450 ms and a
+  short word was fully lit before it was sung. `LyricsEnhanced`, `LyricsV2` and `SimpMusicLyrics` read this
+  helper; the same shape decides whether V2/SimpMusic drive a live span from `withFrameNanos` at display
+  refresh (instead of a coarse 50 ms / `delay(16)` tick). The single-active-line strip now also gates its
+  `KaraokeSweepText` on `ISyncedLine.hasWordTiming()`, so a line-synced row built only to carry a reading
+  never shows a word sweep. `LyricsRenderTimingTest.kt` pins the classification; `LyricsSyncClassificationTest`
+  pins the strip rule.
+- **Less work per frame.** `rememberLyricsClock` published `feedMs` twice per frame (loop top and inside
+  `withFrameNanos`); it now publishes once and the frame callback only waits for vsync.
+  `LyricsFullscreenRenderer` rebuilt a `Set` over every row on every frame for `passedRows`;
+  `PassedRowCounter` (`LyricsInteraction.kt`) builds one prefix-max array once and answers each frame with an
+  allocation-free Int binary search (the prefix max keeps overlapping duet/second-voice rows honest). The
+  `LyricsAutoFollow` line-change scroll kept its 280 ms duration but switched from a symmetric ease-in-out
+  to `FastOutSlowInEasing`, matching ArchiveTune's fast-response active-line follow; a slow-in curve held
+  the first part of a line change almost still and read as ~30 Hz. `LyricsFrameCostTest.kt` pins both.
+- **The V2 interlude dots never restart.** `LyricsInterludeDots.kt` used a `rememberInfiniteTransition`
+  composed only while a break was active, so the pulse snapped back to phase 0 on every break. It now reads
+  `EnhancedInterludeMotion.breath()`/`dotLight()` from the absolute lyrics position in `graphicsLayer`
+  (draw phase), with a `withFrameNanos` projection advancing that position smoothly between coarse polls —
+  the same timeline-driven cosine cycles the Enhanced dots use. `V2InterludeDotsContinuityTest.kt` pins that
+  the phase depends on absolute position, not on a break's own progress.
+- **Background vocals sweep in sync in the shared renderer.** TTML `x-bg` spans and enhanced-LRC bracket
+  runs both arrive as `LyricsWord.isBackground`; `LyricsRenderRows(splitBackground = true)` splits them into
+  `row.background` + `row.backgroundWords`, and the feed (same `LyricsClock`) and deadline schedule (which
+  already walks `backgroundWords`) covered them. The draw path did not: `LyricsRowItems` drew them as a plain
+  `Text`. `LyricsBackgroundSweep.sungFraction` maps each word's range to a contiguous horizontal slice and
+  fills the active word over its own span; `SweptBackgroundLine` draws dim + clipped bright over one measured
+  layout, reading `clock.feedMs` in the draw phase and keeping the backing voice's dimmer alpha.
+  `LyricsBackgroundSweepTest.kt` pins the fractional sweep, reduced motion and the live-frame cover.
+
+All of the above are source-reviewed and unit-tested but not run on a device or through the Kotlin
+compiler locally (CI is the compile signal); the Blacksmith BUILD/TESTS jobs at the pushed head are the
+compile/test evidence.

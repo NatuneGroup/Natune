@@ -57,3 +57,41 @@ object LyricsTapPolicy {
  */
 internal fun isPassedLyricRow(row: LyricsRenderRow, feedPositionMs: Long): Boolean =
     row.isSynced && feedPositionMs >= row.scanEndMs
+
+/**
+ * A cheap, allocation-free version of "how many rows have been passed" for the per-frame composition
+ * read in [LyricsFullscreenRenderer]. The old buildSet iterated every row and allocated a HashSet (plus
+ * boxed indices) on every frame of playback; this builds one prefix-max array of row ends once and
+ * answers each frame with an Int binary search. A row reads as passed while `row.index < countAt(feed)`.
+ *
+ * The prefix maximum (rather than a plain sort) keeps overlapping duet/second-voice rows honest: a
+ * later row is not declared passed while an earlier row that shares its time still reaches past the feed.
+ * That is exactly the same "furthest earlier end" rule the active scanner and interludes use.
+ */
+internal class PassedRowCounter(rows: List<LyricsRenderRow>) {
+    private val allSynced: Boolean
+    private val prefixMaxEndMs: LongArray
+
+    init {
+        allSynced = rows.firstOrNull()?.isSynced == true
+        prefixMaxEndMs = LongArray(rows.size)
+        var running = Long.MIN_VALUE
+        for (index in rows.indices) {
+            running = maxOf(running, rows[index].scanEndMs)
+            prefixMaxEndMs[index] = running
+        }
+    }
+
+    /** The number of leading rows the feed has passed at [feedPositionMs]; one Int, no allocation. */
+    fun countAt(feedPositionMs: Long): Int {
+        if (!allSynced) return 0
+        // First index whose prefix-max end is still ahead of the feed; every row before it is passed.
+        var low = 0
+        var high = prefixMaxEndMs.size
+        while (low < high) {
+            val mid = (low + high).ushr(1)
+            if (prefixMaxEndMs[mid] <= feedPositionMs) low = mid + 1 else high = mid
+        }
+        return low
+    }
+}

@@ -483,12 +483,6 @@ private val sweepLayerPaint = Paint()
 private fun fadeColors(rtl: Boolean): List<Color> =
     if (rtl) listOf(Color.Transparent, Color.Black) else listOf(Color.Black, Color.Transparent)
 
-/** A row's text with the character range each syllable occupies in it, or null for a syllable with no text. */
-private class EnhancedSyllableText(
-    val text: String,
-    val ranges: List<IntRange?>,
-)
-
 /**
  * One row laid out once, with the timed boxes that the draw phase clips against. [letterRuns] mirrors
  * [boxes]: for a box that earned the [LyricsEmphasis] ripple it holds one shaped run per grapheme
@@ -507,24 +501,11 @@ private class EnhancedShapedLine(
 )
 
 /**
- * The text [joinSyllableContents] builds, with the range each syllable occupies in it. The two must stay identical, so the
- * sung line and the plain line lay out the same way.
+ * The text [joinSyllableContents] builds with the range each syllable occupies in it. Both come from one
+ * shared join so the sung line and the plain line lay out identically, and syllable tokens of one word
+ * stay adjacent — which is what keeps the karaoke sweep continuous across them.
  */
-private fun List<KaraokeSyllable>.joinWithRanges(): EnhancedSyllableText {
-    val builder = StringBuilder()
-    val ranges = ArrayList<IntRange?>(size)
-    forEachIndexed { index, syllable ->
-        val first = builder.length
-        builder.append(syllable.content)
-        val range = if (builder.length > first) first until builder.length else null
-        ranges += range
-        val next = getOrNull(index + 1)
-        if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-            builder.append(' ')
-        }
-    }
-    return EnhancedSyllableText(builder.toString(), ranges)
-}
+private fun List<KaraokeSyllable>.joinWithRanges(): JoinedSyllables = joinSyllables()
 
 private fun shapeEnhancedSyllables(
     measurer: TextMeasurer,
