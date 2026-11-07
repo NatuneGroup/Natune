@@ -98,6 +98,22 @@ class LyricsParseTtmlTest {
     }
 
     @Test
+    fun whitespaceInsideTimedSpansStaysAWordBoundary() {
+        val lines =
+            LyricsParser.parseTtml(
+                """
+                <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+                <p begin="1.000" end="4.000"><span begin="1.000" end="1.500">Hello </span><span begin="1.500" end="2.000">a</span><span begin="2.000" end="2.500">gain</span><span begin="2.500" end="3.000"> my</span><span begin="3.000" end="3.500">  friend</span></p>
+                </div></body></tt>
+                """.trimIndent(),
+            )
+
+        val words = assertIs<KaraokeLine>(lines.single()).words
+        assertEquals(listOf("Hello ", "a", "gain ", "my ", "friend"), words.map { it.text })
+        assertEquals("Hello again my friend", words.joinToString("") { it.text })
+    }
+
+    @Test
     fun relativeWordTimesAreShiftedToTheLineStart() {
         val lines =
             LyricsParser.parseTtml(

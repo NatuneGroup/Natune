@@ -92,11 +92,11 @@ class LyricsBackgroundSweepTest {
         val schedule = LyricsDeadlineSchedule.of(rows, LyricsSweepGeometry.MIN_SWEEP_MS, false)
         // The backing words keep frames live through their own sweep, not just the lead line's.
         assertTrue(
-            "background sweep has no live frames",
             (2_000L..2_600L step 16).any { schedule.isLive(it) },
+            "background sweep has no live frames",
         )
         // The loop wakes somewhere in the background window after the lead words end (~1.8 s).
         val next = schedule.nextChangeAfter(1_850)
-        assertTrue("no deadline covers the backing words: $next", next != null && next <= 2_600)
+        assertTrue(next != null && next <= 2_600, "no deadline covers the backing words: $next")
     }
 }
