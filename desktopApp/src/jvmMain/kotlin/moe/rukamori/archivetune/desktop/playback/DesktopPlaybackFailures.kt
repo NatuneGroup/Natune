@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.desktop.playback
 
+import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
@@ -24,12 +26,18 @@ internal fun refusalOf(locator: PlaybackLocator): Pair<PlaybackFailureReason, St
         PlaybackFailureReason.UNSUPPORTED_LOCATOR to "the engine cannot open this kind of source"
     }
 
-/** Keeps the engine loader's curated message, but never echoes a raw LinkageError message that may name a path. */
-internal fun engineCreateFailureMessage(error: Throwable): String =
-    when (error) {
-        is IllegalStateException -> error.message?.takeIf(String::isNotBlank) ?: "the audio output did not start"
-        else -> "the playback engine could not start on this host (${error.javaClass.simpleName})"
-    }
+/**
+ * The user-visible text for a failed engine create. A raw [error] message (the native loader's own text) can name an
+ * absolute filesystem path, so it is written only to the diagnostic log; the user gets the curated resource string.
+ * Injectable [logDetail] keeps the split testable without installing the rotating log.
+ */
+internal fun engineCreateFailureMessage(
+    error: Throwable,
+    logDetail: (String) -> Unit = { DesktopDiagnosticLog.playbackTier("playback engine create failed: $it") },
+): String {
+    logDetail("${error.javaClass.simpleName}: ${error.message.orEmpty()}")
+    return DesktopStrings["playback_failed"]
+}
 
 /**
  * Runs one command on the playback thread. A `ScheduledThreadPoolExecutor` swallows anything a task throws, so a
