@@ -148,10 +148,12 @@ class EnhancedInterludeTest {
 
     @Test
     fun theDotsNeverJumpAtAnyFrameOfABreak() {
-        // Every frame of a 12 s break, including the frames where the end swell opens and closes.
+        // Every frame the break is drawn on, including the frames where the end swell opens and closes.
+        // The break owns [startMs, endMs): at endMs the indicator's own visibility is 0, so the swell's
+        // return to 1 there is a step in a value nothing draws, not a jump the viewer can see.
         val breakWindow = EnhancedInterlude(8_000L, 20_000L)
         var previous = EnhancedInterludeMotion.scale(breakWindow, 8_000L, reduceMotion = false)
-        for (position in 8_000L..20_000L step 16L) {
+        for (position in 8_000L until breakWindow.endMs step 16L) {
             val scale = EnhancedInterludeMotion.scale(breakWindow, position, reduceMotion = false)
             assertTrue("scale jumped at $position: $previous -> $scale", abs(scale - previous) < 0.02f)
             previous = scale
