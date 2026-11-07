@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
@@ -128,15 +129,32 @@ class DesktopPlaybackCommandGuardTest {
     }
 
     @Test
-    fun engineCreateMessagesKeepTheLoaderReasonButNeverAPath() {
-        val loader = IllegalStateException("Desktop playback is unavailable: reinstall Natune")
-        assertEquals("Desktop playback is unavailable: reinstall Natune", engineCreateFailureMessage(loader))
+    fun engineCreateMessagesShowOnlyTheCuratedTextAndLogTheRawDetail() {
+        // The engine loader's IllegalStateException can embed an absolute native-library path. The user sees only the
+        // curated, resource-backed message; the raw detail is kept for diagnostics, never interpolated into the text.
+        val rawDetail = "the engine library did not load from /app/resources/native/libengine.so"
+        val logged = mutableListOf<String>()
 
-        // A raw LinkageError message can name a filesystem path; the user-visible text must not echo it.
-        val linkage = UnsatisfiedLinkError("/app/resources/native/lib.so: undefined symbol")
-        val message = engineCreateFailureMessage(linkage)
-        assertTrue(message.contains("UnsatisfiedLinkError"))
-        assertFalse(message.contains("/app/resources"), "a native path must never reach the user-visible text")
+        val message = engineCreateFailureMessage(IllegalStateException(rawDetail), logDetail = { logged += it })
+
+        assertEquals(DesktopStrings["playback_failed"], message)
+        assertFalse(message.contains(rawDetail), "the raw loader detail must never reach the user-visible text")
+        assertFalse(message.contains("/app/resources"), "an absolute native path must never reach the user-visible text")
+        assertTrue(logged.single().contains(rawDetail), "the raw loader detail belongs in the diagnostic log")
+        assertTrue(logged.single().contains("IllegalStateException"))
+    }
+
+    @Test
+    fun aLinkageErrorDetailStaysOutOfTheUserVisibleText() {
+        // A missing JNI symbol is a LinkageError whose message can name a filesystem path.
+        val rawDetail = "/app/resources/native/lib.so: undefined symbol"
+        val logged = mutableListOf<String>()
+
+        val message = engineCreateFailureMessage(UnsatisfiedLinkError(rawDetail), logDetail = { logged += it })
+
+        assertEquals(DesktopStrings["playback_failed"], message)
+        assertFalse(message.contains(rawDetail), "a native path must never reach the user-visible text")
+        assertTrue(logged.single().contains(rawDetail))
     }
 
     private companion object {
