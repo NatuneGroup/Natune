@@ -85,3 +85,5 @@ NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid
 
 CODE_SIGN_ENTITLEMENTS = ArchiveTune/Natune.entitlements
+
+ARCHIVETUNE_APP_GROUP = group.moe.rukamori.archivetune

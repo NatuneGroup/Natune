@@ -1,4 +1,5 @@
 import UIKit
+import WidgetKit
 import Darwin
 import ArchiveTuneShared
 
@@ -11,6 +12,7 @@ final class ArchiveTuneSession {
     private var observers: [NSObjectProtocol] = []
     private var presenter: AnyObject?
     private var closed = false
+    private var widgetRefresh: DispatchWorkItem?
     private lazy var rootController: UIViewController = IosRootController(
         compose: host.viewController,
         safeArea: host.safeArea,
@@ -32,6 +34,9 @@ final class ArchiveTuneSession {
         ) { [host] _ in
             host.backgrounded()
         })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: Notification.Name("NatuneSystemSnapshotChanged"), object: nil, queue: .main
+        ) { [weak self] _ in self?.publishWidgetSnapshot() })
         observers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -68,9 +73,26 @@ final class ArchiveTuneSession {
         host.openLink(link: url.absoluteString)
     }
 
+    private func publishWidgetSnapshot() {
+        guard !closed, let group = Bundle.main.object(forInfoDictionaryKey: "NatuneAppGroup") as? String,
+              !group.hasPrefix("$("), FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil,
+              let defaults = UserDefaults(suiteName: group) else { return }
+        defaults.set(host.systemSnapshotJson(), forKey: "NatunePlaybackSnapshot")
+        guard widgetRefresh == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.closed else { return }
+            self.widgetRefresh = nil
+            WidgetCenter.shared.reloadTimelines(ofKind: "NatuneControls")
+        }
+        widgetRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
     func shutdown() {
         guard !closed else { return }
         closed = true
+        widgetRefresh?.cancel()
+        widgetRefresh = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         presenter = nil

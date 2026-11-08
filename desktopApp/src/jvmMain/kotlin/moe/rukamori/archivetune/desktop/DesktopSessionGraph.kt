@@ -142,12 +142,15 @@ class DesktopSessionGraph internal constructor(
     private val progressDriver: PodcastProgressDriver,
     /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
     internal val lastFm: DesktopLastFm,
+    internal val listenBrainz: DesktopListenBrainz,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
     internal val lyrics: HostLyrics,
     /** The optional offline Japanese dictionary owner; null only when it could not be constructed. */
     internal val japaneseLanguagePack: JapaneseLanguagePackManager?,
     /** The one owner of the AI lyric sessions and of every lyric surface's phonetic readings. */
     internal val lyricsSurface: LyricsSurfaceRuntime,
+    internal val lyricsStore: DesktopLyricsStore,
+    internal val lyricsEdits: moe.rukamori.archivetune.shared.ui.menu.LyricsMenuEdits,
     /** The one AI request limiter every desktop AI text service shares. */
     internal val aiRateLimiter: moe.rukamori.archivetune.shared.data.ai.AiRateLimiter,
     /** The one listener-presence owner: the opt-in document and the playback-driven heartbeat loop. */
@@ -169,6 +172,7 @@ class DesktopSessionGraph internal constructor(
     internal val playbackPool: DesktopPlaybackPool,
     /** The audio source tiers and the player-menu source search, over the runtime admissions. */
     internal val audioSources: DesktopAudioSources,
+    internal val modules: DesktopModules,
     /** Pulls the signed-in YouTube Music library into [library]; the account settings force it after a switch. */
     internal val youtubeLibrarySync: DesktopYouTubeLibrarySync,
     /** The one Listen Together owner: the room client and the driver that keeps [player] in step with the room. */
@@ -183,6 +187,7 @@ class DesktopSessionGraph internal constructor(
     internal val storedSongIndex: moe.rukamori.archivetune.shared.data.persistence.StoredSongIndex,
     /** The on-disk download repository behind [downloads]: hashed files plus the stored-song index. */
     internal val downloadStore: moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository,
+    internal val songCache: DesktopSongCache,
     /** The `downloads` owner: transfers over the same ordered resolver and the same store. */
     internal val downloads: DesktopDownloadsOwner,
     /** The `local_songs` owner: the folder scan and its persisted filter/sort settings. */
@@ -450,6 +455,7 @@ class DesktopSessionGraph internal constructor(
         listenDriver.close()
         progressDriver.close()
         lastFm.close()
+        listenBrainz.close()
         lyricsSurface.close()
         japaneseLanguagePack?.close()
         lyrics.close()
@@ -462,6 +468,7 @@ class DesktopSessionGraph internal constructor(
         telegram.close()
         uploads.close()
         audioSources.close()
+        modules.close()
         poTokens.close()
         http.close()
         player.close()

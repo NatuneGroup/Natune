@@ -11,11 +11,12 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        // One entry per declared key: the 674 round-two keys plus the three desktop window keys (system window frame,
-        // close to tray, last sleeve seed), which is one declaration each now that both desktop branches share the same
-        // frame key.
-        assertEquals(676, PersistedPreferenceKeys.size)
+        // The retained 676-key surface plus the desktop application icon path.
+        assertEquals(677, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
+        assertEquals(1, PersistedPreferenceKeys.count { it == DesktopAppIconPathKey })
+        assertEquals("desktop_app_icon_path", DesktopAppIconPathKey.name)
+        assertEquals(PreferenceKind.STRING, DesktopAppIconPathKey.kind)
     }
 
     @Test
