@@ -185,7 +185,8 @@ internal fun DesktopSessionWindowRoot(
     LaunchedEffect(Unit) { DesktopEnginePrewarm.process.start() }
     val session by sessions.state.collectAsState()
     when (val current = session) {
-        is DesktopSessionState.Ready ->
+        is DesktopSessionState.Ready -> {
+            DesktopCustomWindowIcon(window, current.graph)
             DesktopMountedRoot(
                 frame,
                 window,
@@ -195,6 +196,7 @@ internal fun DesktopSessionWindowRoot(
                 windowState,
                 frameMode,
             )
+        }
         DesktopSessionState.Loading -> DesktopLoadingRoot()
         DesktopSessionState.Unavailable -> DesktopUnavailableRoot()
     }

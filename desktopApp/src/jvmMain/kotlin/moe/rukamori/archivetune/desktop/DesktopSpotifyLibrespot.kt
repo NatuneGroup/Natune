@@ -271,6 +271,7 @@ internal class DesktopSpotifyLibrespot(
 
     /** Drops the stored grant; the shared clear also turns streaming off when Librespot is the stored engine. */
     suspend fun signOut(): Unit = gate.withLock {
+        graph.audioSources.revokeLibrespot()
         comparedCatalogSpDc = null
         catalogMatchesLibrespot = false
         controller.edit { clearSpotifyLibrespotSession() }

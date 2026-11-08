@@ -242,7 +242,11 @@ private fun DesktopExportSongsPage(graph: DesktopSessionGraph, show: (String) ->
                     val source = AudioSourceType.entries.firstOrNull { it.name == song.row.source } ?: return@forEachIndexed
                     val file = graph.downloads.fileOf(song.row.provider, song.row.mediaId, source, song.row.quality.orEmpty())
                         ?: return@forEachIndexed
-                    withContext(Dispatchers.IO) { copyExport(file, folder, song.baseName) }
+                    val extension = desktopDownloadExtension(file)
+                    var target = folder.resolve("${song.baseName}.$extension")
+                    var suffix = 2
+                    while (Files.exists(target)) target = folder.resolve("${song.baseName} (${suffix++}).$extension")
+                    graph.downloads.export(song.row.storedOccurrence().item.ref, target)
                     done += 1
                 }
                 show(DesktopSettingsText.format("export_songs_done", done, chosen.size))

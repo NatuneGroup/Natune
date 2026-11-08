@@ -201,8 +201,6 @@ class DesktopSettingsNavTest {
                 "splash_overlay_enabled",
                 "hide_status_bar",
                 "ui_scale",
-                "app_icon",
-                "palette_picker",
                 "apple_music_palette",
                 "blur_intensity",
                 "backdrop_blur",
@@ -211,6 +209,10 @@ class DesktopSettingsNavTest {
             .forEach { anchor ->
                 assertTrue(theme.none { it.anchor == anchor }, "desktop appearance kept $anchor")
             }
+        // These now have real desktop image and seed-theme editors.
+        listOf("app_icon", "palette_picker", "theme_creator").forEach { anchor ->
+            assertEquals(1, theme.count { it.anchor == anchor && it is SettingsRow.Action }, "desktop editor missing or duplicated: $anchor")
+        }
 
         val player =
             playerAppearanceSettingsRows(PreferenceSnapshot.EMPTY, true, {}, {}, desktop = true)

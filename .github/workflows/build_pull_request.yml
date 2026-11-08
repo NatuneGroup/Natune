@@ -334,6 +334,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Prepare optional desktop Librespot JNI
+        uses: ./.github/actions/build-desktop-librespot
+        with:
+          host: linux-x64
+
       - name: Compile desktop app
         shell: bash
         run: |

@@ -64,6 +64,13 @@ internal class QobuzPoolAccount(val id: Long?, val token: String, val appId: Str
     override fun toString() = "QobuzPoolAccount(id=$id, REDACTED)"
 }
 
+internal class DesktopApplePoolAccount(val id: Long?, val token: String, val premium: Boolean) {
+    override fun toString() = "ApplePoolAccount(REDACTED)"
+}
+internal class DesktopAmazonPoolAccount(val id: Long?, val baseUrl: String, val operator: String?, val jwt: String?, val expiry: Long?) {
+    override fun toString() = "AmazonPoolAccount(REDACTED)"
+}
+
 /**
  * The desktop client of the Playback Pool, over the same ArchivePool contract as Android's PoolAccountManager: the
  * account feed at `/api/accounts` (the combined `/api/sources` when a deployment predates the split), v2 field
@@ -73,7 +80,7 @@ internal class QobuzPoolAccount(val id: Long?, val token: String, val appId: Str
  *
  * The decrypted accounts are cached in the platform vault under their own key, never in the settings file and never
  * over a personal sign-in. The time of the last attempt is cached with them, so an empty or failed feed stays throttled
- * across restarts. TIDAL, Deezer and Qobuz are kept; the other pooled services have no source on this host.
+ * across restarts. TIDAL, Deezer, Qobuz, Apple lyrics accounts and usable Amazon instance accounts are kept.
  */
 internal class DesktopPlaybackPool(
     private val http: HttpClient,
@@ -99,6 +106,8 @@ internal class DesktopPlaybackPool(
     @Volatile private var tidal: List<TidalPoolAccount> = emptyList()
     @Volatile private var deezer: List<DeezerPoolAccount> = emptyList()
     @Volatile private var qobuz: List<QobuzPoolAccount> = emptyList()
+    @Volatile private var apple: List<DesktopApplePoolAccount> = emptyList()
+    @Volatile private var amazon: List<DesktopAmazonPoolAccount> = emptyList()
     @Volatile private var lastAttemptAtMs = 0L
     @Volatile private var feedEtag: String? = null
 
@@ -157,6 +166,19 @@ internal class DesktopPlaybackPool(
         ensureLoaded()
         return qobuz.sortedWith(compareBy({ coolingDown(QOBUZ, it.id) }, { !it.premium }))
     }
+
+    suspend fun appleAccounts(): List<DesktopApplePoolAccount> {
+        if (!enabled()) return emptyList()
+        ensureLoaded()
+        return if (enabled()) apple.sortedBy { coolingDown(APPLE, it.id) } else emptyList()
+    }
+    suspend fun amazonAccounts(): List<DesktopAmazonPoolAccount> {
+        if (!enabled()) return emptyList()
+        ensureLoaded()
+        return if (enabled()) amazon.sortedBy { coolingDown(AMAZON, it.id) } else emptyList()
+    }
+    fun amazonActive(account: DesktopAmazonPoolAccount): Boolean = enabled() && amazon.any { it === account }
+    fun appleActive(account: DesktopApplePoolAccount): Boolean = enabled() && apple.any { it === account }
 
     /**
      * One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. A token
@@ -278,6 +300,8 @@ internal class DesktopPlaybackPool(
             tidal = emptyList()
             deezer = emptyList()
             qobuz = emptyList()
+            apple = emptyList()
+            amazon = emptyList()
             loaded = true
             persist()
         }
@@ -312,12 +336,16 @@ internal class DesktopPlaybackPool(
                     val nextTidal = parseTidal(accountsArray(root, TIDAL), decrypt)
                     val nextDeezer = parseDeezer(accountsArray(root, DEEZER), decrypt)
                     val nextQobuz = parseQobuz(accountsArray(root, QOBUZ), decrypt)
-                    if (nextTidal.isEmpty() && nextDeezer.isEmpty() && nextQobuz.isEmpty() && hasAccounts()) {
+                    val nextApple = parseApple(accountsArray(root, APPLE), decrypt)
+                    val nextAmazon = parseAmazon(accountsArray(root, AMAZON), decrypt)
+                    if (nextTidal.isEmpty() && nextDeezer.isEmpty() && nextQobuz.isEmpty() && nextApple.isEmpty() && nextAmazon.isEmpty() && hasAccounts()) {
                         log("Playback Pool answered empty lists; the cached accounts are kept")
                     } else {
                         tidal = nextTidal
                         deezer = nextDeezer
                         qobuz = nextQobuz
+                        apple = nextApple
+                        amazon = nextAmazon
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
@@ -341,7 +369,7 @@ internal class DesktopPlaybackPool(
         }
     }
 
-    private fun hasAccounts() = tidal.isNotEmpty() || deezer.isNotEmpty() || qobuz.isNotEmpty()
+    private fun hasAccounts() = tidal.isNotEmpty() || deezer.isNotEmpty() || qobuz.isNotEmpty() || apple.isNotEmpty() || amazon.isNotEmpty()
 
     /** Android re-reads a pool that serves every service daily; one that is missing a service is retried sooner. */
     private fun refreshIntervalMs(): Long =
@@ -373,6 +401,8 @@ internal class DesktopPlaybackPool(
                         tidal = parseTidal(cached[TIDAL] as? JsonArray, passthrough)
                         deezer = parseDeezer(cached[DEEZER] as? JsonArray, passthrough)
                         qobuz = parseQobuz(cached[QOBUZ] as? JsonArray, passthrough)
+                        apple = parseApple(cached[APPLE] as? JsonArray, passthrough)
+                        amazon = parseAmazon(cached[AMAZON] as? JsonArray, passthrough)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -392,6 +422,14 @@ internal class DesktopPlaybackPool(
             put("authFailAt", authBackoff.failedAtMs)
             put("authBackoffMs", authBackoff.windowMs)
             put("authKeyHash", authBackoff.failedKeyHash)
+            put(APPLE, buildJsonArray { apple.forEach { account -> add(buildJsonObject {
+                account.id?.let { put("id", it) }; put("token", account.token); put("premium", account.premium)
+            }) } })
+            put(AMAZON, buildJsonArray { amazon.forEach { account -> add(buildJsonObject {
+                account.id?.let { put("id", it) }; put("baseUrl", account.baseUrl)
+                account.operator?.let { put("bypassToken", it) }; account.jwt?.let { put("turnstileJwt", it) }
+                account.expiry?.let { put("turnstileJwtExpiresAtMs", it) }
+            }) } })
             put(TIDAL, buildJsonArray {
                 tidal.forEach { account ->
                     add(buildJsonObject {
@@ -442,6 +480,8 @@ internal class DesktopPlaybackPool(
                 TIDAL -> tidal = merged(tidal, deadId, { it.id }, parseTidal(entries, decrypt).firstOrNull()) ?: return@withLock
                 DEEZER -> deezer = merged(deezer, deadId, { it.id }, parseDeezer(entries, decrypt).firstOrNull()) ?: return@withLock
                 QOBUZ -> qobuz = merged(qobuz, deadId, { it.id }, parseQobuz(entries, decrypt).firstOrNull()) ?: return@withLock
+                APPLE -> apple = merged(apple, deadId, { it.id }, parseApple(entries, decrypt).firstOrNull()) ?: return@withLock
+                AMAZON -> amazon = merged(amazon, deadId, { it.id }, parseAmazon(entries, decrypt).firstOrNull()) ?: return@withLock
                 else -> return@withLock
             }
             persist()
@@ -496,6 +536,23 @@ internal class DesktopPlaybackPool(
         }
     }
 
+    private fun parseApple(array: JsonArray?, decrypt: (String) -> String?): List<DesktopApplePoolAccount> =
+        array.orEmpty().mapNotNull { value ->
+            val entry = value as? JsonObject ?: return@mapNotNull null
+            val token = field(entry, "token", decrypt)?.takeIf { it.startsWith("0.") } ?: return@mapNotNull null
+            DesktopApplePoolAccount(entryId(entry), token, flag(entry, "premium", true))
+        }
+    private fun parseAmazon(array: JsonArray?, decrypt: (String) -> String?): List<DesktopAmazonPoolAccount> =
+        array.orEmpty().mapNotNull { value ->
+            val entry = value as? JsonObject ?: return@mapNotNull null
+            val base = (entry["baseUrl"] as? JsonPrimitive)?.contentOrNull?.takeIf { url ->
+                runCatching { io.ktor.http.Url(url).let { it.protocol.name == "https" && it.host.isNotBlank() && it.user.isNullOrEmpty() && it.password.isNullOrEmpty() } }.getOrDefault(false)
+            } ?: return@mapNotNull null
+            val expiry = (entry["turnstileJwtExpiresAtMs"] as? JsonPrimitive)?.longOrNull
+                ?: (entry["turnstileJwtExpiresAt"] as? JsonPrimitive)?.contentOrNull?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+            DesktopAmazonPoolAccount(entryId(entry), base, field(entry, "bypassToken", decrypt), field(entry, "turnstileJwt", decrypt), expiry)
+        }
+
     private fun parseTidal(array: JsonArray?, decrypt: (String) -> String?): List<TidalPoolAccount> =
         array.orEmpty().mapNotNull { element ->
             val entry = element as? JsonObject ?: return@mapNotNull null
@@ -528,6 +585,8 @@ internal class DesktopPlaybackPool(
         const val TIDAL = "tidal"
         const val DEEZER = "deezer"
         const val QOBUZ = "qobuz"
+        const val APPLE = "apple-music"
+        const val AMAZON = "amazon-music"
         private val CACHE_KEY = CredentialKey("archivepool", CredentialScope.PLAYBACK_POOL, "feed-cache-v1")
         private const val ENCRYPTED_PREFIX = "enc:1:"
         private const val CLIENT_KEY_DOMAIN = "archivepool-client:"

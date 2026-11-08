@@ -28,6 +28,9 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.okhttp)
             implementation(libs.quickjs.kt)
+            implementation(libs.gson)
+            implementation(libs.jsoup)
+            implementation("org.json:json:20250517")
             // The YouTube fallback tiers. InnerTubeX expects JSON content negotiation on its client. :core and the
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
             // tier can drive the extractor directly, which adds nothing to the package.
@@ -63,6 +66,8 @@ kotlin {
             // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
             implementation(project(":spotifycore"))
             implementation(project(":canvas"))
+            implementation(project(":musixmatch"))
+            implementation("com.github.RouHim:jaudiotagger:1.4.31")
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
@@ -80,9 +85,51 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
             "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
     }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot")) {
+        include("SpotifyLibrespotNative.kt")
+        filter { line: String -> line.replace("System.loadLibrary(\"natune_librespot\")",
+            "moe.rukamori.archivetune.desktop.DesktopLibrespotLibrary.load()") }
+    }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback")) {
+        include("AudioTagger.kt")
+        filter { line: String -> line.replace("import timber.log.Timber",
+            "import moe.rukamori.archivetune.desktop.DesktopTagLog as Timber") }
+    }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/lyrics")) {
+        include("YouTubeLyricsProvider.kt", "YouTubeSubtitleLyricsProvider.kt")
+        filter { line: String ->
+            when {
+                line == "import android.content.Context" || line.contains("override fun isEnabled(context:") -> ""
+                line.startsWith("package ") -> line + "\n\nimport moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider"
+                else -> line.replace("duration: Int,", "durationSec: Int, isrc: String?,").replace("album, duration)", "album, durationSec)")
+            }
+        }
+    }
+    from(rootProject.file("modules/src/main/kotlin/moe/rukamori/archivetune/modules")) {
+        include("*.kt")
+        exclude("ModuleRuntimeStorage.kt")
+        filter { line: String ->
+            when {
+                line == "import android.content.Context" -> "import moe.rukamori.archivetune.modules.ModuleHostEnvironment as Context"
+                line == "import android.util.Base64" -> "import moe.rukamori.archivetune.modules.ModuleBase64 as Base64"
+                line == "import android.net.Uri" -> "import moe.rukamori.archivetune.modules.ModuleUri as Uri"
+                line == "import android.graphics.BitmapFactory" -> "import moe.rukamori.archivetune.modules.ModuleBitmapFactory as BitmapFactory"
+                line == "import android.graphics.Bitmap" -> "import moe.rukamori.archivetune.modules.ModuleBitmap as Bitmap"
+                line == "import android.os.SystemClock" -> ""
+                line.contains("context.packageManager.getPackageInfo") -> "    private val version = context.versionName"
+                else -> line.replace("context.applicationContext", "context")
+                    .replace("SystemClock.elapsedRealtime()", "(System.nanoTime() / 1_000_000L)")
+                    .replace("applicationContext.assets.open(name)", "applicationContext.openAsset(name)")
+            }
+        }
+    }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback/smart")) {
+        include("TransitionPolicy.kt", "TransitionPlanner.kt")
+        filter { line: String -> if (line.startsWith("package ")) line + "\nimport moe.rukamori.archivetune.shared.domain.automix.*" else line }
+    }
     into(desktopPlayPlaySources)
 }
-kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
+kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources); resources.srcDir(rootProject.file("modules/src/main/assets")) }
 tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }
 
 // The public Discord application id, which DesktopDiscordPresence.APPLICATION_ID must also hold. macOS hands the
@@ -592,6 +639,15 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
         // without them installs, starts and plays nothing, so the build refuses it here instead of shipping it.
         requireStagedPlaybackEngine(hostNativeDirectory.get().asFile)
         copy { from("packaging/notices"); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
+        val librespot = layout.buildDirectory.file("generated/librespot/$hostNativeName/native/${System.mapLibraryName("natune_librespot")}").get().asFile
+        hostNativeDirectory.get().asFile.resolve(System.mapLibraryName("natune_librespot")).delete()
+        if (librespot.isFile) {
+            providers.exec { commandLine("python", rootProject.file("native/librespot/desktop-artifact.py"), "validate", hostNativeName) }.result.get().assertNormalExitValue()
+            copy { from(librespot); into(hostNativeDirectory) }
+            copy { from(rootProject.file("native/librespot/LICENSE.librespot")); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
+        } else {
+            logger.warn("Librespot JNI unavailable; desktop playback uses the configured source fallback.")
+        }
         // TDLight is desktop-only. Its native library comes from the pinned source through the host's recipe, and its notice
         // must carry the verbatim Boost license from that tree. A package missing either is refused, not shipped with a
         // placeholder, because the Telegram path would fail at run time with no packaging-time signal.

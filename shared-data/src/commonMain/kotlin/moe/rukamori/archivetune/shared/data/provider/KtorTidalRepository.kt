@@ -65,6 +65,14 @@ class KtorTidalRepository(
     override suspend fun track(id: String): ProviderTrack =
         parse(http.json("$api/tracks/${pathId(id)}", locale, headers()).jsonObject)
 
+    /** Account lyrics reuse the same catalog match and authorization as playback. */
+    suspend fun lyrics(request: AudioResolveRequest): String? {
+        val track = match(request) ?: return null
+        val result = http.json("$api/tracks/${pathId(track.item.ref.id)}/lyrics", headers = headers()).jsonObject
+        check(access.isActive())
+        return result.text("lyrics") ?: result.text("subtitles")
+    }
+
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (!access.isActive()) throw UnsupportedContentOperation()
         if (request.forceFreshStream) instanceResolver.invalidate(request.mediaId)

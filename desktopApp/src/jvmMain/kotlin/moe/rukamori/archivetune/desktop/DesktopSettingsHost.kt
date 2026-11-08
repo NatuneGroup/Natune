@@ -150,7 +150,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
     val youTube = DesktopYouTubeAccountOwner(graph, controller)
     val qqMusic = DesktopQqMusicLoginOwner(graph.scope, graph.accountLifecycle, graph::report)
-    val spotify = DesktopSpotifyAccounts(graph, controller)
+    val spotify = DesktopSpotifyAccounts(graph, controller).also {
+        graph.audioSources.bindLibrespotAccessToken(it::librespotAccessToken)
+    }
     val deezerWeb = DesktopDeezerWebSignIn(graph)
     val tidalWeb = DesktopTidalWebSignIn(graph)
     val appleMusicWeb = DesktopAppleMusicWebSignIn(graph)
@@ -301,7 +303,8 @@ internal val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings/ai_integration", "settings/amazon", "settings/applemusic", "settings/canvas", "settings/changelog",
     "settings/content", "settings/discord", "settings/downloads", "settings/internet", "settings/jiosaavn",
     "settings/language_packs", "settings/lyrics/romanisation", "settings/player/ytdlp", "settings/po_token",
-    "settings/sources", "settings/storage", "settings/update",
+    "settings/sources", "settings/storage", "settings/update", "settings/modules",
+    "settings/appearance/palette_picker", "settings/appearance/theme_creator", "settings/appearance/icon",
     AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
 )
 
@@ -359,6 +362,8 @@ private fun DesktopSettingsRouteBody(
     val routePath = route.value.substringBefore('?')
     val settingsPage: @Composable (String) -> Unit = { path ->
         when (path) {
+            "settings/appearance/palette_picker", "settings/appearance/theme_creator", "settings/appearance/icon" -> DesktopAppearanceEditor(graph, path)
+            "settings/modules" -> DesktopModulesPage(graph, navigate)
             in DESKTOP_GENERAL_SETTINGS_ROUTES -> DesktopGeneralSettingsPage(
                 path = path,
                 controller = owners.controller,
