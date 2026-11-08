@@ -47,6 +47,14 @@ class DesktopExclusiveOutputPolicyTest {
         assertFalse(DesktopExclusiveOutputPolicy.decision(direct.copy(muted = true)).verifiedBitPerfect)
     }
 
+    @Test fun losslessIntegerPaddingCanUseA32BitNativeSlot() {
+        assertTrue(DesktopExclusiveOutputPolicy.decision(direct.copy(outputFormat = DesktopPcmFormat.S32, outputBits = 32)).verifiedBitPerfect)
+        assertTrue(DesktopExclusiveOutputPolicy.decision(direct.copy(inputFormat = DesktopPcmFormat.S16, inputBits = 16,
+            outputFormat = DesktopPcmFormat.S32, outputBits = 32)).verifiedBitPerfect)
+        assertFalse(DesktopExclusiveOutputPolicy.decision(direct.copy(inputFormat = DesktopPcmFormat.F32,
+            outputFormat = DesktopPcmFormat.S32, outputBits = 32)).verifiedBitPerfect)
+    }
+
     @Test fun sharedModeRestoresTheStoredSoftwareStages() {
         val config = StageConfig(request = PLAIN_REQUEST.copy(speed = 1.5, normalizationEnabled = true))
         val plan = DesktopExclusiveOutputPolicy.plan(direct.copy(requested = false), config)

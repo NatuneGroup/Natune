@@ -131,6 +131,7 @@ typedef struct ae_source {
     int leased;
     int interrupted_reads; /* consecutive reads the host answered as interrupted without an engine interrupt */
     int direct_pcm;
+    int precision_unreliable;
     ae_pcm_format pcm;
     uint64_t output_revision;
     uint64_t epoch;
@@ -649,6 +650,7 @@ static void source_close(ae_source *s) {
     s->flushed = 0;
     s->graph_tempo = 0.0;
     s->direct_pcm = 0;
+    s->precision_unreliable = 0;
     s->trim_seconds = -1.0;
     s->seekable = 0;
     s->duration_us = -1;
@@ -691,6 +693,8 @@ static int build_graph(ae_engine *e, ae_source *s, double tempo, double trim_sec
     char args[160];
     char number[48];
     int r;
+    const AVChannelLayout *input_layout = s->frame->nb_samples > 0 && s->frame->ch_layout.nb_channels > 0 ?
+        &s->frame->ch_layout : &s->decoder->ch_layout;
 
     if (s->graph) {
         avfilter_graph_free(&s->graph);
@@ -722,10 +726,10 @@ static int build_graph(ae_engine *e, ae_source *s, double tempo, double trim_sec
         snprintf(message, len, "out of memory");
         return -1;
     }
-    params->format = s->decoder->sample_fmt;
+    params->format = s->frame->nb_samples > 0 ? s->frame->format : s->decoder->sample_fmt;
     params->time_base = s->time_base;
-    params->sample_rate = s->decoder->sample_rate;
-    r = av_channel_layout_copy(&params->ch_layout, &s->decoder->ch_layout);
+    params->sample_rate = s->frame->sample_rate > 0 ? s->frame->sample_rate : s->decoder->sample_rate;
+    r = av_channel_layout_copy(&params->ch_layout, input_layout);
     if (r >= 0) {
         r = av_buffersrc_parameters_set(src, params);
     }
@@ -782,7 +786,7 @@ static int build_graph(ae_engine *e, ae_source *s, double tempo, double trim_sec
      * aformat's mono-to-stereo conversion applies the -3 dB centre mix. Mono sources are duplicated
      * at unity instead, which is what a stereo output device plays for a mono file.
      */
-    if (s->decoder->ch_layout.nb_channels == 1) {
+    if (input_layout->nb_channels == 1) {
         r = avfilter_graph_create_filter(&ctx, duplicate, "duplicate", "map=0|0:channel_layout=stereo", NULL,
                                          s->graph);
         if (r < 0 || avfilter_link(prev, 0, ctx, 0) < 0) {
@@ -873,6 +877,8 @@ static int receive_frames(ae_engine *e, ae_source *s, uint64_t epoch, char *mess
         if (s->frame->pts == AV_NOPTS_VALUE) {
             s->frame->pts = s->frame->best_effort_timestamp;
         }
+        r = synchronize_frame_output(e, s, epoch, message, len);
+        if (r != 0) { av_frame_unref(s->frame); return r; }
         if (s->direct_pcm) {
             r = direct_frame(e, s, epoch, message, len);
             av_frame_unref(s->frame);
@@ -1218,7 +1224,7 @@ static int work_pending_locked(const ae_engine *e, const ae_source *s) {
     if (e->pending_seek) {
         return 1;
     }
-    if (s->output_revision != e->output_revision) return 1;
+    if (!e->ended && s->output_revision != e->output_revision) return 1;
     if (!e->ready) {
         return 0;
     }

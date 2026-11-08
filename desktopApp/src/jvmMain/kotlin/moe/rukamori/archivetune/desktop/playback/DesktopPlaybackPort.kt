@@ -723,13 +723,6 @@ class DesktopPlaybackPort(
         return try {
             syncHandoff()
             if (output.refresh(mix)) applyStages()
-            output.failureReason()?.let { reason ->
-                sessions[activeIndex()]?.let { failed ->
-                    stopSession()
-                    fail(failed.request, PlaybackFailureReason.OUTPUT_FAILED, reason)
-                    return false
-                }
-            }
             val now = clock.nowNanos()
             val timing = mix.snapshot()
             trackTimeline(timing.timelineFrames, now)
@@ -738,6 +731,13 @@ class DesktopPlaybackPort(
             for (index in 0 until DECK_COUNT) {
                 val engine = mix.deck(index)
                 val state = engine.snapshot()
+                output.failureReason()?.takeIf { index == activeIndex() && state.hasSource && !state.isEnded && state.errorCode == 0 }?.let { reason ->
+                    sessions[index]?.let { failed ->
+                        stopSession()
+                        fail(failed.request, PlaybackFailureReason.OUTPUT_FAILED, reason)
+                        return false
+                    }
+                }
                 failureMappers[index].failure(
                     state,
                     httpStatus = { sessions[index]?.lease?.failureStatus() },
