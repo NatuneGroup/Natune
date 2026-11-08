@@ -21,6 +21,10 @@ internal class AutoBrowseChildrenCache<T>(
     // One in-flight load per folder. Concurrent callers await the same Deferred instead of each
     // rebuilding the (possibly shuffled or network-backed) list and overwriting the snapshot.
     private val inFlight = HashMap<String, CompletableDeferred<List<T>>>()
+    // Bumped by clear() so a load that started before a library refresh can never repopulate the
+    // cache with the now-stale list. refreshAutomotiveLibrary() clears while older page loads may
+    // still be suspended on a network/shuffle rebuild.
+    private var generation = 0L
 
     suspend fun children(
         parentId: String,
@@ -30,6 +34,7 @@ internal class AutoBrowseChildrenCache<T>(
         var owner = false
         var snapshot: List<T>? = null
         var deferred: CompletableDeferred<List<T>>? = null
+        var startedGeneration = 0L
         synchronized(lock) {
             // An active load wins over a possibly-stale committed snapshot, so a page 1+ request
             // that races a page 0 reload awaits the new list rather than serving the old one.
@@ -39,6 +44,7 @@ internal class AutoBrowseChildrenCache<T>(
                 active != null -> deferred = active
                 committed != null -> snapshot = committed
                 else -> {
+                    startedGeneration = generation
                     val pending = CompletableDeferred<List<T>>()
                     inFlight[parentId] = pending
                     deferred = pending
@@ -63,7 +69,11 @@ internal class AutoBrowseChildrenCache<T>(
                 throw t
             }
         synchronized(lock) {
-            entries[parentId] = loaded
+            // A clear() during load() bumped the generation; the result is still returned to the
+            // caller that requested it, but it must NOT seed a snapshot: later pages would then
+            // read a list built before the library refresh. A page request made after clear()
+            // finds no snapshot and reloads under the new generation.
+            if (generation == startedGeneration) entries[parentId] = loaded
             if (inFlight[parentId] === pending) inFlight.remove(parentId)
         }
         // Complete outside the lock: an awaiter may resume immediately and re-enter children().
@@ -73,6 +83,7 @@ internal class AutoBrowseChildrenCache<T>(
 
     fun clear() {
         synchronized(lock) {
+            generation++
             entries.clear()
             inFlight.clear()
         }
