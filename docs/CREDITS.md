@@ -210,3 +210,17 @@ diagnostics exporter, the Listen Together server list, and the Kotlin Multiplatf
 
 A contribution derived from another project names that project in the pull request and
 adds it to this file.
+
+## Source modules
+
+The Android `modules/` host, app module repositories/settings/Media3 adapters and
+host assets are ported from rukamori/ArchiveTune dev `8f25a9e21`, GPL-3.0, with
+original notices preserved. Natune source-chain/schema adaptations remove the
+network gatekeeper and hardcoded-key encrypted module envelope.
+
+`addons/modules/upstream/extension/` preserves ArchiveTuneModules source/icons;
+TIDAL and Qobuz forks retain their authorship, JioSaavn is unchanged. Upstream's
+LGPL-3.0-only NOTICE/LICENSE, GPL COPYING, manifest license declarations and GPL
+packager notice are retained together under `addons/modules/`. Natune's provider
+adapters, catalog builder and pure JS ArchivePool crypto state GPL-3.0-or-later
+terms. See [module compatibility and comparison](modules.md).

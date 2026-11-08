@@ -22,9 +22,22 @@ must preserve the invariants below.
 - **Listen Together**: LAN plus exactly the public servers listed in `listentogether/ListenTogetherServers.kt` (vivi's JSON "Hugging Face Sync" at `devilmi-vivi-music-listen-together.hf.space` and Metrolist's protobuf-only The Meowery at `metroserverx.meowery.eu`) — nothing else. The retired `vivimusic-listen-together.onrender.com` is never contacted; it is only accepted as an invite-link host so old links still open. No koiverse REST/WS path and no `*.koiverse.cloud` / `raw.githubusercontent.com/koiverse/*` call anywhere in the tree. The Meowery never takes a JSON frame: the codec is pre-negotiated per host, the app sends no `client_capabilities` frame, `buffer_ready` is the catch-up mechanism, and the host has no chat relay (chat is JSON-server-only). Connection and room-request waits are bounded; stale socket callbacks must not alter a newer connection. Server hosting restrictions must be shown, never bypassed.
 - **Protected files**: `applicationId` (`moe.rukamori.archivetune`) is fork identity — never adopt upstream changes to it. `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`, `DataServer.txt` were removed and must never be restored.
 
+## Source modules
+
+- `:modules` is the Android-only ArchiveTune API-v1 host from upstream `8f25a9e21`;
+  preserve readable `.arch` compatibility, format/API versions and JS host APIs.
+  Modules are opt-in and sit in the existing playback/download source order;
+  YouTube's extractor tiers and native DRM/decryption routes remain unchanged.
+- Never restore `NetworkGatekeeper` or `8SM1.` hardcoded-key envelope decryption.
+  Minimum app compatibility uses the explicit upstream contract floor 15.1.0,
+  independently of Natune's release name. Advance it only with reviewed host changes.
+- `addons/modules` carries provider packages and both upstream/fork attribution.
+  No bundled credentials. Update branch-based catalog download URLs after merge.
+  Architecture, differences and validation limits: [modules](docs/modules.md).
+
 ## Modules & submodules
 
-- Gradle modules: `:app :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
+- Gradle modules: `:app :modules :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
 - Submodules: `core` → **vossgraves/core** (NewPipeExtractor-based InnerTube client; a fork of rukamori/core that deliberately carries no `NetworkGatekeeper`, pinned on `feat/podcast-port` for the podcast models), `lyrics` → **4nx3b/lyrics**, `IconPack` → **NatuneGroup/IconPack** (fork of rukamori/IconPack; the icon-switcher pack), `deobfuscator` → **rukamori/morideobfuscator** (the media obfuscator; the upstream repository keeps its own name and the gitlink is unchanged). Commit + push inside a submodule first, then pin the gitlink; never leave a dirty or unpushed pointer. Never move `core` to a `rukamori/core` revision — its `NetworkGatekeeper` defaults to `connectionBlocked = true` and throws on every request.
 
 ## Build & test
