@@ -15,6 +15,7 @@ import android.os.Bundle
 class DiscordOAuthCallbackActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (DiscordSocialSdkRuntime.forwardSdkCallback(this, intent?.data)) { finish(); return }
         handleIntent(intent)
         finish()
     }
