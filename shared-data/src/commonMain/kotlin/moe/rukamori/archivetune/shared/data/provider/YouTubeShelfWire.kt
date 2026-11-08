@@ -337,9 +337,7 @@ private fun WireResponsiveItem.toEntry(): YouTubeEntry? {
         kind = resolved,
         id = id,
         title = title,
-        subtitle = artists.joinToString(", ") { it.name }.ifBlank {
-            groups.firstOrNull()?.joinToString("") { it.text.orEmpty() }.orEmpty()
-        },
+        subtitle = youTubeArtistSubtitle(artists, groups.firstOrNull()?.joinToString("") { it.text.orEmpty() }.orEmpty()),
         artworkUri = thumbnail?.bestUrl(),
         durationSeconds = duration?.toSeconds(),
         explicit = badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == EXPLICIT_BADGE },
@@ -375,15 +373,7 @@ private fun List<WireRun>.splitBySeparator(): List<List<WireRun>> {
 
 /** The artist credits the provider linked, kept in its order. A credit without a name is dropped. */
 private fun List<List<WireRun>>.artistCredits(): List<ContentCredit> =
-    firstOrNull()?.mapNotNull { run ->
-        val browseId = run.navigationEndpoint?.browseEndpoint?.browseId
-        val name = run.text?.takeIf(String::isNotBlank)
-        when {
-            name == null -> null
-            browseId != null && (browseId.startsWith("UC") || browseId.startsWith("FEMC")) -> ContentCredit(name, browseId)
-            else -> null
-        }
-    }.orEmpty()
+    youTubeArtistCredits(this, { it.text }, { it.navigationEndpoint?.browseEndpoint?.browseId })
 
 /** The (browseId, title) of the album credit, keyed on the album browse id's MPRE prefix. */
 private fun WireRun.albumCredit(): Pair<String, String>? {
@@ -395,11 +385,13 @@ private fun WireTwoRowItem.toEntry(): YouTubeEntry? {
     val kind = navigationEndpoint.toKind() ?: return null
     val id = navigationEndpoint.toId() ?: return null
     val title = title?.text()?.takeIf(String::isNotBlank) ?: return null
+    val artists = subtitle?.runs?.splitBySeparator().orEmpty().artistCredits()
     return YouTubeEntry(
         kind = kind,
         id = id,
         title = title,
-        subtitle = subtitle?.text().orEmpty(),
+        subtitle = youTubeArtistSubtitle(artists, subtitle?.text().orEmpty()),
+        artists = artists,
         artworkUri = thumbnailRenderer?.bestUrl(),
     )
 }
