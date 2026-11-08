@@ -454,6 +454,15 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_existing_ios_editors_are_reachable_from_the_route_registry(self):
+        lane = (UI_IOS / "IosLaneSettings.kt").read_text()
+        routes = lane.split('internal val IOS_LANE_SETTINGS_ROUTES = setOf(', 1)[1].split('\n)', 1)[0]
+        for path in ['settings/modules', 'settings/appearance/liquid_glass', 'settings/discord/experimental']:
+            self.assertIn('"' + path + '"', routes)
+            self.assertIn('"' + path + '" ->', lane)
+        settings = (UI_IOS / "IosSettings.kt").read_text()
+        self.assertIn('in IOS_LANE_SETTINGS_ROUTES -> IosLaneSettingsPage(', settings)
+
     def test_dsp_native_and_blend_keep_additional_filters_and_report_limits(self):
         header = (IOS / "Native/ATNativeAudio.h").read_text()
         self.assertIn('#define AT_AUDIO_EQ_MAX_BANDS 24', header)
