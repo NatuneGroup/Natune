@@ -63,7 +63,9 @@ class ModuleParsingTest {
     }
 
     @Test fun upstreamAudioTypesAndCapabilitiesAreUnchanged() = runBlocking {
-        for (types in listOf(emptyList(), listOf("audio_provider"), listOf("music", "lossless"))) {
+        for (types in listOf(emptyList(), listOf("audio_provider"), listOf("music", "lossless"),
+            listOf("lyrics_provider"), listOf("metadata_provider"), listOf("playback_provider"),
+            listOf("audio_provider", "lyrics_provider", "metadata_provider"))) {
             val data = metadata().put("type", JSONArray(types))
             val manifest = ModuleManifest.parse(data)
             assertEquals(ModuleKind.AUDIO_SOURCE, manifest.kind)
@@ -88,9 +90,10 @@ class ModuleParsingTest {
     }
 
     @Test fun ambiguousKindsAndWrongCapabilitiesAreRejected() {
-        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", JSONArray(listOf("lyrics_provider", "metadata_provider")))) }
-        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", "lyrics_provider")) }
-        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", "metadata_provider").put("capabilities", JSONArray(listOf("getLyrics")))) }
+        fun natuneMetadata() = metadata().put("requiredRuntimeFeatures", JSONArray(listOf("natuneExtensions@1")))
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(natuneMetadata().put("type", JSONArray(listOf("lyrics_provider", "metadata_provider")))) }
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(natuneMetadata().put("type", "lyrics_provider")) }
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(natuneMetadata().put("type", "metadata_provider").put("capabilities", JSONArray(listOf("getLyrics")))) }
     }
 
     @Test fun compatibilityFloorUsesUpstreamContractAndRejectsFutureRequirements() {

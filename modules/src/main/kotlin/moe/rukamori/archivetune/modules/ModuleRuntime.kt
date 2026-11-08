@@ -385,7 +385,8 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                 "minAppVersion:p.minAppVersion,requiredRuntimeFeatures:p.requiredRuntimeFeatures,iconBase64:p.iconBase64,authentication:p.authentication," +
                 "labels:[...(Array.isArray(p.labels)?p.labels:[]),...(Array.isArray(p.tags)?p.tags:[])]," +
                 "settings:p.settings||{},capabilities:(()=>{const kinds=$kinds;const types=Array.isArray(p.type)?p.type:[p.type];" +
-                "const kind=types.find(t=>['metadata_provider','lyrics_provider','playback_provider'].includes(t))||'audio_provider';" +
+                "const features=Array.isArray(p.requiredRuntimeFeatures)?p.requiredRuntimeFeatures:[p.requiredRuntimeFeatures];" +
+                "const kind=(features.includes('natuneExtensions@1')&&types.find(t=>['metadata_provider','lyrics_provider','playback_provider'].includes(t)))||'audio_provider';" +
                 "return kinds[kind].filter(k=>typeof p[k]==='function');})()};})());",
         )
         return ModuleManifest.parse(JSONObject(manifest).put("authentication", host.authentication))

@@ -351,7 +351,8 @@ def validate(manifest, entries, issues, app_version=None, verify_hashes=False):
         "playback_provider": ("searchTracks", "getTrackStreamUrl"),
     }
     types = string_list(module.get("type", []), "module.type", issues, allow_string=True)
-    selected = [kind for kind in kinds if kind in types]
+    features = string_list(module.get("requiredRuntimeFeatures", []), "module.requiredRuntimeFeatures", issues, allow_string=True)
+    selected = [kind for kind in kinds if kind in types] if "natuneExtensions@1" in features else []
     if len(selected) > 1 or (selected and "audio_provider" in types) or (selected and extension):
         issue(issues, "module.type", "Declare one Natune kind using the archivetune runtime")
     kind = selected[0] if selected else None
@@ -437,7 +438,9 @@ def assess(manifest, entries, issues, origin, app_version=None, verify_hashes=Fa
     runtime = manifest.get("runtime", "archivetune") if isinstance(manifest, dict) else "<invalid>"
     types = module.get("type", [])
     types = [types] if isinstance(types, str) else types if isinstance(types, list) else []
-    natune = any(kind in types for kind in ("metadata_provider", "lyrics_provider", "playback_provider"))
+    features = module.get("requiredRuntimeFeatures", [])
+    features = [features] if isinstance(features, str) else features if isinstance(features, list) else []
+    natune = "natuneExtensions@1" in features and any(kind in types for kind in ("metadata_provider", "lyrics_provider", "playback_provider"))
     runtime_note = "Natune-only extension. Upstream ArchiveTune API v1 rejects this kind or its capabilities. JavaScript and live provider access were not executed." if natune else RUNTIME_NOTE
     report = {"operation": "validate", "status": "error" if any(item["level"] == "error" for item in issues) else "valid",
               "source": str(origin), "targetAppVersion": app_version, "runtime": runtime if isinstance(runtime, str) else "<invalid>", "metadata": metadata,

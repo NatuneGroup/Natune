@@ -24,5 +24,8 @@ enum class ModuleKind(val wireType: String, val capabilities: List<String>) {
     }
 }
 
-val ModuleManifest.kind: ModuleKind get() = ModuleKind.fromTypes(types)
+// API-v1 type strings are opaque labels. Only an explicit runtime requirement opts into
+// Natune's interpretation, so an upstream audio module cannot be reclassified on upgrade.
+val ModuleManifest.kind: ModuleKind get() =
+    if ("natuneExtensions@1" in requiredRuntimeFeatures) ModuleKind.fromTypes(types) else ModuleKind.AUDIO_SOURCE
 val ModuleManifest.providesAudio: Boolean get() = kind == ModuleKind.AUDIO_SOURCE || kind == ModuleKind.PLAYBACK
