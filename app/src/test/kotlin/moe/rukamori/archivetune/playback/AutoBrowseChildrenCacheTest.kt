@@ -134,6 +134,32 @@ class AutoBrowseChildrenCacheTest {
         }
 
     @Test
+    fun clearInvalidatesALoadAlreadyInFlight() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val gate = CompletableDeferred<Unit>()
+            var loads = 0
+            val load: suspend () -> List<Int> = {
+                loads++
+                if (loads == 1) gate.await() // the slow load is started before clear()
+                listOf(loads)
+            }
+
+            val stale = async { cache.children("home_quick_picks", 0, load) }
+            runCurrent()
+            assertEquals(1, loads)
+            cache.clear()
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(listOf(1), stale.await()) // its own caller still gets a result
+            // ...but it did not repopulate the cache: a later page must reload under the new
+            // generation instead of serving the pre-clear snapshot.
+            assertEquals(listOf(2), cache.children("home_quick_picks", 1, load))
+            assertEquals(2, loads)
+        }
+
+    @Test
     fun clearAndEvictionDropSnapshots() =
         runTest {
             val cache = AutoBrowseChildrenCache<Int>(maxEntries = 1)
