@@ -92,6 +92,7 @@ import moe.rukamori.archivetune.shared.ui.settings.CrashLogActions
 import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordRoute
 import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordSettings
 import moe.rukamori.archivetune.shared.ui.settings.CrashLogsRoute
+import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
 import moe.rukamori.archivetune.shared.ui.settings.CrashLogsSettings
 import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings

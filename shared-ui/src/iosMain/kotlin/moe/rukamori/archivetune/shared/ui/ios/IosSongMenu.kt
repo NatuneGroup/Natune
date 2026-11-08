@@ -369,8 +369,9 @@ internal fun IosSongMenu(
         add(OverflowAction("lyrics_providers", Res.string.m6_settings_home_lyrics_providers) {
             menu.dismiss(); openRoute("settings/lyrics/providers")
         })
-        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
-        if (playing?.item?.ref == ref && lyricDocument?.hasLines == true) {
+        val document = lyricDocument
+        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }
+        if (document != null && playing?.item?.ref == ref && document.hasLines) {
             add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
             add(OverflowAction("translate_lyrics", Res.string.ios_lyrics_translate) {
                 check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.TRANSLATE)); menu.dismiss()
@@ -379,7 +380,7 @@ internal fun IosSongMenu(
                 check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.ROMANIZE)); menu.dismiss()
             })
             add(OverflowAction("undo_lyrics", Res.string.ios_lyrics_undo) {
-                val id = lyricDocument.occurrenceId
+                val id = document.occurrenceId
                 if (graph.lyricsTools.edits.undo { graph.lyrics.current.value?.occurrenceId == id })
                     graph.lyricsSurface.sessions.translationUndone(id)
                 menu.dismiss()
