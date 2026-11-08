@@ -71,6 +71,44 @@ internal fun DesktopOutputActionButton(
 }
 
 @Composable
+private fun DesktopOutputExclusiveRow(exclusive: Boolean, busy: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(Res.string.desktop_exclusive_output))
+            Text(stringResource(Res.string.m6_usb_exclusions), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = exclusive, onCheckedChange = onChange, enabled = !busy)
+    }
+}
+
+@Composable
+private fun DesktopOutputDeviceList(
+    loading: Boolean,
+    devices: List<DesktopOutputDevice>,
+    selectedId: String?,
+    busy: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    when {
+        loading -> CircularProgressIndicator(Modifier.padding(8.dp))
+        devices.isEmpty() -> Text(DesktopStrings["desktop_output_no_devices"])
+        else -> devices.forEach { device ->
+            ListItem(
+                headlineContent = { Text(device.name) },
+                trailingContent = {
+                    RadioButton(
+                        selected = selectedId == device.id,
+                        enabled = !busy,
+                        onClick = { onSelect(device.id) },
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
 internal fun DesktopOutputSheet(state: DesktopOutputSheetState, graph: DesktopSessionGraph) {
     if (!state.open) return
     val saved by graph.settings.snapshots.collectAsState()
@@ -145,35 +183,13 @@ internal fun DesktopOutputSheet(state: DesktopOutputSheetState, graph: DesktopSe
             Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DesktopOutputStatus(output)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(Res.string.desktop_exclusive_output))
-                        Text(stringResource(Res.string.m6_usb_exclusions), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = exclusive, onCheckedChange = ::setExclusive, enabled = !busy)
-                }
+                DesktopOutputExclusiveRow(exclusive, busy) { setExclusive(it) }
                 Text(DesktopStrings["desktop_output_device_scope"], style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(enabled = !busy, onClick = { select("") }) {
                     Text(DesktopStrings["desktop_output_default_device"])
                 }
-                when {
-                    loading -> CircularProgressIndicator(Modifier.padding(8.dp))
-                    devices.isEmpty() -> Text(DesktopStrings["desktop_output_no_devices"])
-                    else -> devices.forEach { device ->
-                        ListItem(
-                            headlineContent = { Text(device.name) },
-                            trailingContent = {
-                                RadioButton(
-                                    selected = preferences[DesktopOutputDeviceIdKey] == device.id,
-                                    enabled = !busy,
-                                    onClick = { select(device.id) },
-                                )
-                            },
-                        )
-                    }
-                }
+                DesktopOutputDeviceList(loading, devices, preferences[DesktopOutputDeviceIdKey], busy) { select(it) }
             }
         },
         confirmButton = {
