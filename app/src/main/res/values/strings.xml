@@ -1177,8 +1177,8 @@
     <string name="pool_refresh_title">Refresh from pool</string>
     <string name="pool_refreshing">Refreshing from pool…</string>
     <string name="pool_refresh_done">Pool refreshed: %1$d Tidal, %2$d Qobuz, %3$d Deezer account(s)</string>
-    <string name="pool_refresh_up_to_date">Already up to date — the pool is only fetched every few hours, so nothing was requested just now.</string>
-    <string name="pool_refresh_failed">Couldn\'t reach the source pool. Check your connection and try again.</string>
+    <string name="pool_refresh_up_to_date">Pool refresh was skipped.</string>
+    <string name="pool_refresh_failed">Couldn\'t refresh the source pool. Check the status and try again.</string>
     <string name="use_pool_accounts">Use pool accounts</string>
     <string name="nerd_stats">Nerd Stats</string>
     <string name="track_label">Track</string>
