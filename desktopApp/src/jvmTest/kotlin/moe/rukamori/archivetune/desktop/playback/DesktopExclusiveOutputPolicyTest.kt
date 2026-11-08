@@ -1,6 +1,9 @@
 package moe.rukamori.archivetune.desktop.playback
 
 import kotlin.test.*
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import moe.rukamori.archivetune.shared.domain.settings.*
 
 class DesktopExclusiveOutputPolicyTest {
@@ -61,5 +64,32 @@ class DesktopExclusiveOutputPolicyTest {
         assertFalse(plan.bypass)
         assertTrue(plan.tempoPitch)
         assertTrue(plan.normalization)
+    }
+
+    @Test fun refusedExclusiveRouteKeepsTheStoredProcessingInItsSharedFallback() {
+        val config = StageConfig(request = PLAIN_REQUEST.copy(normalizationEnabled = true, equalizerEnabled = true,
+            speed = 1.5, pitchSemitones = 3.0, silenceSkippingEnabled = true, twoDeckMixingEnabled = true))
+        val fallback = direct.copy(directPcm = false, exclusiveActive = false, outputRateHz = 48_000,
+            reason = "Exclusive output refused")
+        val plan = DesktopExclusiveOutputPolicy.plan(fallback, config)
+        assertFalse(plan.bypass)
+        assertTrue(plan.normalization)
+        assertTrue(plan.equalizer)
+        // A requested direct route still pins tempo/pitch, mixing and silence skipping; only the sink changed.
+        assertFalse(plan.tempoPitch || plan.twoDeckMixing || plan.silenceSkipping)
+        assertFalse(DesktopExclusiveOutputPolicy.decision(fallback).verifiedBitPerfect)
+    }
+
+    @Test fun onlyAnActiveDirectLaneStripsTheStoredProcessingSettings() {
+        val bands = listOf(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, 4.0))
+        val stored = DspSettings(normalizationEnabled = true, equalizerEnabled = true, equalizerBands = bands)
+        val directSettings = desktopOutputSettings(direct, stored, bands, 3.0, null)
+        assertFalse(directSettings.equalizerEnabled)
+        assertTrue(directSettings.equalizerBands.isEmpty())
+        assertEquals(1f, directSettings.linearGain)
+        val fallbackSettings = desktopOutputSettings(direct.copy(directPcm = false), stored, bands, 3.0, null)
+        assertTrue(fallbackSettings.equalizerEnabled)
+        assertEquals(bands, fallbackSettings.equalizerBands)
+        assertTrue(fallbackSettings.linearGain > 1f)
     }
 }

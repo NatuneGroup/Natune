@@ -242,6 +242,10 @@ private fun NumberedTopActions(c: PlayerRenderContext, buttonBg: Color, buttonIc
                 likeTint?.copy(alpha = .9f) ?: textColor.copy(alpha = .7f), RoundedCornerShape(12.dp), selected = liked)
         }
         PlayerDesignStyle.V4 -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (c.slots.outputButton != null) {
+                StyleIconButton(c, PlayerSymbol.OUTPUT, PlayerAction.OUTPUT, size = 44.dp, iconSize = 22.dp,
+                    container = textColor.copy(alpha = .12f), iconColor = textColor, shape = RoundedCornerShape(14.dp))
+            }
             TopActionBox(PlayerAction.SHARE, c, 44.dp, 22.dp, textColor.copy(alpha = .12f), textColor, RoundedCornerShape(14.dp))
             TopActionBox(PlayerAction.LIKE, c, 44.dp, 22.dp,
                 if (liked) MaterialTheme.colorScheme.error.copy(alpha = .25f) else textColor.copy(alpha = .12f),

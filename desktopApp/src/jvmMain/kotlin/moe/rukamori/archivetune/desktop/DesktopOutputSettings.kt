@@ -79,7 +79,7 @@ internal fun DesktopPlaybackOutputSettings(
 }
 
 @Composable
-private fun DesktopOutputStatus(output: DesktopOutputState) {
+internal fun DesktopOutputStatus(output: DesktopOutputState) {
     val decision = DesktopExclusiveOutputPolicy.decision(output)
     val label = when {
         output.muted -> "desktop_output_muted"

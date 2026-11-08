@@ -99,7 +99,10 @@ internal fun desktopHostBindings(
     // typeface the settings page installs, so a SpatialFlow title draws in that typeface once it is installed.
     val sleepSheet = DesktopSleepTimerSheetState()
     val playerMenu = DesktopPlayerMenuState()
-    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily,
+    // The player's output control opens the same live device/exclusive selection the playback settings page owns.
+    val outputSheet = DesktopOutputSheetState()
+    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, outputSheet,
+        settingsOwners.services.spatialFlowFontFamily,
         onTitle = { row -> row.item.albumRef()?.let { ownRoutes.trySend(ArchiveRoutes.content(it)) } ?: menu.open(row) },
         onArtists = { row -> menu.openArtists(row.item) })
     val podcasts = createDesktopPodcasts(graph)
@@ -162,6 +165,7 @@ internal fun desktopHostBindings(
             DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph, canvas) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             DesktopEqualizerOverlay(graph.equalizer)
+            DesktopOutputSheet(outputSheet, graph)
             AcousticQualityOverlay(graph.acoustic)
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
@@ -171,7 +175,9 @@ internal fun desktopHostBindings(
             // over any page, and its settings row stays reachable through the settings tree.
             DesktopDeviceConnectHost(graph) { ownRoutes.trySend("settings/integrations/device_connect") }
         },
-        playerSlots = { expanded, active, _ -> desktopPlayerSlots(graph, canvas, canvasFrames, lyricsTools, expanded, active) },
+        playerSlots = { expanded, active, _ ->
+            desktopPlayerSlots(graph, canvas, canvasFrames, lyricsTools, outputSheet, expanded, active)
+        },
         // Native volume and output state come from the same engine as playback.
         playerControls = DesktopCanvasControls(controls, canvas, graph.scope),
         // The row menu queues the chosen row through the one queue. Other song rows need owners this host does not connect.
@@ -286,7 +292,7 @@ internal fun openDesktopUri(uri: String, report: (String) -> Unit): Boolean =
 @Composable
 private fun desktopPlayerSlots(
     graph: DesktopSessionGraph, canvas: DesktopCanvasOwner, canvasFrames: DesktopCanvasFrames,
-    tools: DesktopLyricsTools, expanded: Boolean, active: Boolean,
+    tools: DesktopLyricsTools, outputSheet: DesktopOutputSheetState, expanded: Boolean, active: Boolean,
 ): PlayerSlots {
     val published by graph.lyrics.current.collectAsState()
     val playback by graph.player.snapshot.collectAsState()
@@ -372,6 +378,7 @@ private fun desktopPlayerSlots(
         },
         compactLyrics = lyrics.compact,
         queue = { modifier -> DesktopQueuePanel(graph, modifier) },
+        outputButton = { modifier, tint, enabled -> DesktopOutputActionButton(outputSheet, modifier, tint, enabled) },
     )
 }
 
