@@ -224,7 +224,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcrun --sdk iphonesimulator swiftc -typecheck -application-extension \
+          xcrun --sdk iphonesimulator swiftc -typecheck -parse-as-library -application-extension \
             -swift-version 5 -target arm64-apple-ios16.0-simulator \
             iosApp/Widgets/NatuneControls.swift
 
