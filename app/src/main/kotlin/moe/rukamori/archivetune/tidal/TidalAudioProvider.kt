@@ -1820,9 +1820,9 @@ object TidalAudioProvider {
                 source = AudioSourceType.TIDAL,
             )
         }.onFailure {
+            it.rethrowIfAudioSourceCancelled()
             Timber.tag("TidalAudioProvider").w(it, "account manifest resolve failed")
         }.getOrNull()
-
     private fun parseManifest(
         manifestB64: String,
         declaredMimeType: String?,

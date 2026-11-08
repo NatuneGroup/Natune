@@ -41,6 +41,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.navigation.NavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,6 +58,8 @@ import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.rememberPreference
 import androidx.compose.foundation.layout.asPaddingValues
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +136,22 @@ private fun PoolRefreshSection(positions: PreferencePositions) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
+    var requesting by remember { mutableStateOf(false) }
+    var requestError by remember { mutableStateOf<String?>(null) }
+    val status by PoolAccountManager.feedStatus.collectAsStateWithLifecycle()
+    val refreshing = requesting || status.refreshing
+    val error = requestError ?: status.error
+    val counts = stringResource(R.string.pool_cached_counts, status.tidal, status.qobuz, status.deezer, status.appleMusic, status.amazon)
+    val lastRefresh = if (status.lastAttemptAtMillis > 0L) {
+        stringResource(R.string.pool_last_refresh_attempt, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+            .format(Date(status.lastAttemptAtMillis)))
+    } else stringResource(R.string.pool_never_refreshed)
+
+    LaunchedEffect(context) {
+        try { PoolAccountManager.loadCached(context) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { requestError = context.getString(R.string.pool_refresh_failed) }
+    }
 
     PreferenceGroup(
         modifier = positions.modifierFor("youtube_music"),
@@ -148,6 +167,19 @@ private fun PoolRefreshSection(positions: PreferencePositions) {
                         },
                     )
                 },
+                description = counts,
+                content = {
+                    Column {
+                        Text(stringResource(when {
+                            refreshing -> R.string.pool_refreshing
+                            error != null -> R.string.pool_status_failed
+                            status.lastAttemptAtMillis > 0L -> R.string.pool_status_ready
+                            else -> R.string.pool_never_refreshed
+                        }))
+                        if (status.lastAttemptAtMillis > 0L) Text(lastRefresh)
+                        error?.let { Text(it) }
+                    }
+                },
                 icon = { Icon(painterResource(R.drawable.sync), null) },
                 trailingContent =
                     if (refreshing) {
@@ -158,52 +190,36 @@ private fun PoolRefreshSection(positions: PreferencePositions) {
                 isEnabled = !refreshing,
                 onClick = {
                     if (refreshing) return@PreferenceEntry
-                    refreshing = true
+                    requesting = true
+                    requestError = null
                     scope.launch {
-                        val before = PoolAccountManager.lastRefreshAtMillis
-                        val ok =
+                        try {
+                            val before = PoolAccountManager.lastRefreshAtMillis
                             withContext(Dispatchers.IO) {
-                                // Deliberately NOT forced. A tap must not bypass the interval:
-                                // the pool's database is woken by every fetch, so "I tapped it"
-                                // would spend the same budget the interval exists to protect.
-                                // The tap fetches only when the cached copy is actually due.
-                                val accountsOk = PoolAccountManager.refresh(context)
-                                // Re-discover + re-verify community Tidal instances, but only when
-                                // that refresh really happened — otherwise this is a second network
-                                // round trip for data the throttle just declined to fetch.
-                                if (PoolAccountManager.lastRefreshAtMillis != before) {
-                                    runCatching {
-                                        TidalInstanceHealthManager.refresh(
-                                            context,
-                                            includeDiscovery = true,
-                                            staggered = false,
-                                        )
-                                    }
-                                }
-                                accountsOk
-                            }
-                        // A pool failure wins over `ok`. refresh() returns hasAccounts(), which is
-                        // true whenever anything survives in the persisted cache — so a pool that
-                        // 404s or 401s on every request still reported "refreshed: tidal=1 …" and
-                        // looked healthy, hiding the real reason in logcat. Show the reason.
-                        val poolError = PoolAccountManager.lastFeedError
-                        val message =
-                            when {
-                                poolError != null ->
-                                    context.getString(R.string.pool_refresh_failed) + "\n" + poolError
-                                PoolAccountManager.lastRefreshAtMillis == before ->
-                                    context.getString(R.string.pool_refresh_up_to_date)
-                                ok ->
-                                    context.getString(
-                                        R.string.pool_refresh_done,
-                                        PoolAccountManager.tidalAccounts().size,
-                                        PoolAccountManager.qobuzAccounts().size,
-                                        PoolAccountManager.deezerAccounts().size,
+                                PoolAccountManager.refresh(context, force = true)
+                                if (PoolAccountManager.lastFeedError == null && PoolAccountManager.lastRefreshAtMillis != before) {
+                                    TidalInstanceHealthManager.refresh(
+                                        context,
+                                        includeDiscovery = true,
+                                        staggered = false,
                                     )
-                                else -> context.getString(R.string.pool_refresh_failed)
+                                }
                             }
-                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                        refreshing = false
+                            val updated = PoolAccountManager.feedStatus.value
+                            val message = when {
+                                updated.error != null -> context.getString(R.string.pool_refresh_failed) + "\n" + updated.error
+                                updated.lastAttemptAtMillis == before -> context.getString(R.string.pool_refresh_up_to_date)
+                                else -> context.getString(R.string.pool_refresh_done, updated.tidal, updated.qobuz, updated.deezer)
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            requestError = context.getString(R.string.pool_refresh_failed)
+                            Toast.makeText(context, requestError, Toast.LENGTH_LONG).show()
+                        } finally {
+                            requesting = false
+                        }
                     }
                 },
             )
