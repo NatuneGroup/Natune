@@ -1,0 +1,6 @@
+
+"carplay_queue" = "Queue";
+"carplay_library" = "Library";
+"carplay_refresh" = "Refresh";
+
+"carplay_unavailable" = "Library unavailable. Try Refresh.";

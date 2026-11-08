@@ -16,13 +16,15 @@ import platform.Foundation.NSURLCache
  * stored loop. Songs stream without a managed cache directory and lyrics keep no on-disk store on this host, so
  * those kinds report no bytes and their clear reports itself unavailable rather than claiming a result.
  */
-internal fun iosLaneUsedCacheBytes(graph: IosSessionGraph): Map<SettingsCacheKind, Long> {
+internal suspend fun iosLaneUsedCacheBytes(graph: IosSessionGraph): Map<SettingsCacheKind, Long> {
     val cache = NSURLCache.sharedURLCache
     val image = cache.currentDiskUsage.toLong() + cache.currentMemoryUsage.toLong()
     val canvas = graph.canvasStore.usedBytes() ?: 0L
     return buildMap {
         if (image > 0L) put(SettingsCacheKind.IMAGE, image)
         if (canvas > 0L) put(SettingsCacheKind.CANVAS, canvas)
+        put(SettingsCacheKind.SONG, graph.songCache.usedBytes())
+        put(SettingsCacheKind.LYRICS, graph.lyricsStorage.usedBytes())
     }
 }
 
@@ -33,7 +35,8 @@ internal suspend fun iosLaneClearCache(graph: IosSessionGraph, kind: SettingsCac
             graph.artworkLoader.clear()
         }
         SettingsCacheKind.CANVAS -> graph.canvasStore.clear()
-        SettingsCacheKind.SONG, SettingsCacheKind.LYRICS -> unavailable()
+        SettingsCacheKind.SONG -> graph.songCache.clear()
+        SettingsCacheKind.LYRICS -> graph.lyricsStorage.clearProviderCache()
     }
 }
 

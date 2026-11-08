@@ -72,20 +72,8 @@ internal fun IosGeneralSettingsPage(
         )
         "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows() }
         "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }
-        "settings/player" -> PlaybackSettings(
-            controller = controller,
-            bitPerfectSupported = false,
-            bitPerfectSinkActive = false,
-            usbExclusiveSupported = false,
-            releaseBitPerfectSink = { },
-            navigate = navigate,
-            arrangeArtworkProviders = { arrangeDialog = IosArrangeDialogKind.ARTWORK_PROVIDERS },
-            // The tag manager is the library's own tags page, so the row opens the page that edits this graph's tags.
-            managePlaylistTags = { navigate("library/tags") },
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-            onOpenEqualizer = { graph.equalizer.openSheet() },
-        )
+        "settings/player" -> IosPlaybackSettingsPage(controller, graph, navigate,
+            { arrangeDialog = IosArrangeDialogKind.ARTWORK_PROVIDERS }, onFailure, scrollTo)
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         // This host ships no Python or yt-dlp runtime, so both checks report absent rather than probing a missing binary.
         SettingsRoutes.YTDLP -> YtDlpRuntimeSettings(

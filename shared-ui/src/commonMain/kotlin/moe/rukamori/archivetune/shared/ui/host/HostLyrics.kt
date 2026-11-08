@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.data.lyrics.BetterLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.BiniLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.GeniusLyricsProvider
@@ -99,6 +101,11 @@ fun HostLyricsDocument?.belongingTo(activeOccurrenceId: String?): HostLyricsDocu
  * user-configurable. When both are present and parse, the bundled endpoint serves the lookup.
  * The pair never enters preferences, so it stays out of backups and diagnostics.
  */
+interface HostLyricsStorage {
+    suspend fun read(item: ContentItem, force: Boolean): String?
+    suspend fun write(item: ContentItem, raw: String, edited: Boolean, guard: () -> Boolean = { true }): Boolean
+}
+
 class HostLyrics(
     private val scope: CoroutineScope,
     http: HttpClient,
@@ -109,6 +116,9 @@ class HostLyrics(
     private val report: (String) -> Unit,
     lyprioBuildBaseUrl: String = "",
     lyprioBuildHmacKey: String = "",
+    private val storage: HostLyricsStorage? = null,
+    additionalProviderNames: List<String> = emptyList(),
+    additionalProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
     private val readSaved: suspend (ContentItem) -> HostSavedLyrics? = { null },
     private val saveFetched: suspend (ContentItem, String) -> Unit = { _, _ -> },
     extraProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
@@ -117,9 +127,10 @@ class HostLyrics(
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
-        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES + extraProviderNames),
+        availableProviderNames = MutableStateFlow((SHARED_PROVIDER_NAMES + extraProviderNames + additionalProviderNames).toSet()),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> extraProviders(preferences) + sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
+        providerFactory = { preferences -> extraProviders(preferences) +
+            sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) + additionalProviders(preferences) },
         networkAvailable = networkAvailable,
         // The provider's own message is what says whether the read failed or simply found nothing; the class name
         // alone made every ordinary miss look like a broken provider.
@@ -128,6 +139,9 @@ class HostLyrics(
 
     private val state = MutableStateFlow<HostLyricsDocument?>(null)
     val current: StateFlow<HostLyricsDocument?> = state.asStateFlow()
+    private val documentGate = Mutex()
+    var revision: Long = 0L
+        private set
     private val refresh = MutableStateFlow(0L)
     private var lastAttempt = 0L
     private var driver: Job? = null
@@ -155,6 +169,22 @@ class HostLyrics(
         refresh.value += 1
     }
 
+    /** A stale edit cannot replace a newer document or changed playback occurrence. */
+    suspend fun replaceRaw(occurrenceId: String, expected: String, expectedRevision: Long,
+        raw: String, guard: () -> Boolean = { true }): Boolean = documentGate.withLock {
+        val before = state.value ?: return@withLock false
+        val item = queue.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return@withLock false
+        if (before.occurrenceId != occurrenceId || before.raw != expected || revision != expectedRevision || !guard()) return@withLock false
+        val lines = parse(raw)
+        require(raw.isNotBlank() && lines.isNotEmpty()) { "No usable lyrics" }
+        if (storage?.write(item, raw, edited = true, guard = guard) == false) return@withLock false
+        if (!guard() || state.value != before) return@withLock false
+        revision++
+        state.value = HostLyricsDocument(occurrenceId, lines, false, raw,
+            if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null)
+        true
+    }
+
     fun close() {
         driver?.cancel()
     }
@@ -177,21 +207,20 @@ class HostLyrics(
         } else if (force) {
             state.value = state.value?.copy(loading = true, status = HostLyricsStatus.LOADING)
         }
+        val readRevision = revision
         var status = HostLyricsStatus.NOT_FOUND
+        var fetched = false
         val (raw, lines) = try {
             val saved = item?.let { readSaved(it) }?.takeIf { !force || it.edited }
-            if (saved != null) {
+            val cached = if (saved?.edited == true) saved.raw else storage?.read(requireNotNull(item), force) ?: saved?.raw
+            if (cached != null) {
                 status = HostLyricsStatus.READY
-                saved.raw to parse(saved.raw)
+                cached to parse(cached)
             } else {
                 val result = runtime.lyrics(request, forceRefresh = force)
                 status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
                 if (result.providerName.isEmpty()) "" to emptyList() else {
-                    if (item != null) {
-                        try { saveFetched(item, result.lyrics) }
-                        catch (cancelled: CancellationException) { throw cancelled }
-                        catch (failure: Exception) { report("lyrics persistence failed: ${failure::class.simpleName}") }
-                    }
+                    fetched = true
                     result.lyrics to parse(result.lyrics)
                 }
             }
@@ -207,10 +236,17 @@ class HostLyrics(
             report("lyrics lookup found nothing for \"${request.title} — ${request.artist}\"")
         }
         val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
-        state.value = HostLyricsDocument(
-            occurrenceId, lines, loading = false, raw = raw, credits = credits,
-            status = if (status == HostLyricsStatus.READY && lines.isEmpty()) HostLyricsStatus.NOT_FOUND else status,
-        )
+        documentGate.withLock {
+            if (revision != readRevision || state.value?.occurrenceId != occurrenceId) return@withLock
+            if (status == HostLyricsStatus.READY && lines.isNotEmpty() && fetched && item != null) {
+                storage?.write(item, raw, edited = false)
+                try { saveFetched(item, raw) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { report("lyrics persistence failed: ${failure::class.simpleName}") }
+            }
+            state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw, credits = credits,
+                status = if (status == HostLyricsStatus.READY && lines.isEmpty()) HostLyricsStatus.NOT_FOUND else status)
+        }
     }
 
     private fun parse(text: String): List<LyricsLine> =

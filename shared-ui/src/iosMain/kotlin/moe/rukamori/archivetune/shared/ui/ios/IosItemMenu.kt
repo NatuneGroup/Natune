@@ -31,6 +31,9 @@ import platform.Foundation.NSUUID
  */
 internal class IosItemMenuState {
     /** The row the menu is open for, or null while it is closed. */
+    var canvasSaveTarget: ContentItem? by mutableStateOf(null)
+    var canvasResult: org.jetbrains.compose.resources.StringResource? by mutableStateOf(null)
+
     var target: ContentOccurrence? by mutableStateOf(null)
         private set
 
@@ -140,6 +143,8 @@ internal fun IosItemMenuDialog(
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
 ) {
+    IosLyricsToolsDialogs(graph)
+    IosCanvasSaveDialog(menu, graph)
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
@@ -164,7 +169,7 @@ internal fun IosItemMenuDialog(
                 ) {
                     IosPlaylistRowMenu(menu, graph, host, occurrence, playlistMenus)
                 } else {
-                    IosCollectionRowMenu(menu, host, occurrence)
+                    IosCollectionRowMenu(menu, host, occurrence, graph)
                 }
             }
         }

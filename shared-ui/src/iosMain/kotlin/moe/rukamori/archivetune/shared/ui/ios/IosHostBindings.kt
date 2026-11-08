@@ -263,31 +263,8 @@ private fun iosPlayerSlots(
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
-    val sessionKey = document?.occurrenceId ?: NO_LYRICS_SESSION
-    val romanization = remember(sessionKey) { LyricsRomanizationState(LyricsRomanizationPresentation.off(sessionKey)) }
-    val japanesePack by host.japaneseLanguagePack.collectAsState()
-    val tokenizer by (japanesePack?.tokenizer ?: flowOf(null)).collectAsState(initial = null)
-    val romanizationPreferences = remember(preferences) {
-        LyricsRomanizationPreferences(
-            romanizeJapanese = preferences[LyricsRomanizeJapaneseKey] ?: false,
-            romanizeKorean = preferences[LyricsRomanizeKoreanKey] ?: false,
-            romanizeChinese = preferences[LyricsRomanizeChineseKey] ?: false,
-            romanizeHindi = preferences[LyricsRomanizeHindiKey] ?: false,
-            romanizeOther = preferences[LyricsRomanizeOtherLanguagesKey] ?: false,
-        )
-    }
-    LaunchedEffect(sessionKey, tokenizer, document?.lines, romanizationPreferences) {
-        if (!romanizationPreferences.isEnabled) {
-            romanization.publish(LyricsRomanizationPresentation.off(sessionKey))
-            return@LaunchedEffect
-        }
-        val lines = document?.lines.orEmpty()
-        val phonetics = withContext(Dispatchers.Default) {
-            val romanizer = LyricsRomanizer(japaneseTokenizer = tokenizer)
-            lines.map { romanizer.phoneticsForLine(it, romanizationPreferences) }
-        }
-        romanization.publish(LyricsRomanizationPresentation(sessionKey, LyricsRomanizationSource.BUILT_IN, phonetics))
-    }
+    val sessionKey = graph.lyricsSurface.sessionKey(document)
+    val romanization = graph.lyricsSurface.romanization
     val actions = remember(graph, document?.occurrenceId) {
         val occurrenceId = document?.occurrenceId
         LyricsSurfaceActions(
@@ -299,7 +276,7 @@ private fun iosPlayerSlots(
                     graph.player.seekTo(position)
                 }
             },
-            onShareCard = { },
+            onShareCard = { card -> iosShareLyricsCard(graph, host, card) },
             onResume = {
                 val accepted = graph.player.snapshot.value
                 if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) graph.player.play()

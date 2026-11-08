@@ -29,39 +29,6 @@ import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoUi
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoUi
 
 /**
- * No podcast browse transport is connected on this host, so the page mounts as an initialized, failed page with no
- * subscription operation rather than an empty catalogue presented as real.
- */
-internal fun iosPodcastsPage(): ArchiveGraphPage =
-    ArchiveGraphPage.Podcasts(
-        state = PodcastBrowseUi(page = PagedContentState(initialized = true, failed = true), subscriptionsAvailable = false),
-        query = {},
-        subscriptionsOnly = {},
-        subscribe = null,
-        retry = {},
-        loadMore = {},
-    )
-
-internal fun iosPodcastPage(browseId: String): ArchiveGraphPage =
-    ArchiveGraphPage.Podcast(
-        state = PodcastUi(
-            collection = ContentRequest(
-                provider = ContentProvider.YOUTUBE,
-                surface = ContentSurface.PODCAST,
-                parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PODCAST, browseId),
-            ),
-            header = null,
-            description = null,
-            episodes = emptyList(),
-            page = PagedContentState(initialized = true, failed = true),
-            subscription = null,
-        ),
-        subscribe = null,
-        retry = {},
-        loadMore = {},
-    )
-
-/**
  * The signed-in YouTube library shelves. A session without a YouTube account keeps the host boundary, as on desktop;
  * a failed read leaves the shelves unloaded and reports once.
  */
