@@ -26,9 +26,14 @@ class ArchiveNavigationHostTest {
             "Random Access Memories (Drumless Edition)", null, 2023, ArtistReleaseType.ALBUM)
         val page = ArtistPageUi(ContentItem(artist, "Daft Punk"), null, null, null, emptyList(), listOf(release), "")
         val owner = java.lang.reflect.Proxy.newProxyInstance(ArtistAlbumHost::class.java.classLoader,
-            arrayOf(ArtistAlbumHost::class.java)) { _, method, _ ->
-            check(method.name == "loadArtistPage") { "Unexpected artist host action: ${method.name}" }
-            null
+            arrayOf(ArtistAlbumHost::class.java)) { proxy, method, arguments ->
+            when (method.name) {
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === arguments?.firstOrNull()
+                "toString" -> "Artist navigation fixture"
+                "loadArtistPage" -> null
+                else -> error("Unexpected artist host action: ${method.name}")
+            }
         } as ArtistAlbumHost
         setContent { MaterialTheme {
             ArchiveNavigationHost(navigation, { route -> when (route.destination) {

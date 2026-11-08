@@ -603,18 +603,18 @@ private fun AlbumSongRow(
                     Text(it, style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
                 }
-            when {
-                !selecting -> ArtistAlbumMoreButton(
-                    description = stringResource(Res.string.m5_artist_more_options),
-                    onClick = onMore,
-                )
-                selected -> ArtistAlbumIcon(
-                    symbol = ArtistAlbumSymbol.CHECK,
-                    tint = scheme.primary,
-                    size = 24.dp,
-                )
-                else -> Unit
-            }
+                when {
+                    !selecting -> ArtistAlbumMoreButton(
+                        description = stringResource(Res.string.m5_artist_more_options),
+                        onClick = onMore,
+                    )
+                    selected -> ArtistAlbumIcon(
+                        symbol = ArtistAlbumSymbol.CHECK,
+                        tint = scheme.primary,
+                        size = 24.dp,
+                    )
+                    else -> Unit
+                }
             }
         },
     )
