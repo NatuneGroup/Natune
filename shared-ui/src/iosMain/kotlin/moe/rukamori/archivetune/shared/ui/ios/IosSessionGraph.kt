@@ -344,13 +344,10 @@ internal class IosSessionGraph private constructor(
 
     private var startupJob: Job? = null
 
-    /** Called after Ready is published. Source resolution and file reconciliation do not gate first paint. */
+    /** Called after Ready is published. Saved-song source resolution does not gate first paint. */
     fun startAfterMount() {
         if (startupJob != null || backup.recoveryMode.value) return
         startupJob = scope.launch {
-            // Local paths must be known before a saved local song asks the locator for one.
-            localMedia.start()
-            downloads.start()
             try {
                 queue.resumeIfPristine()
             } catch (cancelled: CancellationException) {
@@ -958,6 +955,10 @@ internal class IosSessionGraph private constructor(
                 reportLine = report,
             )
             host.telegram.value?.let { graph.attachTelegram(it) }
+            // Initialize mutable file owners before UI commands can use them. Their local metadata
+            // is needed by restored local songs; network playback preparation runs after Ready.
+            localMedia.start()
+            downloads.start()
             lyrics.start()
             playbackPool.start()
             lastFm.start()

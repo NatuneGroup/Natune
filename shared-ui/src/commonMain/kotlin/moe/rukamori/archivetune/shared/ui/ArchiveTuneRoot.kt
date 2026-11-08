@@ -391,9 +391,7 @@ private fun ArchiveTuneLoadedRoot(
                             modifier = pageModifier)
                     }
                 }
-                fun playPause() {
-                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                }
+                fun playPause() = host.queue.player.togglePlayPause()
                 fun desktopPlayerAction(action: PlayerAction) =
                     dispatchNativePlayerAction(host.queue.player, host.playerControls, action)
                 fun seekTo(targetMs: Long) = host.queue.player.seekTo(targetMs)
