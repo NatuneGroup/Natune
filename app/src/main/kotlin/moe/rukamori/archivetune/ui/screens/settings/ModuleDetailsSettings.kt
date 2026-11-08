@@ -25,7 +25,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
@@ -175,7 +174,7 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
     val save = remember(focus, onAction) { { focus.clearFocus(); onAction(ModuleSettingsAction.Save) } }
     val showSave = detail.fields.isNotEmpty() && detail.dirty
     val bottomPadding by animateDpAsState(
-        settingsListBottomPadding() + if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
+        SettingsDimensions.ScreenBottomPadding + if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
         MaterialTheme.motionScheme.defaultSpatialSpec(), label = "moduleDetailsBottomPadding")
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -423,9 +422,7 @@ private fun BoxScope.ModuleSaveToolbar(visible: Boolean, enabled: Boolean, onSav
     val motion = MaterialTheme.motionScheme
     AnimatedVisibility(
         visible = visible,
-        modifier = Modifier.align(Alignment.BottomCenter)
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))
-            .imePadding().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        modifier = Modifier.align(Alignment.BottomCenter).imePadding().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         enter = slideInVertically(motion.defaultSpatialSpec()) { it } + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.85f) +
             fadeIn(motion.defaultEffectsSpec()),
         exit = slideOutVertically(motion.fastSpatialSpec()) { it } + scaleOut(motion.fastSpatialSpec(), targetScale = 0.85f) +

@@ -1719,7 +1719,7 @@ private fun SongSourceDialog(
         val searchYtm = AudioSourceType.YOUTUBE in sources && (sourceFilter == null || sourceFilter == AudioSourceType.YOUTUBE)
         val searchTidal = AudioSourceType.TIDAL in sources && (sourceFilter == null || sourceFilter == AudioSourceType.TIDAL)
         val searchQobuz = AudioSourceType.QOBUZ in sources && (sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ)
-        val searchQobuzBackup = AudioSourceType.QOBUZ in sources && (sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ)_BACKUP
+        val searchQobuzBackup = AudioSourceType.QOBUZ_BACKUP in sources && (sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ_BACKUP)
         val searchDeezer = AudioSourceType.DEEZER in sources && (sourceFilter == null || sourceFilter == AudioSourceType.DEEZER)
         val searchSaavn = AudioSourceType.JIOSAAVN in sources && (sourceFilter == null || sourceFilter == AudioSourceType.JIOSAAVN)
         val searchAmazon = AudioSourceType.AMAZON in sources && (sourceFilter == null || sourceFilter == AudioSourceType.AMAZON) && amazonSourceEnabled
