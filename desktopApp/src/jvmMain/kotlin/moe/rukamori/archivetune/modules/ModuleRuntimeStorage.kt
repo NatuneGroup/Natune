@@ -24,6 +24,11 @@ internal class ModuleRuntimeStorage(context: ModuleHostEnvironment, installation
         vault.write(key, encoded)
     } }
     fun remove(): Unit = synchronized(lock) { runBlocking(Dispatchers.IO) { vault.remove(key) } }
+    fun clearAuthorization(): Unit = synchronized(lock) { runBlocking(Dispatchers.IO) {
+        val root = vault.read(key)?.let(::JSONObject) ?: JSONObject()
+        root.keys().asSequence().filter { it == "authorization" || it.startsWith("session:") }.toList().forEach { root.remove(it) }
+        vault.write(key, root.toString())
+    } }
     companion object {
         private val lock = Any()
         fun hash(value: String): String = hashBytes(value.toByteArray())

@@ -363,7 +363,7 @@ private fun DesktopSettingsRouteBody(
     val settingsPage: @Composable (String) -> Unit = { path ->
         when (path) {
             "settings/appearance/palette_picker", "settings/appearance/theme_creator", "settings/appearance/icon" -> DesktopAppearanceEditor(graph, path)
-            "settings/modules" -> DesktopModulesPage(graph)
+            "settings/modules" -> DesktopModulesPage(graph, navigate)
             in DESKTOP_GENERAL_SETTINGS_ROUTES -> DesktopGeneralSettingsPage(
                 path = path,
                 controller = owners.controller,
