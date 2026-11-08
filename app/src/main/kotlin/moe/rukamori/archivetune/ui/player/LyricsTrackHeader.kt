@@ -94,9 +94,10 @@ internal fun AppleMusicTrackHeader(
         val gap = LyricsHeaderMetrics.artworkGapDp(compact).dp.roundToPx().coerceAtMost(constraints.maxWidth)
         val textMeasurable = measurables[1]
         val textHeight = textMeasurable.minIntrinsicHeight((constraints.maxWidth - gap).coerceAtLeast(0))
-        val edge = LyricsHeaderMetrics.artworkSize((constraints.maxWidth - gap).toFloat(), textHeight.toFloat()).toInt()
-        val text = textMeasurable.measure(Constraints(maxWidth = (constraints.maxWidth - edge - gap).coerceAtLeast(0),
+        val reservedEdge = LyricsHeaderMetrics.artworkSize((constraints.maxWidth - gap).toFloat(), textHeight.toFloat()).toInt()
+        val text = textMeasurable.measure(Constraints(maxWidth = (constraints.maxWidth - reservedEdge - gap).coerceAtLeast(0),
             maxHeight = constraints.maxHeight))
+        val edge = LyricsHeaderMetrics.artworkSize((constraints.maxWidth - gap).toFloat(), text.height.toFloat()).toInt()
         val artwork = measurables[0].measure(Constraints.fixed(edge, edge))
         val height = constraints.constrainHeight(maxOf(text.height, artwork.height))
         layout(constraints.maxWidth, height) {

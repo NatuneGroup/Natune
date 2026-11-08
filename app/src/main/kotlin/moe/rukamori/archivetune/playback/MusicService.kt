@@ -8668,7 +8668,8 @@ class MusicService :
      * [AudioSourceConfig.DEFAULT_ENABLED], the same map the settings toggles use.
      */
     private fun sourcePrefsSnapshot(preferences: Preferences? = null): PlaybackSourceSnapshot {
-        fun <T> read(key: Preferences.Key<T>, default: T): T = preferences?.get(key) ?: dataStore.get(key, default)
+        fun <T> read(key: Preferences.Key<T>, default: T): T =
+            if (preferences != null) preferences[key] ?: default else dataStore.get(key, default)
         return PlaybackSourceSnapshot(
             order =
                 AudioSourceConfig.parseOrder(
@@ -8854,7 +8855,6 @@ class MusicService :
                 moe.rukamori.archivetune.audiosource.availableBuiltinSource(it, dataStore, preferences) }
         }.distinctUntilChanged()
     }
-
 
     /**
      * Triggers a fresh resolution of every enabled non-YouTube source for [mediaId], bypassing the
