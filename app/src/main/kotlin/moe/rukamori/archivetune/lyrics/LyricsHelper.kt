@@ -28,6 +28,8 @@ import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.modules.ModuleLyricsProviders
+import moe.rukamori.archivetune.modules.PreferLyricsExtensionsKey
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.GlobalLog
 import moe.rukamori.archivetune.utils.isLocalMediaId
@@ -43,6 +45,7 @@ class LyricsHelper
     constructor(
         @ApplicationContext private val context: Context,
         private val networkConnectivity: NetworkConnectivityObserver,
+        private val moduleLyrics: ModuleLyricsProviders,
     ) {
         private val baseProviders =
             listOf(
@@ -74,6 +77,21 @@ class LyricsHelper
 
         private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
         private val singleLyricsCache = LruCache<String, LyricsResult>(MAX_CACHE_SIZE)
+        private var extensionRevision: String? = null
+        private val availableProviders get() = baseProviders + moduleLyrics.providers
+
+        private suspend fun refreshExtensions() {
+            val revision = try { moduleLyrics.snapshot() }
+                catch (error: CancellationException) { throw error }
+                catch (error: Exception) { reportException(error); return }
+            synchronized(singleLyricsCache) {
+                if (extensionRevision != revision) {
+                    cache.evictAll()
+                    singleLyricsCache.evictAll()
+                    extensionRevision = revision
+                }
+            }
+        }
 
         /**
          * The stored row text an upgrade attempt has already been made against, keyed by media id.
@@ -152,6 +170,7 @@ class LyricsHelper
             preferredProviderOnly: Boolean = false,
             forceRefresh: Boolean = false,
         ): LyricsResult {
+            refreshExtensions()
             val cacheKey = mediaMetadata.lyricsCacheKey
 
             // Read the "Prioritize Word Synced Lyrics" toggle once up-front. We need
@@ -326,6 +345,7 @@ class LyricsHelper
             forceRefresh: Boolean = false,
             callback: (LyricsResult) -> Unit,
         ) {
+            refreshExtensions()
             val cacheKey = lyricsCacheKey(songTitle, songArtists)
             if (forceRefresh) {
                 invalidateCache(cacheKey)
@@ -497,7 +517,9 @@ class LyricsHelper
                 )
             val userOrdered = orderedEnums.mapNotNull { providerMap[it] }
             val rest = baseProviders.filterNot { it in userOrdered }
-            return userOrdered + rest
+            val builtIn = userOrdered + rest
+            val extensions = moduleLyrics.providers
+            return if (context.dataStore.getAsync(PreferLyricsExtensionsKey) == true) extensions + builtIn else builtIn + extensions
         }
 
         private fun isMeaningfulLyrics(lyrics: String): Boolean = LyricsUtils.hasMeaningfulLyricsContent(lyrics)
@@ -507,7 +529,7 @@ class LyricsHelper
             mediaMetadata: MediaMetadata,
             sweepActive: Boolean,
         ): Boolean {
-            val provider = baseProviders.firstOrNull { it.name == cached.providerName } ?: return false
+            val provider = availableProviders.firstOrNull { it.name == cached.providerName } ?: return false
             return isLookupEligible(provider, mediaMetadata, sweepActive)
         }
 
@@ -528,7 +550,7 @@ class LyricsHelper
         }
 
         private fun cachedProviderIsEnabled(cached: LyricsResult): Boolean =
-            baseProviders.firstOrNull { it.name == cached.providerName }?.isEnabled(context) == true
+            availableProviders.firstOrNull { it.name == cached.providerName }?.isEnabled(context) == true
 
         private fun supportsMediaId(
             provider: LyricsProvider,

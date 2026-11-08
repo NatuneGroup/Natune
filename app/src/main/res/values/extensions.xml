@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="extensions_all">All extensions</string>
+    <string name="extensions_kind_audio">Audio sources</string>
+    <string name="extensions_kind_metadata">Metadata</string>
+    <string name="extensions_kind_lyrics">Lyrics</string>
+    <string name="extensions_kind_playback">Playback</string>
+    <string name="extensions_native">Built-in extensions</string>
+    <string name="extensions_spotify_metadata">Spotify Metadata</string>
+    <string name="extensions_spotify_alternate">Spotify Playback (alternate account)</string>
+    <string name="extensions_spotify_official">Spotify Playback (official, librespot)</string>
+    <string name="extensions_spotify_official_unavailable">Login is available. This Android build has no librespot playback binding; playback continues to the next source.</string>
+    <string name="extensions_native_description">Built-in extensions have their own switches. Playback also follows the audio source settings and account requirements.</string>
+    <string name="extensions_settings">Settings and login</string>
+    <string name="extensions_priority">Priority %1$d</string>
+    <string name="extensions_lyrics_manage">Lyrics extensions</string>
+    <string name="extensions_lyrics_manage_description">Install, enable, configure and order lyrics extensions in Modules. Built-in lyrics providers remain available.</string>
+    <string name="extensions_lyrics_first">Prefer lyrics extensions</string>
+    <string name="extensions_lyrics_first_description">Place enabled lyrics extensions before built-in providers within the same sync tier. The word sync preference still applies.</string>
+    <string name="extensions_capability_lyrics">Lyrics</string>
+    <string name="extensions_capability_home">Homepage</string>
+    <string name="extensions_capability_library">Library</string>
+    <string name="extensions_catalog">Natune extensions catalog</string>
+</resources>
