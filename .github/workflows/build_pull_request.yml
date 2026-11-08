@@ -113,10 +113,13 @@ jobs:
           fi
 
       - name: Build Librespot audio (universal)
+        id: librespot
         uses: ./.github/actions/build-librespot
 
       - name: Build and Lint Mobile Universal Debug APK
         shell: bash
+        env:
+          ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
         run: |
           set -euo pipefail
           # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
@@ -162,6 +165,12 @@ jobs:
             :shared-domain:compileKotlinJvm \
             :shared-data:compileKotlinJvm \
             :shared-ui:compileKotlinDesktop
+
+      - name: Verify Librespot in the Debug APK
+        shell: bash
+        env:
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk universal --available "$LIBRESPOT_AVAILABLE"
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
@@ -883,6 +892,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Librespot audio (ARM64)
+        id: librespot
         uses: ./.github/actions/build-librespot
         with:
           variant: arm64
@@ -932,6 +942,12 @@ jobs:
           # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
           ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
             -Pautomix=false -PslimTdlib=true
+
+      - name: Verify Librespot in the candidate APK
+        shell: bash
+        env:
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk arm64 --available "$LIBRESPOT_AVAILABLE"
 
       - name: Stage and validate the assembled release APK
         shell: bash

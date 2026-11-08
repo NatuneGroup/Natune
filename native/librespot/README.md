@@ -32,8 +32,29 @@ bash native/librespot/build-android.sh universal
 The recipe requires Linux, Rust 1.97.1 and NDK 30.0.16248370. It builds API-24
 libraries with 16 KiB ELF alignment, writes them under
 `app/build/generated/librespot/jniLibs/<abi>/`, and reports ELF segments and size.
-The composite CI action restores Cargo caches read-only on PRs; only main/dev
-produce reusable caches. The Gradle packaging gate requires every selected ABI.
+The composite CI action first restores an exact prepared-JNI cache. Its manifest
+binds library checksums to the native recipe and Kotlin JNI contract; cached
+libraries work without installing Rust again. Cache misses compile with Cargo
+input/target caches. Only main/dev produce reusable caches; PRs only restore.
+The mobile universal APK selects arm64-v8a and x86_64. TV universal also includes
+armeabi-v7a and x86, matching AGP's combined device/flavor ABI filters. Per-ABI
+shipping APKs retain their corresponding libraries.
+
+Fresh builds check exported JNI symbols against Kotlin externals, ELF architecture
+and 16 KiB load alignment. CI sets `requireLibrespotAudio=true` after successful
+preparation, and checks the assembled APK contains the exact prepared bytes for
+every selected ABI. Cargo strips the library once; AGP keeps those stripped bytes.
+Debug, the ARM64 candidate, emulator QA and the shared Stable/Nightly Android
+release workflow all use these checks. Debug also receives the registered public
+OAuth client id from the repository variable (a blank variable still disables login).
+
+If Rust/toolchain/native preparation fails without an exact cache, the action
+deletes partial libraries, warns in the job summary and sets the requirement false.
+The APK still builds with Librespot unavailable; the runtime load guard falls
+through to the configured source chain. An APK check confirms JNI is absent in
+that case. A green APK job alone therefore does not prove native compilation:
+inspect the Librespot action's availability result. Partial ABI closures fail
+packaging, and Kotlin compilation/unit tests do not require JNI.
 
 All JNI errors use fixed categories. Protocol logging and panic text are disabled:
 upstream trace logs can expose tokens. OAuth bearer and AP reusable credentials
