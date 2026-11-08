@@ -102,6 +102,9 @@ class DeviceConnectConnection(
     private var watchdogJob: Job? = null
     private val chunks = mutableMapOf<String, ChunkAssembly>()
     private val closedSignal = CompletableDeferred<Unit>()
+    // Settles once the local hello commitment has been written (or could not be). The peer refuses a
+    // hello that arrives before the commitment it reveals, so the local hello waits for this.
+    private val localCommitSettled = CompletableDeferred<Unit>()
 
     val peerDeviceId: String? get() = handshake.peerDeviceId
 
@@ -117,8 +120,12 @@ class DeviceConnectConnection(
             localNonce = crypto.randomBytes(DeviceConnectLimits.NONCE_BYTES)
             localCommitment = DeviceConnectPairing.commitment(role, localIdentity.installId, localNonce, pair.publicKey)
             scope.launch {
-                runCatching { sendHelloCommit(pair.publicKey) }
-                    .onFailure { fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Could not start the encrypted connection") }
+                try {
+                    runCatching { sendHelloCommit(pair.publicKey) }
+                        .onFailure { fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Could not start the encrypted connection") }
+                } finally {
+                    localCommitSettled.complete(Unit)
+                }
             }
         }.onFailure { fail(DeviceConnectErrorCode.INVALID_MESSAGE, "Could not start the encrypted connection") }
         if (closed) return
@@ -372,6 +379,8 @@ class DeviceConnectConnection(
 
     private suspend fun sendLocalHello() {
         val pair = keyPair ?: return
+        localCommitSettled.await()
+        if (closed) return
         sendPlain(
             DeviceMessageType.HELLO,
             HelloPayload(
