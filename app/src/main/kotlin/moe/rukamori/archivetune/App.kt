@@ -192,6 +192,7 @@ class App :
         // Ahead of super.onCreate(): Hilt injects there, and an OkHttpClient built by an injected
         // object would otherwise capture the system ProxySelector for good.
         AppProxy.install()
+        moe.rukamori.archivetune.discord.DiscordSocialSdkRuntime.register(this)
         super.onCreate()
         instance = this
         StartupRecovery.watchHealthyStartup(this)

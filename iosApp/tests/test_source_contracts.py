@@ -22,7 +22,7 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertEqual(
             [
                 "archivetune",
-                "discord-1165706613961789445",
+                "discord-1569030685010821170",
                 "natune",
                 "vnd.youtube",
                 "$(PRODUCT_BUNDLE_IDENTIFIER)",
