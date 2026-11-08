@@ -127,3 +127,17 @@ check is not simulator compilation or device evidence.
 - Inspection found no UIKit navigation controller/swipe-pop stack in this single
   Compose host. The fix supplies an explicit shared control; it does not claim a
   native edge-swipe implementation. Verify touch targets and all styles on device.
+
+## Implementation: search editing
+
+- `hostSearchPage` now saves query/scope with the navigation entry. Previously plain
+  `remember(route.value)` lost drafts when that entry left composition (tabs/routes).
+- `SearchScreen` owns a saved `TextFieldValue` above top/bottom field placement, carrying
+  selection and iOS marked-text composition through result/playback updates. Text alone
+  is published to catalogue bindings; external query changes move the caret intentionally.
+  Submission dismisses the keyboard before opening the results route. Search results now
+  expose Back as other detail screens do.
+- No debounce was found on this path: results are submitted explicitly and fetched by
+  the existing cancellable presenter. Network latency is separate from editor state.
+  These state-lifetime fixes need continuous typing/autocorrect/CJK and tab-return device
+  verification; the recording alone cannot prove an IME framework defect.
