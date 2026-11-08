@@ -341,10 +341,6 @@ import moe.rukamori.archivetune.ui.component.rememberPredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
 import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBar
 import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBarHeight
-import moe.rukamori.archivetune.ui.component.splash.SplashConfig
-import moe.rukamori.archivetune.ui.component.splash.SplashOverlay
-import moe.rukamori.archivetune.ui.component.splash.SplashSlots
-import moe.rukamori.archivetune.ui.component.splash.SplashVectorLoader
 import moe.rukamori.archivetune.ui.player.BottomSheetPlayer
 import moe.rukamori.archivetune.ui.player.ProvideVideoFullscreenState
 import moe.rukamori.archivetune.ui.screens.HomeSourceToggleButton
@@ -435,9 +431,7 @@ class MainActivity : ComponentActivity() {
     private var isMusicServiceBound = false
     private var immersiveStatusBarsHidden = false
 
-    // Held by [onCreate]'s splash screen until the launch has composed the content it will draw.
-    // That first composition already contains a drawable branch — onboarding's loading indicator
-    // while its state is unresolved — so the hand-over is not tied to preference or database reads.
+    // Released when the launch route has its state and completed its first layout.
     private var isReady by mutableStateOf(false)
 
     private val launchSplashGate = LaunchSplashGate()
@@ -679,17 +673,15 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Must run before super.onCreate, and before any content is set: on API 31+ the launcher
-        // icon then stays on @color/splash_window_background while the app prepares, and below 31
-        // the launch window's adaptive colour is held instead, so the first thing the reader sees
-        // after it is this launch's opening animation rather than a bare window. This is the
-        // library db79d42ac dropped as broken: it returns because that attempt's theme switch and
-        // unbounded hold are both gone — the base theme is kept, no exit listener is registered,
-        // and the hold ends at the first committed composition, with LaunchSplashGate's finite
-        // budget only as the fallback for a launch that never composes.
+        // The launcher stays on the system splash until the first resolved route can draw.
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         splashScreen.setKeepOnScreenCondition { !isReady }
+        splashScreen.setOnExitAnimationListener { provider ->
+            val animateLaunch = dataStore.get(SplashOverlayEnabledKey, true) && !dataStore.get(DisableAnimationsKey, false)
+            if (animateLaunch) provider.view.animate().alpha(0f).setDuration(180L).withEndAction { provider.remove() }.start()
+            else provider.remove()
+        }
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -750,19 +742,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-        }
-
-        // The opening animation draws the app icon as a particle formation, so publish its
-        // outline up front: SplashSlots holds a plain static that is read on the first frame,
-        // and the overlay rebuilds its slots the moment [SplashSlots.vectorVersion] moves if
-        // this lands a frame or two late. Parsing the vector is cheap but not free, hence off
-        // the main thread.
-        lifecycleScope.launch(Dispatchers.Default) {
-            val path = SplashVectorLoader.loadPath(this@MainActivity, R.drawable.about_splash)
-            withContext(Dispatchers.Main) {
-                SplashSlots.customVectorPath = path
-                SplashSlots.vectorVersion++
-            }
         }
 
         setContent {
@@ -1139,13 +1118,15 @@ class MainActivity : ComponentActivity() {
                 var showOnboardingLogin by rememberSaveable { mutableStateOf(false) }
                 val shouldShowOnboarding = onboardingState.opensOnboardingRoute()
 
-                // This effect runs only once the launch content has committed, so the branch the
-                // reader will see — the onboarding loading indicator while the decision is still
-                // Loading, or the resolved screen — already exists and can draw. That composition
-                // is the splash release signal: it waits for no preference or database read, and
-                // it sits above the branch below so a first run releases too.
-                LaunchedEffect(Unit) {
-                    launchSplashGate.contentComposed()
+                val firstRouteReady = onboardingState !is moe.rukamori.archivetune.onboarding.OnboardingScreenState.Loading &&
+                    (shouldShowOnboarding || playerConnection != null)
+                LaunchedEffect(firstRouteReady) {
+                    if (firstRouteReady) {
+                        // The second frame follows layout of the resolved route, including service-backed home.
+                        androidx.compose.runtime.withFrameNanos { }
+                        androidx.compose.runtime.withFrameNanos { }
+                        launchSplashGate.contentComposed()
+                    }
                 }
 
                 if (shouldShowOnboarding) {
@@ -1171,65 +1152,10 @@ class MainActivity : ComponentActivity() {
                     return@ArchiveTuneTheme
                 }
 
-                // Cold-launch opening animation. While it is due, the app content stays
-                // transparent and rises into place once the burst fires; with the setting off, or
-                // with animations disabled, every part of this collapses to "content is already
-                // visible" and the overlay is never composed at all. Latched once per process —
-                // an entry animation belongs to this launch, so flipping the switch mid-session
-                // must not start one.
-                val splashAnimationEnabled by rememberPreference(SplashOverlayEnabledKey, defaultValue = true)
-                // Latched once per process. animatorScale is read inside the calculation on
-                // purpose: the entry animation belongs to this launch, so its gate is whether
-                // animation was on at launch — the particle burst cannot follow a developer
-                // option that flips mid-session. Scale 0 is animations off, so no splash.
-                val coldSplash =
-                    remember { splashAnimationEnabled && !disableAnimations && animatorScale > 0f }
-                var contentVisible by remember { mutableStateOf(!coldSplash) }
-                // Set by the first tap on the opening animation. The overlay owns the exit (it
-                // fades itself out), this only tells it that the reader has asked for the screen.
-                var splashSkipped by remember { mutableStateOf(false) }
-                LaunchedEffect(splashAnimationEnabled, disableAnimations) {
-                    // The preference store seeds the first frame from its hot copy, but a value
-                    // that only settles on a later read must never strand the UI invisible behind
-                    // an overlay that has already decided not to play.
-                    if (!splashAnimationEnabled || disableAnimations) contentVisible = true
-                }
-                val contentAlpha by animateFloatAsState(
-                    targetValue = if (contentVisible) 1f else 0f,
-                    animationSpec =
-                        tween(
-                            durationMillis = if (disableAnimations) 0 else SplashConfig.Reveal.DURATION_MS,
-                            easing = EaseOut,
-                        ),
-                    label = "splashContentAlpha",
-                )
-
-                // App-open animation: the first time the main UI appears it fades in while
-                // gently scaling up from 96%, so launching the app feels like a smooth reveal
-                // rather than an abrupt cut. Runs once per process and honors "disable animations".
-                // The splash overlay owns the entry while it is due, so this stands aside then:
-                // its fade would otherwise be hidden behind the overlay and scale the particle
-                // field with it.
-                val appOpenProgress = remember { Animatable(if (disableAnimations || coldSplash) 1f else 0f) }
-                LaunchedEffect(Unit) {
-                    if (!disableAnimations && appOpenProgress.value < 1f) {
-                        appOpenProgress.animateTo(
-                            targetValue = 1f,
-                            animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-                        )
-                    }
-                }
-
                 BoxWithConstraints(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = appOpenProgress.value
-                                val scale = 0.96f + 0.04f * appOpenProgress.value
-                                scaleX = scale
-                                scaleY = scale
-                            }
                             .background(
                                 if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface,
                             ),
@@ -2439,26 +2365,6 @@ class MainActivity : ComponentActivity() {
                         // Opt-in crash feedback: prompts on the next launch after a crash,
                         // only when the build has a feedback endpoint configured.
                         moe.rukamori.archivetune.feedback.ui.CrashFeedbackPromptHost()
-                        // The opening animation sits under the content and over the background,
-                        // so the home screen rises through the particles as the burst lands
-                        // rather than wiping them away. Composed only when it is this launch's
-                        // entry; the overlay gates itself on the preference and on
-                        // LocalAnimationsDisabled as well.
-                        if (coldSplash) {
-                            SplashOverlay(
-                                isDark = useDarkTheme,
-                                skip = splashSkipped,
-                                onBurstStart = {
-                                    contentVisible = true
-                                },
-                                // Also the recovery path: if the overlay gives up — its ceiling,
-                                // or a tap that raced the engine — the content has to come back
-                                // even though no burst ever fired.
-                                onDismiss = {
-                                    contentVisible = true
-                                },
-                            )
-                        }
                         // Hoisted so the frosted backdrop gate can follow the rail's real on-screen
                         // presence, including its exit fade, rather than the tablet-mode flag alone.
                         val railVisibleState = remember { MutableTransitionState(false) }
@@ -2468,36 +2374,7 @@ class MainActivity : ComponentActivity() {
                             (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding)
                         Row(
                             modifier =
-                                Modifier.then(rootGlassOverlay.menuRecordingModifier)
-                                    // The reveal lives on the content, not on the root: the
-                                    // overlay is a sibling of this row, and an alpha on the
-                                    // shared parent would fade the particles out with the UI.
-                                    // ModulateAlpha keeps the row's own translucent surfaces
-                                    // from compositing into a solid block while it rises.
-                                    .graphicsLayer {
-                                        alpha = contentAlpha
-                                        translationY = (1f - contentAlpha) * SplashConfig.Reveal.RISE_DP.dp.toPx()
-                                        compositingStrategy = CompositingStrategy.ModulateAlpha
-                                    }
-                                    .pointerInput(contentVisible) {
-                                        // While the app content is invisible it must not be
-                                        // reachable, and it must not hold the reader either. The
-                                        // Initial pass runs outside-in, so consuming there denies
-                                        // every child gesture outright instead of racing the tap
-                                        // detectors inside the screen; a tap then ends the opening
-                                        // early, which is the way out if a frame never arrives.
-                                        if (!contentVisible) {
-                                            awaitPointerEventScope {
-                                                while (true) {
-                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                                    event.changes.forEach { it.consume() }
-                                                    if (event.changes.any { it.changedToUp() }) {
-                                                        splashSkipped = true
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
+                                Modifier.then(rootGlassOverlay.menuRecordingModifier),
                         ) {
                             AnimatedVisibility(
                                 visibleState = railVisibleState,
