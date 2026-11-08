@@ -647,8 +647,8 @@ class MediaLibrarySessionCallback
                 }
                 // The queue folder mirrors the live player, so it is never served from a snapshot.
                 val items = if (parentId == MusicService.QUEUE) load() else browseChildrenCache.children(parentId, page, load)
-
-                LibraryResult.ofItemList(items.autoBrowsePage(page, pageSize), params)
+                val visibleItems = spotifyAutoVisibleChildren(items, context.spotifyMetadataExtensionEnabled()) { it.mediaId }
+                LibraryResult.ofItemList(visibleItems.autoBrowsePage(page, pageSize), params)
             }
 
         override fun onGetItem(
