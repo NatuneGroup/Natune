@@ -7,7 +7,9 @@
 
 package moe.rukamori.archivetune.modules
 
-import moe.rukamori.archivetune.utils.FuzzyMatcher
+import moe.rukamori.archivetune.audiosource.TitleMatch
+import java.text.Normalizer
+import java.util.Locale
 import kotlin.math.abs
 
 internal object ModuleTrackMatcher {
@@ -23,18 +25,25 @@ internal object ModuleTrackMatcher {
 
     private fun title(value: String): String = value.replace(bracketedFeature, " ").replace(trailingFeature, " ").replace(presentation, " ").trim()
 
+    // Keep recording qualifiers: TitleMatch.normalize removes clean/remaster labels.
+    private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "").replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .replace(Regex("\\s+"), " ").trim()
+
+    private fun similarity(left: String, right: String): Double = TitleMatch.jaroWinkler(normalize(left), normalize(right))
+
     fun query(target: ModuleMatchMetadata): String = "${title(target.title)} ${target.artists.firstOrNull { it.isNotBlank() }.orEmpty()}".trim()
 
     fun evaluate(target: ModuleMatchMetadata, track: ModuleTrack): Evaluation {
         if (track.title.isBlank() || track.artists.none(String::isNotBlank)) return Evaluation(0.0, ModuleMatchRejection.METADATA)
-        val targetTitle = FuzzyMatcher.normalize(title(target.title))
-        val candidateTitle = FuzzyMatcher.normalize(title(track.title))
-        val titleScore = FuzzyMatcher.jaroWinkler(targetTitle, candidateTitle)
+        val targetTitle = normalize(title(target.title))
+        val candidateTitle = normalize(title(track.title))
+        val titleScore = similarity(targetTitle, candidateTitle)
         val primaryArtist = target.artists.firstOrNull { it.isNotBlank() }.orEmpty().replace(trailingFeature, "")
         val artistScore = track.artists.flatMap { listOf(it) + it.split(creditSeparator) }.filter(String::isNotBlank)
-            .maxOfOrNull { FuzzyMatcher.jaroWinkler(primaryArtist, it) } ?: 0.0
+            .maxOfOrNull { similarity(primaryArtist, it) } ?: 0.0
         val album = track.album
-        val albumScore = if (!target.album.isNullOrBlank() && !album.isNullOrBlank()) FuzzyMatcher.jaroWinkler(target.album, album) else 0.0
+        val albumScore = if (!target.album.isNullOrBlank() && !album.isNullOrBlank()) similarity(target.album, album) else 0.0
         val score = titleScore * 0.6 + artistScore * 0.35 + albumScore * 0.05
         val candidateDuration = track.durationSeconds
         val rejection = when {
