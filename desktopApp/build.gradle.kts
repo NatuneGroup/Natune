@@ -23,7 +23,7 @@ kotlin {
             implementation(project(":shared-data"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.compose.multiplatform.components.resources)
-            implementation(libs.materialkolor)
+            implementation(libs.material.kolor)
             // The graph's proxy-aware HTTP client and the retained CIO provider/upload clients are pure JVM.
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)
