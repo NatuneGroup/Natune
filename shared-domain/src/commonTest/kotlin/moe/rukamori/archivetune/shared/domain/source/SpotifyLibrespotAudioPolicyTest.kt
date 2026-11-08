@@ -47,6 +47,20 @@ class SpotifyLibrespotAudioPolicyTest {
     }
 
     @Test
+    fun cacheAdmissionRejectsChangedAccountsEnginesQualitiesAndMalformedRenditions() {
+        val file = "a".repeat(40)
+        val tag = "${SpotifyLibrespotAudioPolicy.cacheNamespace("account-a", "HIGH", false)}:0:$file"
+        assertTrue(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, "account-a", "HIGH", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, "account-b", "HIGH", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, "account-a", "HIGHEST", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, "account-a", "HIGH", true))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted("ECHO", "account-a", "HIGH", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag.replace(":0:", ":2:"), "account-a", "HIGH", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(tag.dropLast(1), "account-a", "HIGH", false))
+        assertFalse(SpotifyLibrespotAudioPolicy.cacheAdmitted(null, "account-a", "HIGH", false))
+    }
+
+    @Test
     fun sourceAdmissionRequiresTheChosenEnginePremiumToggleAndGrant() {
         assertTrue(SpotifyLibrespotAudioPolicy.admitted(SpotifyStreamEngine.LIBRESPOT, true, SpotifyProduct.PREMIUM, true))
         assertFalse(SpotifyLibrespotAudioPolicy.admitted(SpotifyStreamEngine.UNOFFICIAL, true, SpotifyProduct.PREMIUM, true))

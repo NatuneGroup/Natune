@@ -112,7 +112,8 @@ where
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeConnect(
     env: JNIEnv<'_>, _object: JObject<'_>, token: JString<'_>, user_id: JString<'_>,
-    device_id: JString<'_>, cache_dir: JString<'_>, proxy: JString<'_>, android_api_level: jint, timeout_ms: jlong,
+    device_id: JString<'_>, cache_dir: JString<'_>, proxy: JString<'_>, android_api_level: jint,
+    expected_generation: jlong, timeout_ms: jlong,
 ) -> jstring {
     reply(env, |env| {
         let token = read_string(env, &token)?;
@@ -135,6 +136,11 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
         let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
         let generation = {
             let mut state = state()?;
+            // Work can wait on the Java worker. A close before it starts must reject the token
+            // before constructing/authenticating a new session, not just discard its result.
+            if state.generation != expected_generation as u64 {
+                return Err(Failure::new("ACCOUNT_CHANGED"));
+            }
             state.generation = state.generation.wrapping_add(1);
             if let Some(cancel) = state.cancel.take() { let _ = cancel.send(true); }
             if let Some(old) = state.session.take() { old.shutdown(); }
@@ -249,7 +255,8 @@ async fn resolve(session: &Session, uri: SpotifyUri, formats: Vec<i32>) -> Resul
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeResolve(
-    env: JNIEnv<'_>, _object: JObject<'_>, track_uri: JString<'_>, formats: JIntArray<'_>, timeout_ms: jlong,
+    env: JNIEnv<'_>, _object: JObject<'_>, track_uri: JString<'_>, formats: JIntArray<'_>,
+    expected_generation: jlong, timeout_ms: jlong,
 ) -> jstring {
     reply(env, |env| {
         let uri = SpotifyUri::from_uri(&read_string(env, &track_uri)?).map_err(|_| Failure::new("TRACK_UNAVAILABLE"))?;
@@ -260,6 +267,9 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
         env.get_int_array_region(&formats, 0, &mut selected).map_err(|_| Failure::new("INVALID_RESPONSE"))?;
         let (session, generation, mut cancelled) = {
             let state = state()?;
+            if state.generation != expected_generation as u64 {
+                return Err(Failure::new("ACCOUNT_CHANGED"));
+            }
             (state.session.clone().ok_or_else(|| Failure::new("AUTH"))?, state.generation,
                 state.cancel.as_ref().ok_or_else(|| Failure::new("AUTH"))?.subscribe())
         };
@@ -274,6 +284,13 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
         if !current(generation) || session.is_invalid() { return Err(Failure::new("ACCOUNT_CHANGED")); }
         Ok(result)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeGeneration(
+    _env: JNIEnv<'_>, _object: JObject<'_>,
+) -> jlong {
+    catch_unwind(|| state().map(|s| s.generation as jlong).unwrap_or(-1)).unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
