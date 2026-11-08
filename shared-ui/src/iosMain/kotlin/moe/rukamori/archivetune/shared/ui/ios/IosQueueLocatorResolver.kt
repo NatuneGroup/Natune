@@ -140,7 +140,7 @@ internal class IosQueueLocatorResolver(
         val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
         var refused = recovery.rejectedSources
         while (true) {
-            val prepared = when (val resolution = audio.resolve(request, recovery.settings(hostSourceSnapshot(preferences())),
+            val prepared = when (val resolution = audio.resolve(request, recovery.settings(hostSourceSnapshot(preferences(), spotifyStreamingReady = iosSpotifyStreamingReady(preferences()))),
                 pinned = recovery.pinned(pinned), rejected = refused)) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
