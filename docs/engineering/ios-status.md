@@ -440,3 +440,12 @@ existing common plan parser/binder validates model output against actual listeni
 success creates durable local playlists and honours the saved hide preference and ten-minute
 refresh bound. It does not fabricate ids, generate on page visit or silently call AI. New-track
 recommendations are not resolved in this increment. AI/provider and device behavior is unverified.
+
+Scheduled folder backup and folder synchronization rows now use persisted, security-scoped Files
+bookmarks and coordinated atomic child writes. An installed Google Drive Files provider can be
+picked as a folder; this is Files-provider synchronization, not a new Drive HTTP folder client.
+The driver follows the selected daily/weekly/monthly/custom day at 02:00 local while the process
+runs, records successful writes, and cannot run while iOS suspends/terminates the app. The existing
+shared playlist CSV/M3U import and CSV export owners are also mounted in Backup settings.
+No BGTaskScheduler registration or background execution guarantee is claimed. File-provider
+access after restart, scheduling and Apple compilation remain unverified.
