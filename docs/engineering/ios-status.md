@@ -621,3 +621,14 @@ instead of silently playing a downloaded/cache file from another source; Automat
 restores stored-file-first behavior. The dialog wires bounded YouTube search/radio and
 marks other provider search filters unavailable. Global source order, credentials and
 native stream admission remain with their existing owners. No Android file was edited.
+
+
+### Merged Android #88: shared lyrics header and bottom chrome
+
+The full-screen shared lyrics sheet now shows the current artwork next to its title
+and artist. Artwork height follows the measured text block, including font scaling;
+only menu and return-to-player controls occupy the footer. No heart is added to the
+lyrics header/footer. The shared shell omits its bar/compact/rail controls and frosted
+recording gate while the expanded player covers it, rather than retaining invisible
+bottom controls. This builds on merged dev `2e31eb2c`; the Android reference files
+remain unchanged. The shared changes also apply to portable hosts using that sheet.

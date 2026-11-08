@@ -455,6 +455,21 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_merged_android_lyrics_header_and_chrome_have_shared_counterparts(self):
+        header = (UI_COMMON / "player/FullscreenLyricsChrome.kt").read_text()
+        self.assertIn('val edge = text.height.coerceIn(0, available)', header)
+        self.assertIn('Constraints.fixed(edge, edge)', header)
+        self.assertNotIn('PlayerAction.LIKE', header)
+        self.assertIn('PlayerSymbol.MORE', header)
+        self.assertIn('PlayerSymbol.DOWN', header)
+        player = (UI_COMMON / "player/BottomSheetPlayer.kt").read_text()
+        self.assertIn('FullscreenLyricsChrome(c)', player)
+        root = (UI_COMMON / "ArchiveTuneRoot.kt").read_text()
+        self.assertIn('chromeVisible = !expanded', root)
+        shell = (UI_COMMON / "navigation/ArchiveTuneShell.kt").read_text()
+        self.assertIn('if (chromeVisible) Box', shell)
+        self.assertIn('chromeVisible && frostedNavigationOnScreen', shell)
+
     def test_song_source_chooser_uses_persisted_pins_and_the_normal_resolver(self):
         source = (UI_IOS / "IosSongSourceDialog.kt").read_text()
         self.assertIn('PlayerQueueSongSourceDialog(track, state, actions', source)

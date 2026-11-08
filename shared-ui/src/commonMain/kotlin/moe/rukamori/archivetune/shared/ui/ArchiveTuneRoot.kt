@@ -486,7 +486,7 @@ private fun ArchiveTuneLoadedRoot(
                             Box(Modifier.weight(1f).fillMaxWidth()) {
                                 ArchiveTuneShell(navigation, preferences,
                                 onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
-                                television = television, contentModifier = pageSource,
+                                television = television, contentModifier = pageSource, chromeVisible = !expanded,
                                 miniPlayer = {
                                     if (current != null) ArchiveMiniPlayer(
                                         current = current,

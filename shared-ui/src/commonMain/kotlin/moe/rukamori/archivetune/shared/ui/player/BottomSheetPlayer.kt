@@ -107,10 +107,7 @@ fun BottomSheetPlayer(
                     PlayerBackground(c)
                     Box(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current)) {
                     if(interaction.fullscreenLyrics) {
-                        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                            PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ interaction.fullscreenLyrics=false })
-                            content.lyrics(Modifier.weight(1f).fillMaxWidth())
-                        }
+                        FullscreenLyricsChrome(c)
                     } else if(desktop) {
                         Box(Modifier.fillMaxSize()) {
                             // The desktop keeps one visible close control; the style columns start under it.
