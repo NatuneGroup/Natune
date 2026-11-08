@@ -8,7 +8,7 @@
     "name": "Qobuz",
     "displayName": "Qobuz",
     "icon": "icon.png",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "author": "morieattonkatsu; Natune contributors",
     "description": "Qobuz audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
     "homepage": "https://github.com/NatuneGroup/Natune/tree/main/addons/modules/extension/qobuz",

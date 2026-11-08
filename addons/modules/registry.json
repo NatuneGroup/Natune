@@ -22,11 +22,11 @@
       "id": "app.natune.provider.archivepool",
       "name": "ArchivePool",
       "display_name": "ArchivePool",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "Natune contributors",
       "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/archivepool.arch",
-      "sha256": "8118b06c6785dcdae8a0ffd46b4fcf1e4abd6e7835e00df2fb7c927009e05fa4",
+      "sha256": "7131d68c95fd83e6daa5dc4cef27e31dce24047fd2aa1c5a4a8aa5ad76d30e76",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -72,11 +72,11 @@
       "id": "app.natune.provider.qobuz",
       "name": "Qobuz",
       "display_name": "Qobuz",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "author": "morieattonkatsu; Natune contributors",
       "description": "Qobuz audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/qobuz.arch",
-      "sha256": "26cd9151c1f90fbd4c5d5c208109f66c7de19b158c77457ee7fe990d237080be",
+      "sha256": "e50452de4949d351653059c4c23a1c83aae22f802674519a414596118ae9d001",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -109,11 +109,11 @@
       "id": "app.natune.provider.tidal",
       "name": "TIDAL",
       "display_name": "TIDAL",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "author": "morieattonkatsu; Natune contributors",
       "description": "TIDAL audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/tidal.arch",
-      "sha256": "fdc2185e31a82a4dd8592351f13452686d9a626ef8e1f6ada71c2d13c48e553e",
+      "sha256": "6bef79dc48d353ece2e35d94c120c28a7f403f920eb2f20345dc96373f49900b",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"

@@ -32,6 +32,7 @@ class ModuleSettingsUseCases @Inject constructor(
     suspend fun enable(id: String, value: Boolean) = repository.setModuleEnabled(id, value)
     suspend fun reorder(ids: List<String>) = repository.reorder(ids)
     suspend fun remove(id: String, catalog: Boolean) = if (catalog) repository.removeCatalog(id) else repository.removeModule(id)
+    suspend fun accountSetting(id: String, toggle: moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle, value: Boolean) = repository.accountSetting(id, toggle, value)
     suspend fun save(id: String, values: Map<String, String>) = repository.settings(id, values)
     suspend fun saveMetadata(id: String, name: String, author: String, description: String) {
         require(name.isNotBlank())
