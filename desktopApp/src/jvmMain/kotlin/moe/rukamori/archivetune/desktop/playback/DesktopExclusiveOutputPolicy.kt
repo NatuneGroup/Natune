@@ -19,6 +19,7 @@ internal data class DesktopOutputState(
     val requested: Boolean = false,
     val exclusiveActive: Boolean = false,
     val directPcm: Boolean = false,
+    val muted: Boolean = false,
     val inputRateHz: Int = 0,
     val inputBits: Int = 0,
     val inputChannels: Int = 0,
@@ -46,7 +47,7 @@ internal object DesktopExclusiveOutputPolicy {
         return BitPerfectGate.evaluate(BitPerfectRouteFacts(
             bitPerfectRequested = state.requested,
             // The native direct lane cannot invoke DSP or software gain. Stored edits resume in shared mode.
-            softwareDspEngaged = false,
+            softwareDspEngaged = state.muted,
             usbExclusive = false,
             directPlaybackQueried = known,
             directPlaybackSupported = exact,

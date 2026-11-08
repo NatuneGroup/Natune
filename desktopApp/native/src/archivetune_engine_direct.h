@@ -33,6 +33,10 @@ void ae_engine_input_format(ae_engine *e, ae_pcm_format *format) {
     pthread_mutex_lock(&e->mutex); *format = e->input_pcm; pthread_mutex_unlock(&e->mutex);
 }
 
+void ae_engine_output_changed(ae_engine *e) {
+    pthread_mutex_lock(&e->mutex); e->output_revision++; pthread_cond_broadcast(&e->changed); pthread_mutex_unlock(&e->mutex);
+}
+
 int ae_engine_pending_output(ae_engine *e, ae_pcm_format *format) {
     if (!e) return 0;
     pthread_mutex_lock(&e->mutex);
@@ -81,7 +85,7 @@ static int prepare_direct_output(ae_engine *e, ae_source *s, const ae_pcm_format
     s->pcm = copy;
     e->input_pcm = copy;
     uint64_t revision = e->output_revision;
-    if (e->direct_requested || e->direct_enabled) {
+    if (e->direct_requested || e->direct_enabled || revision != s->output_revision) {
         e->format_pending = 1;
         e->ready = 0;
         pthread_cond_broadcast(&e->changed);
