@@ -126,7 +126,7 @@ internal class SpotifyAudioResolver(
         if (SpotifyStreamingAccount.effectiveEngine(context.dataStore) == SpotifyStreamEngine.LIBRESPOT) {
             librespot.cacheAllowed(tag, lowData)
         } else {
-            tag == SpotifyStreamingAccount.resolveMethod(context).name
+            tag == SpotifyStreamingAccount.resolveMethod(context.dataStore).name
         }
 
     fun streamAllowed(stream: DirectStream, lowData: Boolean): Boolean {
