@@ -371,7 +371,8 @@ private fun ArchiveTuneLoadedRoot(
                 null
             }
         }
-        ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
+        ArchiveTuneTheme(darkTheme = darkTheme, pureBlack = preferences[PureBlackKey, false],
+            disableAnimations = preferences[DisableAnimationsKey, false],
             fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
             CompositionLocalProvider(LocalDesktopLayout provides desktopShell) {
