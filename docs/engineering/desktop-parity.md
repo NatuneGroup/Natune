@@ -105,3 +105,13 @@ Android DEX/ABI extensions cannot be loaded as desktop JNI. This is Partial modu
 parity, not a claim that every Android extension works. The shared settings list adds
 one desktop-only Modules row/resource; existing hosts keep their defaults. QuickJS
 compilation, archive fixtures, secure storage and live providers remain unverified.
+
+## ListenBrainz and DNS
+
+The desktop graph submits opt-in ListenBrainz playing-now and listened events using
+the existing shared scrobble timer (buffering/pauses do not count). The existing
+integration toggle and vault-backed token drive the submitter; network failures are
+bounded and reported. Desktop HTTP and core YouTube now consume the selected DoH
+provider through Android's existing factory, including its custom HTTPS endpoint.
+Proxy settings retain their existing routing. Neither integration has live-network
+validation for this branch.

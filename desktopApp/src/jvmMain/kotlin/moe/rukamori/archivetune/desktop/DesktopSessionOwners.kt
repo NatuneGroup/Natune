@@ -413,6 +413,7 @@ internal suspend fun assembleDesktopSessionOwners(
         instanceDirectory = directory,
         report = ::desktopDiagnostic,
     )
+    val listenBrainz = DesktopListenBrainz(scope, http, vault, player, queue.state)
     // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
     // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
     val lyricsStore = DesktopLyricsStore(directory)
@@ -629,6 +630,7 @@ internal suspend fun assembleDesktopSessionOwners(
         listenDriver = listenDriver,
         progressDriver = progressDriver,
         lastFm = lastFm,
+        listenBrainz = listenBrainz,
         lyrics = lyrics,
         japaneseLanguagePack = pack,
         lyricsSurface = lyricsSurface,
