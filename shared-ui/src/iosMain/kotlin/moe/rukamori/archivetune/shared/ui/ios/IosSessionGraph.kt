@@ -174,6 +174,7 @@ internal class IosSessionGraph private constructor(
     val backup: IosBackupOwner,
     /** The Google Drive app-data backup owners. Its rows report the not-configured state when the build carries no iOS OAuth client id. */
     val driveBackup: IosDriveBackup,
+
     /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
@@ -188,6 +189,7 @@ internal class IosSessionGraph private constructor(
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
+    internal var backupSync: IosBackupSync? = null
     val topMixes by lazy { IosTopMixes(this) }
     val lyricsTools by lazy { IosLyricsTools(this) }
 
@@ -380,6 +382,7 @@ internal class IosSessionGraph private constructor(
         uploads.close()
         listenDriver.close()
         progressDriver.close()
+        backupSync?.close()
         topMixes.close()
         lyricsSurface.close()
         lyrics.close()
@@ -984,6 +987,7 @@ internal class IosSessionGraph private constructor(
             listenTogether.start()
             // Re-arms the Drive schedule; its uploads only live as long as this process, like the desktop host's.
             driveBackup.start()
+            graph.backupSync = IosBackupSync(graph, host).also { it.start() }
             return graph
         }
     }
