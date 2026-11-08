@@ -985,3 +985,8 @@ configurations.configureEach {
         "org.jetbrains.kotlin:kotlin-metadata-jvm:${libs.versions.kotlinMetadata.get()}",
     )
 }
+
+// The app's module host contract tests run with its existing CI unit-test gate.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(":modules:testDebugUnitTest")
+}

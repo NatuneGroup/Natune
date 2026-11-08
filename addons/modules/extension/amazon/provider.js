@@ -58,13 +58,13 @@ async function searchTracks(query,limit,context){
 }
 async function getTrackStreamUrl(trackId,quality,context){
   const selected=Natune.unpack(trackId),base=Natune.base(context),token=Natune.text(context,'operatorToken');
-  const params={track:selected.title,artist:selected.artist,album:selected.album||'',duration:String(selected.duration||''),quality:String(quality||'LOSSLESS'),intent:'stream'};
+  const params={track:selected.title,artist:selected.artist,album:selected.album||'',duration:String(selected.duration||''),quality:quality==='HI_RES'?'HI_RES_LOSSLESS':String(quality||'LOSSLESS'),intent:'stream'};
   const headers={Accept:'application/json'};const jwt=Natune.text(context,'turnstileJwt');if(jwt)headers['X-Turnstile-JWT']=jwt;
   let root,modern=false;
   if(token){const r=await fetch(Natune.query(base,'/api/v2/track/',params),{headers:Object.assign({},headers,{Authorization:'Bearer '+token})});
     if(r.status===429||r.status===503)throw Natune.error('RATE_LIMITED','Amazon instance refused the request; honor Retry-After');
     if(r.ok){root=await r.json();modern=true;}else if(![401,403,428,404,502].includes(r.status))throw new Error('Amazon instance failed with HTTP '+r.status);}
-  if(!root){const old=Object.assign({},params,{quality:quality==='HI_RES'?'hires':quality==='HIGH'?'high':'lossless'});if(token)old.bypass_token=token;root=await Natune.json(Natune.query(base,'/api/track/',old),{headers});}
+  if(!root){const old=Object.assign({},params,{quality:quality==='HI_RES'?'UHD':quality==='HIGH'?'SD_HIGH':'HD'});if(token)old.bypass_token=token;root=await Natune.json(Natune.query(base,'/api/track/',old),{headers});}
   if(Natune.preview(root))throw Natune.error('UNSUPPORTED_AUDIO','Amazon instance returned a preview');
   const payload=modern?(Array.isArray(root.playback)?root.playback.find(v=>v.kind==='audio'&&v.delivery==='direct'&&(!v.source||v.source.toLowerCase()==='amazon')):null):[root,root.data,root.track,root.result].find(v=>v?.stream_url);
   const actual=modern?root.track:payload;
