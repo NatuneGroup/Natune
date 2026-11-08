@@ -45,7 +45,7 @@ internal class DesktopAudioSources(
         DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) }, librespot)
     private val retained = desktopAudioProviders(http, accounts, preferences, tidalSessionRefresh, pool)
     val providers: List<AudioProviderRepository> = retained +
-        listOf(qobuz, DesktopAppleMusicSource(http, preferences), DesktopAmazonSource(http, preferences), spotify) + listOfNotNull(modules)
+        listOf(qobuz, DesktopAppleMusicSource(http, preferences), DesktopAmazonSource(http, preferences, pool = pool, admissions = admissions), spotify) + listOfNotNull(modules)
     private val deezerCatalogue = KtorDeezerRepository(http, System::currentTimeMillis)
     private val amazonSuggestions = KtorAmazonSourceSuggestions(http)
 

@@ -43,11 +43,13 @@ internal fun desktopAccountLyrics(http: HttpClient, accounts: VaultProviderAccou
         },
         provider("Apple Music") { request ->
             val captured = preferences() ?: return@provider null
-            val media = captured[AppleMusicMediaUserTokenKey]?.takeIf(String::isNotBlank) ?: return@provider null
+            val personal = captured[AppleMusicMediaUserTokenKey]?.takeIf(String::isNotBlank)
+            val pooled = if (personal == null) pool.appleAccounts().firstOrNull() else null
+            val media = personal ?: pooled?.token ?: return@provider null
             val developer = captured[AppleMusicDevTokenKey]?.takeIf(String::isNotBlank) ?: AppleMusicProvider.ensureTokenFresh() ?: return@provider null
             KtorAppleMusicRepository(http, AppleMusicAccess("lyrics:apple", developer, media,
-                credentialScope = CredentialScope.PERSONAL,
-                isActive = { preferences()?.get(AppleMusicMediaUserTokenKey) == media }), nowMs = System::currentTimeMillis).lyrics(request)
+                credentialScope = if (pooled == null) CredentialScope.PERSONAL else CredentialScope.PLAYBACK_POOL,
+                isActive = { if (pooled == null) preferences()?.get(AppleMusicMediaUserTokenKey) == media else pool.appleActive(pooled) }), nowMs = System::currentTimeMillis).lyrics(request)
         },
         provider("Musixmatch (experimental)") { request ->
             if (preferences()?.get(EnableMusixmatchExperimentalKey, false) != true) return@provider null
