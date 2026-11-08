@@ -291,7 +291,7 @@ object PortableAndroidLibraryImport {
                         val list = grouped.getOrPut(playlistId) { ArrayList() }
                         val setVideoId = statement.textOrNull(3)
                         val occurrence = ContentOccurrence(
-                            occurrenceId = UUID.randomUUID().toString(),
+                            occurrenceId = kotlin.random.Random.nextBytes(16).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') },
                             item = item,
                             setVideoId = setVideoId,
                         )
@@ -337,7 +337,7 @@ object PortableAndroidLibraryImport {
                         val eventId = statement.getLong(0)
                         val item = itemsById[statement.getText(1)] ?: continue
                         val id = "legacy-event-$eventId"
-                        val occurrence = ContentOccurrence(UUID.randomUUID().toString(), item)
+                        val occurrence = ContentOccurrence(kotlin.random.Random.nextBytes(16).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }, item)
                         listens += PortableListenEventRow(
                             id = id,
                             occurrenceJson = ContentJson.encode(occurrence).toString(),
