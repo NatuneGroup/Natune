@@ -23,7 +23,8 @@ internal object DiscordNativeSdkBridge {
         BuildConfig.DISCORD_SOCIAL_SDK_AVAILABLE && runCatching { System.loadLibrary("natune_discord_social") }.isSuccess
     }
     val ready = MutableStateFlow(false)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // Lazy: touching Dispatchers.Main.immediate in the initializer breaks SDK-free JVM unit tests.
+    private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     private var pump: Job? = null
     private var initialized = false
     var authorizationInProgress = false
