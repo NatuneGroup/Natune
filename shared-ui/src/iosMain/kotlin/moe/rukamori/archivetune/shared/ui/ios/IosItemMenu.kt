@@ -140,6 +140,7 @@ internal fun IosItemMenuDialog(
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
 ) {
+    IosLyricsToolsDialogs(graph)
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(

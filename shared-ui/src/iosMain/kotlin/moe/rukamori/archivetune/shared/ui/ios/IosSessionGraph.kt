@@ -2,6 +2,7 @@
 
 package moe.rukamori.archivetune.shared.ui.ios
 
+import platform.Foundation.NSUUID
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
 import kotlinx.coroutines.CancellationException
@@ -14,6 +15,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
+import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -153,6 +158,7 @@ internal class IosSessionGraph private constructor(
     /** The one listening history the library, the listen driver and the statistics pages read and write. */
     val history: RoomListeningHistory,
     val lyrics: HostLyrics,
+    val lyricsSurface: LyricsSurfaceRuntime,
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
@@ -182,6 +188,8 @@ internal class IosSessionGraph private constructor(
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
+    val lyricsTools by lazy { IosLyricsTools(this) }
+
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
 
     /** The persisted per-song lyrics offsets this host applies on every lyrics surface. */
@@ -371,6 +379,7 @@ internal class IosSessionGraph private constructor(
         uploads.close()
         listenDriver.close()
         progressDriver.close()
+        lyricsSurface.close()
         lyrics.close()
         newsFeed.close()
         drivers.forEach { it.cancel() }
@@ -826,7 +835,11 @@ internal class IosSessionGraph private constructor(
                 report = report,
                 lyprioBuildBaseUrl = IosProviderCredentials.lyprioBaseUrl,
                 lyprioBuildHmacKey = IosProviderCredentials.lyprioHmacKey,
+                storage = IosLyricsStore("$databaseDirectory/lyrics"),
             )
+            val lyricsSurface = LyricsSurfaceRuntime(scope, vault, KtorAiTextService(http), lyrics.current,
+                host.japaneseLanguagePack.flatMapLatest { it?.tokenizer ?: flowOf(null) }, null,
+                NSUUID().UUIDString, report)
             val libraryContent = LibraryContentOwner(
                 settings = vault,
                 library = library,
@@ -935,6 +948,7 @@ internal class IosSessionGraph private constructor(
                 pageOwners = pageOwners,
                 history = history,
                 lyrics = lyrics,
+                lyricsSurface = lyricsSurface,
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
@@ -961,6 +975,8 @@ internal class IosSessionGraph private constructor(
             localMedia.start()
             downloads.start()
             lyrics.start()
+            lyricsSurface.start()
+            graph.lyricsTools
             playbackPool.start()
             lastFm.start()
             listenTogether.start()
@@ -971,28 +987,3 @@ internal class IosSessionGraph private constructor(
     }
 }
 
-internal fun iosRepeatMode(preferences: PreferenceSnapshot?): QueueRepeatMode =
-    preferences?.get(RepeatModeKey)?.let { QueueRepeatMode.fromStoredValue(it) } ?: QueueRepeatMode.OFF
-
-/** The local time zone offset at [epochMs], for the history day boundaries and the My Top windows. */
-internal fun iosOffsetMsAt(epochMs: Long): Long =
-    NSTimeZone.localTimeZone.secondsFromGMTForDate(NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)) * 1000L
-
-/**
- * The text order the portable library sorts with: the user's locale, case-insensitive, so one artist never splits into
- * two groups by case.
- */
-internal val iosTextOrder: Comparator<String> = Comparator { first, second ->
-    NSString.create(string = first).localizedCaseInsensitiveCompare(second).toInt()
-}
-
-/** One queue checkpoint. A failure is logged and never escapes into playback or shutdown. */
-private suspend fun checkpointNow(queue: ContinuationQueueController, report: (String) -> Unit) {
-    try {
-        queue.checkpoint()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        report("queue checkpoint failed: ${failure::class.simpleName}")
-    }
-}

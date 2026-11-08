@@ -417,3 +417,12 @@ byte position, checks length/expiry, closes every preparation, and commits throu
 stored-song transaction. Protected Apple FairPlay remains refused and falls through. Telegram
 still belongs to TDLib's cache; streaming Spotify stays excluded. Native transfer, device offline
 playback and compilation remain unverified. No background download entitlement is claimed.
+
+The iOS graph now starts the existing `LyricsSurfaceRuntime` and both AI lyric coordinators,
+including automatic and manual romanization/translation. Manual edit and undo, guarded AI
+translation persistence, per-song ±30 s timing writes and actual PNG share sheets are mounted
+on the common song menu/player surfaces. A source-bound atomic iOS lyric store caches provider
+text (256 bounded entries) and preserves edits across restarts. `HostLyricsStorage` and guarded
+raw-document replacement are additive commonMain hooks; other hosts keep their default behavior.
+Direct/account-bound and module lyric providers remain incomplete. AI service configuration,
+Apple compilation, share sheets and offline/device behavior remain unverified.
