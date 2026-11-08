@@ -28,6 +28,9 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.okhttp)
             implementation(libs.quickjs.kt)
+            implementation(libs.gson)
+            implementation(libs.jsoup)
+            implementation("org.json:json:20250517")
             // The YouTube fallback tiers. InnerTubeX expects JSON content negotiation on its client. :core and the
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
             // tier can drive the extractor directly, which adds nothing to the package.
@@ -101,9 +104,27 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
             }
         }
     }
+    from(rootProject.file("modules/src/main/kotlin/moe/rukamori/archivetune/modules")) {
+        include("*.kt")
+        exclude("ModuleRuntimeStorage.kt")
+        filter { line: String ->
+            when {
+                line == "import android.content.Context" -> "import moe.rukamori.archivetune.modules.ModuleHostEnvironment as Context"
+                line == "import android.util.Base64" -> "import moe.rukamori.archivetune.modules.ModuleBase64 as Base64"
+                line == "import android.net.Uri" -> "import moe.rukamori.archivetune.modules.ModuleUri as Uri"
+                line == "import android.graphics.BitmapFactory" -> "import moe.rukamori.archivetune.modules.ModuleBitmapFactory as BitmapFactory"
+                line == "import android.graphics.Bitmap" -> "import moe.rukamori.archivetune.modules.ModuleBitmap as Bitmap"
+                line == "import android.os.SystemClock" -> ""
+                line.contains("context.packageManager.getPackageInfo") -> "    private val version = context.versionName"
+                else -> line.replace("context.applicationContext", "context")
+                    .replace("SystemClock.elapsedRealtime()", "(System.nanoTime() / 1_000_000L)")
+                    .replace("applicationContext.assets.open(name)", "applicationContext.openAsset(name)")
+            }
+        }
+    }
     into(desktopPlayPlaySources)
 }
-kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
+kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources); resources.srcDir(rootProject.file("modules/src/main/assets")) }
 tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }
 
 // The public Discord application id, which DesktopDiscordPresence.APPLICATION_ID must also hold. macOS hands the

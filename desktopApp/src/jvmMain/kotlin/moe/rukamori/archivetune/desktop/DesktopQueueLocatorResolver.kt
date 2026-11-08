@@ -172,6 +172,8 @@ internal class DesktopQueueLocatorResolver(
 /** The source snapshot one resolution reads, as every host reads it. */
 internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot =
     hostSourceSnapshot(preferences, spotifyStreamingReady = desktopSpotifyStreamingReady(preferences))
+        .let { snapshot -> if (preferences?.get(moe.rukamori.archivetune.shared.domain.settings.ModulesEnabledKey) == true)
+            snapshot.copy(enabled = snapshot.enabled + AudioSourceType.MODULES) else snapshot }
 
 /**
  * The audio providers this host connects, each over the one HTTP client of the graph, in no particular order: the

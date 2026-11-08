@@ -87,3 +87,21 @@ Normalization consumes reported ReplayGain/peak tags, with a bounded five-second
 PCM-head RMS/peak fallback (-18 dB RMS, gain capped to -12/+6 dB). Silent/inconclusive
 heads stay at unity; this is not whole-track loudness analysis. All DSP/pitch/native
 changes remain uncompiled and audibly unverified pending CI/runtime testing.
+
+## Modules and extensions
+
+Desktop mounts the retained .arch package reader, catalog reader and QuickJS
+API-v1 host through generated JVM sources. Only Android assets/clock/image helpers
+and Keystore storage are adapted; module state/settings use the existing OS vault
+without plaintext fallback. A desktop settings page installs packages/catalog entries,
+inspects manifests, enables/disables sources and edits/removes packages. Updates can
+replace the same installation through the owner API; packages start disabled.
+Progressive module audio joins the existing source order and download path through
+revocable admissions; compatible script lyric extensions join HostLyrics.
+
+Module manifest audio and metadata-surface mounting, signed-session browser/callback
+UI, complete catalog update UI and binary native-extension loading remain incomplete.
+Android DEX/ABI extensions cannot be loaded as desktop JNI. This is Partial module
+parity, not a claim that every Android extension works. The shared settings list adds
+one desktop-only Modules row/resource; existing hosts keep their defaults. QuickJS
+compilation, archive fixtures, secure storage and live providers remain unverified.

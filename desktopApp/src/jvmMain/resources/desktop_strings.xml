@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="desktop_modules_title">Modules and extensions</string>
+    <string name="desktop_modules_scope">Install API-v1 .arch packages and compatible script extensions. Review the provider and its settings before enabling it. Binary Android extensions require a desktop build.</string>
+    <string name="desktop_modules_enable">Enable module audio sources</string>
+    <string name="desktop_modules_install">Install package</string>
+    <string name="desktop_modules_catalog">Catalog URL</string>
+    <string name="desktop_modules_load_catalog">Load catalog</string>
+    <string name="desktop_modules_settings">Settings</string>
+    <string name="desktop_modules_remove">Remove</string>
+    <string name="desktop_modules_failed">The module operation failed. Check the package, configuration and system credential vault.</string>
     <string name="desktop_lyrics_edit">Edit lyrics</string>
     <string name="desktop_lyrics_actions">Lyrics actions</string>
     <string name="desktop_lyrics_edit_failed">The lyric edit or translation could not be saved. Check the current song and AI settings.</string>

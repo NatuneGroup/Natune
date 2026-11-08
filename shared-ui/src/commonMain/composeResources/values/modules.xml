@@ -1,3 +1,4 @@
 <resources>
     <string name="source_modules">Modules</string>
+    <string name="desktop_modules_description">Source packages and compatible extensions</string>
 </resources>
