@@ -35,8 +35,10 @@ fun ContentRow(
     ordinal: Int? = null,
     /** Extra row actions, such as the playlist drag handle and move buttons, drawn before the overflow button. */
     trailingControls: (@Composable () -> Unit)? = null,
+    showDuration: Boolean = false,
 ) {
     val display = effectiveSong(occurrence.item)
+    val duration = contentTrackDuration(occurrence.item.durationMs).takeIf { showDuration }
     ListItem(
         headlineContent = { Text(display.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
@@ -46,16 +48,21 @@ fun ContentRow(
             }
         },
         leadingContent = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ordinal?.let { Text(it.toString(), style = MaterialTheme.typography.labelMedium) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ordinal?.let { Text(it.toString(), style = MaterialTheme.typography.labelMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.width(28.dp).testTag("track-number-${occurrence.occurrenceId}")) }
                 artwork(occurrence.item, Modifier.size(48.dp))
             }
         },
-        trailingContent = if (trailingControls == null && actions.more == null) {
+        trailingContent = if (trailingControls == null && actions.more == null && duration == null) {
             null
         } else {
             {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    duration?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp).testTag("track-duration-${occurrence.occurrenceId}")) }
                     trailingControls?.invoke()
                     actions.more?.let { more ->
                         TextButton(onClick = { more(occurrence) }, modifier = Modifier.testTag("more-${occurrence.occurrenceId}")) {
@@ -79,6 +86,7 @@ internal fun LazyListScope.contentRows(
     move: ((ContentOccurrence, ContentOccurrence, Boolean) -> Unit)? = null,
     /** The drag handle of the same admission as [move]. A held drag reorders the rows on screen through its preview. */
     drag: PlaylistRowDrag? = null,
+    showDuration: Boolean = false,
 ) {
     val rows = drag?.displayRows(state.items) ?: state.items
     itemsIndexed(rows, key = { _, row -> playlistRowKey(row.occurrenceId) }) { index, occurrence ->
@@ -101,9 +109,19 @@ internal fun LazyListScope.contentRows(
             modifier = drag?.rowModifier(occurrence.occurrenceId, MaterialTheme.colorScheme.surfaceContainerHigh) ?: Modifier,
             ordinal = if (numbered) index + 1 else null,
             trailingControls = reorder,
+            showDuration = showDuration,
         )
     }
     item(key = "m4-pagination-status") { PageStatus(state, actions) }
+}
+
+internal fun contentTrackDuration(durationMs: Long?): String? {
+    if (durationMs == null || durationMs <= 0L) return null
+    val seconds = durationMs / 1000L
+    val minutes = seconds / 60L
+    val secondText = (seconds % 60L).toString().padStart(2, '0')
+    return if (minutes < 60L) "$minutes:$secondText"
+        else "${minutes / 60L}:${(minutes % 60L).toString().padStart(2, '0')}:$secondText"
 }
 
 @Composable

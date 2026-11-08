@@ -21,6 +21,24 @@ class DetailScreenTest {
     private val entries = listOf(ContentOccurrence("first", item, "set-1"), ContentOccurrence("second", item, "set-2"))
     private val artwork: ContentArtwork = { _, modifier -> Box(modifier.background(Color.Blue)) }
 
+    @Test fun albumNumbersAndKnownDurationsKeepRepeatedOccurrencesDistinct() = runComposeUiTest {
+        var selected: String? = null
+        val tracks = listOf(entries[0].copy(item = item.copy(durationMs = 184_000L)), entries[1])
+        setContent {
+            MaterialTheme {
+                DetailScreen(DetailKind.Album, null, PagedContentState(items = tracks, initialized = true),
+                    DetailActions(ContentActions({ selected = it.occurrenceId }, null, {}, {}), {}, null, null, null, null),
+                    artwork, Modifier.size(540.dp, 600.dp))
+            }
+        }
+        onNodeWithTag("track-number-first").assertTextEquals("1")
+        onNodeWithTag("track-number-second").assertTextEquals("2")
+        onNodeWithTag("track-duration-first").assertTextEquals("3:04")
+        onNodeWithTag("track-duration-second").assertDoesNotExist()
+        onNodeWithTag("occurrence-second").performClick()
+        assertEquals("second", selected)
+    }
+
     @Test fun emptyPageWithContinuationCanAdvanceAndProviderKeysCannotCollideWithFooter() = runComposeUiTest {
         var state by mutableStateOf(PagedContentState(initialized = true, continuation = "tail"))
         var loads = 0
