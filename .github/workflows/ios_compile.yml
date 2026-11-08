@@ -118,7 +118,7 @@ jobs:
             shift
             xcrun --sdk macosx clang -std=gnu11 -Wall -Wextra \
               -dynamiclib -Wl,-undefined,error \
-              -I desktopApp/native/src -I "$SRC/miniaudio-$MINIAUDIO_VERSION" \
+              -I desktopApp/native/src -I desktopApp/native/include -I "$SRC/miniaudio-$MINIAUDIO_VERSION" \
               "$@" "$wrapper" desktopApp/native/src/archivetune_coreaudio_exclusive.c \
               -framework CoreAudio -framework AudioToolbox -framework CoreFoundation \
               -o "$output"
