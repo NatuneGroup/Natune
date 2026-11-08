@@ -162,8 +162,14 @@ object SpotifyStreamingAccount {
     suspend fun spDc(context: Context): String = pref(context, SpotifyStreamSpDcKey).orEmpty()
 
     suspend fun resolveMethod(context: Context): SpotifyStreamResolveMethod =
-        pref(context, SpotifyStreamResolveMethodKey)
-            ?.let { stored -> runCatching { SpotifyStreamResolveMethod.valueOf(stored) }.getOrNull() }
+        resolveMethodOf(pref(context, SpotifyStreamResolveMethodKey))
+
+    /** Synchronous read for cache-key checks on the player thread, like [effectiveEngine]. */
+    fun resolveMethod(dataStore: DataStore<Preferences>): SpotifyStreamResolveMethod =
+        resolveMethodOf(dataStore[SpotifyStreamResolveMethodKey])
+
+    private fun resolveMethodOf(stored: String?): SpotifyStreamResolveMethod =
+        stored?.let { runCatching { SpotifyStreamResolveMethod.valueOf(it) }.getOrNull() }
             ?: SpotifyStreamResolveMethod.Default
 
     suspend fun deviceId(context: Context): String {
