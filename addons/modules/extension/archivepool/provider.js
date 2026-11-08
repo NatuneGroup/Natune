@@ -188,7 +188,15 @@ async function authorize(config) {
   const expiry = refreshed?.expiresAt || tokenExpiry(accessToken);
   if (!accessToken || expiry !== null && expiry <= Date.now() + 60000) accessToken = await refreshAccess(config);
   if (session?.key === key && session.accessToken === accessToken) return session;
-  const countryCode = config.countryCode || await accountCountry(accessToken);
+  let countryCode = config.countryCode;
+  if (!countryCode) {
+    try { countryCode = await accountCountry(accessToken); }
+    catch (error) {
+      if (error.code !== 'VERIFY_REQUIRED' || !(config.refreshToken && config.clientId)) throw error;
+      accessToken = await refreshAccess(config);
+      countryCode = await accountCountry(accessToken);
+    }
+  }
   session = {key, accessToken, countryCode};
   return session;
 }

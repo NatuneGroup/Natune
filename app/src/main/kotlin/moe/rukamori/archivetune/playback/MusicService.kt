@@ -9591,10 +9591,12 @@ class MusicService :
         if (cacheGeneration !== directStreamCache.generation) return null
         val winningStream = best
         val winningSource = bestSource
+        if (winningSource != AudioSourceType.MODULES) activeModuleAudio.remove(mediaId)
         if (winningStream != null && winningSource != null) {
             Timber.tag("MusicService").i(
                 "Source WIN: %s resolved \"%s\" [%s] metadata match %.1f%% (%s)",
-                winningSource.name, query.title, winningStream.label, bestScore * 100, winningStream.uri.take(80),
+                winningSource.name, query.title, winningStream.label, bestScore * 100,
+                if (winningSource == AudioSourceType.MODULES) "module stream" else winningStream.uri.take(80),
             )
             if (switchFallback != null && !isPrefetch) {
                 if (switchFallbackAppended && winningSource == switchFallback.source) {
@@ -11395,25 +11397,7 @@ class MusicService :
         // One Spotify manager per factory, built on first need: a manager binds to the looper of
         // the first player that prepares it, and the crossfade player has its own factory.
         var spotifyDrmManager: DrmSessionManager? = null
-        val standard = DefaultMediaSourceFactory(
-            createDataSourceFactory(),
-            DefaultExtractorsFactory()
-                // Enable constant-bitrate seeking for CBR streams (most MP3/AAC files) so
-                // the user can seek to any position without needing a seek table. Without
-                // this, ExoPlayer can only seek to keyframes, making seeking in .m4a/.mp3
-                // files imprecise or impossible.
-                .setConstantBitrateSeekingEnabled(true),
-        )
-            // Apple Music full-track streams are CENC-encrypted fMP4; the Widevine L3
-            // session (license exchanged against Apple's acquireWebPlaybackLicense) is
-            // attached only for media ids resolved through the Apple source — everything
-            // else stays DRM-free with the default behavior.
-            //
-            // Spotify's web-player method is also CENC fMP4, but the source is only known once
-            // the item's data source resolves, after this provider has run. The Spotify session
-            // is therefore attached to every item while that source is switched on and signed
-            // in; an unencrypted stream never asks it for a key.
-            .setDrmSessionManagerProvider { mediaItem ->
+        val drmProvider = androidx.media3.exoplayer.drm.DrmSessionManagerProvider { mediaItem ->
                 val appleTrack = mediaItem.mediaId?.let { appleDrmTrackInfo[it] }
                 when {
                     appleTrack != null -> buildAppleDrmSessionManager(appleTrack) ?: DrmSessionManager.DRM_UNSUPPORTED
@@ -11425,8 +11409,8 @@ class MusicService :
                     else -> DrmSessionManager.DRM_UNSUPPORTED
                 }
             }
-        return ModuleMediaSourceFactory(
-            standard, moduleAudio, moduleBindings, moduleStorage,
+        return moduleMediaSourceFactory(
+            createDataSourceFactory(), drmProvider, moduleAudio, moduleBindings, moduleStorage,
             completedDownload = { id -> moduleDownloadUtil.downloadManager.downloadIndex.getDownload(id)?.state ==
                 androidx.media3.exoplayer.offline.Download.STATE_COMPLETED },
             selected = { id, selection ->

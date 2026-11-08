@@ -1857,19 +1857,7 @@ val TelegramBotForwardToChannelKey = booleanPreferencesKey("telegramBotForwardTo
 // terminal fallback and can be toggled off like any other source; disabling it turns "no other
 // source matched" into a hard playback failure rather than a silent YouTube stream.
 
-enum class AudioSourceType {
-    TIDAL,
-    QOBUZ,
-    QOBUZ_BACKUP,
-    DEEZER,
-    APPLE,
-    AMAZON,
-    QQ,
-    SPOTIFY,
-    JIOSAAVN,
-    MODULES,
-    YOUTUBE,
-}
+
 
 // ---------------------------------------------------------------------------
 // QQ Music source
@@ -2354,5 +2342,3 @@ val LastwaveAudioProcessingKey = booleanPreferencesKey("lastwaveAudioProcessing"
 val EnableBiniLyricsKey = booleanPreferencesKey("enableBiniLyrics")
 val EnableGeniusLyricsKey = booleanPreferencesKey("enableGeniusLyrics")
 val EnableLrcRedKey = booleanPreferencesKey("enableLrcRed")
-
-val ModulesEnabledKey = booleanPreferencesKey("modulesEnabled")

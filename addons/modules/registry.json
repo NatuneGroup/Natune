@@ -10,7 +10,7 @@
       "author": "Natune contributors",
       "description": "Uses Deezer public recording metadata to query the same recording on your authorized Amazon instance, via v2 then v1.5. Requires actual response recording metadata and plaintext audio. Challenge solving, encrypted CENC audio and queued jobs require native playback.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/amazon.arch",
-      "sha256": "b953e0b27f074021e82bc80f9d855d7140b834cd7284052c9aea511edc47bb7d",
+      "sha256": "0d061133e79062bb31f15a167d2ada7b2efc1b88a2ebe670b6deb28f61df1b8f",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -26,7 +26,7 @@
       "author": "Natune contributors",
       "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/archivepool.arch",
-      "sha256": "5acbcb4397474aa922da04dd042310bda88d36fdd230d0dd31025eee65ce03b8",
+      "sha256": "fa3419c140a461e92e158d6881522516d18396849737d0248b00f6f3ed1724f9",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -129,7 +129,7 @@
       "author": "morieattonkatsu; Natune contributors",
       "description": "Natune fork: own-account TIDAL audio with explicit quality restriction fallback, bounded rate-limit cooldown, optional OAuth refresh and account country lookup. Plain BTS or unprotected inline DASH only. Refreshed tokens stay in runtime memory; configure again after restart if the service rotates your refresh token.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/tidal.arch",
-      "sha256": "1ff0278a11572d793da3e6c023145d356b43ad349fffb5e4b879cf7e2e69b003",
+      "sha256": "8a1b97a874c7adaaf9ac95c40fa44f4968a6d25dafe3562650930d25a5216242",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"

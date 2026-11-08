@@ -237,7 +237,11 @@ internal fun PlaybackSourceSections(
     val moduleViewModel: moe.rukamori.archivetune.viewmodels.ModuleSettingsViewModel =
         androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
     val moduleModel by moduleViewModel.state.collectAsState()
-    val modulesEnabled = moduleModel.enabled
+    val modulesEnabled = when (val current = moduleModel) {
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Success -> current.model.enabled
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Empty -> current.model.enabled
+        else -> false
+    }
     val sourceOrder =
         remember(sourceOrderRaw) {
             AudioSourceConfig.parseOrder(sourceOrderRaw.ifBlank { null })
