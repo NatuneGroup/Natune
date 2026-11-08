@@ -6,12 +6,12 @@
   "module": {
     "id": "app.natune.provider.tidal",
     "name": "TIDAL",
-    "displayName": "TIDAL (Natune)",
+    "displayName": "TIDAL",
     "icon": "icon.png",
     "version": "1.2.0",
     "author": "morieattonkatsu; Natune contributors",
-    "description": "Natune fork: own-account TIDAL audio with explicit quality restriction fallback, bounded rate-limit cooldown, optional OAuth refresh and account country lookup. Plain BTS or unprotected inline DASH only. Refreshed tokens stay in runtime memory; configure again after restart if the service rotates your refresh token.",
-    "homepage": "https://github.com/NatuneGroup/Natune/tree/feat/r3-modules/addons/modules",
+    "description": "TIDAL audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
+    "homepage": "https://github.com/NatuneGroup/Natune/tree/dev/addons/modules",
     "repository": "https://github.com/NatuneGroup/Natune",
     "license": "GPL-3.0",
     "type": [
@@ -34,6 +34,28 @@
       "getTrackStreamUrl"
     ],
     "settings": {
+      "mode": {
+        "type": "select",
+        "label": "Connection mode",
+        "description": "Choose your own account or a public/community instance without an account.",
+        "defaultValue": "account",
+        "options": [
+          {
+            "label": "Signed-in account",
+            "value": "account"
+          },
+          {
+            "label": "Public instance (no account)",
+            "value": "instance"
+          }
+        ]
+      },
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "description": "HTTPS endpoint used only in public instance mode.",
+        "defaultValue": null
+      },
       "accessToken": {
         "type": "password",
         "label": "Access token",
