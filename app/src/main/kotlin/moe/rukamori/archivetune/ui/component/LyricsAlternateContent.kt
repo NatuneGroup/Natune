@@ -96,7 +96,7 @@ internal data class AlternateLyricSelectionLine(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun PlainLyricsView(
+internal fun PlainLyricsView(
     lines: AlternatePlainLyrics,
     listState: LazyListState,
     selectedLineKeys: Set<String>,
