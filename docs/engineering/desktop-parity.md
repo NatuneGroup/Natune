@@ -217,3 +217,10 @@ The only retained Android module change for native HLS is an additive permission
 snapshot accessor on ModuleRuntime; its JS API and Android behavior are unchanged.
 Theme source extraction normalizes line endings for the Windows build, and the
 four-seed editor scrolls in smaller windows.
+
+Local-audio sharing now copies a native file-list clipboard item in the item/player
+menus and main player Share action, with Linux URI/clipboard variants. Users can
+paste into compatible apps/file managers; missing files or unavailable clipboards
+report failure. Download export remains the format-named, tagged file path. Clipboard
+behavior is unverified on Windows/Linux. The existing missing-file contract test is
+updated without running local JVM tests.
