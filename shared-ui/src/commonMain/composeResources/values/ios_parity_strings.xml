@@ -19,4 +19,9 @@
     <string name="ios_icon_title">App icon</string>
     <string name="ios_icon_default">Natune</string>
     <string name="ios_icon_android">ArchiveTune Android</string>
+    <string name="ios_modules_title">Source modules</string>
+    <string name="ios_modules_enable">Enable modules</string>
+    <string name="ios_modules_import">Install .arch package</string>
+    <string name="ios_modules_configure">Configure</string>
+    <string name="ios_modules_remove">Remove</string>
 </resources>

@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
+import moe.rukamori.archivetune.shared.data.modules.IosModulesRepository
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -159,6 +160,7 @@ internal class IosSessionGraph private constructor(
     val history: RoomListeningHistory,
     val lyrics: HostLyrics,
     val lyricsSurface: LyricsSurfaceRuntime,
+    val modules: IosModulesRepository,
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
@@ -382,6 +384,7 @@ internal class IosSessionGraph private constructor(
         uploads.close()
         listenDriver.close()
         progressDriver.close()
+        modules.close()
         backupSync?.close()
         topMixes.close()
         lyricsSurface.close()
@@ -673,8 +676,9 @@ internal class IosSessionGraph private constructor(
                 personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
                 syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
             )
+            val modules = IosModulesRepository(http, "$databaseDirectory/modules", host.credentials) { vault.snapshots.value }
             val audioResolver = OrderedAudioResolver(
-                providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
+                providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool, modules),
                 youtube = IosYouTubeResolver(
                     http = http,
                     transport = youtubeTransport,
@@ -954,6 +958,7 @@ internal class IosSessionGraph private constructor(
                 history = history,
                 lyrics = lyrics,
                 lyricsSurface = lyricsSurface,
+                modules = modules,
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),

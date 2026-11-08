@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import moe.rukamori.archivetune.shared.domain.settings.ModulesEnabledKey
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,7 +85,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/theme_creator", "settings/appearance/navigation_bar",
     "settings/appearance/aod_customized",
-    "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
+    "settings/android_auto", "settings/modules", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
     TelegramLoginRoute, IosLastFmDashboardRoute, "customize_background", "settings/customize_background",
@@ -112,6 +114,7 @@ internal fun IosLaneSettingsPage(
 ) {
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
+        "settings/modules" -> IosModulesPage(host, owners.graph, onFailure)
         "settings/appearance/icon" -> IosIconEditor(onFailure)
         "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
         "settings/appearance/liquid_glass" -> moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings(
@@ -312,9 +315,9 @@ private fun IosLaneSourceSettingsPage(
     SourceSettings(
         controller = owners.controller,
         spotifyStreamingReady =
-            preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective()),
-        // This host has no Spotify streaming transport, so the row reads as not available here.
-        spotifyStreamingPlatformSupported = false,
+            iosSpotifyStreamingReady(preferences),
+        // The Echo transport is present; the selected engine/method and account still gate readiness.
+        spotifyStreamingPlatformSupported = true,
         poolConfigured = owners.poolConfigured,
         refreshPool = { iosLaneRefreshPool(owners) },
         checkSource = { type, prefs -> iosLaneCheckSource(owners.graph.http, type, prefs) },
@@ -358,7 +361,7 @@ internal suspend fun iosLaneCheckSource(
     // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
     AudioSourceType.SPOTIFY -> iosLaneProbe(http, "https://open.spotify.com/")
     // Modules run only in the Android host.
-    AudioSourceType.MODULES -> false
+    AudioSourceType.MODULES -> preferences[ModulesEnabledKey] == true
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
     AudioSourceType.YOUTUBE -> iosLaneProbe(http, "https://music.youtube.com/generate_204")
