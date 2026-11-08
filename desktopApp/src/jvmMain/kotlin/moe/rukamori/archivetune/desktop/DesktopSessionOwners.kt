@@ -277,6 +277,8 @@ internal suspend fun assembleDesktopSessionOwners(
         client = http,
         index = storedIndex,
     )
+    val songCache = DesktopSongCache(directory.resolve("cache/songs"), http, database.storedSongs(), storedIndex,
+        playback, { vault.snapshots.value }, scope)
     // A committed download answers before the network does, so a stored song keeps playing offline.
     val storedFile: suspend (String, String) -> java.nio.file.Path? = { provider, mediaId ->
         var found: java.nio.file.Path? = null
@@ -287,13 +289,14 @@ internal suspend fun assembleDesktopSessionOwners(
             found = downloadStore.find(DownloadKey(mediaId, source, quality, provider))
             if (found != null) break
         }
-        found
+        found ?: songCache.fileOf(provider, mediaId)
     }
     val locators = DesktopQueueLocatorResolver(
         audio = audioResolver,
         port = playback,
         preferences = { vault.snapshots.value },
         storedFile = storedFile,
+        cacheAudio = songCache::consider,
     )
     val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
     val youtubeLibrarySync = DesktopYouTubeLibrarySync(
@@ -632,6 +635,7 @@ internal suspend fun assembleDesktopSessionOwners(
         ),
         storedSongIndex = storedIndex,
         downloadStore = downloadStore,
+        songCache = songCache,
         downloads = downloadsOwner,
         localMedia = localMediaOwner,
         statistics = statisticsOwner,

@@ -13,7 +13,8 @@ import moe.rukamori.archivetune.shared.domain.repository.toPlaybackLocator
 import moe.rukamori.archivetune.shared.domain.source.toPlaybackLocator
 
 /** Reads the same bounded, admitted plaintext that playback decodes; never commits provider ciphertext. */
-internal suspend fun writeDesktopPreparedDownload(port: DesktopPlaybackPort, audio: PreparedAudio, target: Path): Long {
+internal suspend fun writeDesktopPreparedDownload(port: DesktopPlaybackPort, audio: PreparedAudio, target: Path,
+    byteLimit: Long = 2L * 1024 * 1024 * 1024): Long {
     val lease = when (audio) {
         is PreparedAudio.DeezerEncrypted -> NativeStreamLease.forDeezerTrack(audio.toPlaybackLocator())
         is PreparedAudio.Progressive -> {
@@ -31,7 +32,7 @@ internal suspend fun writeDesktopPreparedDownload(port: DesktopPlaybackPort, aud
             withContext(Dispatchers.IO) {
                 val sizing = LongArray(2)
                 check(lease.open(sizing) == 0) { "The download stream could not be opened" }
-                val maxBytes = 2L * 1024 * 1024 * 1024
+                val maxBytes = minOf(byteLimit, 2L * 1024 * 1024 * 1024)
                 require(sizing[0] <= maxBytes) { "Download exceeds size limit" }
                 var bytes = 0L
                 var lastProgress = System.nanoTime()
@@ -57,8 +58,10 @@ internal suspend fun writeDesktopPreparedDownload(port: DesktopPlaybackPort, aud
                 bytes
             }
         } finally {
-            interrupt.cancelAndJoin()
-            lease.close()
+            withContext(NonCancellable) {
+                interrupt.cancelAndJoin()
+                lease.close()
+            }
         }
     }
 }

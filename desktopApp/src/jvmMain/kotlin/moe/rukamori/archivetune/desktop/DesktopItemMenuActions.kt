@@ -61,7 +61,7 @@ internal class DesktopSongMenuHost(
     }
 
     /** The streamed cache's index row; the producer is not wired, so the row only appears on cache occurrences. */
-    override suspend fun removeFromCache(song: ContentRef) = graph.storedSongIndex.cacheRemoved(song)
+    override suspend fun removeFromCache(song: ContentRef) = graph.songCache.remove(song)
 
     override suspend fun startDownload(song: ContentRef) {
         if (song.kind != ContentKind.SONG) state.unavailable("content_menu_episode_download_unsupported")

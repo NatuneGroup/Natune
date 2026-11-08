@@ -36,3 +36,11 @@ by the download/player menus and retain their kind in the portable stored row.
 The only commonMain change is allowing downloaded EPISODE rows in that existing
 index serializer; songs and cache rows keep their previous contract.
 Playback/export of these files still needs CI and Windows/Linux runtime validation.
+
+Automatic song caching now fills bounded complete plaintext files after successful
+playback resolution, records them in the existing CACHE index and reuses them before
+network resolution. It serializes fills and honors the song-cache size setting;
+Spotify and episodes are excluded from automatic caching. Explicit cache removal
+deletes both the index row and its file. A separate cache fill can duplicate network
+traffic while the player reads; it does not yet tee decoder reads. Runtime eviction
+and offline playback remain unverified.
