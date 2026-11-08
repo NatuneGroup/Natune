@@ -316,11 +316,24 @@ internal fun ModuleSectionHeading(title: Int, description: Int? = null) {
 
 @Composable
 internal fun ModuleInformation(item: ModuleInfoUi, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    if (item.link) {
+        Surface(onClick = { onAction(ModuleSettingsAction.OpenLink(item.value)) }, modifier = modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.link), null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(if (item.label == R.string.modules_metadata_repository) R.string.modules_source_code else item.label),
+                        style = MaterialTheme.typography.titleSmallEmphasized)
+                    Text(item.value, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary, softWrap = true)
+                }
+                Icon(painterResource(R.drawable.open_in_new), null)
+            }
+        }
+    } else Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(stringResource(item.label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (item.link) TextButton(onClick = remember(item.value, onAction) { { onAction(ModuleSettingsAction.OpenLink(item.value)) } }, contentPadding = PaddingValues(0.dp)) {
-            Text(item.value, style = MaterialTheme.typography.bodyMedium)
-        } else Text(item.value, style = MaterialTheme.typography.bodyMedium)
+        Text(item.value, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium, softWrap = true)
     }
 }
 
