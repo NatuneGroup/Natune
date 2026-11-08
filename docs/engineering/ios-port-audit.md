@@ -215,3 +215,53 @@ check is not simulator compilation or device evidence.
 - Inspected the cached InnerTubeX v0.11.2 JAR in place: its AudioQuality enum contains
   MP4 and its Format bitrate accessor returns Int, matching the new iOS selection calls.
   No archive was extracted and no JVM was launched.
+
+## Pushed commit map and final validation
+
+The initial worktree was clean at audit commit `28eab547`; there was no uncommitted
+WIP to recover. Each implementation step below was committed and pushed to
+`origin/feat/r3-ios-port`. No PR was created and no workflow was dispatched.
+
+| Defect / root cause | Primary fix commit |
+| --- | --- |
+| Byte-source suspend/resume inversion; complete partial bodies treated as truncated files; WebM-first iOS policy; watchdog resume window | `ab9af533` |
+| No shared phone player dismiss target; preserve inner-panel/player/route order | `bccfb9c5` |
+| Unsaved search entry draft; selection/composition not explicitly owned across field placement | `8e5ddf28` |
+| Hand-drawn transport/navigation symbols; implicit fills in shared XML | `92b1171e` |
+| Artists read only from first subtitle group; iOS palette always empty | `84b893d3` |
+| Tall blurred artwork frame; text-only transport crowded the mini player | `024feb65` |
+| Graph readiness awaited saved-song network resolution | `44eadd61` |
+| Source-review corrections: startup owner ordering, bottom Search Back, shared Replay action, duplicate import, Solar attribution | `86c70c30` |
+
+Current source locations (after the implementation commits):
+
+- transport: `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosHttpRangeSource.kt:158`
+- format: `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/provider/IosAudioFormatPolicy.kt:4`
+- watchdog: `shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/playback/PlaybackProgressWatchdog.kt:30`
+- back: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/player/BottomSheetPlayer.kt:154`
+- search: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/screens/SearchScreen.kt:89`
+- icons: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/player/PlayerComponents.kt:130`
+- credits: `shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/provider/YouTubeArtistCredits.kt:6`
+- palette: `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios/IosPlayerControls.kt:84`
+- cover: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/playerstyles/NumberedPlayers.kt:155`
+- mini: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/player/ArchiveMiniPlayer.kt:90`
+- startup: `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios/IosSessionGraph.kt:348`
+- restore: `shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/repository/TypedDelegatingQueueController.kt:85`
+
+Validation on the final implementation:
+
+- `python3 scripts/check_repository.py --worktree`: **0 findings**.
+- `python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`: **28 passed**.
+- Added common tests for watchdog pause/resume and unknown duration, linked artist policy
+  and a typed shelf fixture, player/route back order, and deferred queue restore precedence.
+  Added iosTest format-selection and partial-range policy tests. Kotlin tests were **not
+  run locally**; compilation/execution remain for orchestrator-controlled GitHub CI.
+- The Python vector checks cover all shared XML vectors, including syntax/command shape;
+  they do **not** prove iOS rendering. No local Gradle/JVM, lint, build, simulator or device
+  test was run. Existing JAR inspection read selected entries in memory without extraction.
+- The supplied recording's exact stall cause remains unproven. Device verification must
+  cover full-track/seek/background/interrupted playback, IME composition and fast edits,
+  all player/panel Back paths, all style and compact/safe-area layouts, custom covers and
+  Lock Screen artist metadata, and cold/warm/offline launch with saved local/remote queues.
+  iOS native edge-swipe navigation is not implemented by these commits; explicit shared
+  Back controls are. Old saved provider metadata refreshes when its content is reloaded.
