@@ -63,6 +63,8 @@ internal object DesktopExclusiveOutputPolicy {
     fun plan(state: DesktopOutputState, config: StageConfig): SoftwareStagePlan =
         if (!state.requested) desktopStagePlan(config.copy(routeFacts = config.routeFacts.copy(bitPerfectRequested = false)))
         else SoftwareStagePlan.resolve(decision(state), config.request.copy(
-            normalizationEnabled = false, equalizerEnabled = false, speed = 1.0, pitchSemitones = 0.0,
-            silenceSkippingEnabled = false, twoDeckMixingEnabled = false))
+            // A direct lane bypasses every stage, so these three stay pinned until the sink is shared again.
+            // The stored equalizer and normalization are kept in the request: a refused direct route falls
+            // back to shared output, where the user's saved processing must resume instead of disappearing.
+            speed = 1.0, pitchSemitones = 0.0, silenceSkippingEnabled = false, twoDeckMixingEnabled = false))
 }

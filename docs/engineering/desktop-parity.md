@@ -266,7 +266,9 @@ behavior need Windows/Linux runtime validation.
   `hw:` on Linux, and Core Audio hog ownership with native rate/physical-format
   selection on macOS. The decoded integer/float lane bypasses software stages;
   rate/format changes reopen the sink, and device refusal has a visible shared
-  fallback. Output settings retain the device picker and publish sink diagnostics.
+  fallback that resumes the stored equalizer/normalization instead of leaving the
+  processing switches written but inactive. Output settings retain the device
+  picker and publish sink diagnostics.
   The raw lane drains the negotiated hardware queue after its last PCM before
   closing on EOF or a format change. Stop/seek still discard obsolete output.
   Native/WAVE speaker masks are passed to the sink; mismatched, custom or unknown
