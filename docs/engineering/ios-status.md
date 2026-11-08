@@ -648,3 +648,21 @@ merged TIDAL/Qobuz packages, and normalized metadata can be validated again when
 listed. Automatic account authorization and module-specific Playback Pool/account
 lanes remain explicitly unavailable; declared package connection modes and personal
 credentials still work. Android and desktop source sets were not edited.
+
+
+### Shared library/search/discovery: Spotify catalog details
+
+Spotify album and artist routes now retain the actual catalog identity and artwork
+instead of switching to a YouTube page before rendering. Albums use the shared album
+screen with artist navigation, local bookmarks and the complete track list; completion
+requires the declared total, unique continuation traversal and the existing time/request
+bounds. Artists use the shared artist screen with real popular songs and paged album/
+single shelves; the shared artist-section screen handles further releases. Album ids,
+artist credits, explicit flags and ISRC now survive Spotify track parsing in library,
+search and discovery rows. The existing catalog-to-audio matching path still starts
+playback, and catalog tokens remain isolated from streaming credentials. Matching
+cancellation propagates, and row-list cache retention is capped at 32 collections.
+YouTube, QQ discovery/search, podcasts and local-library screens were already shared
+and remain wired. QQ artist/album details, Spotify radio continuations and direct
+catalog-song downloads are not supplied by these adapters. Compilation and real
+provider/device execution of this follow-up remain pending CI/QA.

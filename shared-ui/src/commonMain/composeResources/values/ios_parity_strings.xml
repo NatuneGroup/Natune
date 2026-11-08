@@ -53,4 +53,6 @@
     <string name="ios_choose_artist">Choose artist</string>
     <string name="ios_output_routes">Audio output</string>
     <string name="ios_lyrics_refresh">Refresh lyrics</string>
+    <string name="ios_spotify_top_tracks">Popular songs</string>
+    <string name="ios_spotify_releases">Albums and singles</string>
 </resources>
