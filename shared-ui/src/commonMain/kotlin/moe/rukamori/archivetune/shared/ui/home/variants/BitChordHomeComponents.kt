@@ -14,6 +14,7 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -229,6 +230,7 @@ internal fun BitChordHeroCard(
                 color = if (isCurrent) BitChordPlayingAccent else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().basicMarquee(),
             )
             Text(
                 text = effectiveSong(item).subtitle,
@@ -300,6 +302,7 @@ internal fun BitChordShelfCard(
             color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().basicMarquee(),
         )
         Text(
             text = effectiveSong(item).subtitle,
@@ -309,7 +312,7 @@ internal fun BitChordShelfCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.fillMaxWidth().basicMarquee().padding(top = 2.dp),
         )
     }
 }
@@ -353,6 +356,7 @@ internal fun BitChordCompactTrackRow(
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().basicMarquee(),
             )
             Text(
                 text = effectiveSong(item).subtitle,
@@ -362,7 +366,7 @@ internal fun BitChordCompactTrackRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 1.dp),
+                modifier = Modifier.fillMaxWidth().basicMarquee().padding(top = 1.dp),
             )
         }
     }
