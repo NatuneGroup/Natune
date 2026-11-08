@@ -1,0 +1,69 @@
+--- a/core/src/session.rs
++++ b/core/src/session.rs
+@@ -3,7 +3,6 @@
+     future::Future,
+     io,
+     pin::Pin,
+-    process::exit,
+     sync::{Arc, OnceLock, RwLock, Weak},
+     task::{Context, Poll},
+     time::{Duration, SystemTime, UNIX_EPOCH},
+@@ -367,8 +366,7 @@
+                 error!("librespot does not support {account_type:?} accounts.");
+                 info!("Please support Spotify and your artists and sign up for a premium account.");
+ 
+-                // TODO: logout instead of exiting
+-                exit(1);
++                // Embedded hosts reject this product and tear down their session; never exit the app.
+             }
+         }
+     }
+--- a/core/src/config.rs
++++ b/core/src/config.rs
+@@ -3,7 +3,7 @@
+ use librespot_protocol::devices::DeviceType as ProtoDeviceType;
+ use url::Url;
+ 
+-pub(crate) const KEYMASTER_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
++pub const KEYMASTER_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
+ pub(crate) const ANDROID_CLIENT_ID: &str = "9a8d2f0ce77a4e248bb71fefcb557637";
+ pub(crate) const IOS_CLIENT_ID: &str = "58bd3c95768941ea9eb4350aaa033eb3";
+ 
+--- a/core/src/http_client.rs
++++ b/core/src/http_client.rs
+@@ -42,6 +42,8 @@
+ 
+ #[derive(Debug, Error)]
+ pub enum HttpClientError {
++    #[error("Rate limited by service")]
++    RateLimited(Option<String>),
+     #[error("Response status code: {0}")]
+     StatusCode(hyper::StatusCode),
+ }
+@@ -49,6 +51,7 @@
+ impl From<HttpClientError> for Error {
+     fn from(err: HttpClientError) -> Self {
+         match err {
++            HttpClientError::RateLimited(_) => Error::resource_exhausted(err),
+             HttpClientError::StatusCode(code) => {
+                 // not exhaustive, but what reasonably could be expected
+                 match code {
+@@ -201,14 +204,10 @@
+                 let code = response.status();
+ 
+                 if code == StatusCode::TOO_MANY_REQUESTS {
+-                    if let Some(duration) = Self::get_retry_after(response.headers()) {
+-                        warn!(
+-                            "Rate limited by service, retrying in {} seconds...",
+-                            duration.as_secs()
+-                        );
+-                        tokio::time::sleep(duration).await;
+-                        continue;
+-                    }
++                    return Err(HttpClientError::RateLimited(
++                        response.headers().get("Retry-After")
++                            .and_then(|value| value.to_str().ok()).map(str::to_owned),
++                    ).into());
+                 }
+ 
+                 if !code.is_success() {

@@ -1,0 +1,34 @@
+name: Build Librespot audio JNI
+description: Compile the pinned core/metadata-only Rust binding for this Android artifact
+inputs:
+  variant:
+    description: ABI flavor or shipping distribution-device-ABI variant
+    default: universal
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@1.97.1
+    - uses: actions/cache/restore@v5
+      id: cargo-cache
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: librespot-${{ runner.os }}-ndk30-rust1.97.1-${{ inputs.variant }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision') }}
+    - name: Cross-compile selected ABIs
+      shell: bash
+      env:
+        LIBRESPOT_VARIANT: ${{ inputs.variant }}
+      run: bash native/librespot/build-android.sh "$LIBRESPOT_VARIANT"
+    - uses: actions/cache/save@v5
+      if: >-
+        steps.cargo-cache.outputs.cache-hit != 'true' &&
+        github.event_name != 'pull_request' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
