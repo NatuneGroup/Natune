@@ -1,21 +1,28 @@
-# Source modules
+# Source modules and Natune extensions
 
 Natune ports the Android source-module host from ArchiveTune `upstream/dev`
-`8f25a9e21` (ArchiveTune 15.1.0). Nothing is installed or enabled on a fresh
-installation. Open Settings → Modules, import a file/URL, or add one of the two
-suggested catalogs, review the installation, configure credentials and explicitly
-enable Modules. Each installed module has its own enable switch and order.
+`8f25a9e21` (ArchiveTune 15.1.0). No downloaded module is installed or enabled on
+a fresh installation. The built-in Spotify extensions are listed separately and
+remain off until an account/source is enabled or the user switches an extension
+on. Open Settings → Modules, import a file/URL, or add a suggested catalog,
+review the installation, configure credentials and explicitly enable Modules.
+Each installed module has its own enable switch and order.
 
-The suggested catalogs are:
+The audio catalogs remain portable to upstream ArchiveTune. A separate Natune-only
+[extensions catalog](https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-spotify-ext/addons/modules/natune-extensions.json)
+contains the optional LRCLIB lyrics example. All three catalogs are available as
+explicit suggestions in Modules settings.
+
+The portable audio catalogs are:
 
 - [Natune catalog](https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/registry.json)
 - [ArchiveTune catalog](https://raw.githubusercontent.com/rukamori/ArchiveTuneModules/main/registry.json)
 
 The Natune catalog and in-app suggestion currently target `feat/r3-modules`.
-After merging, update the suggestion in `ModulesSettings.kt`, `BRANCH` in
-`addons/modules/scripts/build_catalog.py`, and this link to the shipping branch,
-then regenerate the catalog. Do not delete the feature branch before publishing
-replacement download links.
+After merging, update the suggestions in `ModulesSettings.kt`, `BRANCH` and
+`NATUNE_BRANCH` in `addons/modules/scripts/build_catalog.py`, and these links to
+the shipping branch, then regenerate both catalogs. Do not delete the feature
+branches before publishing replacement download links.
 
 ## Architecture and compatibility
 
@@ -33,8 +40,9 @@ Manifest, settings, registry/category catalogs, typed quality options, native
 CommonJS exports and the extension host APIs retain the upstream parsing and
 limits. The installer does not extract paths to disk. `8SM1.` is intentionally
 unsupported. Upstream text modules and readable `.arch` packages remain accepted.
-The Natune packages use only upstream JS API v1, including `fetch`, typed settings,
-base64 and inline DASH. No Natune runtime feature is required by the catalog.
+The nine portable audio packages use only upstream JS API v1, including `fetch`,
+typed settings, base64 and inline DASH. No Natune runtime feature is required by
+the portable audio catalog.
 Packages can consequently be installed on either host; live service/account
 availability is separate from package compatibility and is not verified here.
 
@@ -52,7 +60,7 @@ Android playback still enters through `MusicService.resolveMultiSourceDataSpec`.
 snapshot and rejection policy. Its default position is before Spotify and
 YouTube; Spotify remains directly before YouTube. Existing stored orders insert
 missing sources before the terminal YouTube entry. Modules are available only
-when the registry and an installed module are enabled. Module quality remains
+when the registry and an installed audio/playback module are enabled. Module quality remains
 independent of YouTube/low-data quality, as upstream specifies; existing sources
 retain their low-data rules. Local files, podcasts, music videos and Telegram
 keep their existing paths.
@@ -76,6 +84,128 @@ Desktop and iOS receive no QuickJS/Android module dependency. Their source setti
 report the runtime unavailable. Module portable export/restore helpers are
 retained, but they are not added to Natune's transactional application-backup
 format in this port.
+
+## Extension kinds and compatibility
+
+`module.type` declares the kind (`audio_provider`, `metadata_provider`,
+`lyrics_provider` or `playback_provider`), as a string or array. One Natune kind
+per package is supported. Legacy manifests without a kind, or with other upstream
+type labels, retain audio-source behavior and their original type labels. Audio
+parsing still requires `searchTracks` and `getTrackStreamUrl`; new kinds do not
+relax that audio contract or change its recognized capabilities.
+
+| Kind | Natune Android | Upstream ArchiveTune API v1 |
+| --- | --- | --- |
+| `audio_provider` / legacy audio | Existing QuickJS audio source and download route; unchanged `.arch` v1 behavior | Same package, methods and settings supported |
+| `metadata_provider` | Metadata-only packages: at least one of `searchTracks`, `getHome`, `getLibrary`, `getAlbum`, `getArtist`, `getPlaylist`; bounded runtime calls | Unsupported kind; new methods/features are rejected, or a host may ignore the kind label |
+| `lyrics_provider` | `getLyrics(track, context)` joins the Android lyrics chain | Rejected: no lyrics capability/API in upstream v1 |
+| `playback_provider` (JS) | URL-based `searchTracks` + `getTrackStreamUrl`, in the `MODULES` source slot | Natune marker rejected; without the marker an upstream host may ignore the kind and treat the methods as audio |
+| Built-in native metadata/playback | Registered alongside installed extensions, Android code and existing settings routes | Not a downloadable `.arch` package; no upstream registration |
+
+Natune packages keep `format: "archivetune.module"`, `formatVersion: 1`,
+`apiVersion: 1` and the same checksum/entry/size protections. Authors of Natune-only
+packages should declare `requiredRuntimeFeatures: ["natuneExtensions@1"]`, plus
+`lyrics@1` or `metadata@1` as applicable. Upstream rejects these host features;
+the API version is not bumped and audio package validation is unchanged. The
+Natune packager adds kind-specific validation, preserving the upstream path for
+audio packages and all original notices. The nine audio `.arch` files and their
+portable catalog are unchanged by this extension work.
+
+Modules settings offers All / Audio sources / Metadata / Lyrics / Playback
+filters. Installed JS extensions retain their own enable switch, configuration,
+installation review and priority controls. The Modules master switch applies to
+all downloaded JS extensions; native extensions use their independent switches.
+Only audio/playback JS extensions participate in audio resolution. Metadata
+methods return bounded JSON: `getHome(context)`, `getLibrary(context)` and
+`getAlbum(id, context)` / `getArtist(id, context)` / `getPlaylist(id, context)`.
+`searchTracks(query, limit, context)` retains its v1 track schema. The runtime
+exposes these metadata calls for catalog consumers; this change does not add a
+generic JS homepage/library renderer. Spotify's native metadata extension uses
+its existing catalog screens.
+
+## Lyrics extensions
+
+Export `getLyrics(track, context)` from `provider.js` and declare only
+`getLyrics` in `capabilities`, with `module.type: "lyrics_provider"`. `track`
+contains `id`, `title`, `artist` (joined credits), `artists` (string array),
+`album` (nullable), `duration` (nullable seconds), `explicit` and `isrc`.
+`context.settings` keeps the upstream `{key: {value: ...}}` shape, and
+`context.track` / `metadata` / `item` contain the same target recording. A module
+gets no access to personal Spotify or other native account credentials.
+
+A success returns:
+
+```json
+{"format": "lrc", "text": "[00:01.25]Hello", "language": "en"}
+```
+
+`format` must be exactly `lrc`, `ttml` or `plain`. `text` is the complete raw
+LRC/TTML/plain document; timing is preserved for Natune's existing parsers and
+renderers. It must be a nonblank string, contain no NUL, and fit within 1 MiB of
+UTF-8. Optional `language` is a 1–64 character string or null. Return null (or
+undefined) for no lyrics/instrumental recordings; do not return a sentinel as
+successful lyrics. Strings, malformed objects and unsupported formats are
+rejected. Requests are bounded and cancellable, with ordinary timeout/provider
+failure allowing the existing lyrics chain to continue.
+
+`ModuleLyricsProviders` adapts each installation to `LyricsHelper`. Built-in
+providers, the word-sync sweep, sync-tier ranking and renderers remain. Lyrics
+Providers settings links to Modules and adds **Prefer lyrics extensions**, which
+places the extension group before/after built-ins within the same sync tier;
+the group's relative order comes from Modules. Disabled/uninstalled or revised
+extensions do not reuse their old provider cache. The existing built-in LRCLIB
+provider stays available independently of the example extension.
+
+The example is `addons/modules/natune/lrclib/provider.js`, distributed as
+`addons/modules/dist/lrclib.arch`. It uses LRCLIB's exact `/api/get` recording
+lookup, prefers synced LRC, falls back to plain text and returns null on 404 or
+instrumental responses. It bundles no credentials. Its separate catalog uses
+`feat/r3-spotify-ext`; update that URL and `NATUNE_BRANCH` after merge.
+
+## Built-in Spotify extensions
+
+`ExtensionRegistry` exposes installed packages and three native registrations.
+The Android-only `NativeExtension` interface has stable `id`, `kind`,
+`displayName`, `enabled: Flow<Boolean>`, `settingsRoute` and `priority: Flow<Int>`.
+Additional native extensions can implement the interface, register their
+preferences/default migration and settings route, and gate their owned callers.
+Shared modules, desktopApp and iOS receive no dependency on this registry.
+
+| Extension / stable ID | Kind | Gate and existing settings |
+| --- | --- | --- |
+| Spotify Metadata / `app.natune.native.spotify.metadata` | Metadata | Home/library selectors, search picker/results, playlists, catalog authentication/enrichment and cached Android Auto folders; Integration → Spotify catalog login/settings |
+| Spotify Playback (alternate account) / `app.natune.native.spotify.alternate` | Playback | Dedicated streaming-token owner and source availability; existing alternate-account WebView login/method/settings |
+| Spotify Playback (official, librespot) / `app.natune.native.spotify.librespot` | Playback | Catalog-bound OAuth token owner and source availability; existing librespot OAuth login/settings |
+
+Native enablement is separate from credentials and the existing Spotify audio
+source switch. Opening a settings link shows the relevant account login without
+changing playback priority. The two native playback entries share the existing
+`SPOTIFY` source slot; their priority controls reuse `SpotifyStreamEngineKey`
+and preserve the existing effective-engine/Premium policy. Disabling the chosen
+playback extension removes that Spotify path from the enabled source set. The
+existing engine selection still selects one Spotify path; this change does not
+introduce automatic cross-account fallback. Catalog and streaming credentials
+remain separate, including same-account refusal for alternate playback and the
+Premium/catalog-account checks for official playback. Native DRM/decryption is
+never routed through QuickJS.
+
+Absent enable keys infer existing catalog/streaming/OAuth sessions or an enabled
+legacy source. Registry initialization writes those defaults once; existing
+explicit choices win, later sign-out/migration never resets them, and no account
+credential or source-enabled preference is changed. Fresh installs migrate all
+three switches off. The same keys appear in Modules and the existing Spotify
+settings screens.
+
+**Inherited Android librespot gap:** the supplied integration base contains
+`SpotifyLibrespotAccount`, PKCE callback and engine settings, but no Android
+librespot playback binding or librespot playback dependency in
+`app/build.gradle.kts`. `SpotifyStreamingAccount` explicitly stands the unofficial
+pipelines down for a Premium librespot selection, falling through to the next
+audio source. The official extension is registered, configurable and gated, and
+the UI reports that runtime absence. This work does not claim working Android
+librespot audio or add an unvalidated native engine. A native playback binding
+is still required to fulfill official playback; account/device validation is
+also pending.
 
 ## Catalog sources and comparisons
 
@@ -154,12 +284,14 @@ signing material are included.
 
 Run `python3 addons/modules/scripts/build_catalog.py`. It bundles `lib/common.js`,
 custom `main.js` sources, and the TIDAL/Qobuz forks into `provider.js`, then runs
-the unchanged `package_module.py --check`, package creation and `--inspect` for
+`package_module.py --check`, package creation and `--inspect` for
 each provider, and writes `dist/*.arch` plus SHA-256 catalog entries. It performs
 no Gradle/JVM operation or live provider request. For manual authoring, use
 `python3 addons/modules/scripts/package_module.py <provider-directory> --check`
 and supply a second output-file argument to package; inspect with `--inspect`.
-The vendored upstream packager defines format/API v1 authoring validation.
+The vendored packager preserves upstream format/API v1 audio authoring validation
+and adds the Natune kind-specific capability rules. The builder also packages
+`natune/` into the separate `natune-extensions.json` catalog.
 
 Optional syntax check: `node --check <provider.js>`. CI runs
 `node --test addons/modules/tests/providers.test.js` for synthetic provider and
@@ -173,7 +305,9 @@ On the implementation VM: nine packages passed check/package/inspect, JS passed
 syntax checks, repository light checks passed, and the allowed iOS Python suite
 passed 26 tests. No Gradle/JVM build, lint, unit-test execution, device test, live
 account/network probe, desktop/iOS compilation or cross-app installation was
-performed. JVM and JS runtime fixtures require the orchestrator's CI run.
+performed. JVM and JS runtime fixtures require the orchestrator's CI run. Extension-specific
+checks, commits and remaining gaps are recorded in
+[the extension implementation report](modules-extensions-report.md).
 
 The largest integration risk is source preparation timing: module-enabled tracks
 may perform a source-chain preparation before standard Media3 resolution; a

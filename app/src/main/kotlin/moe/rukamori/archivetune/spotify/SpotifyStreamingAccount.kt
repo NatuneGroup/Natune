@@ -47,6 +47,10 @@ import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.modules.SpotifyAlternateExtensionEnabledKey
+import moe.rukamori.archivetune.modules.SpotifyOfficialExtensionEnabledKey
 import moe.rukamori.archivetune.utils.get
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -106,8 +110,10 @@ object SpotifyStreamingAccount {
                 SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(dataStore[SpotifyProductKey])
             }
         return when (SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)) {
-            SpotifyStreamEngine.UNOFFICIAL -> !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
-            SpotifyStreamEngine.LIBRESPOT -> !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
+            SpotifyStreamEngine.UNOFFICIAL -> dataStore.get(SpotifyAlternateExtensionEnabledKey, !dataStore[SpotifyStreamSpDcKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
+                !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
+            SpotifyStreamEngine.LIBRESPOT -> dataStore.get(SpotifyOfficialExtensionEnabledKey, !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
+                !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
         }
     }
 
@@ -144,7 +150,10 @@ object SpotifyStreamingAccount {
 
     suspend fun isSignedIn(context: Context): Boolean = pref(context, SpotifyStreamSpDcKey).orEmpty().isNotBlank()
 
-    suspend fun isActive(context: Context): Boolean = pref(context, SpotifyStreamEnabledKey) == true && isSignedIn(context)
+    suspend fun isActive(context: Context): Boolean {
+        val prefs = context.dataStore.data.first()
+        return prefs[SpotifyStreamEnabledKey] == true && NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, prefs) && isSignedIn(context)
+    }
 
     suspend fun spDc(context: Context): String = pref(context, SpotifyStreamSpDcKey).orEmpty()
 
@@ -171,6 +180,7 @@ object SpotifyStreamingAccount {
     private suspend fun lockedAccessToken(context: Context): String? =
         tokenMutex.withLock {
             val prefs = context.dataStore.data.first()
+            if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, prefs)) return@withLock null
             // While the effective engine is Librespot (stored choice plus observed Premium) the
             // unofficial pipelines get no token at all: they stand down and playback falls through
             // to the next source until the native librespot session lands.

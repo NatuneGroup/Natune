@@ -52,3 +52,11 @@ sessions and domain permissions remain intact.
 
 Disk use stayed small: the upstream module checkout and sources/packages are under a few MB;
 no large download or signing/secret access occurred. Git identity was not changed.
+
+## Natune extension follow-up
+
+The additive kind model, lyrics contract/example and three built-in Spotify
+registrations are described in [the extension report](modules-extensions-report.md).
+The original nine portable audio packages remain unchanged. The supplied Android
+base has librespot OAuth/settings but no playback binding; that inherited gap is
+reported explicitly by the official extension.

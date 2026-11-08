@@ -99,7 +99,10 @@ data class ModuleManifest(
                 value.optString("iconBase64").takeIf(String::isNotBlank)?.let(::moduleIcon),
                 value.optBoolean("authentication"),
             ).also {
-                if (it.id.isBlank() || it.name.isBlank() || !it.capabilities.containsAll(listOf("searchTracks", "getTrackStreamUrl"))) {
+                if (it.id.isBlank() || it.name.isBlank() || !it.kind.accepts(it.capabilities)) {
+                    throw ModuleException(ModuleFailure.UNSUPPORTED)
+                }
+                if (it.kind != ModuleKind.AUDIO_SOURCE && it.capabilities.any { capability -> capability !in it.kind.capabilities }) {
                     throw ModuleException(ModuleFailure.UNSUPPORTED)
                 }
                 if (it.id.length > 256 || it.name.length > 256 || it.version.length > 128 || it.description.length > 8192) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
@@ -141,7 +144,8 @@ fun moduleIcon(encoded: String): ByteString {
 const val ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION = "15.1.0"
 
 fun ModuleManifest.requireCompatible(appVersion: String) {
-    val features = setOf("fetch@1", "settings@1", "streamResolution@1", "packagedIcon@1", "qualityOptions@1")
+    val features = setOf("fetch@1", "settings@1", "streamResolution@1", "packagedIcon@1", "qualityOptions@1") +
+        if (kind == ModuleKind.AUDIO_SOURCE) emptySet() else setOf("natuneExtensions@1", "lyrics@1", "metadata@1")
     if (requiredRuntimeFeatures.any { it !in features }) throw ModuleException(ModuleFailure.UNSUPPORTED,
         stage = ModuleLoadStage.MANIFEST, diagnosticCode = "ARCH_RUNTIME_FEATURE")
     if (minAppVersion.isBlank()) return

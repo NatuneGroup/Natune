@@ -89,6 +89,8 @@ import androidx.navigation.NavController
 import androidx.graphics.shapes.RoundedPolygon
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.modules.ExtensionRegistration
+import moe.rukamori.archivetune.modules.ModuleKind
 import moe.rukamori.archivetune.viewmodels.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -97,8 +99,10 @@ import coil3.request.ImageRequest
 import okio.ByteString
 
 @Composable
-fun ModulesSettings(navController: NavController, viewModel: ModuleSettingsViewModel = hiltViewModel()) {
+fun ModulesSettings(navController: NavController, viewModel: ModuleSettingsViewModel = hiltViewModel(),
+    extensionsViewModel: ExtensionSettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val extensions by extensionsViewModel.state.collectAsStateWithLifecycle()
     val onAction = remember(viewModel) { viewModel::onAction }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -118,7 +122,8 @@ fun ModulesSettings(navController: NavController, viewModel: ModuleSettingsViewM
         } }
     }
     BackHandler { onAction(ModuleSettingsAction.Back) }
-    ModuleSettingsContent(state, onAction)
+    ModuleSettingsContent(state, onAction, extensions.filter { it.native }, extensionsViewModel::setEnabled,
+        { extension -> extension.settingsRoute?.let { navController.navigate(it) } }, extensionsViewModel::move)
 }
 
 private val ModuleSettingsState.uiModel: ModuleSettingsUiModel?
@@ -139,7 +144,9 @@ private fun ModuleSettingsState.pageKey(): Any = uiModel?.let { model ->
 private fun ModuleSettingsState.depth(): Int = if (uiModel?.page?.let { it != ModuleSettingsPage.HOME } == true) 1 else 0
 
 @Composable
-private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleSettingsAction) -> Unit) {
+private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleSettingsAction) -> Unit,
+    nativeExtensions: List<ExtensionRegistration>, onNativeEnabled: (String, Boolean) -> Unit,
+    onNativeSettings: (ExtensionRegistration) -> Unit, onNativeMove: (String, Int) -> Unit) {
     val model = state.uiModel
     val motion = MaterialTheme.motionScheme
     val layoutDirection = LocalLayoutDirection.current
@@ -208,7 +215,8 @@ private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleS
                     is ModuleSettingsState.Error -> ModuleLoadError(target.message, onAction)
                     else -> target.uiModel?.let { page ->
                         when (page.page) {
-                            ModuleSettingsPage.HOME -> ModuleHome(page, homeListState, onAction)
+                            ModuleSettingsPage.HOME -> ModuleHome(page, homeListState, onAction, nativeExtensions,
+                                onNativeEnabled, onNativeSettings, onNativeMove)
                             ModuleSettingsPage.MODULE -> page.module?.let { ModuleDetails(it, page, onAction) }
                             ModuleSettingsPage.CATALOG -> page.catalog?.let { ModuleCatalogDetails(it, page, onAction) }
                         }
@@ -221,7 +229,13 @@ private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleS
 }
 
 @Composable
-private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, onAction: (ModuleSettingsAction) -> Unit) {
+private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, onAction: (ModuleSettingsAction) -> Unit,
+    nativeExtensions: List<ExtensionRegistration>, onNativeEnabled: (String, Boolean) -> Unit,
+    onNativeSettings: (ExtensionRegistration) -> Unit, onNativeMove: (String, Int) -> Unit) {
+    var selectedKindName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedKind = ModuleKind.entries.firstOrNull { it.name == selectedKindName }
+    val visibleRows = model.rows.filter { selectedKind == null || it.kind == selectedKind }
+    val visibleNative = nativeExtensions.filter { selectedKind == null || it.kind == selectedKind }.sortedWith(compareBy({ it.kind.ordinal }, { it.priority }))
     val haptics = LocalHapticFeedback.current
     val reorder = rememberReorderableLazyListState(listState) { from, to ->
         val fromId = from.key as? String
@@ -248,6 +262,18 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                 ModuleMessage(model, onAction, moduleItemMotion())
             }
             if (model.tab == 0) {
+                item(key = "extension_kinds") {
+                    ExtensionKindFilters(selectedKind) { selectedKindName = it?.name }
+                }
+                if (visibleNative.isNotEmpty()) item(key = "native_extensions_heading") {
+                    Column(Modifier.padding(vertical = 8.dp)) {
+                        Text(stringResource(R.string.extensions_native), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.extensions_native_description), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                items(visibleNative, key = { it.id }, contentType = { "native_extension" }) { extension ->
+                    NativeExtensionCard(extension, { onNativeEnabled(extension.id, it) }, { onNativeSettings(extension) }, { onNativeMove(extension.id, it) })
+                }
                 if (model.rows.size > 1) item(key = "order_hint", contentType = "hint") {
                     Row(moduleItemMotion().fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -261,7 +287,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                     ModuleEmpty(R.drawable.extension, MaterialShapes.Cookie12Sided, R.string.modules_empty, R.string.modules_empty_description,
                         R.string.modules_import_file, onAction, ModuleSettingsAction.File, moduleItemMotion())
                 }
-                items(model.rows, key = { it.id }, contentType = { "module" }) { row ->
+                items(visibleRows, key = { it.id }, contentType = { "module" }) { row ->
                     ReorderableItem(reorder, key = row.id, animateItemModifier = moduleItemMotion()) { dragging ->
                         val moveUp = remember(row.id, onAction) { { onAction(ModuleSettingsAction.Move(row.id, -1)); true } }
                         val moveDown = remember(row.id, onAction) { { onAction(ModuleSettingsAction.Move(row.id, 1)); true } }
@@ -296,6 +322,10 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                         TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
                             "https://raw.githubusercontent.com/rukamori/ArchiveTuneModules/main/registry.json")) }) {
                             Text(stringResource(R.string.modules_upstream_catalog))
+                        }
+                        TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
+                            "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-spotify-ext/addons/modules/natune-extensions.json")) }) {
+                            Text(stringResource(R.string.extensions_catalog))
                         }
                     }
                 }
@@ -434,6 +464,7 @@ private fun ModuleCard(
                     modifier = remember(row.name) { Modifier.semantics { contentDescription = row.name } })
             }
             Column(Modifier.padding(start = 48.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModuleBadge(stringResource(row.kind.labelResource()), accent = false)
                 ModuleStatusLine(row.status, moduleStatusLabel(row))
                 if (row.qualityTags.isNotEmpty() || row.capabilities.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
