@@ -98,9 +98,9 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
 
     fun enabled(): Boolean = !closed && cachedIdentity()?.admitted == true
 
-    fun cacheTag(lowData: Boolean): String? = cachedIdentity()?.takeIf { !closed && it.admitted }?.let {
-        "LIBRESPOT:${it.fingerprint}:${SpotifyLibrespotAudioPolicy.preferredFormats(it.quality, lowData).joinToString(",") }"
-    }
+    fun cacheAllowed(tag: String?, lowData: Boolean): Boolean = cachedIdentity()?.takeIf { !closed && it.admitted }?.let {
+        SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, it.fingerprint, it.quality, lowData)
+    } == true
 
     fun observe(scope: CoroutineScope, onChanged: () -> Unit) {
         observer?.cancel()
@@ -139,8 +139,12 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         streams[uri.toString()]?.takeIf(Stream::active)
     }
 
-    fun cachedUri(tag: String): Uri? = synchronized(lifecycle) {
+    fun cachedUri(tag: String, lowData: Boolean): Uri? = synchronized(lifecycle) {
         val captured = cachedIdentity()?.takeIf { !closed && it.admitted } ?: return@synchronized null
+        // Validate the selected entry under the same identity captured by its read guard.
+        if (!SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, captured.fingerprint, captured.quality, lowData)) {
+            return@synchronized null
+        }
         val epoch = generation.get()
         val uri = Uri.Builder().scheme(SpotifyLibrespotAudioPolicy.SCHEME).authority("audio")
             .appendPath(UUID.randomUUID().toString()).build()
@@ -153,12 +157,18 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
     private fun remaining(): Long = (AudioSourceAttemptScope.current()?.remainingMillis() ?: 20_000L)
         .coerceAtMost(20_000L).also { if (it <= 0) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.TIMEOUT) }
 
-    private suspend fun native(expectedGeneration: Long, operation: () -> String): JSONObject {
+    private suspend fun native(expectedGeneration: Long, operation: (Long) -> String): JSONObject {
         if (nativeCooldown.remainingSeconds() > 0) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.RATE_LIMITED)
+        val nativeGeneration = synchronized(lifecycle) {
+            if (closed || generation.get() != expectedGeneration || cachedIdentity() != identity) {
+                throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.ACCOUNT_CHANGED)
+            }
+            SpotifyLibrespotNative.nativeGeneration()
+        }
         val result = withTimeoutOrNull(remaining()) {
             SpotifyLibrespotNative.request(onCancelled = {
                 synchronized(lifecycle) { if (generation.get() == expectedGeneration) revoke() }
-            }, operation = operation)
+            }, operation = { operation(nativeGeneration) })
         } ?: throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.TIMEOUT)
         currentCoroutineContext().ensureActive()
         val json = JSONObject(result)
@@ -209,16 +219,16 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         }
         if (synchronized(lifecycle) { nativeToken != token } || !SpotifyLibrespotNative.nativeSessionValid()) {
             val timeout = remaining()
-            native(expectedGeneration) { SpotifyLibrespotNative.nativeConnect(token, captured.userId, deviceId,
+            native(expectedGeneration) { nativeGeneration -> SpotifyLibrespotNative.nativeConnect(token, captured.userId, deviceId,
                 context.cacheDir.absolutePath, proxy?.let {
                     okhttp3.HttpUrl.Builder().scheme("http").host(it.host).port(it.port).build().toString()
-                }.orEmpty(), android.os.Build.VERSION.SDK_INT, timeout) }
+                }.orEmpty(), android.os.Build.VERSION.SDK_INT, nativeGeneration, timeout) }
             synchronized(lifecycle) { if (current()) nativeToken = token }
         }
         val formats = SpotifyLibrespotAudioPolicy.preferredFormats(captured.quality, lowData)
         val timeout = remaining()
-        val result = native(expectedGeneration) {
-            SpotifyLibrespotNative.nativeResolve("spotify:track:$trackId", formats.toIntArray(), timeout)
+        val result = native(expectedGeneration) { nativeGeneration ->
+            SpotifyLibrespotNative.nativeResolve("spotify:track:$trackId", formats.toIntArray(), nativeGeneration, timeout)
         }
         if (!current() || identity(context.dataStore.data.first()) != captured) return@withLock null
         val format = result.getInt("format")
@@ -231,7 +241,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         if (urls.isEmpty()) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.INVALID_RESPONSE)
         val expiry = minOf(System.currentTimeMillis() + 20 * 60_000L,
             urls.mapNotNull(StreamUrlExpiry::fromUrl).minOrNull() ?: Long.MAX_VALUE)
-        val tag = "LIBRESPOT:${captured.fingerprint}:${formats.joinToString(",")}:$format:$fileId"
+        val tag = "${SpotifyLibrespotAudioPolicy.cacheNamespace(captured.fingerprint, captured.quality, lowData)}:$format:$fileId"
         val uri = Uri.Builder().scheme(SpotifyLibrespotAudioPolicy.SCHEME).authority("audio")
             .appendPath(UUID.randomUUID().toString()).build()
         val stream = Stream(SpotifyEchoResolver.EchoStreamRef(urls, key, format, fileId), tag, expiry, ::current)

@@ -124,16 +124,15 @@ internal class SpotifyAudioResolver(
 
     fun cacheAllowed(tag: String?, lowData: Boolean): Boolean =
         if (SpotifyStreamingAccount.effectiveEngine(context.dataStore) == SpotifyStreamEngine.LIBRESPOT) {
-            val namespace = librespot.cacheTag(lowData)
-            namespace != null && tag?.startsWith("$namespace:") == true
+            librespot.cacheAllowed(tag, lowData)
         } else {
             tag == SpotifyStreamingAccount.resolveMethod(context).name
         }
 
-    fun streamAllowed(stream: DirectStream): Boolean {
+    fun streamAllowed(stream: DirectStream, lowData: Boolean): Boolean {
         val uri = Uri.parse(stream.uri)
         return if (SpotifyStreamingAccount.effectiveEngine(context.dataStore) == SpotifyStreamEngine.LIBRESPOT) {
-            librespot.stream(uri) != null
+            librespot.stream(uri)?.let { librespot.cacheAllowed(it.tag, lowData) } == true
         } else uri.scheme != SpotifyLibrespotAudioPolicy.SCHEME
     }
 }

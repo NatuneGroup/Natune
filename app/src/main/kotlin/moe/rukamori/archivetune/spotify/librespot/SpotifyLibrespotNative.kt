@@ -54,10 +54,13 @@ internal object SpotifyLibrespotNative {
         cacheDir: String,
         proxy: String,
         androidApiLevel: Int,
+        expectedGeneration: Long,
         timeoutMs: Long,
     ): String
 
-    external fun nativeResolve(trackUri: String, formats: IntArray, timeoutMs: Long): String
+    external fun nativeResolve(trackUri: String, formats: IntArray, expectedGeneration: Long, timeoutMs: Long): String
+
+    external fun nativeGeneration(): Long
 
     external fun nativeSessionValid(): Boolean
 

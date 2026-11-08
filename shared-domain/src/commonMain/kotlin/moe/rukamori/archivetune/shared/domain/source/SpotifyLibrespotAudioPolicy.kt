@@ -39,6 +39,18 @@ object SpotifyLibrespotAudioPolicy {
     fun selectFormat(available: Set<Int>, quality: String?, lowData: Boolean): Int? =
         preferredFormats(quality, lowData).firstOrNull(available::contains)
 
+    fun cacheNamespace(accountFingerprint: String, quality: String?, lowData: Boolean): String =
+        "LIBRESPOT:$accountFingerprint:${preferredFormats(quality, lowData).joinToString(",")}"
+
+    /** Cache bytes are usable only for this account, requested ceiling and actual audio file. */
+    fun cacheAdmitted(tag: String?, accountFingerprint: String, quality: String?, lowData: Boolean): Boolean {
+        val prefix = "${cacheNamespace(accountFingerprint, quality, lowData)}:"
+        if (tag == null || !tag.startsWith(prefix)) return false
+        val rendition = tag.removePrefix(prefix).split(':')
+        return rendition.size == 2 && rendition[0].toIntOrNull() in preferredFormats(quality, lowData) &&
+            rendition[1].matches(Regex("[0-9a-f]{40}"))
+    }
+
     fun bitrate(format: Int): Int? = when (format) {
         VORBIS_96 -> 96_000
         VORBIS_160 -> 160_000

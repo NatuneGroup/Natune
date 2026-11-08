@@ -1,26 +1,8 @@
---- a/core/src/session.rs
-+++ b/core/src/session.rs
-@@ -3,7 +3,6 @@
-     future::Future,
-     io,
-     pin::Pin,
--    process::exit,
-     sync::{Arc, OnceLock, RwLock, Weak},
-     task::{Context, Poll},
-     time::{Duration, SystemTime, UNIX_EPOCH},
-@@ -367,8 +366,7 @@
-                 error!("librespot does not support {account_type:?} accounts.");
-                 info!("Please support Spotify and your artists and sign up for a premium account.");
-
--                // TODO: logout instead of exiting
--                exit(1);
-+                // Embedded hosts reject this product and tear down their session; never exit the app.
-             }
-         }
-     }
+diff --git a/core/src/config.rs b/core/src/config.rs
+index 1b81123..c013489 100644
 --- a/core/src/config.rs
 +++ b/core/src/config.rs
-@@ -2,8 +2,16 @@
+@@ -2,8 +2,16 @@ use std::{fmt, path::PathBuf, str::FromStr};
 
  use librespot_protocol::devices::DeviceType as ProtoDeviceType;
  use url::Url;
@@ -38,7 +20,7 @@
  pub(crate) const ANDROID_CLIENT_ID: &str = "9a8d2f0ce77a4e248bb71fefcb557637";
  pub(crate) const IOS_CLIENT_ID: &str = "58bd3c95768941ea9eb4350aaa033eb3";
 
-@@ -18,6 +26,10 @@
+@@ -18,6 +26,10 @@ pub const OS: &str = std::env::consts::OS;
  // 'ios': 17
  /// See [sysinfo::System::os_version]
  pub fn os_version() -> String {
@@ -49,9 +31,11 @@
      sysinfo::System::os_version().unwrap_or("0".into())
  }
 
+diff --git a/core/src/http_client.rs b/core/src/http_client.rs
+index 03af57e..835a313 100644
 --- a/core/src/http_client.rs
 +++ b/core/src/http_client.rs
-@@ -42,6 +42,8 @@
+@@ -42,6 +42,8 @@ pub const RATE_LIMIT_CALLS_PER_INTERVAL: u32 = 300;
 
  #[derive(Debug, Error)]
  pub enum HttpClientError {
@@ -60,7 +44,7 @@
      #[error("Response status code: {0}")]
      StatusCode(hyper::StatusCode),
  }
-@@ -49,6 +51,7 @@
+@@ -49,6 +51,7 @@ pub enum HttpClientError {
  impl From<HttpClientError> for Error {
      fn from(err: HttpClientError) -> Self {
          match err {
@@ -68,7 +52,7 @@
              HttpClientError::StatusCode(code) => {
                  // not exhaustive, but what reasonably could be expected
                  match code {
-@@ -201,14 +204,10 @@
+@@ -201,14 +204,10 @@ impl HttpClient {
                  let code = response.status();
 
                  if code == StatusCode::TOO_MANY_REQUESTS {
@@ -87,3 +71,67 @@
                  }
 
                  if !code.is_success() {
+diff --git a/core/src/login5.rs b/core/src/login5.rs
+index fb3f9ac..3fcb803 100644
+--- a/core/src/login5.rs
++++ b/core/src/login5.rs
+@@ -18,10 +18,8 @@ use protobuf::well_known_types::duration::Duration as ProtoDuration;
+ use protobuf::{Message, MessageField};
+ use std::time::{Duration, SystemTime};
+ use thiserror::Error;
+-use tokio::time::sleep;
+
+ const MAX_LOGIN_TRIES: u8 = 3;
+-const LOGIN_TIMEOUT: Duration = Duration::from_secs(3);
+
+ component! {
+     Login5Manager : Login5ManagerInner {
+@@ -106,9 +104,10 @@ impl Login5Manager {
+
+             if message.has_error() {
+                 match message.error() {
+-                    LoginError::TIMEOUT | LoginError::TOO_MANY_ATTEMPTS => {
+-                        sleep(LOGIN_TIMEOUT).await
+-                    }
++                    LoginError::TIMEOUT => return Err(Error::deadline_exceeded(
++                        Login5Error::FaultyRequest(message.error()))),
++                    LoginError::TOO_MANY_ATTEMPTS => return Err(Error::resource_exhausted(
++                        Login5Error::FaultyRequest(message.error()))),
+                     others => return Err(Login5Error::FaultyRequest(others).into()),
+                 }
+             }
+diff --git a/core/src/session.rs b/core/src/session.rs
+index 333678f..001816a 100644
+--- a/core/src/session.rs
++++ b/core/src/session.rs
+@@ -3,7 +3,6 @@ use std::{
+     future::Future,
+     io,
+     pin::Pin,
+-    process::exit,
+     sync::{Arc, OnceLock, RwLock, Weak},
+     task::{Context, Poll},
+     time::{Duration, SystemTime, UNIX_EPOCH},
+@@ -367,8 +366,7 @@ impl Session {
+                 error!("librespot does not support {account_type:?} accounts.");
+                 info!("Please support Spotify and your artists and sign up for a premium account.");
+
+-                // TODO: logout instead of exiting
+-                exit(1);
++                // Embedded hosts reject this product and tear down their session; never exit the app.
+             }
+         }
+     }
+diff --git a/core/src/spclient.rs b/core/src/spclient.rs
+index bb42ece..c286f7c 100644
+--- a/core/src/spclient.rs
++++ b/core/src/spclient.rs
+@@ -509,6 +509,8 @@ impl SpClient {
+                 Ok(client_token) => {
+                     let _ = headers_mut.insert(CLIENT_TOKEN, HeaderValue::from_str(&client_token)?);
+                 }
++                Err(e) if matches!(e.kind, ErrorKind::Unauthenticated | ErrorKind::PermissionDenied |
++                    ErrorKind::ResourceExhausted) => return Err(e),
+                 Err(e) => {
+                     // currently these endpoints seem to work fine without it
+                     warn!("Unable to get client token: {e} Trying to continue without...")
