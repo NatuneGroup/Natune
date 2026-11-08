@@ -189,6 +189,7 @@ internal class DesktopModules(private val root: Path, private val preferences: (
                 generation.get() == captured && preferences()?.get(ModulesEnabledKey, false) == true &&
                     entries.value.any { it.id == entry.id && it.enabled && it.source == entry.source }
             } ?: return null
+            admissions.bindCookies(admission, desktopModuleCookies(environment, entry.id))
             val directStream = DirectStream(stream.url, stream.mimeType, stream.codecs,
                 stream.contentLength.takeIf { it > 0 }, entry.manifest.name, source, track.title, track.artists.joinToString(", "),
                 track.album, track.durationSeconds?.times(1000L), headers = PlaybackHeaders.of(stream.headers),

@@ -28,6 +28,7 @@ internal class DesktopSourceAdmissions(
 
     private val lock = Any()
     private val leases = LinkedHashMap<String, Lease>()
+    private val cookieSources = LinkedHashMap<String, ScopedCookieSource>()
     private var closed = false
     private var generation = 0L
 
@@ -38,6 +39,7 @@ internal class DesktopSourceAdmissions(
         current: () -> Boolean): Lease? = synchronized(lock) {
         if (closed || !current()) return@synchronized null
         leases.entries.removeIf { !it.value.current() }
+        cookieSources.keys.removeIf { it !in leases }
         leases.values.firstOrNull {
             it.account.identity == identity && it.credential == credential && it.current()
         }?.let { return@synchronized it }
@@ -57,7 +59,13 @@ internal class DesktopSourceAdmissions(
         if (closed || leases[lease.scope] !== lease) return@synchronized false
         if (lease.current()) return@synchronized true
         leases.remove(lease.scope)
+        cookieSources.remove(lease.scope)
         false
+    }
+
+    fun bindCookies(lease: Lease, source: ScopedCookieSource) = synchronized(lock) {
+        if (active(lease)) cookieSources[lease.scope] = source
+        Unit
     }
 
     override suspend fun acceptedAccount(provider: String, accountScope: String): AcceptedAccount? {
@@ -72,14 +80,22 @@ internal class DesktopSourceAdmissions(
         if (!accountScope.startsWith(PREFIX)) accounts.admit(provider, accountScope)
         else acceptedAccount(provider, accountScope)?.let { AccountAdmission(accountScope, it) }
 
-    override suspend fun storedCookies(account: ByteSourceAccount, origin: StreamOrigin): List<ScopedCookie> =
+    override suspend fun storedCookies(account: ByteSourceAccount, origin: StreamOrigin): List<ScopedCookie> {
         // Qobuz's signed CDN URL and Spotify's PlayPlay CDN need no browser cookie. In particular the streaming
         // sp_dc never goes to an audio CDN, and the catalog jar cannot answer one of these scopes.
-        if (account.accountScope?.startsWith(PREFIX) == true) emptyList() else cookies.storedCookies(account, origin)
+        if (account.accountScope?.startsWith(PREFIX) != true) return cookies.storedCookies(account, origin)
+        val source = synchronized(lock) {
+            val lease = leases[account.accountScope] ?: return@synchronized null
+            if (active(lease)) cookieSources[lease.scope] else null
+        } ?: return emptyList()
+        val result = source.storedCookies(account, origin)
+        return if (acceptedAccount(account.provider, requireNotNull(account.accountScope)) != null) result else emptyList()
+    }
 
     fun close() = synchronized(lock) {
         closed = true
         leases.clear()
+        cookieSources.clear()
     }
 
     private companion object {
