@@ -595,6 +595,17 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable", menu)
         self.assertIn("Res.string.ios_share_link_unavailable", menu)
 
+    def test_apple_music_search_shares_the_playback_account_admission(self):
+        discovery = (UI_IOS / "IosProviderDiscovery.kt").read_text()
+        self.assertIn('"APPLE_MUSIC" -> ContentProvider.APPLE', discovery)
+        self.assertIn("iosAppleMusicSearchRepository(graph.http, graph.accounts", discovery)
+        self.assertIn("owners.lists.recordShelf(request, \"provider-search\", page.items)", discovery)
+        resolver = (UI_IOS / "IosQueueLocatorResolver.kt").read_text()
+        self.assertIn("internal suspend fun iosAppleMusicSearchRepository(", resolver)
+        self.assertIn("accounts.admitPoolEntry(", resolver)
+        self.assertIn("CredentialScope.PLAYBACK_POOL", resolver)
+        self.assertIn("IosAppleDevToken(http, preferences).bearer()", resolver)
+
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()
         self.assertIn("dictionary host/settings/root composition remains required", status)
