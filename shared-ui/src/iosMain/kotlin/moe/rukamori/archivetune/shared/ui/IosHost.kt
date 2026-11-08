@@ -284,6 +284,49 @@ class IosHost {
         }
     }
 
+    /** Read-only, credential-free data for Apple system templates and the WidgetKit extension. */
+    fun systemSnapshotJson(): String = moe.rukamori.archivetune.shared.ui.ios.iosSystemSnapshotJson(graph?.queue?.state?.value, player)
+
+    fun systemLibrary(completion: (String) -> Unit) {
+        scope.launch {
+            try {
+                val ready = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                    sessionState.first { it !is IosSessionState.Opening }
+                } as? IosSessionState.Ready ?: return@launch completion("[]")
+                val page = ready.graph.libraryContent.chipPage(moe.rukamori.archivetune.shared.domain.library.LibraryFilter.SONGS)
+                    .first { it.initialized || it.failed }
+                completion(kotlinx.serialization.json.buildJsonArray {
+                    page.items.take(200).forEach { row -> add(kotlinx.serialization.json.buildJsonObject {
+                        put("id", kotlinx.serialization.json.JsonPrimitive(row.item.ref.id))
+                        put("provider", kotlinx.serialization.json.JsonPrimitive(row.item.ref.provider))
+                        put("title", kotlinx.serialization.json.JsonPrimitive(row.item.title))
+                        put("artist", kotlinx.serialization.json.JsonPrimitive(row.item.subtitle))
+                    }) }
+                }.toString())
+            } catch (_: Exception) { completion("failed") }
+        }
+    }
+
+    fun systemPlay(provider: String, id: String, occurrence: String?, completion: (String) -> Unit) {
+        scope.launch {
+            try {
+                val ready = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                    sessionState.first { it !is IosSessionState.Opening }
+                } as? IosSessionState.Ready ?: return@launch completion("failed")
+                val queued = ready.graph.queue.state.value.entries.firstOrNull {
+                    it.occurrenceId == occurrence && it.item.ref.provider == provider && it.item.ref.id == id
+                }
+                if (queued != null) ready.graph.queue.select(queued.occurrenceId) else {
+                    val item = ready.graph.library.findSong(id, provider) ?: return@launch completion("failed")
+                    val row = moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence("carplay:" + platform.Foundation.NSUUID().UUIDString, item)
+                    ready.graph.queue.replace(listOf(row), row.occurrenceId, true, staysFinite = true)
+                }
+                ready.graph.player.play()
+                completion("ready")
+            } catch (_: Exception) { completion("failed") }
+        }
+    }
+
     /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */
     fun report(message: String) {
         println("Natune iOS: $message")

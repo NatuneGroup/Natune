@@ -546,3 +546,11 @@ silence skip, normalization measurement, Android offload/PIP/wakelock/task handl
 Bluetooth auto-start and source rejection based on unmeasured acoustic evidence. Saved
 preferences are retained. Optional Audio Units still have the existing route-refusal
 bypass; device sound, full-app linkage and parity with Android DSP remain unverified.
+
+CarPlay now has a CPTemplateApplicationScene delegate and registered scene configuration,
+with bounded library/queue lists and selection dispatched to the sole shared Kotlin player/queue.
+The project includes an audio-app entitlement declaration; Apple approval, a matching provisioning
+profile, full app linking and CarPlay device execution remain required/unverified. The shared
+host exports only credential-free snapshots and bounded queue commands. CPTemplate and WidgetKit
+are documented system-only renderer exceptions in AGENTS.md; ordinary app content stays Compose.
+This source increment supersedes the earlier statement that no CarPlay scene exists.
