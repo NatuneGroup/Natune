@@ -613,21 +613,25 @@ fun SpatialFlowPlayerContent(
                             modifier = Modifier.basicMarqueeWithFadedEdges(),
                         )
                         Spacer(modifier = Modifier.height(if (canvasAvailable) 6.dp else 4.dp))
-                        Text(
-                            text = mediaMetadata.artists.joinToString { it.name },
-                            style = if (canvasAvailable) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-                            color = contentSecondary,
-                            maxLines = 1,
+                        Box(
                             modifier =
                                 Modifier
-                                    .basicMarqueeWithFadedEdges()
+                                    .fillMaxWidth()
                                     .clickable {
                                         mediaMetadata.artists.firstOrNull()?.id?.let { artistId ->
                                             state.collapseSoft()
                                             navController.navigate("artist/$artistId")
                                         }
                                     },
-                        )
+                        ) {
+                            Text(
+                                text = mediaMetadata.artists.joinToString { it.name },
+                                style = if (canvasAvailable) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+                                color = contentSecondary,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarqueeWithFadedEdges(),
+                            )
+                        }
                     }
                 }
 

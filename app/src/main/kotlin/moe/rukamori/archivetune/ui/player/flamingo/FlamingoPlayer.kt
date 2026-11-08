@@ -1507,10 +1507,12 @@ fun FlamingoPlayerContent(
                                                                     fontWeight = FontWeight.Medium,
                                                                     modifier = Modifier.fillMaxWidth(),
                                                                 )
-                                                                Text(
+                                                                MarqueeText(
                                                                     text = metadata.artistNames(),
                                                                     fontSize = 18.5.sp,
+                                                                    color = Color.White.copy(alpha = 0.35f),
                                                                     modifier = Modifier
+                                                                        .fillMaxWidth()
                                                                         .overlayEffect()
 
                                                                         .clickable(
@@ -1521,9 +1523,6 @@ fun FlamingoPlayerContent(
                                                                                 artistPickerOpen = true
                                                                             },
                                                                         ),
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis,
-                                                                    color = Color.White.copy(alpha = 0.35f),
                                                                 )
                                                             }
 
@@ -2717,10 +2716,12 @@ private fun FlamingoLandscapeTitleBlock(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
+            MarqueeText(
                 text = mediaMetadata.artistNames(),
                 fontSize = 18.5.sp,
+                color = Color.White.copy(alpha = 0.35f),
                 modifier = Modifier
+                    .fillMaxWidth()
                     .overlayEffect()
 
                     .clickable(
@@ -2731,9 +2732,6 @@ private fun FlamingoLandscapeTitleBlock(
                             onArtistClick()
                         },
                     ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.White.copy(alpha = 0.35f),
             )
         }
 
@@ -3757,10 +3755,12 @@ private fun FlamingoPlayingBar(
                 style = LocalTextStyle.current.copy(lineHeight = 16.5.sp),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
+            MarqueeText(
                 text = mediaMetadata.artistNames(),
                 fontSize = 15.sp,
+                color = Color.White.copy(alpha = 0.35f),
                 modifier = Modifier
+                    .fillMaxWidth()
                     .overlayEffect()
 
                     .clickable(
@@ -3771,9 +3771,6 @@ private fun FlamingoPlayingBar(
                             onArtistClick()
                         },
                     ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.White.copy(alpha = 0.35f),
             )
         }
 
