@@ -133,8 +133,9 @@ omit that section rather than retaining Android's preview fallback.
 Desktop mounts palette and seed-based theme creation with shared MaterialKolor
 schemes, preview swatches, persisted color/style and bounded theme JSON import/export.
 Custom application images update the live window/task-switcher icon; package/pinned
-launcher icons still follow the installer. Android's per-role theme editor and full
-launcher icon pack are not ported. The settings list adds desktop-only editor links
+launcher icons still follow the installer. Android's four-seed theme codec and color merge are now reused through generated
+desktop sources. The desktop theme creator edits all four seeds and reads/writes
+the Android preference and JSON formats. The full launcher icon pack is not ported. The settings list adds desktop-only editor links
 and the icon path key is additive in the shared preference registry. UI compilation
 and OS icon behavior remain unverified.
 
@@ -201,3 +202,9 @@ material and revocable admissions. The shared Amazon JWT safety policy is reused
 Account-only Amazon entries still cannot stream on this host; Spotify pool
 credentials are not mounted into its separately admitted streaming account.
 Provider playback and refreshed pool entries remain unverified.
+
+The shared root adds one optional saved-theme scheme callback for desktop's reused
+Android codec. Its default is absent, so other hosts keep their existing behavior.
+The codec/generator are extracted from the retained Android Theme.kt at build time
+with its original notice, and MaterialKolor uses the existing version pin. This
+source extraction and four-seed UI still need CI/runtime validation.

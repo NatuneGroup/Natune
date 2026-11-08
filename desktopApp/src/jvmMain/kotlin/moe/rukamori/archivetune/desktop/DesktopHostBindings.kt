@@ -119,6 +119,13 @@ internal fun desktopHostBindings(
         // The restart-scoped custom font resolves from the file the picker stored by file URI.
         customFontLoader = { uri -> desktopCustomFontFamily(uri) },
         settings = graph.settings,
+        savedThemeScheme = { preferences, dark ->
+            if (preferences[moe.rukamori.archivetune.shared.domain.settings.DynamicThemeKey, true]) null
+            else preferences[moe.rukamori.archivetune.shared.domain.settings.CustomThemeColorKey]
+                ?.takeIf { it.length <= 64 * 1024 }
+                ?.let(moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec::decodeFromPreference)
+                ?.let { moe.rukamori.archivetune.ui.theme.desktopSeedColorScheme(it, dark) }
+        },
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.
         routes = merge(desktopLaunchRoutes(graph), ownRoutes.receiveAsFlow()),

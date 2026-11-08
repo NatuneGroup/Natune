@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="desktop_theme_name">Theme name</string>
+    <string name="desktop_theme_primary">Primary seed</string>
+    <string name="desktop_theme_secondary">Secondary seed</string>
+    <string name="desktop_theme_tertiary">Tertiary seed</string>
+    <string name="desktop_theme_neutral">Neutral seed</string>
     <string name="desktop_theme_title">Theme creator and palette</string>
     <string name="desktop_theme_color">Palette color (#RRGGBB)</string>
     <string name="desktop_theme_apply">Apply theme</string>
