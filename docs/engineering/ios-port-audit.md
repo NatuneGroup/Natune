@@ -114,3 +114,16 @@ check is not simulator compilation or device evidence.
 - Added simulator format/range policy tests and extended common watchdog tests. Native
   scheduling, network starvation and physical output still require simulator/device QA;
   these fixes identify code defects, not a proven diagnosis of the supplied recording.
+
+## Implementation: shared back navigation
+
+- `BottomSheetPlayer.kt` now reserves a 48 dp top control area and exposes Back on
+  every phone/tablet style, including landscape and queue/lyrics panels. Fullscreen
+  lyrics keep their existing back control. The shared root collapses only after the
+  inner panel is closed; it retains the underlying tab and route.
+- `PlayerInteractionState.backOrCollapse` is shared by the visible control and host
+  back dispatch. The host collector reads the latest handler. Added common tests for
+  fullscreen → panel → player → route order and independent restored tab stacks.
+- Inspection found no UIKit navigation controller/swipe-pop stack in this single
+  Compose host. The fix supplies an explicit shared control; it does not claim a
+  native edge-swipe implementation. Verify touch targets and all styles on device.
