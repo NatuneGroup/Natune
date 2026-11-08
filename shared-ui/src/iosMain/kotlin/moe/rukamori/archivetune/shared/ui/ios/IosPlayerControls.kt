@@ -33,6 +33,10 @@ import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.player.playerOccurrence
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onStart
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerHandoff
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
@@ -61,15 +65,19 @@ internal class IosPlayerControls(
     private val host: IosHost,
     private val sleepSheet: IosSleepTimerSheetState,
     private val itemMenu: IosItemMenuState,
+    private val openRoute: (String) -> Unit,
 ) : PlayerNativeControls {
     private val clock = TimeSource.Monotonic
     private var lastSeekAt: TimeSource.Monotonic.ValueTimeMark? = null
     private var seekMultiplier = 1
 
-    private val liked: Flow<Boolean> = graph.queue.state
-        .map { queue -> queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }?.item?.ref }
+    val outputPicker = MutableStateFlow(false)
+    val artistChoices = MutableStateFlow<List<Pair<ContentRef, String>>>(emptyList())
+    private val occurrence = combine(graph.queue.state, graph.player.snapshot) { queue, playback -> playerOccurrence(queue, playback) }
+    private val liked: Flow<Pair<ContentRef?, Boolean>> = occurrence
+        .map { it?.item?.ref }
         .distinctUntilChanged()
-        .flatMapLatest { ref -> if (ref == null) flowOf(false) else graph.libraryContent.isLiked(ref) }
+        .flatMapLatest { ref -> if (ref == null) flowOf(null to false) else graph.libraryContent.isLiked(ref).map { ref to it }.onStart { emit(ref to false) } }
 
     private val observed: Flow<PlayerNativeState> = combine(
         graph.queue.state,
@@ -78,13 +86,11 @@ internal class IosPlayerControls(
         liked,
         graph.handoff,
     ) { queue, playback, preferences, isLiked, handoff ->
-        iosNativeState(queue, playback, preferences, isLiked, handoff)
+        iosNativeState(queue, playback, preferences, isLiked.first == playerOccurrence(queue, playback)?.item?.ref && isLiked.second, handoff)
     }
 
     private val palette: Flow<Pair<String?, List<Color>>> = combine(
-        graph.queue.state.map { queue ->
-            queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }?.item?.artworkUri
-        }.distinctUntilChanged(),
+        occurrence.map { it?.item?.artworkUri }.distinctUntilChanged(),
         graph.artworkLoader.overrides ?: flowOf(null),
     ) { uri, overrides -> uri to graph.artworkLoader.displayUri(uri, overrides) }
         .distinctUntilChanged()
@@ -178,6 +184,9 @@ internal class IosPlayerControls(
             PlayerAction.SLEEP -> sleepSheet.open = true
             // The more button opens the same song menu a row's overflow shows, tempo and pitch included.
             PlayerAction.MORE -> openItemMenu(occurrenceId)
+            PlayerAction.TITLE -> openAlbum(occurrenceId)
+            PlayerAction.ARTIST -> openArtist(occurrenceId)
+            PlayerAction.OUTPUT -> outputPicker.value = true
             else -> graph.report("player action ${action.name} is not connected on the iOS host")
         }
     }
@@ -190,6 +199,12 @@ internal class IosPlayerControls(
     private fun share(occurrenceId: String?) {
         val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
         graph.scope.launch {
+            if (item.ref.provider == ContentProvider.LOCAL.id) {
+                try { iosMenuSharing(itemMenu, host, graph).shareLocalAudio(item.ref.id, null) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { itemMenu.notice(IosItemMenuState.NOTICE_SHARE_UNAVAILABLE) }
+                return@launch
+            }
             val link = iosNowPlayingShareLink(item.ref, host)
             // The sheet and the notice are both UIKit/Compose surfaces, so they run on the main queue.
             withContext(Dispatchers.Main) {
@@ -208,6 +223,24 @@ internal class IosPlayerControls(
         }
         itemMenu.open(entry)
     }
+
+    private fun openAlbum(occurrenceId: String?) {
+        val entry = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId } ?: return
+        val album = entry.item.albumId
+        if (!album.isNullOrBlank() && entry.item.ref.provider != ContentProvider.LOCAL.id)
+            openRoute(ArchiveRoutes.content(ContentRef(entry.item.ref.provider, ContentKind.ALBUM, album)))
+        else itemMenu.open(entry)
+    }
+
+    private fun openArtist(occurrenceId: String?) {
+        val entry = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId } ?: return
+        val choices = entry.item.artists.mapNotNull { artist -> artist.ref(entry.item.ref.provider)?.let { it to artist.name } }.distinctBy { it.first }.take(32)
+        if (choices.size == 1) chooseArtist(choices.single().first)
+        else if (choices.isNotEmpty()) artistChoices.value = choices
+        else itemMenu.open(entry)
+    }
+
+    fun chooseArtist(ref: ContentRef) { artistChoices.value = emptyList(); openRoute(ArchiveRoutes.content(ref)) }
 
     private fun toggleLike(occurrenceId: String?) {
         val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
