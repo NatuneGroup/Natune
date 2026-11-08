@@ -135,6 +135,7 @@ import moe.rukamori.archivetune.ui.screens.settings.PoTokenScreen
 import moe.rukamori.archivetune.ui.screens.settings.PrivacySettings
 import moe.rukamori.archivetune.ui.screens.settings.SettingsScreen
 import moe.rukamori.archivetune.ui.screens.settings.SourceSettings
+import moe.rukamori.archivetune.ui.screens.settings.ModulesSettings
 import moe.rukamori.archivetune.ui.screens.settings.StorageSettings
 import moe.rukamori.archivetune.ui.screens.settings.DownloadsSettings
 import moe.rukamori.archivetune.ui.screens.settings.ThemeCreatorScreen
@@ -656,6 +657,9 @@ fun NavGraphBuilder.navigationBuilder(
         arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
         SourceSettings(navController, it.savedStateHandle["scrollTo"])
+    }
+    composable("settings/modules") {
+        ModulesSettings(navController)
     }
     composable("settings/android_auto") {
         AndroidAutoSettings(navController)
