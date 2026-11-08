@@ -53,6 +53,7 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.modules.PreferLyricsExtensionsKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsKey
 import moe.rukamori.archivetune.constants.EnableBiniLyricsKey
 import moe.rukamori.archivetune.constants.EnableGeniusLyricsKey
@@ -102,6 +103,7 @@ fun LyricsProvidersSettings(
     scrollTo: String? = null,
 ) {
     val prefs = rememberPreferenceSnapshot()
+    val (preferExtensions, onPreferExtensionsChange) = prefs.state(key = PreferLyricsExtensionsKey, defaultValue = false)
     val (enableLrclib, onEnableLrclibChange) = prefs.state(key = EnableLrcLibKey, defaultValue = true)
     val (enableKugou, onEnableKugouChange) = prefs.state(key = EnableKugouKey, defaultValue = true)
     val (enableBetterLyrics, onEnableBetterLyricsChange) =
@@ -240,6 +242,22 @@ fun LyricsProvidersSettings(
                     .then(positions.containerModifier()),
         ) {
             preferenceGroup(title = providersTitle) {
+                item {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.extensions_lyrics_manage)) },
+                        description = stringResource(R.string.extensions_lyrics_manage_description),
+                        icon = { Icon(painterResource(R.drawable.extension), null) },
+                        onClick = { navController.navigate("settings/modules") },
+                    )
+                }
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.extensions_lyrics_first)) },
+                        description = stringResource(R.string.extensions_lyrics_first_description),
+                        checked = preferExtensions,
+                        onCheckedChange = onPreferExtensionsChange,
+                    )
+                }
                 // This is a preliminary sweep; the ordinary fallback still reads the controls below.
                 item {
                     SwitchPreference(
