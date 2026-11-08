@@ -824,12 +824,15 @@ static int drain_sink(ae_engine *e, ae_source *s, uint64_t epoch, char *message,
         int status = 0;
         if (s->out->nb_samples > 0) {
             if (e->processor.process) {
+                pthread_mutex_lock(&e->mutex);
+                uint64_t processing_generation = (e->load_generation << 32) | (e->seek_generation & UINT64_C(0xffffffff));
+                pthread_mutex_unlock(&e->mutex);
                 AVDictionaryEntry *gain = av_dict_get(s->format->metadata, "replaygain_track_gain", NULL, 0);
                 AVDictionaryEntry *peak = av_dict_get(s->format->metadata, "replaygain_track_peak", NULL, 0);
                 if (!gain) gain = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_gain", NULL, 0);
                 if (!peak) peak = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_peak", NULL, 0);
                 if (av_frame_make_writable(s->out) < 0 || e->processor.process(e->processor.opaque,
-                    (float *)s->out->data[0], (uint32_t)s->out->nb_samples, e->rate, epoch,
+                    (float *)s->out->data[0], (uint32_t)s->out->nb_samples, e->rate, processing_generation,
                     gain ? strtod(gain->value, NULL) : NAN, peak ? strtod(peak->value, NULL) : NAN) != 0) {
                     snprintf(message, len, "shared PCM processing failed"); av_frame_unref(s->out); return -1;
                 }
@@ -1671,8 +1674,10 @@ void ae_engine_set_pitch(ae_engine *e, float semitones) {
 void ae_engine_set_skip_silence(ae_engine *e, int enabled) {
     if (!e) return;
     pthread_mutex_lock(&e->mutex);
-    e->skip_silence = enabled != 0;
-    e->quiet_frames = 0;
+    if (e->skip_silence != (enabled != 0)) {
+        e->skip_silence = enabled != 0;
+        e->quiet_frames = 0;
+    }
     pthread_mutex_unlock(&e->mutex);
 }
 

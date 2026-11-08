@@ -39,6 +39,7 @@ internal class DesktopSpotifyLibrespotAudio(
     private val gate = Mutex()
     private val deviceId = UUID.randomUUID().toString().replace("-", "")
     private var connectedToken: String? = null
+    private var connectedRoute: String? = null
     private var cooldownUntil = 0L
     private var closed = false
 
@@ -66,6 +67,8 @@ internal class DesktopSpotifyLibrespotAudio(
                 it[SpotifySpDcKey] == catalog && it[SpotifyLibrespotCatalogSpDcKey] == binding &&
                 desktopProxyConfig(it)?.toString() == proxy?.toString() && it[ProxyHostKey] == prefs[ProxyHostKey] &&
                 it[ProxyPortKey] == prefs[ProxyPortKey] && it[IpRotationEnabledKey, false] == false
+                && it[ProxyEnabledKey, false] == prefs[ProxyEnabledKey, false] && it[ProxyUsernameKey] == prefs[ProxyUsernameKey] &&
+                it[ProxyPasswordKey] == prefs[ProxyPasswordKey]
         } == true
         suspend fun native(operation: () -> String): JsonObject {
             if (!current()) unavailable(AudioProviderUnavailableReason.ACCOUNT_CHANGED)
@@ -80,13 +83,14 @@ internal class DesktopSpotifyLibrespotAudio(
             return reply
         }
         val track = match(token, request) ?: return@withLock null
-        if (connectedToken != token || !SpotifyLibrespotNative.nativeSessionValid()) {
+        if (connectedToken != token || connectedRoute != proxyUrl || !SpotifyLibrespotNative.nativeSessionValid()) {
             Files.createDirectories(cacheDirectory)
             val generation = SpotifyLibrespotNative.nativeGeneration()
             val result = native { SpotifyLibrespotNative.nativeConnect(token, user, deviceId,
                 cacheDirectory.toAbsolutePath().toString(), proxyUrl, 0, generation, 20_000L) }
             if ((result["ok"] as? JsonPrimitive)?.booleanOrNull != true) return@withLock null
             connectedToken = token
+            connectedRoute = proxyUrl
         }
         val formats = SpotifyLibrespotAudioPolicy.preferredFormats(request.qualities[AudioSourceType.SPOTIFY], false)
         val generation = SpotifyLibrespotNative.nativeGeneration()
@@ -132,6 +136,7 @@ internal class DesktopSpotifyLibrespotAudio(
     suspend fun close() = gate.withLock {
         closed = true
         connectedToken = null
+        connectedRoute = null
         SpotifyLibrespotNative.close()
         http.close()
     }

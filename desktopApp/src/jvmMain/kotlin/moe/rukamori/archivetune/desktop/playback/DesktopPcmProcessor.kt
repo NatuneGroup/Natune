@@ -19,6 +19,8 @@ internal class DesktopPcmProcessor {
     private var energy = 0.0
     private var peakMeasured = 0.0
     private var measuredGain: Double? = null
+    private var applied: Configuration? = null
+    private var appliedGain = Float.NaN
 
     fun configure(settings: DspSettings, plan: SoftwareStagePlan) {
         configured.set(Configuration(settings.copy(speed = 1.0, pitchSemitones = 0.0, transitionGain = 1f),
@@ -30,11 +32,15 @@ internal class DesktopPcmProcessor {
         val config = configured.get() ?: return
         if (epoch != generation || graph?.format?.sampleRateHz != rate) {
             graph = DspGraph(rate, 2)
+            applied = null
+            val newTrack = (epoch ushr 32) != (generation ushr 32) || epoch == Long.MIN_VALUE
             epoch = generation
-            samplesMeasured = 0
-            energy = 0.0
-            peakMeasured = 0.0
-            measuredGain = null
+            if (newTrack) {
+                samplesMeasured = 0
+                energy = 0.0
+                peakMeasured = 0.0
+                measuredGain = null
+            }
         }
         if (samplesMeasured < rate * 2L * 5L) {
             val count = minOf(frames * 2, (rate * 2L * 5L - samplesMeasured).toInt())
@@ -52,7 +58,11 @@ internal class DesktopPcmProcessor {
         val peak = reportedPeak.takeIf { it.isFinite() && it > 0 } ?: peakMeasured.takeIf { it > 0 }
         val normalization = if (config.settings.linearGain != 1f) config.settings.linearGain else NormalizationGain.linearGain(gainDb, peak)
         val processor = requireNotNull(graph)
-        processor.apply(config.settings.copy(linearGain = normalization), config.plan)
+        if (applied != config || appliedGain != normalization) {
+            processor.apply(config.settings.copy(linearGain = normalization), config.plan)
+            applied = config
+            appliedGain = normalization
+        }
         check(processor.process(samples, frames, samples, frames) == frames) { "Tone processing changed frame count" }
     }
 }
