@@ -494,3 +494,19 @@ lyrics/metadata modules, and inline DASH/DRM streams are explicitly unsupported 
 Direct progressive and ordinary HLS URLs continue through the existing iOS preparation.
 Local Python checks are structural evidence; CI compilation and device playback remain
 separate gates.
+
+
+### WidgetKit controls and system surfaces
+
+The app now embeds a WidgetKit extension for small/medium home-screen playback controls.
+Links foreground the app and issue one bounded command after its authoritative session
+and persisted queue are ready; the extension does not own a player or account credentials.
+The simulator CI gate type-checks the extension separately. Full extension/app linkage,
+provisioning and home-screen interaction still require the existing Apple build/device gate.
+The widget deliberately shows controls, not fabricated current-song state: live artwork,
+listening insights and lock-screen/Dynamic Island lyrics need a shared snapshot/ActivityKit
+integration and are not implemented. No App Group entitlement is claimed or required here.
+CarPlay browsing remains unavailable: an audio-app entitlement approved by Apple and a
+CarPlay scene/device integration are absent. The iOS system integrations settings page
+states this boundary and describes the widget and existing AirPlay/Now Playing surfaces.
+Android custom always-on-display controls now explain the iOS lock-screen limitation.

@@ -220,6 +220,14 @@ jobs:
             -F "$FRAMEWORKS" \
             iosApp/ArchiveTune/*.swift
 
+      - name: Type-check the WidgetKit extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun --sdk iphonesimulator swiftc -typecheck -application-extension \
+            -swift-version 5 -target arm64-apple-ios16.0-simulator \
+            iosApp/Widgets/NatuneControls.swift
+
       # Nothing above links the app target: the two Swift host files are only type-checked and the three ObjC++
       # bridges only syntax-checked. That link needs the static FFmpeg/TDLib/OpenSSL closure from
       # scripts/build_ios_native_core.sh, because Native.xcconfig links shared-data/build/ios-native/$(PLATFORM_NAME)/lib
