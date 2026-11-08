@@ -454,6 +454,20 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_dsp_native_and_blend_keep_additional_filters_and_report_limits(self):
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn('#define AT_AUDIO_EQ_MAX_BANDS 24', header)
+        for name in ['ATNativeAudio.mm', 'ATAudioGraph.mm']:
+            self.assertIn('AVAudioUnitEQFilterTypeHighPass', (IOS / "Native" / name).read_text())
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn('EQ_UNIT_BANDS = 24u', blend)
+        port = (KOTLIN / "IosPlaybackPort.kt").read_text()
+        self.assertIn('setTone(true, settings.toIosEqBands(), settings.iosInputGainDb)', port)
+        settings = (UI_IOS / "IosPlaybackSettingsPage.kt").read_text()
+        self.assertIn('"skip_silence", "audio_normalization", "audio_offload"', settings)
+        self.assertIn('enabled = false', settings)
+        self.assertIn('Res.string.ios_dsp_limits', settings)
+
     def test_widget_controls_embed_extension_and_use_authoritative_queue(self):
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
         self.assertIn('productType = "com.apple.product-type.app-extension"', project)

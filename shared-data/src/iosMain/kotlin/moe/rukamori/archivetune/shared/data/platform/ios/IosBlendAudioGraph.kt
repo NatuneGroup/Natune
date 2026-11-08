@@ -16,7 +16,7 @@ private const val PCM_RATE = 48_000.0
 private const val PCM_FRAMES = 1_024
 private const val MAX_PCM_BUFFERS = 8
 private const val PREBUFFER_US = 120_000L
-private const val EQ_UNIT_BANDS = 16u
+private const val EQ_UNIT_BANDS = 24u
 
 /** Two decks share one device. Apple graph mutations are native exception-safe calls, never Kotlin try/catch. */
 @OptIn(ExperimentalForeignApi::class)

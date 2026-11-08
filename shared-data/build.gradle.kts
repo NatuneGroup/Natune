@@ -164,4 +164,3 @@ val backupFontFixture = tasks.register<Copy>("prepareBackupFontTestResource") {
     into(layout.buildDirectory.dir("generated/backup-test-resource"))
 }
 kotlin.sourceSets.named("jvmTest") { resources.srcDir(backupFontFixture) }
-

@@ -529,3 +529,20 @@ Spotify clients, and missing lyrics/authentication remains a failed provider res
 host accepts additive provider factories/names without changing other hosts. Remaining direct
 Musixmatch/QQ/Netease and module lyric providers are still incomplete; live Spotify access and
 new-source compilation are unverified.
+
+
+### AVAudioEngine DSP coverage
+
+Ordinary output and both blend decks now apply the selected shared clarity preset's six
+filter sections, a 5 Hz high-pass approximation when DC removal is enabled, independent
+pitch, user EQ/preamp and any supplied normalization gain. Twenty-four native EQ slots
+retain all sixteen user bands plus the additional contour/DC filters. EQ-off does not
+silently disable the separately selected contour. No Kotlin work runs in the realtime
+callback. This is partial clarity support: stereo width, bass-side processing, exciter,
+shared limiter/dither and exact shared DC-filter transfer are not implemented by these
+Audio Units. Track loudness measurement is not supplied, so its gain stays unity.
+The iOS playback page explains these limits and disables settings with no native reader:
+silence skip, normalization measurement, Android offload/PIP/wakelock/task handling,
+Bluetooth auto-start and source rejection based on unmeasured acoustic evidence. Saved
+preferences are retained. Optional Audio Units still have the existing route-refusal
+bypass; device sound, full-app linkage and parity with Android DSP remain unverified.
