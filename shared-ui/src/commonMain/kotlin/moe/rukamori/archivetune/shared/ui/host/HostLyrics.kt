@@ -127,7 +127,7 @@ class HostLyrics(
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
-        availableProviderNames = MutableStateFlow((SHARED_PROVIDER_NAMES + extraProviderNames + additionalProviderNames).distinct()),
+        availableProviderNames = MutableStateFlow((SHARED_PROVIDER_NAMES + extraProviderNames + additionalProviderNames).toSet()),
         providerRevision = MutableStateFlow(0L),
         providerFactory = { preferences -> extraProviders(preferences) +
             sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) + additionalProviders(preferences) },

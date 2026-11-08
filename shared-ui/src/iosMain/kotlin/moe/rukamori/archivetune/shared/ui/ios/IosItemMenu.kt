@@ -169,7 +169,7 @@ internal fun IosItemMenuDialog(
                 ) {
                     IosPlaylistRowMenu(menu, graph, host, occurrence, playlistMenus)
                 } else {
-                    IosCollectionRowMenu(menu, host, occurrence)
+                    IosCollectionRowMenu(menu, host, occurrence, graph)
                 }
             }
         }

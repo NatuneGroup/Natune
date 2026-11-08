@@ -56,6 +56,11 @@ import moe.rukamori.archivetune.shared.ui.menu.songLibraryAndDownloadActions
 import moe.rukamori.archivetune.shared.ui.menu.songOverflowActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_timing
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_edit
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_translate
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_romanize
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_undo
 import moe.rukamori.archivetune.shared.ui.resources.m6_save_canvas
 import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
@@ -382,7 +387,7 @@ internal fun IosSongMenu(
 
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
-internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence) {
+internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence, graph: IosSessionGraph) {
     val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val ref = occurrence.item.ref
     val actions = buildList<OverflowAction> {
