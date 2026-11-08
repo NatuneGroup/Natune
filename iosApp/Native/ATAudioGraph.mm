@@ -84,10 +84,11 @@ int at_graph_eq_band(AVAudioUnitEQ *unit, uint32_t index, uint32_t type,
         AVAudioUnitEQFilterParameters *band = unit.bands[index];
         if (!enabled) { band.bypass = YES; return YES; }
         const float high = (float)std::min(23900.0, rate * 0.49);
-        band.frequency = bounded(frequency, std::min(20.0f, high), high);
+        band.frequency = bounded(frequency, std::min(type == 3 ? 1.0f : 20.0f, high), high);
         band.bandwidth = bounded(bandwidth, 0.05f, 5.0f);
         band.gain = bounded(gain, -24.0f, 24.0f);
-        band.filterType = type == 1 ? AVAudioUnitEQFilterTypeLowShelf :
+        band.filterType = type == 3 ? AVAudioUnitEQFilterTypeHighPass :
+            type == 1 ? AVAudioUnitEQFilterTypeLowShelf :
                           type == 2 ? AVAudioUnitEQFilterTypeHighShelf : AVAudioUnitEQFilterTypeParametric;
         band.bypass = NO;
         return YES;
