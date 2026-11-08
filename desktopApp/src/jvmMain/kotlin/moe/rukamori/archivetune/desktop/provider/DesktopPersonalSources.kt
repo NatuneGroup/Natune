@@ -76,6 +76,7 @@ internal class DesktopAmazonSource(
         // Sent as the Origin the sitekey is locked to; a build that names none sends no Origin header, as Android does.
         val turnstileOrigin = DesktopCredentials.amazonTurnstileOrigin
         var failure: Exception? = null
+        var authorized = personalAuthorization != null
         for ((index, base) in (if (personalAuthorization == null) emptyList() else bases).withIndex()) {
             val authorization = requireNotNull(personalAuthorization)
             // A JWT is issued by the first instance's authorization flow and never sent to another host.
@@ -112,6 +113,7 @@ internal class DesktopAmazonSource(
             val lease = admissions?.accept(moe.rukamori.archivetune.shared.domain.platform.ProviderIdentity("amazon",
                 CredentialScope.PLAYBACK_POOL, "pool:${account.id ?: account.baseUrl.hashCode()}"), account) { owner.amazonActive(account) }
                 ?: continue
+            authorized = true
             val access = AmazonInstanceAccess(lease.scope, account.operator, jwt, account.expiry, isActive = { owner.amazonActive(account) })
             try {
                 KtorAmazonRepository(http, account.baseUrl, access, nowMs, turnstileOrigin = turnstileOrigin).resolve(request)?.let {
@@ -122,6 +124,7 @@ internal class DesktopAmazonSource(
             catch (error: Exception) { owner.noteFailure(DesktopPlaybackPool.AMAZON, account.id); failure = error }
         }
         failure?.let { throw it }
+        if (!authorized) throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
         return null
     }
 }
