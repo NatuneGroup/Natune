@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="local_audio_copied">Audio file copied. Paste it into a compatible app or file manager.</string>
     <string name="desktop_theme_name">Theme name</string>
     <string name="desktop_theme_primary">Primary seed</string>
     <string name="desktop_theme_secondary">Secondary seed</string>
@@ -294,7 +295,7 @@
     <string name="content_menu_recommendation_unsupported">Per-song recommendation blocking is not connected on desktop. This action will not block the artist or unlike the song.</string>
     <string name="content_menu_refetch_unsupported">Metadata refresh currently supports YouTube Music songs only.</string>
     <string name="content_menu_artist_unavailable">This item has no provider artist link. Its text credit cannot be used as an artist ID.</string>
-    <string name="content_menu_local_share_unavailable">The original audio file or a desktop file browser is unavailable.</string>
+    <string name="content_menu_local_share_unavailable">The original audio file or system clipboard is unavailable.</string>
     <string name="content_menu_telegram_share_unsupported">Telegram message-link sharing is not connected on desktop. Share the message from Telegram instead.</string>
     <string name="content_menu_share_unsupported">A share link is not available for this item and provider.</string>
     <string name="content_menu_canvas_export_unsupported">Canvas export is not connected on desktop. Custom artwork can still set or remove a local Canvas.</string>
