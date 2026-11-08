@@ -81,3 +81,5 @@ ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME =
 // Android build's; set it blank in Credentials.xcconfig to disable the feed and hide the News entry.
 NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"
+
+ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid

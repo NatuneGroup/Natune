@@ -603,7 +603,9 @@ private fun IosSettingsRouteBody(
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
             "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
-            "settings/update" -> UpdateSettings(
+            "settings/update" -> androidx.compose.foundation.layout.Column {
+                IosReleasePage(owners.graph, navigate)
+                UpdateSettings(
                 controller = owners.controller,
                 isNightlyBuild = false,
                 updaterAvailable = false,
@@ -625,6 +627,7 @@ private fun IosSettingsRouteBody(
                 onFailure = onFailure,
                 scrollTo = scrollTo,
             )
+            }
             "settings/integration" -> {
                 val spotifyAccount by owners.spotifyCatalog.state.collectAsState()
                 val spotifyErrorKind by owners.spotifyCatalog.error.collectAsState()

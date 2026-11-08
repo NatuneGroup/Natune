@@ -449,3 +449,12 @@ runs, records successful writes, and cannot run while iOS suspends/terminates th
 shared playlist CSV/M3U import and CSV export owners are also mounted in Backup settings.
 No BGTaskScheduler registration or background execution guarantee is claimed. File-provider
 access after restart, scheduling and Apple compilation remain unverified.
+
+Appearance now mounts an independent seed-color palette/theme editor and native alternate-icon
+selection using the retained Android launcher artwork in an iOS app-icon asset. The full Android
+IconPack remains absent. The shared Liquid Glass settings route is mounted and keeps refraction
+capability false, so unsupported optical controls remain disabled. Discord's shared experimental
+translator/button editor is mounted over the existing presence settings. Updates now offer an
+explicit release-page handoff while retaining channel/changelog preferences; iOS cannot install
+an arbitrary package in process. Asset-catalog alternate-icon merging, Apple compilation and all
+new controls remain unverified.
