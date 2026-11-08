@@ -10,6 +10,7 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import org.jetbrains.compose.resources.stringResource
+import platform.UIKit.*
 
 /** Writes the same independent seed preference the shared theme consumes, without applying an interface preset. */
 @Composable
@@ -48,10 +49,10 @@ internal fun IosIconEditor(onFailure: () -> Unit) {
     Column(Modifier.padding(24.dp)) {
         Text(stringResource(Res.string.ios_icon_title), style = MaterialTheme.typography.headlineSmall)
         TextButton(enabled = app.supportsAlternateIcons, onClick = {
-            app.setAlternateIconName(null) { if (it != null) onFailure() }
+            app.setAlternateIconName(null, completionHandler = { error -> if (error != null) onFailure() })
         }) { Text(stringResource(Res.string.ios_icon_default)) }
         TextButton(enabled = app.supportsAlternateIcons, onClick = {
-            app.setAlternateIconName("ArchiveTuneAndroid") { if (it != null) onFailure() }
+            app.setAlternateIconName("ArchiveTuneAndroid", completionHandler = { error -> if (error != null) onFailure() })
         }) { Text(stringResource(Res.string.ios_icon_android)) }
     }
 }
