@@ -39,7 +39,7 @@ class LyricsSyncClassificationTest {
 
     @Test
     fun aLineSyncedRowNeverHasWordTiming() {
-        // Every syllable is pegged at the line's start by buildLineSyncedLrcLine.
+        // Every syllable is pegged at the line's start by buildAlternateLineSyncedLrcLine.
         val line = karaokeLine(listOf(syllable("Hold ", 5_000, 5_001), syllable("on", 5_000, 5_001)))
         assertFalse(line.hasWordTiming())
     }

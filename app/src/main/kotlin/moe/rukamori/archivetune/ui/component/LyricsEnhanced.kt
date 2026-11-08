@@ -224,7 +224,12 @@ fun LyricsEnhanced(
                             phonetics[phonetic.wordIndex] = phonetic.text
                         }
                     }
-                    index to if (phonetics.any { it != null }) phonetics else listOf(line.romanizedText)
+                    // Natune's AI can return an unaligned line reading; keep it on the line.
+                    index to if (line.main.words.isEmpty() && line.backgrounds.all { it.words.isEmpty() }) {
+                        listOf(line.romanizedText)
+                    } else {
+                        phonetics
+                    }
                 }?.toMap()
                 .orEmpty()
         }
@@ -251,14 +256,9 @@ fun LyricsEnhanced(
             if (isSynced) karaokeLyricsListState.isManualScrolling else plainLyricsListState.isScrollInProgress
         }.collect { onLyricsScroll(it) }
     }
-    LaunchedEffect(isSelectionModeActive, onLyricsSelection) {
-        onLyricsSelection(isSelectionModeActive)
-    }
+    LaunchedEffect(isSelectionModeActive, onLyricsSelection) { onLyricsSelection(isSelectionModeActive) }
     DisposableEffect(onLyricsScroll, onLyricsSelection) {
-        onDispose {
-            onLyricsScroll(false)
-            onLyricsSelection(false)
-        }
+        onDispose { onLyricsScroll(false); onLyricsSelection(false) }
     }
 
     LaunchedEffect(lyricsSessionKey) {
@@ -1118,7 +1118,7 @@ private fun buildSyncedLyrics(
                     alignment = alignment,
                     start = lineStart,
                     end = lineEnd,
-                    phonetic = null,
+                    phonetic = entry.providerRomanizedText.takeIf { wordPhonetics.none { !it.isNullOrBlank() } },
                     accompanimentLines = accompanimentLines,
                 ),
             )

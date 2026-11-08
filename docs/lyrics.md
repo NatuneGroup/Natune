@@ -1,5 +1,33 @@
 # Lyrics
 
+## Android Enhanced upstream restoration (2026-11-08)
+
+Android's Enhanced style uses `rukamori/ArchiveTune` `dev` at `8f25a9e21`, including
+the `f71c0c086` frame-paced synchronization fix. `LyricsEnhanced.kt` retains upstream's
+`KaraokeLyricsView`, playback clock, 64 dp / 25% focus anchor, 700 ms scroll tween,
+72 dp keep-alive zone, word timestamps and offset-aware tap-to-seek. Word-synced and
+TTML lyrics have no lead; line-synced LRC has upstream's 300 ms lead. The dependency
+versions match upstream: `lyrics-ui 2.0.0-rc.2` and `lyrics-core 0.5.0`.
+
+`NatuneLyricsEnhanced.kt` adapts the current provider flow, existing LRC/TTML parsers,
+saved preferences, provider phonetics, Japanese pack state and settings-bound AI results
+to upstream's prepared-lyrics model. The underlying TTML parser's line ends are retained.
+An unaligned AI reading stays a line caption rather than being attached to the first word.
+The renderer reports scroll/selection activity to the existing sheet controls and retains
+the original copyright attribution. Those are the Natune adaptations; its animation,
+auto-scroll and highlighting use upstream's implementation.
+
+Spotify mode and TikTok's compact strip retain the previous implementation through
+`LyricsAlternate.kt`, `LyricsAlternateData.kt` and `LyricsAlternateContent.kt`. Their
+custom helpers and tests remain because they still have callers. The unused library
+comparison branch was removed from `EnhancedKaraokePane` for the new library API; its
+active `BasicSyncedLyricsList` path is unchanged. V2, SimpMusic, the shared desktop/iOS
+renderer, the lyrics screen layout and `LyricsTrackHeader.kt` are unchanged. The Android
+custom-renderer tuning history below applies to the alternate renderer after this restoration.
+
+Source/reference review and the permitted Python checks do not establish Android
+compilation or device rendering; CI supplies build/test validation.
+
 ## Parsing
 
 One parser for everyone: `lyrics/LyricsUtils` (`parseLyrics`, `parseTtml`,
@@ -64,7 +92,8 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 
 | Renderer | Where |
 |---|---|
-| `ui/component/LyricsEnhanced.kt` | The default full-screen renderer; also drawn inside SimpMusic's lyrics card for every mode except SIMPMUSIC |
+| `ui/component/LyricsEnhanced.kt` via `NatuneLyricsEnhanced.kt` | Upstream Enhanced mode in full-screen and inline lyrics surfaces |
+| `ui/component/LyricsAlternate.kt` | Existing Spotify mode and compact TikTok strip |
 | `ui/component/LyricsV2.kt` | Alternate full-screen renderer |
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 

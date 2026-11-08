@@ -22,7 +22,7 @@ import moe.rukamori.archivetune.shared.ui.lyrics.LyricsViewportFade
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 
 /**
- * The synced Enhanced lyrics list inside a box whose top and bottom edges fade, wherever the list is scrolled. The
+ * The synced alternate lyrics list inside a box whose top and bottom edges fade, wherever the list is scrolled. The
  * active line sits 15% of the box height below the top. The alternate styles retain [BasicSyncedLyricsList].
  */
 @Composable
