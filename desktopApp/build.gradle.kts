@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // The desktop host is a JVM-only Kotlin Multiplatform module: it has no Android or iOS code, so it
@@ -22,6 +23,7 @@ kotlin {
             implementation(project(":shared-data"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.compose.multiplatform.components.resources)
+            implementation(libs.material.kolor)
             // The graph's proxy-aware HTTP client and the retained CIO provider/upload clients are pure JVM.
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)
@@ -81,6 +83,8 @@ kotlin {
 // WebView code are deliberately not in this source set; the desktop adapter owns its separate streaming session.
 val desktopPlayPlaySources = layout.buildDirectory.dir("generated/retained-playplay")
 val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlaySources") {
+    val themeSource = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/ui/theme/Theme.kt")
+    inputs.file(themeSource)
     from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo")) {
         include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
             "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
@@ -128,6 +132,30 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         filter { line: String -> if (line.startsWith("package ")) line + "\nimport moe.rukamori.archivetune.shared.domain.automix.*" else line }
     }
     into(desktopPlayPlaySources)
+    doLast {
+        val source = themeSource.readText().replace("\r\n", "\n")
+        val notice = source.substring(0, source.indexOf("package "))
+        val model = source.substring(source.indexOf("data class ThemeSeedPalette("), source.indexOf("@OptIn(ExperimentalMaterial3ExpressiveApi", source.indexOf("data class ThemeSeedPalette(")))
+        val scheme = source.substring(source.indexOf("private fun exactPaletteColorScheme("), source.indexOf("private fun Int.toComposeColor()"))
+            .replace("private fun exactPaletteColorScheme", "fun desktopSeedColorScheme")
+        val codec = source.substring(source.indexOf("@Serializable\ndata class ThemeExportV1"))
+            .replace("Color(android.graphics.Color.parseColor(withHash))", "desktopThemeColor(withHash)")
+        val imports = """
+            import androidx.compose.material3.ColorScheme
+            import androidx.compose.ui.graphics.Color
+            import androidx.compose.ui.graphics.toArgb
+            import com.materialkolor.PaletteStyle
+            import com.materialkolor.dynamicColorScheme
+            import com.materialkolor.ktx.toHct
+            import kotlinx.serialization.Serializable
+            import kotlinx.serialization.encodeToString
+            import kotlinx.serialization.json.*
+            import moe.rukamori.archivetune.modules.ModuleBase64 as Base64
+            import moe.rukamori.archivetune.desktop.desktopThemeColor
+        """.trimIndent()
+        desktopPlayPlaySources.get().asFile.resolve("DesktopThemeSeeds.kt").writeText(
+            notice + "package moe.rukamori.archivetune.ui.theme\n\n" + imports + "\n\n" + model + scheme + codec)
+    }
 }
 kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources); resources.srcDir(rootProject.file("modules/src/main/assets")) }
 tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }

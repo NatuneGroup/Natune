@@ -15,8 +15,25 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "archivetune_output.h"
 
 typedef struct ae_device ae_device;
+
+typedef struct ae_device_request {
+    ae_pcm_format pcm;
+    int exclusive;
+    int null_backend;
+    const char *device_id; /* backend-prefixed identifier returned by ae_device_list; NULL selects the default. */
+} ae_device_request;
+typedef void (*ae_device_raw_pull)(void *user, void *out, uint32_t frames);
+
+/* Exact PCM open. Exclusive requests never silently fall back or retain a converted device. */
+ae_device *ae_device_open_pcm(const ae_device_request *request, ae_device_raw_pull pull, void *user,
+                             char *error, size_t error_len);
+void ae_device_state_read(ae_device *device, ae_device_state *state);
+/* Negotiated hardware queue depth; the raw lane renders silence for this tail before closing. */
+uint32_t ae_device_buffer_frames(ae_device *device);
+uint32_t ae_device_list(ae_device_description *out, uint32_t capacity, char *error, size_t error_len);
 
 /* Called on the audio thread. It must fill exactly frames interleaved stereo float frames. */
 typedef void (*ae_device_pull)(void *user, float *out, uint32_t frames);

@@ -76,7 +76,7 @@ internal class DesktopSpotifyLibrespotAudio(
                 ?: unavailable(AudioProviderUnavailableReason.PLATFORM_DECRYPTION_REQUIRED)
             if (!current()) { SpotifyLibrespotNative.close(); unavailable(AudioProviderUnavailableReason.ACCOUNT_CHANGED) }
             reply.spotifyText("error")?.let { code ->
-                connectedToken = null
+                if (SpotifyLibrespotAudioPolicy.failure(code).reconnectOnNextRequest) connectedToken = null
                 if (code == "RATE_LIMITED") cooldownUntil = System.currentTimeMillis() + 60_000L
                 unavailable(AudioProviderUnavailableReason.PLATFORM_DECRYPTION_REQUIRED)
             }
@@ -92,7 +92,7 @@ internal class DesktopSpotifyLibrespotAudio(
             connectedToken = token
             connectedRoute = proxyUrl
         }
-        val formats = SpotifyLibrespotAudioPolicy.preferredFormats(request.qualities[AudioSourceType.SPOTIFY], false)
+        val formats = SpotifyLibrespotAudioPolicy.preferredFormats(request.qualities[AudioSourceType.SPOTIFY] ?: prefs[AudioQualityKey], prefs.lowDataMode())
         val generation = SpotifyLibrespotNative.nativeGeneration()
         val result = native { SpotifyLibrespotNative.nativeResolve("spotify:track:${track.item.ref.id}",
             formats.toIntArray(), generation, 20_000L) }
@@ -109,7 +109,9 @@ internal class DesktopSpotifyLibrespotAudio(
         val stream = DirectStream(url, "audio/ogg", "vorbis", null,
             "Spotify Librespot", AudioSourceType.SPOTIFY, result.spotifyText("title"), result.spotifyText("artist"),
             result.spotifyText("album"), (result["durationMs"] as? JsonPrimitive)?.longOrNull,
-            trustedDirectId = request.directIds[AudioSourceType.SPOTIFY] != null, accountScope = lease.scope, expiresAtEpochMs = expiry)
+            trustedDirectId = request.directIds[AudioSourceType.SPOTIFY] != null ||
+                SpotifyLibrespotAudioPolicy.isrc(request.isrc)?.let { it == SpotifyLibrespotAudioPolicy.isrc(track.isrc) } == true,
+            accountScope = lease.scope, expiresAtEpochMs = expiry)
         PreparedAudio.Native(stream, NativeAudioRecipe.SpotifyPlayPlay(url, AudioSecret(key),
             AudioSecret("72e067fbddcbcf77ebe8bc643f630d93"), false, lease.scope))
     }
@@ -129,6 +131,7 @@ internal class DesktopSpotifyLibrespotAudio(
         val root = get(DesktopSpotifyHttp.url("https://api.spotify.com/v1/search", mapOf("q" to query, "type" to "track", "limit" to "20")))
         val tracks = (root.spotifyObject("tracks")?.get("items") as? JsonArray).orEmpty()
             .mapNotNull { (it as? JsonObject)?.let(DesktopSpotifyEchoClient::parseRest) }
+        if (isrc != null) tracks.firstOrNull { SpotifyLibrespotAudioPolicy.isrc(it.isrc) == isrc }?.let { return it }
         val best = TrackMatching.best(request.target, tracks.map { it.candidate() }) ?: return null
         return tracks.firstOrNull { it.item.ref.id == best.id }
     }
