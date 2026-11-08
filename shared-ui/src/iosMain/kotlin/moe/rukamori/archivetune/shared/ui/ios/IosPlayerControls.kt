@@ -316,7 +316,7 @@ private fun PlayerRepeat.toQueueRepeatMode(): QueueRepeatMode = when (this) {
  * Telegram id resolves through the signed-in client, which is the only owner of its channel message link. The same
  * provider-to-link rules the desktop share applies, so a Spotify id never becomes a YouTube video id.
  */
-private suspend fun iosNowPlayingShareLink(ref: ContentRef, host: IosHost): String? {
+internal suspend fun iosNowPlayingShareLink(ref: ContentRef, host: IosHost): String? {
     if (ref.id.startsWith("telegram://")) {
         val track = TelegramTrackRef.fromMediaId(ref.id) ?: return null
         return host.telegram.value?.messageLink(track.chatId, track.messageId)
