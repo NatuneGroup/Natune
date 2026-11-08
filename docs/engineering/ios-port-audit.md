@@ -192,8 +192,8 @@ check is not simulator compilation or device evidence.
 - Traced `IosSessionGraph.assemble → queue.resume → PortableQueueOwner.restore →
   requestFor → IosQueueLocatorResolver` to network source resolution of the saved song.
   This was awaited before `Ready`, making first paint wait on provider latency.
-- `IosHost` publishes the valid graph before `startAfterMount` restores playback and
-  reconciles local/download files. `TypedDelegatingQueueController.resumeIfPristine`
+- `IosHost` publishes the valid graph before `startAfterMount` restores playback.
+  Local/download owners finish local initialization before UI commands can reach them. `TypedDelegatingQueueController.resumeIfPristine`
   checks the live queue under the same mutation lock, so a queue selected first wins.
   Shutdown cancels/joins startup before closing owners. Local imports are indexed before
   restoring a local song (the original order attempted resolution before their paths loaded).
@@ -204,3 +204,14 @@ check is not simulator compilation or device evidence.
 - The opening boundary is now shared Compose branding plus `Opening your library…` and
   a small progress indicator. Optional language-pack foreground consideration starts after
   graph readiness. Cold/warm/offline launch and restored local/remote queues need device QA.
+
+## Source-review follow-up
+
+- Kept mutable local/download owner initialization before Ready to avoid racing their
+  `start()` with newly enabled UI commands. Only saved-song provider resolution is deferred.
+- Preserved the results Back header when the search field is placed at the bottom.
+- The mini-player Replay action now shares `togglePlayPause` with the full player and
+  seeks to zero before Play; removed a duplicate layout import found during source review.
+- Inspected the cached InnerTubeX v0.11.2 JAR in place: its AudioQuality enum contains
+  MP4 and its Format bitrate accessor returns Int, matching the new iOS selection calls.
+  No archive was extracted and no JVM was launched.

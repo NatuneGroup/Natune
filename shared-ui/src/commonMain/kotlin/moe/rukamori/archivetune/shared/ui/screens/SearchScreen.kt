@@ -157,11 +157,11 @@ fun SearchScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             // The desktop top bar owns the search field; this page keeps the scope filters and results only.
-            if (!searchBarAtBottom && !LocalDesktopLayout.current) {
+            if (!LocalDesktopLayout.current) {
                 if (onBack != null) ManagementHeader(stringResource(Res.string.m4_search), onBack)
                 else Text(stringResource(Res.string.m4_search), style = desktopPageTitle(false),
                     modifier = Modifier.padding(16.dp))
-                SearchField(fieldValue, edit, submit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                if (!searchBarAtBottom) SearchField(fieldValue, edit, submit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     focusRequester = fieldFocus)
             }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
