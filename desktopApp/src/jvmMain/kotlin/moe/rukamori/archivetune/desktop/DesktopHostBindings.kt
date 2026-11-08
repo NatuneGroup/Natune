@@ -341,6 +341,7 @@ private fun desktopPlayerSlots(
         customBackground = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         lyrics = { modifier ->
             Column(modifier) {
+                DesktopLyricsEditor(graph, current?.item, document)
                 val ref = current?.item?.ref
                 LyricsSyncControls(
                     storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },

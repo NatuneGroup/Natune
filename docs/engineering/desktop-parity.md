@@ -55,3 +55,16 @@ bounded and best-effort; unsupported container tags are reported in diagnostics.
 Offline artwork and lyrics for songs absent from the current library/document are
 not invented. Source downloads are never modified. Container/device validation is
 unverified. No commonMain change was needed for the tag writer.
+
+## Lyrics
+
+Desktop has a bounded persistent provider lyric cache and separate durable user
+edits. The shared HostLyrics owner gained optional host persistence and extra-provider
+callbacks (additive defaults preserve existing hosts). Desktop reuses Android's direct
+YouTube Music/subtitle implementations through generated sources. The desktop lyric
+pane mounts editing plus shared AI translate/romanize/cancel/undo actions, and shared
+LyricsTranslationPersistence commits successful automatic/manual translations through
+the same revision-checked store, refreshing the displayed document. Saved lyrics are
+also available to offline export. Account Apple/TIDAL/Deezer, experimental Musixmatch
+and module lyrics still need their host providers. Ordinary non-AI translation is not
+mounted. Persistence, generated adapters and AI rendering remain CI/runtime unverified.

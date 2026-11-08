@@ -51,6 +51,9 @@ import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
  */
 enum class HostLyricsStatus { LOADING, READY, NOT_FOUND, FAILED }
 
+/** Optional host persistence; edited documents survive an ordinary provider refresh. */
+data class HostSavedLyrics(val raw: String, val edited: Boolean = false)
+
 /**
  * The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any.
  * [raw] is the exact document text the provider returned; it is the AI session's identity and input
@@ -106,13 +109,17 @@ class HostLyrics(
     private val report: (String) -> Unit,
     lyprioBuildBaseUrl: String = "",
     lyprioBuildHmacKey: String = "",
+    private val readSaved: suspend (ContentItem) -> HostSavedLyrics? = { null },
+    private val saveFetched: suspend (ContentItem, String) -> Unit = { _, _ -> },
+    extraProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
+    extraProviderNames: Set<String> = emptySet(),
 ) {
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
-        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES),
+        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES + extraProviderNames),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
+        providerFactory = { preferences -> extraProviders(preferences) + sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
         networkAvailable = networkAvailable,
         // The provider's own message is what says whether the read failed or simply found nothing; the class name
         // alone made every ordinary miss look like a broken provider.
@@ -172,9 +179,22 @@ class HostLyrics(
         }
         var status = HostLyricsStatus.NOT_FOUND
         val (raw, lines) = try {
-            val result = runtime.lyrics(request, forceRefresh = force)
-            status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
-            if (result.providerName.isEmpty()) "" to emptyList() else result.lyrics to parse(result.lyrics)
+            val saved = item?.let { readSaved(it) }?.takeIf { !force || it.edited }
+            if (saved != null) {
+                status = HostLyricsStatus.READY
+                saved.raw to parse(saved.raw)
+            } else {
+                val result = runtime.lyrics(request, forceRefresh = force)
+                status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
+                if (result.providerName.isEmpty()) "" to emptyList() else {
+                    if (item != null) {
+                        try { saveFetched(item, result.lyrics) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (failure: Exception) { report("lyrics persistence failed: ${failure::class.simpleName}") }
+                    }
+                    result.lyrics to parse(result.lyrics)
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

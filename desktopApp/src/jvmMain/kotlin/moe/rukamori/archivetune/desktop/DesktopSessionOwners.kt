@@ -408,6 +408,7 @@ internal suspend fun assembleDesktopSessionOwners(
     )
     // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
     // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
+    val lyricsStore = DesktopLyricsStore(directory)
     val lyrics = HostLyrics(
         scope = scope,
         http = http,
@@ -418,6 +419,11 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
         lyprioBuildBaseUrl = DesktopCredentials.lyprioBaseUrl,
         lyprioBuildHmacKey = DesktopCredentials.lyprioHmacKey,
+        readSaved = lyricsStore::saved,
+        saveFetched = { item, raw -> lyricsStore.fetched(item, raw); Unit },
+        extraProviderNames = setOf("YouTube Music", "YouTube Subtitle"),
+        extraProviders = { listOf(moe.rukamori.archivetune.lyrics.YouTubeLyricsProvider,
+            moe.rukamori.archivetune.lyrics.YouTubeSubtitleLyricsProvider) },
     )
     val pack = try {
         jvmJapaneseLanguagePackManager(
@@ -448,6 +454,14 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     lyricsSurface.start()
+    val lyricsEdits = moe.rukamori.archivetune.shared.ui.menu.LyricsMenuEdits { before, after, current ->
+        val item = queue.state.value.entries.firstOrNull { it.occurrenceId == before.mediaId }?.item
+        item?.let { lyricsStore.compareAndSet(it, before, after, current) }?.also { lyrics.retry() }
+    }
+    moe.rukamori.archivetune.shared.ui.session.LyricsTranslationPersistence(scope, lyricsSurface.sessions, lyricsEdits,
+        read = { occurrenceId -> queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item
+            ?.let { lyricsStore.snapshot(it, occurrenceId) } },
+        onFailure = { desktopDiagnostic("AI lyrics durable edit was refused") })
     // App start is the one foreground event a desktop host has; the pack consumes it once.
     scope.launch { pack?.onForeground() }
     // Built after the settings owner is open, so the restored room session and blocked list read real values.
@@ -547,7 +561,7 @@ internal suspend fun assembleDesktopSessionOwners(
         exportTags = { item, file ->
             val document = lyrics.current.value
             val activeItem = queue.state.value.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }?.item
-            tagDesktopExport(http, item, document?.raw?.takeIf { activeItem?.ref == item.ref }, file)
+            tagDesktopExport(http, item, lyricsStore.saved(item)?.raw ?: document?.raw?.takeIf { activeItem?.ref == item.ref }, file)
         },
         downloads = downloadStore,
         storedSongs = database.storedSongs(),
@@ -607,6 +621,8 @@ internal suspend fun assembleDesktopSessionOwners(
         lyrics = lyrics,
         japaneseLanguagePack = pack,
         lyricsSurface = lyricsSurface,
+        lyricsStore = lyricsStore,
+        lyricsEdits = lyricsEdits,
         aiRateLimiter = aiRateLimiter,
         listenerPresence = listenerPresence,
         locators = locators,
