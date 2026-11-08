@@ -160,3 +160,21 @@ Beat/vocal features are heuristics. Advanced beat stretching, bass-swap/sweep
 envelopes and optional ONNX models remain unavailable on this mixer, so higher
 ambition tiers are not claimed. Native decoding, analysis and transitions remain
 unverified. No commonMain change was needed for this mount.
+
+## Module details and signed sessions
+
+The module manager now opens manifest details (identity, author, license, provider
+types, capabilities, runtime requirements and web links), validates typed settings,
+and updates an existing installation only when its module ID matches. Updates are
+disabled until reviewed again. Session verification uses the retained signed-grant
+host and a separate isolated Chromium profile per installation; nested callback
+state is checked before launching and again before exchange. Cancellation releases
+the browser and callback listener. Clearing a session preserves module settings.
+Android APK/DEX/native binary extension packages are explicitly unsupported; the
+page links to the portable Spotify catalog, Echo and optional Librespot adapters.
+No commonMain source changed. Live sign-in and desktop UI remain unverified.
+
+The shared player's title and artist actions now reach the existing desktop album
+route/item menu and artist picker. The existing capability-dispatch contract test
+was updated for those callbacks; it has not been run locally. Output routing/Cast
+remains unavailable in the player.

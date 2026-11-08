@@ -98,7 +98,9 @@ internal fun desktopHostBindings(
     // typeface the settings page installs, so a SpatialFlow title draws in that typeface once it is installed.
     val sleepSheet = DesktopSleepTimerSheetState()
     val playerMenu = DesktopPlayerMenuState()
-    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily)
+    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily,
+        onTitle = { row -> row.item.albumRef()?.let { ownRoutes.trySend(ArchiveRoutes.content(it)) } ?: menu.open(row) },
+        onArtists = { row -> menu.openArtists(row.item) })
     val podcasts = createDesktopPodcasts(graph)
     val topMixes = createDesktopTopMixes(graph)
     val canvas = createDesktopCanvas(graph, settingsOwners.spotify)
