@@ -455,6 +455,18 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_song_source_chooser_uses_persisted_pins_and_the_normal_resolver(self):
+        source = (UI_IOS / "IosSongSourceDialog.kt").read_text()
+        self.assertIn('PlayerQueueSongSourceDialog(track, state, actions', source)
+        self.assertIn('SongSourceOverride.withOverride', source)
+        self.assertIn('graph.retryAfterFailure(target.occurrenceId)', source)
+        self.assertIn('searchableSources = setOf(AudioSourceType.YOUTUBE)', source)
+        menu = (UI_IOS / "IosItemMenu.kt").read_text()
+        self.assertIn('menu.sourceTarget?.let { IosSongSourceDialog', menu)
+        resolver = (UI_IOS / "IosQueueLocatorResolver.kt").read_text()
+        self.assertIn('if (explicitSource == null)', resolver)
+        self.assertIn('recovery.pinned(pinned)', resolver)
+
     def test_player_actions_follow_the_playing_occurrence_and_have_hosts(self):
         controls = (UI_IOS / "IosPlayerControls.kt").read_text()
         self.assertIn('playerOccurrence(queue, playback)', controls)
