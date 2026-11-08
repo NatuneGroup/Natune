@@ -13,7 +13,15 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
+import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
@@ -97,3 +105,9 @@ object SettingsAnimations {
         )
     }
 }
+
+/** Scrollable clearance for the system navigation bar and the app bottom controls. */
+@Composable
+fun settingsListBottomPadding(): Dp = SettingsDimensions.ScreenBottomPadding +
+    LocalPlayerAwareWindowInsets.current.union(WindowInsets.navigationBars)
+        .only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding()

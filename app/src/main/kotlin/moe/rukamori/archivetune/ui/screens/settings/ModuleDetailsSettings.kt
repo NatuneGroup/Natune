@@ -174,7 +174,7 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
     val save = remember(focus, onAction) { { focus.clearFocus(); onAction(ModuleSettingsAction.Save) } }
     val showSave = detail.fields.isNotEmpty() && detail.dirty
     val bottomPadding by animateDpAsState(
-        SettingsDimensions.ScreenBottomPadding + if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
+        settingsListBottomPadding() + if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
         MaterialTheme.motionScheme.defaultSpatialSpec(), label = "moduleDetailsBottomPadding")
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
