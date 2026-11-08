@@ -196,6 +196,11 @@ jobs:
           echo "gradle_task=assemble${DISTRIBUTION_NAME}${DEVICE_NAME}${ABI_CAP}Release" >> "$GITHUB_OUTPUT"
           echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-${CHANNEL_SUFFIX}.apk" >> "$GITHUB_OUTPUT"
 
+      - name: Build Librespot audio for the shipping ABI
+        uses: ./.github/actions/build-librespot
+        with:
+          variant: ${{ matrix.variant }}
+
       - name: Assemble Android APK
         shell: bash
         run: |

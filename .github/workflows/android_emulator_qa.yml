@@ -46,6 +46,15 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
 
+      - name: Install pinned NDK for Librespot audio
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;30.0.16248370"
+
+      - name: Build Librespot audio (universal)
+        uses: ./.github/actions/build-librespot
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 

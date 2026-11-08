@@ -16,7 +16,7 @@ librespot-core = { path = "upstream/core", default-features = false, features = 
 librespot-metadata = { path = "upstream/metadata", default-features = false, features = ["rustls-tls-webpki-roots"] }
 log = "=0.4.29"
 serde_json = "=1.0.149"
-tokio = { version = "=1.49.0", features = ["rt-multi-thread", "time"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "time", "sync"] }
 url = "=2.5.8"
 
 [profile.release]

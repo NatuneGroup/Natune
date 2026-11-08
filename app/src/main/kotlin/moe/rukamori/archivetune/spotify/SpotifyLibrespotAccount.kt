@@ -281,6 +281,18 @@ object SpotifyLibrespotAccount {
                             context.dataStore.edit { it.clearLibrespotSession() }
                             return@withLock null
                         }
+                        // Bind a grant created while the catalog was signed out as soon as the
+                        // same-account comparison succeeds, including the cached-token path.
+                        var catalogChanged = false
+                        context.dataStore.edit {
+                            if (it[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                                it.clearLibrespotSession()
+                                catalogChanged = true
+                            } else {
+                                it[SpotifyLibrespotCatalogSpDcKey] = catalogSpDc
+                            }
+                        }
+                        if (catalogChanged) return@withLock null
                     }
                 }
 

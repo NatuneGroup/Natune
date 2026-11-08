@@ -8,11 +8,11 @@ use std::{
 use jni::{
     JNIEnv,
     objects::{JIntArray, JObject, JString},
-    sys::{jboolean, jlong, jstring},
+    sys::{jboolean, jint, jlong, jstring},
 };
 use librespot_core::{
     Session, SessionConfig, authentication::Credentials, audio_key::AudioKeyError,
-    cdn_url::CdnUrl, config::KEYMASTER_CLIENT_ID, error::ErrorKind, http_client::HttpClientError,
+    cdn_url::CdnUrl, config::{KEYMASTER_CLIENT_ID, set_android_api_level}, error::ErrorKind, http_client::HttpClientError,
     spclient::RequestStrategy, SpotifyUri,
 };
 use librespot_metadata::audio::{file::AudioFileFormat, item::AudioItem};
@@ -21,11 +21,12 @@ use tokio::runtime::{Builder, Runtime};
 use url::Url;
 
 static RUNTIME: OnceLock<Result<Runtime, ()>> = OnceLock::new();
-static STATE: Mutex<State> = Mutex::new(State { generation: 0, session: None });
+static STATE: Mutex<State> = Mutex::new(State { generation: 0, session: None, cancel: None });
 
 struct State {
     generation: u64,
     session: Option<Session>,
+    cancel: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 struct Failure {
@@ -80,6 +81,7 @@ fn current(generation: u64) -> bool {
 fn close() {
     if let Ok(mut state) = state() {
         state.generation = state.generation.wrapping_add(1);
+        if let Some(cancel) = state.cancel.take() { let _ = cancel.send(true); }
         if let Some(session) = state.session.take() {
             session.shutdown();
         }
@@ -110,7 +112,7 @@ where
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeConnect(
     env: JNIEnv<'_>, _object: JObject<'_>, token: JString<'_>, user_id: JString<'_>,
-    device_id: JString<'_>, cache_dir: JString<'_>, proxy: JString<'_>, timeout_ms: jlong,
+    device_id: JString<'_>, cache_dir: JString<'_>, proxy: JString<'_>, android_api_level: jint, timeout_ms: jlong,
 ) -> jstring {
     reply(env, |env| {
         let token = read_string(env, &token)?;
@@ -121,6 +123,7 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
         if token.is_empty() || user_id.is_empty() || device_id.is_empty() {
             return Err(Failure::new("AUTH"));
         }
+        set_android_api_level(android_api_level.try_into().map_err(|_| Failure::new("INVALID_RESPONSE"))?);
         let proxy = if proxy.is_empty() { None } else {
             let url = Url::parse(&proxy).map_err(|_| Failure::new("INVALID_RESPONSE"))?;
             if !matches!(url.scheme(), "http" | "https") {
@@ -129,9 +132,11 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
             Some(url)
         };
         let rt = runtime()?;
+        let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
         let generation = {
             let mut state = state()?;
             state.generation = state.generation.wrapping_add(1);
+            if let Some(cancel) = state.cancel.take() { let _ = cancel.send(true); }
             if let Some(old) = state.session.take() { old.shutdown(); }
             state.generation
         };
@@ -156,8 +161,11 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
             }
             // Publish before connecting: logout can cancel an in-flight AP connection too.
             state.session = Some(session.clone());
+            state.cancel = Some(cancel_sender);
         }
-        let result = rt.block_on(async { tokio::time::timeout(budget(timeout_ms), async {
+        let result = rt.block_on(async { tokio::select! {
+            _ = cancelled.changed() => Err(Failure::new("ACCOUNT_CHANGED")),
+            result = tokio::time::timeout(budget(timeout_ms), async {
             session.connect(Credentials::with_access_token(token), false).await.map_err(native_error)?;
             if session.username() != user_id { return Err(Failure::new("ACCOUNT_CHANGED")); }
             // ProductInfo arrives asynchronously after APWelcome. Wait inside the caller's budget.
@@ -168,11 +176,12 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
                 }
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
-        }).await }).map_err(|_| Failure::new("TIMEOUT")).and_then(|r| r);
+            }) => result.map_err(|_| Failure::new("TIMEOUT")).and_then(|r| r),
+        }});
         if let Err(failure) = result {
             session.shutdown();
             let mut state = state()?;
-            if state.generation == generation { state.session = None; }
+            if state.generation == generation { state.session = None; state.cancel = None; }
             return Err(failure);
         }
         if !current(generation) {
@@ -211,9 +220,11 @@ async fn resolve(session: &Session, uri: SpotifyUri, formats: Vec<i32>) -> Resul
     }).ok_or_else(|| Failure::new("UNSUPPORTED_FORMAT"))?;
     let SpotifyUri::Track { id } = &item.track_id else { return Err(Failure::new("TRACK_UNAVAILABLE")); };
     let key = session.audio_key().request(*id, chosen.1).await.map_err(|error| {
-        if matches!(error.error.downcast_ref::<AudioKeyError>(), Some(AudioKeyError::AesKey)) {
-            Failure::new("AUDIO_KEY")
-        } else { native_error(error) }
+        match error.error.downcast_ref::<AudioKeyError>() {
+            Some(AudioKeyError::AesKey) => Failure::new("AUDIO_KEY"),
+            Some(AudioKeyError::Timeout) => Failure::new("TIMEOUT"),
+            _ => native_error(error),
+        }
     })?;
     let storage = CdnUrl::new(chosen.1).resolve_audio(session).await.map_err(native_error)?;
     let urls: Vec<String> = storage.try_get_urls().map_err(native_error)?.into_iter().filter(|url| {
@@ -247,15 +258,19 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
         if !(1..=3).contains(&count) { return Err(Failure::new("UNSUPPORTED_FORMAT")); }
         let mut selected = vec![0; count as usize];
         env.get_int_array_region(&formats, 0, &mut selected).map_err(|_| Failure::new("INVALID_RESPONSE"))?;
-        let (session, generation) = {
+        let (session, generation, mut cancelled) = {
             let state = state()?;
-            (state.session.clone().ok_or_else(|| Failure::new("AUTH"))?, state.generation)
+            (state.session.clone().ok_or_else(|| Failure::new("AUTH"))?, state.generation,
+                state.cancel.as_ref().ok_or_else(|| Failure::new("AUTH"))?.subscribe())
         };
         if session.is_invalid() { return Err(Failure::new("NETWORK")); }
         let result = runtime()?.block_on(async {
-            tokio::time::timeout(budget(timeout_ms), resolve(&session, uri, selected)).await
-        })
-            .map_err(|_| Failure::new("TIMEOUT"))??;
+            tokio::select! {
+                _ = cancelled.changed() => Err(Failure::new("ACCOUNT_CHANGED")),
+                result = tokio::time::timeout(budget(timeout_ms), resolve(&session, uri, selected)) =>
+                    result.map_err(|_| Failure::new("TIMEOUT")).and_then(|r| r),
+            }
+        })?;
         if !current(generation) || session.is_invalid() { return Err(Failure::new("ACCOUNT_CHANGED")); }
         Ok(result)
     })
