@@ -336,20 +336,12 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     val unknownText = stringResource(Res.string.m9_media_info_unknown)
     val title = stringResource(Res.string.m9_media_info_ti_section_dac)
     val dacDeviceLabel = stringResource(Res.string.m9_media_info_ti_dac_device)
-    val builtInOutputText = if (pipeline?.hostDesktop == true) {
-        stringResource(Res.string.m9_media_info_system_output)
-    } else {
-        stringResource(Res.string.m9_media_info_android_builtin_output)
-    }
+    val builtInOutputText = mediaInfoOutputFallbackLabel(pipeline?.hostDesktop == true)
     val signalPathLabel = stringResource(Res.string.m9_media_info_ti_signal_path)
     val usbExclusiveText = stringResource(Res.string.m9_media_info_usb_exclusive_direct)
     val exclusiveDirectText = stringResource(Res.string.m9_media_info_exclusive_direct)
     val bitPerfectUsbTitle = stringResource(Res.string.m9_media_info_bit_perfect_usb_title)
-    val mixerText = if (pipeline?.hostDesktop == true) {
-        stringResource(Res.string.m9_media_info_system_mixer)
-    } else {
-        stringResource(Res.string.m9_media_info_default_mixer)
-    }
+    val mixerText = mediaInfoMixerLabel(pipeline?.hostDesktop == true)
     val hardwareClockLabel = stringResource(Res.string.m9_media_info_ti_hardware_clock)
     val usbIdLabel = stringResource(Res.string.m9_media_info_ti_usb_id)
     val pipelineStateLabel = stringResource(Res.string.m9_media_info_ti_pipeline_state)
@@ -417,6 +409,19 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     )
     MediaInfoSectionCard(title = title, rows = rows)
 }
+
+/** The route fallback Android names for its built-in output; a desktop host names its own system output. */
+@Composable
+private fun mediaInfoOutputFallbackLabel(hostDesktop: Boolean): String =
+    stringResource(
+        if (hostDesktop) Res.string.m9_media_info_system_output
+        else Res.string.m9_media_info_android_builtin_output
+    )
+
+/** The mixer label Android names for its system mixer; a desktop host names its own mixer. */
+@Composable
+private fun mediaInfoMixerLabel(hostDesktop: Boolean): String =
+    stringResource(if (hostDesktop) Res.string.m9_media_info_system_mixer else Res.string.m9_media_info_default_mixer)
 
 /**
  * Output route card: the device, its supported rates, the Android mix rate and the sample-rate
