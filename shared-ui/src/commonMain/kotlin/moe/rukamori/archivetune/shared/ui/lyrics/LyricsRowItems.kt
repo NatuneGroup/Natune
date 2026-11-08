@@ -61,6 +61,9 @@ private const val SELECTED_ROW_ALPHA = 0.16f
 private const val BACKGROUND_SIZE_RATIO = 0.7f
 private const val BACKGROUND_ACTIVE_ALPHA = 0.72f
 
+/** The document's second voice: an answer to the lead line, not another lead line. */
+private const val SECOND_VOICE_SIZE_RATIO = 0.82f
+
 /**
  * The soft dark lift under every sung glyph. Artwork behind the rows can be bright or busy, so a
  * short-radius shadow keeps the edges reading on any palette without a visible outline.
@@ -106,9 +109,14 @@ internal fun LyricsRowItem(
 ) {
     // Unsynced text has no timing to follow, so it reads at full strength rather than as an idle line.
     val linePalette = if (row.isSynced) palette else palette.copy(dim = palette.bright)
+    // The document's second voice answers the lead line: its own row, its own sweep, drawn as an answer.
+    val secondVoiceStyle = remember(mainStyle) { lyricsSecondVoiceStyle(mainStyle) }
     Column(
         Modifier
             .fillMaxWidth()
+            // The glide rides outside the row's softening: a translated row keeps the same blurred layer instead of
+            // paying for a new one on every frame of the change.
+            .then(if (settle != null) Modifier.lyricsSettle(settle, row.index, staggerMs) else Modifier)
             .then(
                 if (depthEnabled) {
                     Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion, staggerMs = staggerMs)
@@ -116,7 +124,6 @@ internal fun LyricsRowItem(
                     Modifier
                 },
             )
-            .then(if (settle != null) Modifier.lyricsSettle(settle, staggerMs) else Modifier)
             .then(Modifier.lyricsActiveScale(active, activeScale, animate = !reduceMotion, alignment))
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
@@ -129,7 +136,7 @@ internal fun LyricsRowItem(
         }
         SweptLyricLine(
             row = row,
-            style = mainStyle,
+            style = if (row.isSecondVoice) secondVoiceStyle else mainStyle,
             palette = linePalette,
             active = active,
             passed = passed,
@@ -142,10 +149,26 @@ internal fun LyricsRowItem(
         )
         row.background?.let { background ->
             val backgroundStyle = remember(mainStyle) { lyricsBackgroundStyle(mainStyle) }
-            Text(
+            // The backing voice stays dimmer than the lead even while its own words are swept.
+            val backgroundPalette = remember(palette) {
+                palette.copy(
+                    bright = palette.bright.copy(alpha = palette.bright.alpha * BACKGROUND_ACTIVE_ALPHA),
+                    glow = palette.glow.copy(alpha = palette.glow.alpha * BACKGROUND_ACTIVE_ALPHA),
+                )
+            }
+            // The backing vocal has its own word timings, so it sweeps on the same feed as the lead
+            // line instead of lighting up as one static block while the lead karaoke runs above it.
+            SweptBackgroundLine(
                 text = background,
+                words = row.backgroundWords,
                 style = backgroundStyle,
-                color = if (active) palette.bright.copy(alpha = BACKGROUND_ACTIVE_ALPHA) else palette.dim,
+                palette = backgroundPalette,
+                clock = clock,
+                active = active,
+                passed = passed,
+                minSweepMs = minSweepMs,
+                reduceMotion = reduceMotion,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         val autoCreatedLabel = stringResource(Res.string.lyrics_auto_created)
@@ -271,8 +294,8 @@ private fun Modifier.lyricsDepth(
  * The line-change glide. The row is drawn where it was before the list moved, and eases to its place after [staggerMs].
  * The offset is read in the draw phase, so a frame of the glide does not recompose the row.
  */
-private fun Modifier.lyricsSettle(settle: LyricsLineSettle, staggerMs: Long): Modifier =
-    graphicsLayer { translationY = settle.offsetPx(staggerMs) }
+private fun Modifier.lyricsSettle(settle: LyricsLineSettle, rowIndex: Int, staggerMs: Long): Modifier =
+    graphicsLayer { translationY = settle.offsetPx(rowIndex, staggerMs) }
 
 private const val ACTIVE_SCALE_MS = 100
 
@@ -313,6 +336,18 @@ internal fun lyricsBackgroundStyle(mainStyle: TextStyle): TextStyle =
     mainStyle.copy(
         fontSize = if (mainStyle.fontSize.isSpecified) mainStyle.fontSize * BACKGROUND_SIZE_RATIO else mainStyle.fontSize,
         lineHeight = if (mainStyle.lineHeight.isSpecified) mainStyle.lineHeight * BACKGROUND_SIZE_RATIO else mainStyle.lineHeight,
+        fontWeight = FontWeight.SemiBold,
+    )
+
+/**
+ * The document's second voice — the backing vocal a lead line is answered by. It is a line of its own, so
+ * it keeps its own sweep, but it reads as an answer rather than as another lead: smaller than the line it
+ * answers, the same way the background row does.
+ */
+internal fun lyricsSecondVoiceStyle(mainStyle: TextStyle): TextStyle =
+    mainStyle.copy(
+        fontSize = if (mainStyle.fontSize.isSpecified) mainStyle.fontSize * SECOND_VOICE_SIZE_RATIO else mainStyle.fontSize,
+        lineHeight = if (mainStyle.lineHeight.isSpecified) mainStyle.lineHeight * SECOND_VOICE_SIZE_RATIO else mainStyle.lineHeight,
         fontWeight = FontWeight.SemiBold,
     )
 

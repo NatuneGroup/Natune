@@ -11,7 +11,10 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(666, PersistedPreferenceKeys.size)
+        // One entry per declared key: the 674 round-two keys plus the three desktop window keys (system window frame,
+        // close to tray, last sleeve seed), which is one declaration each now that both desktop branches share the same
+        // frame key.
+        assertEquals(676, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 
@@ -62,6 +65,10 @@ class PersistedPreferenceRegistrySettingsTest {
         assertEquals("chipSortType", ChipSortTypeKey.name)
         assertEquals("nativeIosInterface", NativeIosInterfaceKey.name)
         assertEquals(PreferenceKind.BOOLEAN, NativeIosInterfaceKey.kind)
+        // The desktop window choices keep the snake_case on-disk names the other desktop keys already use.
+        assertEquals("desktop_system_window_frame", DesktopSystemWindowFrameKey.name)
+        assertEquals("desktop_hide_to_tray", DesktopHideToTrayKey.name)
+        assertEquals(PreferenceKind.BOOLEAN, DesktopSystemWindowFrameKey.kind)
     }
 
     @Test

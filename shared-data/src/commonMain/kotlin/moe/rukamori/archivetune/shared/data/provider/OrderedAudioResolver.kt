@@ -10,8 +10,18 @@ interface YouTubeResolutionPort {
     suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio?
 }
 enum class AudioAttemptResult { UNAVAILABLE, NO_MATCH, REJECTED_METADATA, TIMEOUT, FAILED, RESOLVED }
-data class AudioAttempt(val source: AudioSourceType, val result: AudioAttemptResult,
-    val unavailableReason: AudioProviderUnavailableReason? = null)
+
+/**
+ * One source's answer in a resolution. [detail] is the sanitized failure text when the attempt failed with an
+ * exception (a bot check, a refusal, a decipher failure), so the dialog's copied reason names what happened instead of
+ * only "FAILED". It never carries a URL query or credential.
+ */
+data class AudioAttempt(
+    val source: AudioSourceType,
+    val result: AudioAttemptResult,
+    val unavailableReason: AudioProviderUnavailableReason? = null,
+    val detail: String? = null,
+)
 sealed interface AudioResolution {
     data class Resolved(val audio: PreparedAudio, val attempts: List<AudioAttempt>) : AudioResolution
     data class Unavailable(val attempts: List<AudioAttempt>) : AudioResolution
@@ -43,10 +53,11 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
         val attempts = chain.attempts
         if (PlaybackSourceChain.youTubeTerminalAllowed(settings, rejected)) {
             var failure = false
+            var primaryDetail: String? = null
             val primary = try { withTimeoutOrNull(30_000) { youtube.primary(request) } }
                 catch (auth: TerminalPlaybackAuthentication) { throw auth }
                 catch (cancel: CancellationException) { throw cancel }
-                catch (error: Exception) { failure = true; null }
+                catch (error: Exception) { failure = true; primaryDetail = error.attemptDetail(); null }
             if (primary != null && primary.source == AudioSourceType.YOUTUBE && primary.matchesRequest(request))
                 return AudioResolution.Resolved(primary, attempts + AudioAttempt(AudioSourceType.YOUTUBE, AudioAttemptResult.RESOLVED))
             var terminalAuth: TerminalPlaybackAuthentication? = null
@@ -61,7 +72,11 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             terminalAuth?.let { throw it }
             if (recovered is YouTubeRecovery.Resolved)
                 return AudioResolution.Resolved(recovered.value, attempts + AudioAttempt(AudioSourceType.YOUTUBE, AudioAttemptResult.RESOLVED))
-            attempts += AudioAttempt(AudioSourceType.YOUTUBE, if (failure) AudioAttemptResult.FAILED else AudioAttemptResult.NO_MATCH)
+            attempts += AudioAttempt(
+                AudioSourceType.YOUTUBE,
+                if (failure) AudioAttemptResult.FAILED else AudioAttemptResult.NO_MATCH,
+                detail = primaryDetail,
+            )
         }
         return AudioResolution.Unavailable(attempts.toList())
     }
@@ -97,7 +112,7 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             }
             catch (failure: Exception) {
                 chain.inFlight = null
-                chain.attempts += AudioAttempt(source, AudioAttemptResult.FAILED); continue
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.FAILED, detail = failure.attemptDetail()); continue
             }
             chain.inFlight = null
             if (outcome == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue }
@@ -150,3 +165,11 @@ internal fun PreparedAudio.matchesRequest(request: AudioResolveRequest): Boolean
     } ?: request.target
     return TitleMatch.evaluate(target.title, target.artists, target.album, target.durationMs, stream).accepted
 }
+
+/** A failure line safe for the dialog: no URL query tokens, bounded, one line. */
+private fun Throwable.attemptDetail(): String =
+    message.orEmpty()
+        .replace(Regex("""https?://\S+"""), "<url>")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+        .take(160)

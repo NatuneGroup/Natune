@@ -104,7 +104,7 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.component.NatuneLyricsEnhanced
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
@@ -515,7 +515,7 @@ private fun TikTokInlineLyricsPane(
         modifier =
             modifier.fillMaxSize(),
     ) {
-        LyricsEnhanced(
+        NatuneLyricsEnhanced(
             sliderPositionProvider = sliderPositionProvider,
             lyricsSyncOffset = lyricsSyncOffset,
             textColorOverride = Color.White,

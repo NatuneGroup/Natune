@@ -8,9 +8,10 @@ The `NatuneGroup/Natune` repository has two release channels:
 | Nightly | `dev` | Every push or manual dispatch | Prerelease titled and tagged `N<yyyyMMdd>` using the UTC date |
 
 Every successful release run builds the Android flavor matrix, Windows x64, Linux
-x64 and arm64, macOS x64 and arm64, and an unsigned iOS IPA. The release is
-published only after all platform jobs finish successfully. Stable and nightly
-builds do not commit version changes to the branch.
+x64 and arm64, macOS x64 and arm64, and an unsigned iOS IPA. The Android and
+Windows/Linux legs are required for publication; the macOS and iOS assets are
+best-effort and attach after the release exists. Stable and nightly builds do not
+commit version changes to the branch.
 
 ## Versioning
 
@@ -69,7 +70,7 @@ Non-Android release assets use
 are published unsigned and the release notes identify that state.
 The publisher checks each expected file by name instead of one fixed total.
 The Android APKs and the Windows/Linux installers stay required; the two macOS
-DMGs and the iOS IPA are best-effort on their GitHub-hosted legs, so a leg that
+DMGs and the iOS IPA are best-effort on their Blacksmith macOS legs, so a leg that
 fails or never picks up leaves a partial release whose notes list the missing
 names. A complete run still carries 16 files for Nightly or 17 for Stable,
 including the ten non-Android assets. The Actions handoff artifacts (including
@@ -225,8 +226,8 @@ they must not be server-administrator credentials.
 The release matrix publishes while the required legs deliver; the macOS and iOS
 legs are best-effort, so a failed or unscheduled one leaves a partial release
 instead of blocking the rest. Workflow and recipe changes still require an
-exact-head packaging run — Blacksmith for the Android, Windows and Linux legs,
-GitHub-hosted `macos-26` for the macOS and iOS legs:
+exact-head packaging run — Blacksmith for every host, with
+`blacksmith-12vcpu-macos-26` for the macOS and iOS legs:
 
 - Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
   under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
@@ -265,7 +266,8 @@ GitHub-hosted `macos-26` for the macOS and iOS legs:
 - Linux x64 and arm64 install `gperf` for TDLib source generation. The arm64 leg
   uses `blacksmith-8vcpu-ubuntu-2404-arm`.
 - iOS release CI explicitly expects the pinned Xcode 26.4 (`setup-xcode`,
-  resolving to the GitHub `macos-26` image's 26.4.1) and builds only the
+  resolving to the macOS 26 runner image's 26.4.1; the Blacksmith image's exact
+  Xcode build is unverified until a run selects it) and builds only the
   `iphoneos` native closure. It retains the producer's strict version check
   rather than allowing an arbitrary/unverified Xcode, and keeps code signing
   disabled for the IPA. The job installs gpg like the desktop macOS legs, and the
@@ -293,6 +295,33 @@ image, and without `%u` or a MimeType. `addLinuxBrowserDebDepends` adds
 it already unpacks, `addLinuxBrowserRpmRequires` passes jpackage an overriding
 `Natune.desktop` template through `--resource-dir`, and the AppImage's
 hand-written entry declares the same pair in the workflow.
+
+## Runner cost
+
+Apple CI runs on Blacksmith's `blacksmith-12vcpu-macos-26` (12 vCPU Apple silicon,
+macOS 26). Blacksmith documents macOS 12 vCPU at 40 equivalent x64 2-vCPU minutes
+per elapsed minute (6 vCPU is 20) and a free tier of 3,000 equivalent minutes per
+month. The owner reports those 3,000 minutes as remaining; this is not a
+provider-enforced cap and no paid overage is authorized.
+
+The 2026-11-03 nightly (run 41735716057) is the measured baseline. Its macOS jobs
+ran on the GitHub-hosted `macos-26` image, so these are durations, not Blacksmith
+speed claims:
+
+| Job | Duration | Equivalent minutes at 40x for the same duration |
+| --- | ---: | ---: |
+| Unsigned iOS IPA | 3 h 09 m 33 s | about 7,580 |
+| Desktop macOS x64 | 1 h 56 m 48 s | about 4,670 |
+| Desktop macOS arm64 | 44 m 50 s | about 1,790 |
+
+A same-speed iOS release leg alone would exceed the reported balance. The iOS
+compile check is the bounded trial: a `workflow_dispatch` with the default
+`ios_simulator_app=false` has a 45-minute ceiling (1,800 equivalent minutes at
+40x), while `ios_simulator_app=true` raises it to 330 minutes (13,200). The
+release workflow's dispatch defaults `build_ios=false`; a release or nightly with
+`build_ios=true` runs the 3-hour-class iOS job. Neither the opt-in app link nor a
+`build_ios=true` release/nightly may run until the owner explicitly approves the
+spend. Xcode 26.4 selection and actual Blacksmith durations remain unverified.
 
 ## Native dependency caches
 

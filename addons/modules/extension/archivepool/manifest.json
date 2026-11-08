@@ -1,0 +1,98 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.archivepool",
+    "name": "ArchivePool",
+    "displayName": "ArchivePool",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "poolUrl": {
+        "type": "text",
+        "label": "Pool URL",
+        "description": "Your ArchivePool deployment.",
+        "defaultValue": "https://archivepool.natune.workers.dev",
+        "required": true
+      },
+      "readKey": {
+        "type": "password",
+        "label": "Read key",
+        "description": "Your pool read key; never an administrator secret.",
+        "defaultValue": null,
+        "required": true,
+        "secret": true
+      },
+      "source": {
+        "type": "select",
+        "label": "Preferred source",
+        "description": "",
+        "defaultValue": "tidal",
+        "required": false,
+        "options": [
+          {
+            "label": "TIDAL first",
+            "value": "tidal"
+          },
+          {
+            "label": "Qobuz first",
+            "value": "qobuz"
+          }
+        ]
+      },
+      "tidalClientId": {
+        "type": "text",
+        "label": "TIDAL OAuth client ID",
+        "description": "Optional, for leased refresh tokens.",
+        "defaultValue": null,
+        "required": false
+      },
+      "tidalClientSecret": {
+        "type": "password",
+        "label": "TIDAL OAuth client secret",
+        "description": "Optional, only if required by your client.",
+        "defaultValue": null,
+        "required": false,
+        "secret": true
+      },
+      "quality": {
+        "type": "select",
+        "label": "Audio quality",
+        "description": "",
+        "defaultValue": "lossless",
+        "required": false,
+        "options": [
+          {
+            "label": "Lossless",
+            "value": "lossless"
+          },
+          {
+            "label": "Hi-Res",
+            "value": "hires"
+          },
+          {
+            "label": "Lossy",
+            "value": "lossy"
+          }
+        ]
+      }
+    }
+  }
+}

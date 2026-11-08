@@ -61,7 +61,6 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
-import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -78,9 +77,8 @@ fun AmazonSettings(
 ) {
     val context = LocalContext.current
 
-    val (enabled, onEnabledChange) = rememberPreference(AmazonEnabledKey, false)
-    // The toggle flips only its own flag; the source already sits in the order (default just
-    // above YouTube) and the user positions it in "Preferred sources".
+    val (enabled) = rememberPreference(AmazonEnabledKey, false)
+    // The source switch lives on Sources; this page owns the account and quality.
     val (audioQuality, onAudioQualityChange) =
         rememberEnumPreference(AmazonAudioQualityKey, AmazonAudioQuality.Default)
     val (storedInstances, onStoredInstancesChange) = rememberPreference(AmazonInstancesKey, "")
@@ -167,17 +165,6 @@ fun AmazonSettings(
             PreferenceGroup(
                 title = stringResource(R.string.source_amazon),
             ) {
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("amazon_source_enable"),
-                        title = { Text(stringResource(R.string.source_amazon)) },
-                        description = stringResource(R.string.audio_source_enabled),
-                        icon = { Icon(painterResource(R.drawable.star), null) },
-                        checked = enabled,
-                        onCheckedChange = onEnabledChange,
-                    )
-                }
-
                 item {
                     EnumListPreference(
                         modifier = positions.modifierFor("amazon_audio_quality"),

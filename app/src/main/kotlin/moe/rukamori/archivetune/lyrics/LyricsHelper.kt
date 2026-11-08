@@ -17,10 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PreferredLyricsProvider
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
@@ -28,6 +25,8 @@ import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.modules.ModuleLyricsProviders
+import moe.rukamori.archivetune.modules.PreferLyricsExtensionsKey
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.GlobalLog
 import moe.rukamori.archivetune.utils.isLocalMediaId
@@ -43,6 +42,7 @@ class LyricsHelper
     constructor(
         @ApplicationContext private val context: Context,
         private val networkConnectivity: NetworkConnectivityObserver,
+        private val moduleLyrics: ModuleLyricsProviders,
     ) {
         private val baseProviders =
             listOf(
@@ -74,6 +74,21 @@ class LyricsHelper
 
         private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
         private val singleLyricsCache = LruCache<String, LyricsResult>(MAX_CACHE_SIZE)
+        private var extensionRevision: String? = null
+        private val availableProviders get() = baseProviders + moduleLyrics.providers
+
+        private suspend fun refreshExtensions() {
+            val revision = try { moduleLyrics.snapshot() }
+                catch (error: CancellationException) { throw error }
+                catch (error: Exception) { reportException(error); return }
+            synchronized(singleLyricsCache) {
+                if (extensionRevision != revision) {
+                    cache.evictAll()
+                    singleLyricsCache.evictAll()
+                    extensionRevision = revision
+                }
+            }
+        }
 
         /**
          * The stored row text an upgrade attempt has already been made against, keyed by media id.
@@ -152,6 +167,7 @@ class LyricsHelper
             preferredProviderOnly: Boolean = false,
             forceRefresh: Boolean = false,
         ): LyricsResult {
+            refreshExtensions()
             val cacheKey = mediaMetadata.lyricsCacheKey
 
             // Read the "Prioritize Word Synced Lyrics" toggle once up-front. We need
@@ -283,10 +299,8 @@ class LyricsHelper
                         .map { provider ->
                             async(Dispatchers.IO) {
                                 val lyrics =
-                                    providerPermits.withPermit {
-                                        withTimeoutOrNull(WORD_SYNC_PROVIDER_TIMEOUT_MS) {
-                                            fetchProviderLyrics(provider, mediaMetadata, artist)
-                                        }
+                                    providerRequests.run(isExtension = false, timeoutMillis = WORD_SYNC_PROVIDER_TIMEOUT_MS) {
+                                        fetchProviderLyrics(provider, mediaMetadata, artist)
                                     }
                                 if (lyrics == null) {
                                     GlobalLog.append(
@@ -326,6 +340,7 @@ class LyricsHelper
             forceRefresh: Boolean = false,
             callback: (LyricsResult) -> Unit,
         ) {
+            refreshExtensions()
             val cacheKey = lyricsCacheKey(songTitle, songArtists)
             if (forceRefresh) {
                 invalidateCache(cacheKey)
@@ -372,17 +387,15 @@ class LyricsHelper
                     providers.map { provider ->
                         async {
                             try {
-                                providerPermits.withPermit {
-                                    withTimeoutOrNull(PROVIDER_TIMEOUT_MS) {
-                                        provider.getAllLyrics(mediaId, songTitle, songArtists, songAlbum, duration) lyricsCallback@{ lyrics ->
-                                            val normalizedLyrics = LyricsUtils.lyricsOrNotFound(lyrics)
-                                            if (normalizedLyrics == LYRICS_NOT_FOUND) return@lyricsCallback
-                                            val result = LyricsResult(provider.name, normalizedLyrics)
-                                            synchronized(allResult) {
-                                                allResult += result
-                                            }
-                                            callback(result)
+                                providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
+                                    provider.getAllLyrics(mediaId, songTitle, songArtists, songAlbum, duration) lyricsCallback@{ lyrics ->
+                                        val normalizedLyrics = LyricsUtils.lyricsOrNotFound(lyrics)
+                                        if (normalizedLyrics == LYRICS_NOT_FOUND) return@lyricsCallback
+                                        val result = LyricsResult(provider.name, normalizedLyrics)
+                                        synchronized(allResult) {
+                                            allResult += result
                                         }
+                                        callback(result)
                                     }
                                 }
                             } catch (e: CancellationException) {
@@ -414,10 +427,8 @@ class LyricsHelper
                         .map { provider ->
                             async(Dispatchers.IO) {
                                 val lyrics =
-                                    providerPermits.withPermit {
-                                        withTimeoutOrNull(PROVIDER_TIMEOUT_MS) {
-                                            fetchProviderLyrics(provider, mediaMetadata, artist)
-                                        }
+                                    providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
+                                        fetchProviderLyrics(provider, mediaMetadata, artist)
                                     }
                                 if (lyrics == null) null else provider.name to lyrics
                             }
@@ -497,7 +508,9 @@ class LyricsHelper
                 )
             val userOrdered = orderedEnums.mapNotNull { providerMap[it] }
             val rest = baseProviders.filterNot { it in userOrdered }
-            return userOrdered + rest
+            val builtIn = userOrdered + rest
+            val extensions = moduleLyrics.providers
+            return if (context.dataStore.getAsync(PreferLyricsExtensionsKey) == true) extensions + builtIn else builtIn + extensions
         }
 
         private fun isMeaningfulLyrics(lyrics: String): Boolean = LyricsUtils.hasMeaningfulLyricsContent(lyrics)
@@ -507,7 +520,7 @@ class LyricsHelper
             mediaMetadata: MediaMetadata,
             sweepActive: Boolean,
         ): Boolean {
-            val provider = baseProviders.firstOrNull { it.name == cached.providerName } ?: return false
+            val provider = availableProviders.firstOrNull { it.name == cached.providerName } ?: return false
             return isLookupEligible(provider, mediaMetadata, sweepActive)
         }
 
@@ -528,7 +541,7 @@ class LyricsHelper
         }
 
         private fun cachedProviderIsEnabled(cached: LyricsResult): Boolean =
-            baseProviders.firstOrNull { it.name == cached.providerName }?.isEnabled(context) == true
+            availableProviders.firstOrNull { it.name == cached.providerName }?.isEnabled(context) == true
 
         private fun supportsMediaId(
             provider: LyricsProvider,
@@ -562,19 +575,11 @@ class LyricsHelper
             title: String,
             artists: String,
         ): String = "$artists-$title".replace(" ", "")
-        // Bounds provider fan-out across the three parallel fetch paths so a burst of
-        // provider HTTP calls cannot exhaust sockets/threads on low-end devices.
 
         companion object {
-            // Process-wide cap on concurrent provider fetches, shared by the three
-            // parallel fetch paths AND every LyricsHelper instance (MusicService,
-            // menu, preload all inject their own). Per-instance caps summed past
-            // the socket budget on low-end devices; one shared semaphore holds.
-            private val providerPermits = Semaphore(MAX_CONCURRENT_PROVIDERS)
-
-            // Cap on concurrent provider fetches, shared by all three parallel fetch
-            // paths via [providerPermits].
-            private const val MAX_CONCURRENT_PROVIDERS = 6
+            // Shared by all fetch paths and helper instances (service, menu and preload).
+            // Keep the six built-in slots available while a bounded extension request runs.
+            private val providerRequests = LyricsProviderRequests()
             private const val MAX_CACHE_SIZE = 16
 
             // One entry per track whose stored lyrics a word-synced upgrade has been attempted

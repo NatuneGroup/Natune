@@ -148,6 +148,14 @@
     <string name="error_no_stream">No stream available</string>
     <string name="error_malformed_stream">Source error</string>
     <string name="error_unknown">Unknown error</string>
+    <!-- Playback cannot make a sound. {detail} is replaced at runtime with a sanitized detail.
+         These messages are shown to the user (a startup notice or the playback error dialog), so they live in
+         resources rather than as inline Kotlin strings. -->
+    <string name="playback_failed">Playback could not start. Check this computer's audio output device, then reinstall Natune if the problem continues.</string>
+    <string name="playback_engine_missing">Natune cannot play audio: this build has no playback engine. Reinstall Natune; a self-built copy needs its native engine built and staged (desktopApp/native/scripts/build-native-deps.sh).</string>
+    <string name="playback_engine_failed">Natune cannot play audio: the playback engine did not load. Reinstall Natune to repair this build's native files. Detail: {detail}</string>
+    <string name="playback_output_unavailable">Natune cannot play audio: {detail}</string>
+    <string name="playback_attestation_unavailable">YouTube playback may be refused on this network: {detail}</string>
     <string name="details">Details</string>
     <string name="copy">Copy</string>
     <string name="retry">Retry</string>
@@ -215,4 +223,6 @@
     <string name="content_menu_telegram_share_unsupported">Telegram message-link sharing is not connected on desktop. Share the message from Telegram instead.</string>
     <string name="content_menu_share_unsupported">A share link is not available for this item and provider.</string>
     <string name="content_menu_canvas_export_unsupported">Canvas export is not connected on desktop. Custom artwork can still set or remove a local Canvas.</string>
+    <string name="search_placeholder">Search songs, albums and artists</string>
+    <string name="search_shortcut">Ctrl+K</string>
 </resources>

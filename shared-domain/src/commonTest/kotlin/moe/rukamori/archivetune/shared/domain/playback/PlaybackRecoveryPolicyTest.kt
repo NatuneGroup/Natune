@@ -27,6 +27,27 @@ class PlaybackRecoveryPolicyTest {
     }
 
     @Test
+    fun aNativeLeaseMessageCarriesTheStatusTheEngineCannot() {
+        val cases = mapOf(
+            "the source answered HTTP 403" to PlaybackFailureCategory.CDN_FORBIDDEN,
+            "the source answered HTTP 401" to PlaybackFailureCategory.TOKEN,
+            "the source answered HTTP 404" to PlaybackFailureCategory.URL_EXPIRED,
+            "the source answered HTTP 410" to PlaybackFailureCategory.URL_EXPIRED,
+            "the source answered HTTP 416" to PlaybackFailureCategory.URL_EXPIRED,
+            "the stream lease has expired" to PlaybackFailureCategory.URL_EXPIRED,
+            "Server returned 503 Service Unavailable" to PlaybackFailureCategory.NETWORK,
+        )
+        val base = PlaybackFailure("occ", PlaybackFailureReason.DECODE_FAILED, "the source read failed")
+        for ((message, category) in cases) {
+            assertEquals(
+                category,
+                PlaybackFailureClassifier.categorize(base.copy(message = message)),
+                message,
+            )
+        }
+    }
+
+    @Test
     fun aCarriedStatusWinsOverCauseNamesAndReason() {
         val failure = PlaybackFailure(
             "occ", PlaybackFailureReason.DECODE_FAILED, "rejected",
@@ -122,6 +143,42 @@ class PlaybackRecoveryPolicyTest {
         val kept = budget.forPlaybackFailure(positionMs = 29_999L, nowMs = 1L)
         assertEquals(0, kept.requestsRemaining)
         assertEquals(29_999L, kept.lastFailurePositionMs)
+    }
+
+    @Test
+    fun aTransportFailureTheLeaseNamesReResolvesInsteadOfStalling() {
+        // The desktop lease fails a dead body read with the exception class rather than returning zero bytes and
+        // leaving the engine to spend its 30 s starvation limit. Without a status or an expiry in the evidence the
+        // failure is UNKNOWN, which buys a bounded re-resolve through the source chain.
+        val transport = PlaybackFailure(
+            "occ",
+            PlaybackFailureReason.DECODE_FAILED,
+            "the source's connection failed: SocketTimeoutException",
+        )
+        assertEquals(PlaybackFailureCategory.UNKNOWN, PlaybackFailureClassifier.categorize(transport))
+        assertEquals(
+            PlaybackRecoveryAction.RETRY_CLIENT,
+            PlaybackRecoveryPolicy.decide(
+                PlaybackFailureClassifier.categorize(transport),
+                PlaybackRecoveryBudget.starting(0L),
+                0L,
+            ).action,
+        )
+
+        // The status the lease carried outranks the wording, as it does for a status the engine reports itself.
+        val refused = transport.copy(
+            message = "the source read failed (the source answered HTTP 403)",
+            httpStatus = 403,
+        )
+        assertEquals(PlaybackFailureCategory.CDN_FORBIDDEN, PlaybackFailureClassifier.categorize(refused))
+        assertEquals(
+            PlaybackRecoveryAction.REFRESH_URL,
+            PlaybackRecoveryPolicy.decide(
+                PlaybackFailureClassifier.categorize(refused),
+                PlaybackRecoveryBudget.starting(0L),
+                0L,
+            ).action,
+        )
     }
 
     @Test

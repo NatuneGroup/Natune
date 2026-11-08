@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.foundation.lazy.LazyListState
 import io.ktor.client.HttpClient
 import java.nio.file.Files
 import java.nio.file.Path
@@ -121,6 +122,11 @@ class DesktopSessionGraph internal constructor(
     val transport: StateFlow<DesktopTransportState>,
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */
     val textOrder: Comparator<String>,
+    /**
+     * The settings window's category-list scroll position. It lives on the graph rather than in the page composition, so
+     * opening one settings page after another never sends the reader back to the top of the category list.
+     */
+    val settingsNavScroll: LazyListState = LazyListState(),
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
     internal val libraryContent: LibraryContentOwner,
     /** The YouTube resolve owner; the source chooser's refresh drops its searched-id cache entry. */
@@ -187,6 +193,19 @@ class DesktopSessionGraph internal constructor(
     internal val mediaInfo: DesktopMediaInfoOwner,
     private val drivers: List<Job>,
 ) {
+    private var deviceConnectOwner: DesktopDeviceConnect? = null
+
+    /**
+     * Desktop Device Connect, created on first use. The shell's Connected devices hook reads
+     * [DesktopDeviceConnect.sheetVisible]; the redesign has to bind that flag and call
+     * [DesktopDeviceConnect.openConnectedDevices].
+     */
+    @get:Synchronized
+    internal val deviceConnect: DesktopDeviceConnect
+        get() = deviceConnectOwner ?: DesktopDeviceConnect(this) { volume ->
+            playback.setVolume(volume.coerceIn(0f, 1f))
+        }.also { deviceConnectOwner = it }
+
     internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
 
     /** The persisted per-song lyrics offsets, keyed by the playing item's content ref. */
@@ -425,6 +444,8 @@ class DesktopSessionGraph internal constructor(
      * and only then are the stores released.
      */
     suspend fun close() = withContext(NonCancellable) {
+        deviceConnectOwner?.close()
+        deviceConnectOwner = null
         listenTogether.close()
         listenDriver.close()
         progressDriver.close()

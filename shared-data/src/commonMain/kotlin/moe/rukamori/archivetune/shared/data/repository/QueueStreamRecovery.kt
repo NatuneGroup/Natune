@@ -90,7 +90,9 @@ internal class QueueStreamRecovery(
         // Unattributed legacy failures keep their terminal policy, never reopening an unrelated active load.
         if (failure.attemptId == null || !accepts(failure)) return null
         val current = active?.takeIf { it.occurrenceId == occurrence.occurrenceId } ?: return null
-        val source = current.locator.source?.takeUnless { it == AudioSourceType.YOUTUBE } ?: return null
+        // A YouTube URL is as short-lived and IP-bound as any CDN URL: its locator now carries the URL's own expiry
+        // window, so a 403/404/410/416 or an expired lease earns the same bounded re-resolution as every other source.
+        val source = current.locator.source ?: return null
         if (current.locator is PlaybackLocator.LocalFile || current.locator is PlaybackLocator.TelegramFile) return null
         // Native engines collapse lease read/expiry failures into DECODE_FAILED, not just OPEN_FAILED.
         // A carried status below 400 was never a rejection, so there is nothing to classify.

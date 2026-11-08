@@ -42,6 +42,14 @@ data class ArchiveRoute(val value: String, val destination: ArchiveDestination, 
 
 /** Only route arguments are encoded. Provider IDs, saved playlist IDs and existing path meanings stay intact. */
 object ArchiveRoutes {
+    /**
+     * The Last.fm dashboard. Every host mounts it as a settings page beside `settings/lastfm`
+     * rather than as its own destination, so the value lives next to the resolver: the settings
+     * hosts read it to mount the page and the shared account menu reads it to open the page, so
+     * neither can drift from the other.
+     */
+    const val LASTFM_DASHBOARD_ROUTE = "settings/lastfm/dashboard"
+
     fun article(id: String): String = "view_news/${encode(id)}"
     fun search(query: String, provider: ContentProvider, filter: ContentSearchFilter = ContentSearchFilter.ALL): String {
         val encoded = if (query.isEmpty()) "~" else Base64.UrlSafe.encode(query.encodeToByteArray()).trimEnd('=')

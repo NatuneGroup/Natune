@@ -87,6 +87,15 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "Realtime output requires lock-free in
 #define AE_MAX_INTERRUPTED_READS 256
 
 /*
+ * A direct (unleased) HTTP open is a fallback path: the host reads remote sources through its own ranged lease. It
+ * still gets a bounded read timeout and a browser-like agent, because FFmpeg's own reader would otherwise block with
+ * no timeout and announce itself as "Lavf/...", which media CDNs treat as a bot.
+ */
+#define AE_DIRECT_HTTP_TIMEOUT_US "15000000"
+#define AE_DIRECT_HTTP_USER_AGENT \
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+
+/*
  * The producer's copy of a host source. FFmpeg's AVIO callbacks receive a pointer to it, so it must stay
  * at a fixed address until its AVIOContext is freed; the producer's ae_source owns it for that reason.
  */
@@ -878,6 +887,13 @@ static int source_open(ae_engine *e, ae_source *s, const char *path, int64_t sta
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
         /* Ktor and the app own connection reuse, so FFmpeg must not keep its own HTTP connections. */
         av_dict_set(&options, "multiple_requests", "0", 0);
+        /*
+         * The host lease normally reads every remote source, so this direct open is a fallback (a probe or a source
+         * without a lease). It still must not hang forever or identify itself as FFmpeg's library reader: googlevideo
+         * treats the Lavf agent as a bot, and an HTTP read with no timeout can block until the process exits.
+         */
+        av_dict_set(&options, "rw_timeout", AE_DIRECT_HTTP_TIMEOUT_US, 0);
+        av_dict_set(&options, "user_agent", AE_DIRECT_HTTP_USER_AGENT, 0);
     }
 
     s->format = avformat_alloc_context();
@@ -950,10 +966,14 @@ static int source_open_stream(ae_engine *e, ae_source *s, const ae_stream_io *io
     /*
      * An empty whitelist refuses every protocol. avformat_open_input duplicates a non-NULL pb whitelist into the
      * input context (demux.c), so a child that reached a protocol opener anyway would still be refused, behind the
-     * refused io_open. A literal is used because the AVIOContext never frees the string it points to, so a
-     * duplicate allocated here would leak on every open.
+     * refused io_open. The copy must be heap-owned: avio_context_free() frees the whitelist it finds on the context,
+     * so assigning the literal here is an invalid free at every leased-source teardown.
      */
-    s->avio->protocol_whitelist = "";
+    s->avio->protocol_whitelist = av_strdup("");
+    if (!s->avio->protocol_whitelist) {
+        snprintf(message, len, "out of memory");
+        return -1;
+    }
 
     s->format = avformat_alloc_context();
     if (!s->format) {

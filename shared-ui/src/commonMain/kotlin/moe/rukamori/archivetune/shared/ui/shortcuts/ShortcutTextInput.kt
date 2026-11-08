@@ -1,13 +1,10 @@
 package moe.rukamori.archivetune.shared.ui.shortcuts
 
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.composed
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
 
 /**
@@ -35,13 +32,26 @@ val LocalShortcutTextInput = staticCompositionLocalOf { ShortcutTextInputState()
 /**
  * Marks a text input as an editing surface. While one holds focus, unmodified shortcuts such as Space or a letter stay
  * quiet so typing wins; Escape and every modifier-bearing shortcut keep working.
+ *
+ * The attachment holds its own flag rather than snapshot state, and it is the same flag the dispose path reads. A
+ * `remember { mutableStateOf(false) }` read from inside `onDispose` reads the value *after* the focus change, which is
+ * false again, so the release never ran: one visit to a field silenced every unmodified shortcut for the rest of the
+ * session.
  */
 fun Modifier.shortcutTextInput(): Modifier = composed {
-    val state = LocalShortcutTextInput.current
-    var focused by remember { mutableStateOf(false) }
-    DisposableEffect(state, focused) {
-        if (focused) state.attach()
-        onDispose { if (focused) state.detach() }
+    val counter = LocalShortcutTextInput.current
+    val attachment = remember(counter) { TextInputAttachment(counter) }
+    DisposableEffect(attachment) { onDispose { attachment.setFocused(false) } }
+    onFocusChanged { attachment.setFocused(it.isFocused) }
+}
+
+/** Counts one editing surface in or out exactly once per focus transition, however often it is composed. */
+private class TextInputAttachment(private val counter: ShortcutTextInputState) {
+    private var focused = false
+
+    fun setFocused(value: Boolean) {
+        if (value == focused) return
+        focused = value
+        if (value) counter.attach() else counter.detach()
     }
-    onFocusChanged { focused = it.isFocused }
 }

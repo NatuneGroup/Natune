@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.player.ActionButton
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerArtworkPager
@@ -149,21 +150,16 @@ internal fun NumberedPlayer(c: PlayerRenderContext) {
     }
 }
 
-/** Header ("Now Playing"/playing-from) plus the blur-backed square artwork pager with double-tap seek. */
+/** Header plus the same square artwork geometry as Android, bounded by the available height. */
 @Composable
 private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (c.optical.artworkBlur && !c.preferences.sleeveHidden) {
-                c.slots.artwork(
-                    c.state.playback?.occurrenceId,
-                    Modifier.fillMaxSize().graphicsLayer { alpha = .6f }.blur(36.dp),
-                )
-            }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val side = minOf(maxWidth, maxHeight, if (LocalDesktopLayout.current) 392.dp else maxWidth)
             PlayerArtworkPager(
                 c,
-                Modifier.fillMaxSize().playerSeekDoubleTap(c, c.preferences.style in doubleTapSeekStyles),
+                Modifier.size(side).playerSeekDoubleTap(c, c.preferences.style in doubleTapSeekStyles),
             )
         }
     }

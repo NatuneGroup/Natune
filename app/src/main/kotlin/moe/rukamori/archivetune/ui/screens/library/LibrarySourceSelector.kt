@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.constants.LibrarySource
 import moe.rukamori.archivetune.constants.LibrarySourceKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
@@ -42,7 +43,7 @@ import moe.rukamori.archivetune.utils.rememberPreference
 fun rememberLibrarySourceAvailable(): Boolean {
     val spDc by rememberPreference(SpotifySpDcKey, defaultValue = "")
     val showSpotify by rememberPreference(ShowSpotifyPlaylistsKey, defaultValue = false)
-    return spDc.isNotBlank() && showSpotify
+    return spDc.isNotBlank() && showSpotify && rememberSpotifyMetadataExtensionEnabled()
 }
 
 /**

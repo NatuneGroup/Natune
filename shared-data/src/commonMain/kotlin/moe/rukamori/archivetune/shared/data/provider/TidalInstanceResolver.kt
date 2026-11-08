@@ -27,11 +27,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.contentOrNull
 import moe.rukamori.archivetune.shared.data.stream.dash.TidalDashManifest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,6 +61,7 @@ class TidalInstanceResolver(
     private val poolEnabled: () -> Boolean = { false },
     private val sourceProviderUrl: () -> String = { "" },
     private val sourceProviderKey: () -> String = { "" },
+    discoveryStore: PoolDiscoveryStore = NoPoolDiscoveryStore,
     /**
      * Carries the best-effort cancels of abandoned queued playback. It must outlive the attempt that
      * abandoned the ticket, because the race does not wait for a cancel before returning a winner.
@@ -203,12 +200,24 @@ class TidalInstanceResolver(
     private val INSTANCE_DISCOVERY_SOURCES: List<String>
         get() = ArchivePoolEndpoints.candidates(sourceProviderUrl()).map { "$it/api/discovery/tidal" }
 
+    /** Six-hour jittered cadence, persisted list, ETag revalidation and refusal backoff. */
+    private val discoveryFeed = PoolDiscoveryFeed(
+        service = "tidal",
+        nowMs = nowMs,
+        candidateFeeds = { INSTANCE_DISCOVERY_SOURCES },
+        request = { url, headers -> healthGet(url, HEALTH_TIMEOUT_MS, headers = headers).toPoolResponse() },
+        parse = { body -> PoolDiscoveryPayload.urls(body, dropSquidWtf = true) },
+        enabled = poolEnabled,
+        readKey = sourceProviderKey,
+        store = discoveryStore,
+    )
+
     @kotlin.concurrent.Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
 
     @kotlin.concurrent.Volatile private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
 
-    @kotlin.concurrent.Volatile private var discoveryFetchedAtMs = 0L
+    @kotlin.concurrent.Volatile private var discoveryForgetRequested = false
 
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
@@ -235,7 +244,7 @@ class TidalInstanceResolver(
             customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
             poolDiscoveredInstanceUrls = emptySet()
         }
-        discoveryFetchedAtMs = 0L
+        discoveryForgetRequested = true
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null when it is not valid. */
@@ -366,79 +375,19 @@ class TidalInstanceResolver(
             clearPoolDiscovery()
             return emptyList()
         }
-        if (discoveryFetchedAtMs != 0L && nowMs() - discoveryFetchedAtMs < DISCOVERY_TTL_MS) return emptyList()
-        discoveryFetchedAtMs = nowMs()
-        val discovered = discoverInstancesWithinAttempt()
+        if (discoveryForgetRequested) {
+            discoveryForgetRequested = false
+            discoveryFeed.forget()
+        }
+        // The feed answers the persisted list inside its window; only a due feed costs a request.
+        val all = discoveryFeed.instances()
         if (!poolEnabled()) {
             clearPoolDiscovery()
             return emptyList()
         }
-        if (discovered.isNotEmpty()) poolDiscoveredInstanceUrls = poolDiscoveredInstanceUrls + discovered
-        return discovered
-    }
-
-    private suspend fun discoverInstancesWithinAttempt(): List<String> {
-        val discovered = LinkedHashSet<String>()
-        for (source in INSTANCE_DISCOVERY_SOURCES) {
-            if (!poolEnabled()) break
-            val answered = runCatching {
-                val headers = sourceProviderKey().takeIf { it.isNotBlank() }
-                    ?.let { mapOf("Authorization" to "Bearer $it") }
-                    ?: emptyMap()
-                val reply = healthGet(source, HEALTH_TIMEOUT_MS, headers = headers)
-                if (!poolEnabled() || ArchivePoolEndpoints.isFailoverStatus(reply.status)) return@runCatching false
-                ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
-                if (reply.status !in 200..299) return@runCatching true
-                parseDiscoveredInstances(reply.body).forEach { url ->
-                    normalizeInstanceUrl(url)?.let(discovered::add)
-                }
-                true
-            }.getOrDefault(false)
-            if (answered) break
-        }
-        return discovered.toList()
-    }
-
-    /**
-     * Parses a discovery payload: `{ "api": [...], "streaming": [...] }` objects (streaming first,
-     * `.squid.wtf` dropped, `qobuz` ignored), a JSON array of strings or `{url,host}` objects, or a
-     * plain whitespace-separated list.
-     */
-    private fun parseDiscoveredInstances(body: String): List<String> {
-        val trimmed = body.trim()
-        if (trimmed.isEmpty()) return emptyList()
-        runCatching {
-            val obj = Json.parseToJsonElement(trimmed).jsonObject
-            val result = LinkedHashSet<String>()
-            for (key in listOf("streaming", "instances", "api")) {
-                obj.array(key)?.let { collectStringsFromArray(it, result) }
-            }
-            val filtered = result.filterNot { it.contains(".squid.wtf", ignoreCase = true) }
-            if (filtered.isNotEmpty()) return filtered
-        }
-        runCatching {
-            val result = LinkedHashSet<String>()
-            collectStringsFromArray(Json.parseToJsonElement(trimmed).jsonArray, result)
-            if (result.isNotEmpty()) return result.toList()
-        }
-        return trimmed
-            .split('\n', '\r', ' ', ',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-    }
-
-    private fun collectStringsFromArray(
-        arr: JsonArray,
-        into: MutableCollection<String>,
-    ) {
-        for (item in arr) {
-            when (item) {
-                is JsonObject -> {
-                    (item.stringOrNull("url") ?: item.stringOrNull("host"))?.let(into::add)
-                }
-                else -> item.jsonPrimitiveOrNull?.content?.takeIf { it.isNotBlank() }?.let(into::add)
-            }
-        }
+        val fresh = all.filter { it !in poolDiscoveredInstanceUrls }
+        if (fresh.isNotEmpty()) poolDiscoveredInstanceUrls = poolDiscoveredInstanceUrls + fresh
+        return fresh
     }
     // endregion
 
@@ -1884,7 +1833,10 @@ class TidalInstanceResolver(
         val contentLength: Long?,
         val contentRange: String?,
         val location: String? = null,
-    )
+        val etag: String? = null,
+    ) {
+        fun toPoolResponse(): PoolResponse = PoolResponse(status, body, PoolResponse.retryAfterMs(retryAfter), etag)
+    }
 
     private class TidalTimeoutException : Exception("TIDAL request timed out")
     private class TidalConnectException : Exception("TIDAL host unreachable")
@@ -1956,6 +1908,7 @@ class TidalInstanceResolver(
                         contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull(),
                         contentRange = response.headers[HttpHeaders.ContentRange],
                         location = response.headers[HttpHeaders.Location],
+                        etag = response.headers["ETag"],
                     )
                 }
             } catch (cancel: CancellationException) {
@@ -2028,7 +1981,6 @@ class TidalInstanceResolver(
         private const val HEALTH_TIMEOUT_MS = 6_000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
-        private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L
         private const val STRONG_MATCH_SCORE = 150
         private const val REJECT_SCORE = -1_000_000
 

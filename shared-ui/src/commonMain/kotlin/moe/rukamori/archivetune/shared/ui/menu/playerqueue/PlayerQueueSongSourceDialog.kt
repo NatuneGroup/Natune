@@ -455,6 +455,7 @@ private fun AudioSourceType.sourceLabel(): StringResource =
         AudioSourceType.DEEZER -> Res.string.m5pq_source_deezer
         AudioSourceType.APPLE -> Res.string.m5pq_source_apple_music
         AudioSourceType.AMAZON -> Res.string.m5pq_source_amazon
+        AudioSourceType.MODULES -> Res.string.source_modules
         AudioSourceType.QQ -> Res.string.m5pq_source_qq_music
         AudioSourceType.SPOTIFY -> Res.string.m5pq_source_spotify_stream
         AudioSourceType.JIOSAAVN -> Res.string.m5pq_source_jiosaavn
@@ -470,7 +471,7 @@ private fun AudioSourceType.sourceIcon(): PlayerQueueMenuIcon =
         AudioSourceType.TIDAL -> PlayerQueueMenuIcon.PROVIDER_TIDAL
         AudioSourceType.QOBUZ, AudioSourceType.QOBUZ_BACKUP -> PlayerQueueMenuIcon.PROVIDER_QOBUZ
         AudioSourceType.DEEZER -> PlayerQueueMenuIcon.PROVIDER_DEEZER
-        AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ -> PlayerQueueMenuIcon.PROVIDER_GENERIC
+        AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.MODULES -> PlayerQueueMenuIcon.PROVIDER_GENERIC
         AudioSourceType.SPOTIFY -> PlayerQueueMenuIcon.SPOTIFY
         AudioSourceType.JIOSAAVN -> PlayerQueueMenuIcon.PROVIDER_JIOSAAVN
         AudioSourceType.YOUTUBE -> PlayerQueueMenuIcon.PLAY

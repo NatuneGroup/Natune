@@ -45,6 +45,13 @@ import moe.rukamori.archivetune.shared.ui.session.SettingsLyricsRuntime
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
 /**
+ * Where a lookup stands, so a surface can tell "still reading" from "nothing was found" from "the read failed". Before
+ * this the document was a list and a flag, and an empty list meant all three at once: the pane showed nothing at all
+ * for a track no provider knows.
+ */
+enum class HostLyricsStatus { LOADING, READY, NOT_FOUND, FAILED }
+
+/**
  * The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any.
  * [raw] is the exact document text the provider returned; it is the AI session's identity and input
  * and the host's share of the session key, so a refetch of different text invalidates every surface.
@@ -56,7 +63,28 @@ data class HostLyricsDocument(
     val raw: String = "",
     /** The document's writer/auto-created credits; null for non-TTML lyrics. */
     val credits: LyricsCredits? = null,
-)
+    val status: HostLyricsStatus = if (loading) HostLyricsStatus.LOADING else HostLyricsStatus.READY,
+) {
+    /** Whether a surface has lines to draw; the one question the player slots asked before this existed. */
+    val hasLines: Boolean get() = lines.isNotEmpty()
+}
+
+/**
+ * The occurrence a lyrics surface is showing: the player's, or the queue's before playback starts or after it failed.
+ * The owner follows the same pair in [HostLyrics.follow], so a surface and the lookup always name one track.
+ */
+fun activeLyricsOccurrence(playbackOccurrenceId: String?, queueOccurrenceId: String?): String? =
+    playbackOccurrenceId ?: queueOccurrenceId
+
+/**
+ * The published document, and only while it belongs to [activeOccurrenceId].
+ *
+ * A track change reaches the player before it reaches the lyrics owner, which keeps the previous track's finished
+ * document until it has read the new occurrence. Handing that document to a surface draws the old track's lines under
+ * the new track's title; resolving it against the occurrence on screen leaves the surface reading instead.
+ */
+fun HostLyricsDocument?.belongingTo(activeOccurrenceId: String?): HostLyricsDocument? =
+    this?.takeIf { activeOccurrenceId != null && occurrenceId == activeOccurrenceId }
 
 /**
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
@@ -86,11 +114,15 @@ class HostLyrics(
         providerRevision = MutableStateFlow(0L),
         providerFactory = { preferences -> sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
         networkAvailable = networkAvailable,
-        reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure::class.simpleName}") },
+        // The provider's own message is what says whether the read failed or simply found nothing; the class name
+        // alone made every ordinary miss look like a broken provider.
+        reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure.describe()}") },
     )
 
     private val state = MutableStateFlow<HostLyricsDocument?>(null)
     val current: StateFlow<HostLyricsDocument?> = state.asStateFlow()
+    private val refresh = MutableStateFlow(0L)
+    private var lastAttempt = 0L
     private var driver: Job? = null
 
     fun start() {
@@ -98,16 +130,29 @@ class HostLyrics(
             combine(player.snapshot, queue) { snapshot, queueState ->
                 val id = snapshot?.occurrenceId ?: queueState.currentOccurrenceId
                 id to queueState
-            }.distinctUntilChanged { old, new -> old.first == new.first && old.second.playOrder == new.second.playOrder }
-                .collectLatest { (id, queueState) -> follow(id, queueState) }
+            }.combine(refresh) { (id, queueState), attempt -> Triple(id, queueState, attempt) }
+                .distinctUntilChanged { old, new ->
+                    old.first == new.first && old.second.playOrder == new.second.playOrder && old.third == new.third
+                }
+                .collectLatest { (id, queueState, attempt) ->
+                    // Only a retry asks the providers again; every other emission keeps the cached answer.
+                    val force = attempt != lastAttempt
+                    lastAttempt = attempt
+                    follow(id, queueState, force)
+                }
         }
+    }
+
+    /** Asks the providers again for the occurrence on screen, for the pane's retry control. */
+    fun retry() {
+        refresh.value += 1
     }
 
     fun close() {
         driver?.cancel()
     }
 
-    private suspend fun follow(occurrenceId: String?, queueState: QueueState) {
+    private suspend fun follow(occurrenceId: String?, queueState: QueueState, force: Boolean = false) {
         val entries = queueState.entries.associateBy { it.occurrenceId }
         val item = occurrenceId?.let { entries[it]?.item }
         val request = item?.lyricsRequest()
@@ -120,18 +165,32 @@ class HostLyrics(
             state.value = null
             return
         }
-        if (state.value?.occurrenceId != occurrenceId) state.value = HostLyricsDocument(occurrenceId, emptyList(), loading = true)
+        if (state.value?.occurrenceId != occurrenceId) {
+            state.value = HostLyricsDocument(occurrenceId, emptyList(), loading = true)
+        } else if (force) {
+            state.value = state.value?.copy(loading = true, status = HostLyricsStatus.LOADING)
+        }
+        var status = HostLyricsStatus.NOT_FOUND
         val (raw, lines) = try {
-            val result = runtime.lyrics(request)
+            val result = runtime.lyrics(request, forceRefresh = force)
+            status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
             if (result.providerName.isEmpty()) "" to emptyList() else result.lyrics to parse(result.lyrics)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            report("lyrics lookup failed: ${failure::class.simpleName}")
+            status = HostLyricsStatus.FAILED
+            report("lyrics lookup failed: ${failure.describe()}")
             "" to emptyList()
         }
+        if (status == HostLyricsStatus.NOT_FOUND) {
+            // One line naming the track, so a miss for a track no provider knows is not mistaken for a broken lookup.
+            report("lyrics lookup found nothing for \"${request.title} — ${request.artist}\"")
+        }
         val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
-        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw, credits = credits)
+        state.value = HostLyricsDocument(
+            occurrenceId, lines, loading = false, raw = raw, credits = credits,
+            status = if (status == HostLyricsStatus.READY && lines.isEmpty()) HostLyricsStatus.NOT_FOUND else status,
+        )
     }
 
     private fun parse(text: String): List<LyricsLine> =
@@ -142,6 +201,21 @@ class HostLyrics(
         const val PRELOAD_LIMIT = 10
     }
 }
+
+/**
+ * One diagnostic line that keeps the failure's own reason. The class name alone made an ordinary provider miss
+ * ("Lyrics unavailable") indistinguishable from a broken lookup, which is what turned a track no provider knows into
+ * fourteen looking-alike "failed: IllegalStateException" lines. The reason is one line and bounded; the lyrics
+ * endpoints are public constants, so nothing from preferences or the Lyprio build pair can appear here.
+ */
+private fun Throwable.describe(): String {
+    val reason = message?.lineSequence()?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    val name = this::class.simpleName.orEmpty().ifEmpty { "failure" }
+    return if (reason == null) name else "$name: ${reason.take(MAX_REPORTED_REASON_CHARS)}"
+}
+
+/** Long enough for a provider's message, short enough for one log line. */
+private const val MAX_REPORTED_REASON_CHARS = 160
 
 private fun ContentItem.lyricsRequest(): LyricsRequest? {
     val artist = artists.joinToString(", ") { it.name }.ifBlank { subtitle }

@@ -36,6 +36,9 @@ object BackupPreferencePolicy {
     )
     private val deviceKeys = setOf("scheduledBackupEnabled", "scheduledBackupDirectoryUri", "scheduledBackupDirectoryName",
         "spotifyStreamDeviceId",
+        // Device Connect identity, default device and the public half of every pair grant are device-scoped.
+        "deviceConnectEnabled", "deviceConnectDeviceId", "deviceConnectDeviceName",
+        "deviceConnectAllowVpn", "deviceConnectDefaultDeviceId", "deviceConnectPairedDevices",
         // Retired preferences whose leftovers never export: the user-entered Lyprio server pair is gone
         // (the provider is build-configured now) and its signing key was a credential.
         "lyprioEndpoint", "lyprioSigningKey")

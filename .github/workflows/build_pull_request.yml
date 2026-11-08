@@ -94,6 +94,9 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -112,6 +115,10 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      - name: Build Librespot audio (universal)
+        id: librespot
+        uses: ./.github/actions/build-librespot
+
       - name: Build and Lint Mobile Universal Debug APK
         shell: bash
         run: |
@@ -128,6 +135,7 @@ jobs:
                   sys.stdout.write(line)
           '
         env:
+          ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           # Pull request builds run code that has not been reviewed yet, so no provider secret reaches
@@ -159,6 +167,12 @@ jobs:
             :shared-domain:compileKotlinJvm \
             :shared-data:compileKotlinJvm \
             :shared-ui:compileKotlinDesktop
+
+      - name: Verify Librespot in the Debug APK
+        shell: bash
+        env:
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk universal --available "$LIBRESPOT_AVAILABLE"
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
@@ -263,6 +277,9 @@ jobs:
           cache-read-only: true
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Run Kotlin formatting and structural analysis
         env:
           BASE_SHA: ${{ steps.quality-base.outputs.base }}
@@ -311,6 +328,9 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -338,10 +358,48 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev gperf
 
+      # The pinned closure is content-addressed: the recipe's own pins (zlib 1.3.2, OpenSSL 3.5.9, libxml2 2.15.4,
+      # FFmpeg 8.1.3, miniaudio 0.11.25), the toolchain identity and the runner image are the key, so an exact
+      # restore replaces ~6 minutes of C compilation. scripts/native_dependency_cache.py also owns the paths, so
+      # the cache holds the validated prefix/openssl-static/manifest set rather than the multi-gigabyte build trees.
+      - name: Compute the native dependency cache key
+        if: inputs.desktop_app_image == true
+        id: native-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/native_dependency_cache.py key --kind desktop --platform linux --target-arch x64 \
+            --optional >> "$GITHUB_OUTPUT"
+
+      - name: Restore the native dependency cache
+        if: inputs.desktop_app_image == true && steps.native-key.outputs.key != ''
+        id: native-cache
+        uses: actions/cache/restore@v4
+        # A cache is an accelerator, never a prerequisite: a restore failure rebuilds the closure.
+        continue-on-error: true
+        with:
+          path: ${{ steps.native-key.outputs.paths }}
+          key: ${{ steps.native-key.outputs.key }}
+
       - name: Build host native dependencies
         if: inputs.desktop_app_image == true
         shell: bash
-        run: bash desktopApp/native/scripts/build-native-deps.sh
+        # A restored tree is skipped only when the helper revalidates its producer inputs, file inventory,
+        # SHA-256 content and ELF architecture against this checkout; anything else is rebuilt from the recipe.
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/native_dependency_cache.py && ( -e desktopApp/build/native/prefix || -e desktopApp/build/native/openssl-static || -e desktopApp/build/native/.native-deps-cache.json ) ]]; then
+            if python3 scripts/native_dependency_cache.py verify --kind desktop --platform linux --target-arch x64; then
+              echo "Native dependency cache verified; skipping the recipe."
+              exit 0
+            fi
+            echo "::warning::Native dependency cache failed validation; rebuilding it."
+            python3 scripts/native_dependency_cache.py invalidate --kind desktop --platform linux --target-arch x64
+          fi
+          bash desktopApp/native/scripts/build-native-deps.sh
+          # The manifest is the identity a later run restores against, so a cold build writes it here and the
+          # verification step below keeps reporting on the real prefix.
+          python3 scripts/native_dependency_cache.py manifest --kind desktop --platform linux --target-arch x64
 
       - name: Verify the produced Linux native dependency prefix
         # One real-prefix proof after the existing producer: manifest then verify the actual
@@ -367,15 +425,93 @@ jobs:
           echo "Native cache proof: $status"
           echo "NATIVE CACHE VERIFICATION: $status" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Save the native dependency cache
+        # Only a trusted event in this repository may write a cache another run will trust.
+        if: >-
+          success() &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          inputs.desktop_app_image == true &&
+          hashFiles('desktopApp/build/native/.native-deps-cache.json') != '' &&
+          steps.native-key.outputs.key != '' &&
+          steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ steps.native-key.outputs.paths }}
+          key: ${{ steps.native-key.outputs.key }}
+
+      # The TDLight stage is a pure function of four things: the pinned tdlight commit, the recipe itself, the
+      # static OpenSSL/zlib prefix the recipe links against (both pins live in build-native-deps.sh), and the host.
+      # build-tdjni.sh measured ~12.5 minutes on this runner class, so the compiled stage is cached under exactly
+      # those inputs. The POM of a published native carries no commit hash, so a sibling artifact is not a
+      # substitute for this key.
+      - name: Read the pinned TDLight commit
+        if: inputs.desktop_app_image == true
+        id: tdlight-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(sed -n -e 's/^TDLIGHT_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' desktopApp/tdlight-jvm/native/build-tdjni.sh)"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::desktopApp/tdlight-jvm/native/build-tdjni.sh no longer pins TDLIGHT_COMMIT to one 40-character commit."
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Pinned TDLight commit: $commit"
+
+      - name: Restore the TDLight native library cache
+        if: inputs.desktop_app_image == true && steps.tdlight-key.outputs.commit != ''
+        id: tdlight-cache
+        uses: actions/cache/restore@v4
+        # A restore failure rebuilds TDLib; it must never fail the image.
+        continue-on-error: true
+        with:
+          path: desktopApp/build/tdlight-jvm/stage
+          key: tdlight-jni-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tdlight-key.outputs.commit }}-${{ hashFiles('desktopApp/tdlight-jvm/native/build-tdjni.sh', 'desktopApp/native/scripts/build-native-deps.sh') }}
+
       - name: Build TDLight native library
         if: inputs.desktop_app_image == true
         shell: bash
         # The deps script's static OpenSSL and zlib prefixes are what this TDLib recipe links against.
         run: |
           set -euo pipefail
+          stage="desktopApp/build/tdlight-jvm/stage"
+          library="$stage/linux-x64/native/libtdjni.so"
+          notice="$stage/notices/TDLight-Boost-1.0-LICENSE.txt"
+          machine=""
+          if [ -s "$library" ]; then
+            machine="$(readelf -h "$library" | sed -n -e 's/^ *Machine: *//p')"
+          fi
+          if [ "${{ steps.tdlight-cache.outputs.cache-hit }}" = "true" ] && [ -s "$library" ] && [ -s "$notice" ] \
+              && [ "$machine" = "Advanced Micro Devices X86-64" ]; then
+            echo "Restored a validated $library from the pinned-commit cache; skipping the TDLib build."
+            exit 0
+          fi
           TDLIGHT_OPENSSL_PREFIX="$PWD/desktopApp/build/native/openssl-static" \
           TDLIGHT_ZLIB_PREFIX="$PWD/desktopApp/build/native/prefix" \
             bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+          machine="$(readelf -h "$library" | sed -n -e 's/^ *Machine: *//p')"
+          if [ "$machine" != "Advanced Micro Devices X86-64" ]; then
+            echo "::error::build-tdjni.sh staged no x86_64 $library (machine: ${machine:-unreadable})"
+            exit 1
+          fi
+          echo "Staged $library for $machine."
+
+      - name: Save the TDLight native library cache
+        if: >-
+          success() &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          inputs.desktop_app_image == true &&
+          steps.tdlight-key.outputs.commit != '' &&
+          steps.tdlight-cache.outputs.cache-hit != 'true' &&
+          hashFiles('desktopApp/build/tdlight-jvm/stage/notices/TDLight-Boost-1.0-LICENSE.txt') != ''
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: desktopApp/build/tdlight-jvm/stage
+          key: tdlight-jni-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tdlight-key.outputs.commit }}-${{ hashFiles('desktopApp/tdlight-jvm/native/build-tdjni.sh', 'desktopApp/native/scripts/build-native-deps.sh') }}
 
       - name: Build the native engine before packaging
         if: inputs.desktop_app_image == true
@@ -760,8 +896,17 @@ jobs:
         with:
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Build Librespot audio (ARM64)
+        id: librespot
+        uses: ./.github/actions/build-librespot
+        with:
+          variant: arm64
 
       - name: Assemble only the GMS mobile ARM64 release APK
         shell: bash
@@ -808,6 +953,12 @@ jobs:
           # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
           ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
             -Pautomix=false -PslimTdlib=true
+
+      - name: Verify Librespot in the candidate APK
+        shell: bash
+        env:
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk arm64 --available "$LIBRESPOT_AVAILABLE"
 
       - name: Stage and validate the assembled release APK
         shell: bash

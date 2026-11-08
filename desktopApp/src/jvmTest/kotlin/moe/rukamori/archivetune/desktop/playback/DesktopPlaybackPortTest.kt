@@ -208,8 +208,15 @@ class DesktopPlaybackPortTest {
             }
 
             controller.pause()
-            awaitValue("the controller seeing the pause") { controller.snapshot.value?.takeIf { !it.playWhenReady } }
+            // The pause reaches the engine on its own audio callback, so the settled snapshot — not the first
+            // playWhenReady=false read — is where the interpolated position has to hold. Reading it earlier measured
+            // how quickly the command was published: the drain that follows keeps the anchor advancing, so the
+            // position had already moved by the time it was compared.
+            val settled = awaitValue("the controller seeing the settled pause") {
+                controller.snapshot.value?.takeIf { !it.playWhenReady && !it.isAudioAdvancing }
+            }
             val held = assertNotNull(controller.positionMs())
+            assertEquals(settled.positionMs, held, "a settled pause is the position the controller holds")
             Thread.sleep(300L)
 
             assertEquals(held, assertNotNull(controller.positionMs()), "the controller moved while paused")

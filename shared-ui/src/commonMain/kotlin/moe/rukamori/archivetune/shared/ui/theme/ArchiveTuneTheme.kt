@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.AppFontPreference
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -30,7 +31,15 @@ fun ArchiveTuneTheme(
     colorScheme: ColorScheme = archiveTuneDefaultColorScheme(darkTheme),
     content: @Composable () -> Unit,
 ) {
-    val appFamily = FontFamily(Font(Res.font.m4_poppins))
+    // The one bundled family carries real 400/500/600/700 faces. A single Regular file made every Material 3
+    // Medium/SemiBold/Bold style either flat or a synthesised weight, so the type hierarchy had one voice.
+    // Scripts outside Latin/Devanagari come from the platform's own font stack (see SystemFontFallback).
+    val appFamily = FontFamily(
+        Font(Res.font.m4_poppins, FontWeight.Normal),
+        Font(Res.font.m4_poppins_medium, FontWeight.Medium),
+        Font(Res.font.m4_poppins_semibold, FontWeight.SemiBold),
+        Font(Res.font.m4_poppins_bold, FontWeight.Bold),
+    )
     val family = when (fontPreference) {
         AppFontPreference.DEFAULT -> appFamily
         AppFontPreference.SYSTEM -> FontFamily.Default
@@ -58,6 +67,16 @@ fun ArchiveTuneTheme(
  */
 internal fun archiveTuneDefaultColorScheme(darkTheme: Boolean): ColorScheme =
     if (darkTheme) darkColorScheme() else lightColorScheme()
+
+/**
+ * The window's own background, for the hosts that own the pixels Compose does not paint: the strip an in-flight
+ * resize has not repainted yet and whatever the compositor cuts out of a rounded window corner. The toolkit's
+ * default there is black, which reads as a hole in the window; the app's background colour reads as the page.
+ *
+ * It follows the default scheme rather than a saved wallpaper palette because it is only ever visible for a frame or
+ * in a corner, and the dark and light backgrounds are what the window is surrounded by either way.
+ */
+fun archiveTuneWindowBackground(darkTheme: Boolean): Color = archiveTuneDefaultColorScheme(darkTheme).background
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal object DisabledArchiveTuneMotion : MotionScheme {

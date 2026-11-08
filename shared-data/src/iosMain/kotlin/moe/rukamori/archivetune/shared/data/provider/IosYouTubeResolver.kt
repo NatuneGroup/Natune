@@ -53,13 +53,9 @@ private const val MINT_BUDGET_MS = 3_000L
 /** Echo's last-byte probe stays well inside its 20 s tier bound. */
 private const val ECHO_PROBE_TIMEOUT_MS = 8_000L
 private const val ECHO_PROBE_CHUNK_BYTES = 512L * 1024L
-private const val ECHO_WEBM_BONUS = 10_240
 private const val PRIVATE_TRACK_TYPE = "MUSIC_VIDEO_TYPE_PRIVATELY_OWNED_TRACK"
 
 private val VIDEO_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
-
-/** The audio itags the shipped resolver prefers, best first, the same ladder the Android walk uses. */
-private val PREFERRED_ITAGS = listOf(251, 140, 250, 249, 141, 139)
 
 private val LOGIN_REASONS = listOf("sign in", "sign-in", "login")
 private val BOT_REASONS = listOf("bot", "unusual traffic", "automated")
@@ -196,7 +192,7 @@ class IosYouTubeResolver(
                 withTimeoutOrNull(tier.timeoutMs) {
                     val result =
                         when (tier) {
-                            YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target)
+                            YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target, request)
                             YouTubeFallbackTier.NEWPIPE -> resolveNewPipe(target, request)
                             YouTubeFallbackTier.ECHO -> resolveEcho(target)
                         }
@@ -256,7 +252,7 @@ class IosYouTubeResolver(
     private suspend fun innerTubePlayer(client: YouTubeClient, videoId: String, poToken: String?): PlayerResponse =
         innerTube.player(client, videoId, poToken = poToken).body()
 
-    private suspend fun resolveInnerTubeX(target: IosYouTubeTarget): PreparedAudio? {
+    private suspend fun resolveInnerTubeX(target: IosYouTubeTarget, request: AudioResolveRequest): PreparedAudio? {
         prewarmOnce()
         val stream =
             extractor.extract(
@@ -267,7 +263,7 @@ class IosYouTubeResolver(
                         allowSabr = false,
                         allowBoundedRange = false,
                     ),
-                audioQuality = requestAudioQualityInnerTubeX(),
+                audioQuality = requestAudioQualityInnerTubeX(request),
             ) ?: return null
         if (stream.audioUrl.contains("/manifest/hls") || stream.audioUrl.contains(".m3u8")) {
             throw IosInnerTubeXException("InnerTubeX returned an HLS manifest for ${target.videoId}")
@@ -504,13 +500,14 @@ class IosYouTubeResolver(
             null
         }
 
-    /** Echo's format pick: the highest-bitrate audio, with the webm container preference it adds. */
+    /** Use the same iOS container preference in the final fallback tier. */
     private fun echoPickAudio(
         formats: List<PlayerResponse.StreamingData.Format>,
     ): PlayerResponse.StreamingData.Format? =
-        formats
-            .filter { it.isAudio && !it.url.isNullOrBlank() }
-            .maxByOrNull { it.bitrate + if (it.mimeType.startsWith("audio/webm")) ECHO_WEBM_BONUS else 0 }
+        selectIosAudioFormat(
+            formats.filter { it.isAudio && !it.url.isNullOrBlank() },
+            mimeType = { it.mimeType }, bitrate = { it.bitrate }, low = false,
+        )
 
     /** The `PlaybackDiagnostics` line Android writes once per tier, with the same tier names. */
     private fun logTier(name: String, resolved: Boolean, elapsedMs: Long, reason: String?) {
@@ -596,13 +593,9 @@ class IosYouTubeResolver(
             request.qualities[AudioSourceType.YOUTUBE] ?: preferences()?.get(AudioQualityKey)
         )
 
-    private fun requestAudioQualityInnerTubeX(): InnerTubeXAudioQuality =
-        when (IosYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey))) {
-            IosYouTubeAudioQuality.AUTO -> InnerTubeXAudioQuality.AUTO
-            IosYouTubeAudioQuality.LOW -> InnerTubeXAudioQuality.LOW
-            // InnerTubeX has no distinct highest tier; HIGH is its best lossy audio.
-            IosYouTubeAudioQuality.HIGH, IosYouTubeAudioQuality.HIGHEST -> InnerTubeXAudioQuality.HIGH
-        }
+    private fun requestAudioQualityInnerTubeX(request: AudioResolveRequest): InnerTubeXAudioQuality =
+        if (requestAudioQuality(request) == IosYouTubeAudioQuality.LOW) InnerTubeXAudioQuality.LOW
+        else InnerTubeXAudioQuality.MP4
 
     /**
      * The shipped order: the chosen client, the last successful one, then the app's fallbacks, then the main client,
@@ -720,16 +713,7 @@ private fun pickFormat(
             format.isAudio && format.url?.isNotBlank() == true &&
                 format.signatureCipher == null && format.cipher == null
         }
-    if (audio.isEmpty()) return null
-    return when (quality) {
-        IosYouTubeAudioQuality.LOW -> audio.minByOrNull { it.bitrate }
-        else -> audio.maxByOrNull { itagRank(it) * 1_000_000 + it.bitrate }
-    }
-}
-
-private fun itagRank(format: PlayerResponse.StreamingData.Format): Int {
-    val index = PREFERRED_ITAGS.indexOf(format.itag)
-    return if (index < 0) 0 else PREFERRED_ITAGS.size - index
+    return selectIosAudioFormat(audio, { it.mimeType }, { it.bitrate }, quality == IosYouTubeAudioQuality.LOW)
 }
 
 private fun PlayerResponse.StreamingData.Format.toDirectStream(

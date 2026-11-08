@@ -57,6 +57,14 @@ internal class DesktopEnginePrewarm(
     private val mutableState = MutableStateFlow<DesktopEnginePrewarmState>(DesktopEnginePrewarmState.Idle)
     val state: StateFlow<DesktopEnginePrewarmState> = mutableState.asStateFlow()
 
+    companion object {
+        /**
+         * The process's one warm. The window starts it from its first composition, and the startup self-check reads
+         * the same instance, so "did the engine load" has one answer for the whole process instead of one per owner.
+         */
+        val process: DesktopEnginePrewarm by lazy { DesktopEnginePrewarm() }
+    }
+
     /** Starts the one warm. Every later call is a no-op, including one after a failure, so no load is retried. */
     fun start() {
         if (!started.compareAndSet(false, true)) return

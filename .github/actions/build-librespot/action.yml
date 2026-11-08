@@ -1,0 +1,119 @@
+name: Build Librespot audio JNI
+description: Prepare pinned Android JNI, or explicitly mark the optional source unavailable
+inputs:
+  variant:
+    description: ABI flavor or shipping distribution-device-ABI variant
+    default: universal
+outputs:
+  available:
+    description: All selected ABI libraries were built or restored from an exact verified cache
+    value: ${{ steps.prepared.outputs.available }}
+runs:
+  using: composite
+  steps:
+    - name: Select ABI cache
+      id: selection
+      shell: bash
+      env:
+        LIBRESPOT_VARIANT: ${{ inputs.variant }}
+      run: |
+        set -euo pipefail
+        abis="$(python3 native/librespot/android-artifact.py abis "$LIBRESPOT_VARIANT")"
+        echo "abis=${abis// /_}" >> "$GITHUB_OUTPUT"
+        # Recipe-owned output only: a failed build must never package an old/partial library.
+        rm -rf app/build/generated/librespot
+
+    - name: Restore exact prepared JNI
+      id: binary-cache
+      continue-on-error: true
+      uses: actions/cache/restore@v5
+      with:
+        path: app/build/generated/librespot
+        key: librespot-jni-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+
+    - name: Validate prepared JNI
+      id: restored
+      if: steps.binary-cache.outputs.cache-hit == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        LIBRESPOT_VARIANT: ${{ inputs.variant }}
+      run: python3 native/librespot/android-artifact.py validate "$LIBRESPOT_VARIANT"
+
+    - name: Set up pinned Rust
+      id: rust
+      if: steps.restored.outcome != 'success'
+      continue-on-error: true
+      uses: dtolnay/rust-toolchain@1.97.1
+
+    - name: Restore Cargo inputs
+      id: cargo-cache
+      if: steps.restored.outcome != 'success' && steps.rust.outcome == 'success'
+      continue-on-error: true
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: librespot-cargo-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+        restore-keys: |
+          librespot-cargo-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-
+
+    - name: Cross-compile selected ABIs and check JNI exports
+      id: build
+      if: steps.restored.outcome != 'success' && steps.rust.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        LIBRESPOT_VARIANT: ${{ inputs.variant }}
+      run: |
+        set -euo pipefail
+        rm -rf app/build/generated/librespot
+        bash native/librespot/build-android.sh "$LIBRESPOT_VARIANT"
+
+    - name: Set APK native requirement
+      id: prepared
+      shell: bash
+      env:
+        LIBRESPOT_VARIANT: ${{ inputs.variant }}
+        PREPARED: ${{ steps.restored.outcome == 'success' || steps.build.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        if [[ "$PREPARED" == 'true' ]]; then
+          python3 native/librespot/android-artifact.py validate "$LIBRESPOT_VARIANT"
+          echo 'available=true' >> "$GITHUB_OUTPUT"
+          echo 'ORG_GRADLE_PROJECT_requireLibrespotAudio=true' >> "$GITHUB_ENV"
+          echo "Librespot JNI ready: $LIBRESPOT_VARIANT (exact cache or compiled)." >> "$GITHUB_STEP_SUMMARY"
+        else
+          rm -rf app/build/generated/librespot
+          echo 'available=false' >> "$GITHUB_OUTPUT"
+          echo 'ORG_GRADLE_PROJECT_requireLibrespotAudio=false' >> "$GITHUB_ENV"
+          echo '::warning::Librespot native preparation failed; APK will omit this optional source and playback will use the configured fallback.'
+          echo "Librespot JNI UNAVAILABLE: $LIBRESPOT_VARIANT; APK omits this source." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Save exact prepared JNI (trusted producer only)
+      if: >-
+        steps.build.outcome == 'success' && steps.binary-cache.outputs.cache-hit != 'true' &&
+        github.event_name != 'pull_request' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+      continue-on-error: true
+      uses: actions/cache/save@v5
+      with:
+        path: app/build/generated/librespot
+        key: ${{ steps.binary-cache.outputs.cache-primary-key }}
+
+    - name: Save Cargo inputs (trusted producer only)
+      if: >-
+        steps.build.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true' &&
+        github.event_name != 'pull_request' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+      continue-on-error: true
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: ${{ steps.cargo-cache.outputs.cache-primary-key }}

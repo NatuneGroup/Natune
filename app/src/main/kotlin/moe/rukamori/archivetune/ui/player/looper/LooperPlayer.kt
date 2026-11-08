@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +50,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -75,6 +75,7 @@ import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.PlayerWindowLayout
 import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.compose.animation.core.snap
 import androidx.compose.runtime.rememberUpdatedState
@@ -123,8 +124,6 @@ fun LooperPlayerContent(
 ) {
     val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val haptic = LocalHapticFeedback.current
-    val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp.dp
 
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val currentSongLiked = currentSong?.song?.liked == true
@@ -261,11 +260,13 @@ fun LooperPlayerContent(
 
                 Spacer(Modifier.height(16.dp))
 
-                Box(
+                BoxWithConstraints(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val artSize = screenWidthDp - 40.dp
+                    // The square that fits the stage it is given, not the device screen's width:
+                    // in a short pop-up window the latter overflowed the controls below it.
+                    val artSize = PlayerWindowLayout.fittedArtwork(maxWidth, maxHeight)
                     if (videoShowing && videoState != null) {
                         InlineVideoPlayer(
                             state = videoState,

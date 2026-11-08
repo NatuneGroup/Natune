@@ -15,9 +15,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,15 +79,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,10 +93,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.window.core.layout.WindowSizeClass
-import coil3.compose.AsyncImage
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -125,11 +115,13 @@ import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.GitCommit
+import moe.rukamori.archivetune.utils.UpdateAction
 import moe.rukamori.archivetune.utils.UpdateNotificationManager
 import moe.rukamori.archivetune.utils.UpdateOffer
 import moe.rukamori.archivetune.utils.Updater
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.resolveUpdateAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,11 +192,10 @@ fun UpdateScreen(
     val downloadState by AppUpdateInstaller.downloadState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val openUpdateUrl: (String) -> Unit = { url ->
-        try {
-            uriHandler.openUri(url)
-        } catch (_: Exception) {
-        }
+    // Returns false when no activity can handle the URL. The caller turns that into a visible error
+    // instead of the previous silent catch, which made the "Update" action look like a dead tap.
+    val openUpdateUrl: (String) -> Boolean = { url ->
+        runCatching { uriHandler.openUri(url) }.isSuccess
     }
 
     val onUpdateChannelChange: (UpdateChannel) -> Unit = { channel ->
@@ -220,16 +211,60 @@ fun UpdateScreen(
             }
         }
     }
-    val installUpdate: (UpdateOffer, Long) -> Unit = { offer, revision ->
+    val installUpdate: (UpdateOffer?, Long) -> Unit = { offer, revision ->
         coroutineScope.launch {
-            if (Updater.isCurrentSelection(offer.channel, revision)) {
-                updateSheetState.dismiss()
-                if (useInAppUpdateInstaller) {
+            // isCurrentSelection reads the DataStore, so resolve it here and let the pure decision
+            // below map every outcome to a visible action. A stale offer (already installed, or
+            // captured before a channel switch) must never fall through an early return with no
+            // feedback — that is exactly the "Update button does nothing" symptom when the reader
+            // is already on the newest nightly.
+            val selectionIsCurrent = offer?.let { Updater.isCurrentSelection(it.channel, revision) } ?: false
+            when (
+                resolveUpdateAction(
+                    offer = offer,
+                    installedCode = BuildConfig.VERSION_CODE,
+                    selectionIsCurrent = selectionIsCurrent,
+                    canInstallDirectly = useInAppUpdateInstaller,
+                )
+            ) {
+                UpdateAction.UP_TO_DATE -> {
+                    updateSheetState.dismiss()
                     updateSheetError = null
                     showUpdateErrorDialog = false
-                    AppUpdateInstaller.startDownload(context, offer)
-                } else {
-                    openUpdateUrl(offer.downloadUrl)
+                    showUpdateUpToDateDialog = true
+                    onUpToDate()
+                }
+
+                UpdateAction.ERROR -> {
+                    updateSheetState.dismiss()
+                    updateSheetError = context.getString(R.string.update_feed_unavailable)
+                    showUpdateUpToDateDialog = false
+                    showUpdateErrorDialog = true
+                }
+
+                UpdateAction.INSTALL_DIRECT -> {
+                    val started = AppUpdateInstaller.startDownload(context, offer!!)
+                    updateSheetState.dismiss()
+                    updateSheetError = null
+                    showUpdateErrorDialog = false
+                    if (!started) {
+                        // resolveUpdateAction already rejected stale/not-newer offers, so a false
+                        // return means an attempt is still in flight. Its progress dialog is the
+                        // feedback; confirm it here so the tap is never silent.
+                        snackbarHostState.showSnackbar(context.getString(R.string.update_already_in_progress))
+                    }
+                }
+
+                UpdateAction.OPEN_URL -> {
+                    updateSheetState.dismiss()
+                    if (openUpdateUrl(offer!!.downloadUrl)) {
+                        updateSheetError = null
+                        showUpdateErrorDialog = false
+                    } else {
+                        updateSheetError = context.getString(R.string.update_feed_unavailable)
+                        showUpdateUpToDateDialog = false
+                        showUpdateErrorDialog = true
+                    }
                 }
             }
         }
@@ -334,8 +369,9 @@ fun UpdateScreen(
         val offer = updateSheetOffer
         val revision = updateSheetRevision
         Button(
-            onClick = { if (offer != null) installUpdate(offer, revision) },
-            enabled = offer != null && offer.channel == updateChannel,
+            // Always resolve through installUpdate: even a stale or missing offer now resolves to a
+            // visible "up to date"/error result instead of the button silently doing nothing.
+            onClick = { installUpdate(offer, revision) },
             modifier = Modifier.fillMaxWidth(),
             shapes = ButtonDefaults.shapes(),
         ) {
@@ -359,36 +395,49 @@ fun UpdateScreen(
                 coroutineScope.launch {
                     val requestChannel = updateChannel
                     val revision = Updater.selectionRevision
-                    val releaseResult = Updater.getLatestRelease(requestChannel, forceRefresh = true)
-                    if (!Updater.isCurrentSelection(requestChannel, revision)) return@launch
-
-                    updateSheetLoading = false
-
-                    releaseResult
-                        .onSuccess { release ->
-                            val offer = Updater.eligibleOffer(release, requestChannel)
-                            val version = Updater.releaseVersionName(release, requestChannel)
-                            latestVersion = version
-                            latestOffer = offer
-                            updateSheetOffer = offer
-                            updateSheetRevision = revision
-                            updateSheetNotes = release.body
-                            updateSheetIsSameVersion = offer == null
-                            updateSheetVersion = version
-
-                            if (updateSheetIsSameVersion) {
-                                showUpdateUpToDateDialog = true
-                                onUpToDate()
-                            } else {
-                                updateSheetState.show(updateSheetContent)
-                            }
-                        }.onFailure { error ->
-                            latestVersion = ""
-                            latestOffer = null
-                            updateSheetOffer = null
-                            updateSheetError = error.message ?: context.getString(R.string.error_unknown)
-                            showUpdateErrorDialog = true
+                    // try/finally guarantees the non-dismissable "Checking…" dialog is cleared even
+                    // when the request is cancelled, the channel switches mid-flight, or the feed
+                    // throws. Leaving it up consumed every tap and read as a permanently stale
+                    // button.
+                    try {
+                        val releaseResult = Updater.getLatestRelease(requestChannel, forceRefresh = true)
+                        if (!Updater.isCurrentSelection(requestChannel, revision)) {
+                            // A channel switch invalidated this check. Report it instead of silently
+                            // returning with the dialog still showing.
+                            updateSheetState.dismiss()
+                            showUpdateUpToDateDialog = true
+                            onUpToDate()
+                            return@launch
                         }
+
+                        releaseResult
+                            .onSuccess { release ->
+                                val offer = Updater.eligibleOffer(release, requestChannel)
+                                val version = Updater.releaseVersionName(release, requestChannel)
+                                latestVersion = version
+                                latestOffer = offer
+                                updateSheetOffer = offer
+                                updateSheetRevision = revision
+                                updateSheetNotes = release.body
+                                updateSheetIsSameVersion = offer == null
+                                updateSheetVersion = version
+
+                                if (updateSheetIsSameVersion) {
+                                    showUpdateUpToDateDialog = true
+                                    onUpToDate()
+                                } else {
+                                    updateSheetState.show(updateSheetContent)
+                                }
+                            }.onFailure { error ->
+                                latestVersion = ""
+                                latestOffer = null
+                                updateSheetOffer = null
+                                updateSheetError = error.message ?: context.getString(R.string.error_unknown)
+                                showUpdateErrorDialog = true
+                            }
+                    } finally {
+                        updateSheetLoading = false
+                    }
                 }
         }
     }
@@ -707,7 +756,14 @@ fun UpdateScreen(
 
     if (updateSheetLoading) {
         AlertDialog(
-            onDismissRequest = {},
+            // The check now always clears this flag in a finally block, but it must also be
+            // escapable: a non-dismissable dialog left on screen by any unexpected path traps the
+            // reader and makes every button behind it look dead.
+            onDismissRequest = {
+                updateCheckJob?.cancel()
+                updateCheckJob = null
+                updateSheetLoading = false
+            },
             icon = {
                 LoadingIndicator(
                     modifier = Modifier.size(24.dp),
@@ -719,7 +775,17 @@ fun UpdateScreen(
                     style = MaterialTheme.typography.headlineSmall,
                 )
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        updateCheckJob?.cancel()
+                        updateCheckJob = null
+                        updateSheetLoading = false
+                    },
+                ) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+            },
         )
     }
 
@@ -1273,269 +1339,3 @@ private fun UpdatePreferencesPanel(
         }
     }
 }
-
-@Composable
-private fun CommitHistorySection(
-    commits: List<GitCommit>,
-    isLoading: Boolean,
-    isExpanded: Boolean,
-    rotationAngle: Float,
-    modifier: Modifier = Modifier,
-    onToggleExpanded: () -> Unit,
-    onCommitClick: (GitCommit) -> Unit,
-) {
-    Column(
-        modifier = modifier.animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SettingsGlassSegment(index = 0, count = 1) {
-            SegmentedListItem(
-                onClick = onToggleExpanded,
-                shapes =
-                    ListItemDefaults.shapes(
-                        shape = MaterialTheme.shapes.extraLarge,
-                    ),
-                modifier = Modifier.fillMaxWidth(),
-                colors =
-                    ListItemDefaults.segmentedColors(
-                        containerColor = Color.Transparent,
-                    ),
-                leadingContent = {
-                    FeatureIcon(
-                        iconRes = R.drawable.history,
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                },
-                trailingContent = {
-                    Icon(
-                        painter = painterResource(R.drawable.expand_more),
-                        contentDescription = null,
-                        modifier = Modifier.rotate(rotationAngle),
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text =
-                            when {
-                                isLoading -> {
-                                    stringResource(R.string.updates_loading_commits)
-                                }
-
-                                commits.isEmpty() -> {
-                                    stringResource(R.string.updates_no_commits)
-                                }
-
-                                else -> {
-                                    stringResource(
-                                        R.string.updates_recent_commits_count,
-                                        commits.size,
-                                    )
-                                }
-                            },
-                    )
-                },
-                content = {
-                    Text(
-                        text = stringResource(R.string.recent_commits),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-            )
-        }
-
-        AnimatedVisibility(visible = isExpanded) {
-            when {
-                isLoading -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                LoadingIndicator(modifier = Modifier.size(32.dp))
-                                Text(
-                                    text = stringResource(R.string.updates_loading_commits),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                commits.isEmpty() -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.updates_no_commits),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 32.dp),
-                        )
-                    }
-                }
-
-                else -> {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-                    ) {
-                        commits.forEachIndexed { index, commit ->
-                            key(commit.sha) {
-                                CommitItem(
-                                    commit = commit,
-                                    index = index,
-                                    count = commits.size,
-                                    onClick = { onCommitClick(commit) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeatureIcon(
-    @DrawableRes iconRes: Int,
-    containerColor: Color,
-    contentColor: Color,
-) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = containerColor,
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = contentColor,
-            modifier =
-                Modifier
-                    .padding(12.dp)
-                    .size(22.dp),
-        )
-    }
-}
-
-@Composable
-private fun CommitItem(
-    commit: GitCommit,
-    index: Int,
-    count: Int,
-    onClick: () -> Unit,
-) {
-    SettingsGlassSegment(index = index, count = count) {
-        SegmentedListItem(
-            onClick = onClick,
-            shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp),
-            colors =
-                ListItemDefaults.segmentedColors(
-                    containerColor = Color.Transparent,
-                ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            leadingContent = {
-                CommitAvatar(avatarUrl = commit.authorAvatarUrl)
-            },
-            trailingContent = {
-                Icon(
-                    painter = painterResource(R.drawable.arrow_forward),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            supportingContent = {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = commit.sha,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text =
-                            if (commit.date.isNotEmpty()) {
-                                commit.author + " - " + formatCommitDate(commit.date)
-                            } else {
-                                commit.author
-                            },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            },
-            content = {
-                Text(
-                    text = commit.message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-        )
-    }
-}
-
-@Composable
-private fun CommitAvatar(avatarUrl: String?) {
-    Surface(
-        modifier = Modifier.size(40.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            if (!avatarUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    painter = painterResource(R.drawable.github),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-private fun formatCommitDate(isoDate: String): String =
-    try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        inputFormat.timeZone = TimeZone.getTimeZone("UTC")
-        val date = inputFormat.parse(isoDate)
-        val outputFormat = SimpleDateFormat("MMM d", Locale.getDefault())
-        outputFormat.format(date!!)
-    } catch (e: Exception) {
-        isoDate.take(10)
-    }

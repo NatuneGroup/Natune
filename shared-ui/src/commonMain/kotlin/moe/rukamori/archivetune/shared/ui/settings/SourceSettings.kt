@@ -176,11 +176,10 @@ fun sourceSettingsRows(
         SettingsRow.Option("AUTO", Res.string.m6_quality_auto), SettingsRow.Option("HIGH", Res.string.m6_high),
         SettingsRow.Option("HIGHEST", Res.string.m6_highest), SettingsRow.Option("LOW", Res.string.m6_low))))
     add(SettingsRow.Toggle("auto_choose_playback_client", Res.string.m6_auto_client, AutoChoosePlaybackClientKey, true))
-    add(SettingsRow.Choice("player_stream_client", Res.string.m6_playback_client, PlayerStreamClientKey, "WEB_REMIX",
-        listOf("ANDROID_VR" to Res.string.m6_client_android_vr, "WEB_REMIX" to Res.string.m6_client_web_remix,
-            "IOS" to Res.string.m6_client_ios,
-            "TVHTML5" to Res.string.m6_client_tv, "ANDROID_MUSIC" to Res.string.m6_client_android_music)
-            .map { SettingsRow.Option(it.first, it.second) }, enabled = !preferences[AutoChoosePlaybackClientKey, true]))
+    add(SettingsRow.Choice("player_stream_client", Res.string.m6_playback_client, PlayerStreamClientKey,
+        PlaybackClientChoice.WEB_REMIX.preference,
+        PlaybackClientChoice.entries.map { SettingsRow.Option(it.preference, it.settingsLabel()) },
+        enabled = !preferences[AutoChoosePlaybackClientKey, true]))
     add(SettingsRow.Toggle("tidal_enable", Res.string.m6_source_tidal, TidalEnabledKey, true))
     add(SettingsRow.Toggle("tidal_account_first", Res.string.m6_tidal_account_first, TidalAccountFirstKey, true, enabled = preferences[TidalEnabledKey, true]))
     add(SettingsRow.Choice("tidal_audio_quality", Res.string.m6_audio_quality, TidalAudioQualityKey, "FLAC",
@@ -223,6 +222,7 @@ internal fun AudioSourceType.settingsLabel(): StringResource = when (this) {
     AudioSourceType.DEEZER -> Res.string.m6_source_deezer
     AudioSourceType.APPLE -> Res.string.m6_apple_music
     AudioSourceType.AMAZON -> Res.string.m6_source_amazon
+    AudioSourceType.MODULES -> Res.string.source_modules
     AudioSourceType.QQ -> Res.string.m6_source_qq
     AudioSourceType.SPOTIFY -> Res.string.m6_source_spotify_stream
     AudioSourceType.JIOSAAVN -> Res.string.m6_source_jio
@@ -241,4 +241,13 @@ internal fun qualityOptions(vararg names: String): List<SettingsRow.Option> = na
         "QUALITY_96" -> Res.string.m6_quality_96
         else -> error("Unsupported quality identity")
     })
+}
+
+/** The name one playback client is listed under; exhaustive, so a new choice cannot be offered without its label. */
+internal fun PlaybackClientChoice.settingsLabel(): StringResource = when (this) {
+    PlaybackClientChoice.ANDROID_VR -> Res.string.m6_client_android_vr
+    PlaybackClientChoice.WEB_REMIX -> Res.string.m6_client_web_remix
+    PlaybackClientChoice.IOS -> Res.string.m6_client_ios
+    PlaybackClientChoice.TVHTML5 -> Res.string.m6_client_tv
+    PlaybackClientChoice.ANDROID_MUSIC -> Res.string.m6_client_android_music
 }

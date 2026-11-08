@@ -53,6 +53,9 @@ import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSyncControls
 import moe.rukamori.archivetune.shared.ui.navigation.ExternalLink
+import moe.rukamori.archivetune.shared.ui.desktop.DesktopLyricsPane
+import moe.rukamori.archivetune.shared.ui.host.activeLyricsOccurrence
+import moe.rukamori.archivetune.shared.ui.host.belongingTo
 import moe.rukamori.archivetune.shared.ui.navigation.ExternalLinks
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.capabilities
@@ -60,10 +63,11 @@ import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
 
 /**
- * Blur is the one optical effect this host draws. Refraction stays off until a native owner reports it, so the
- * glass policy never promises an effect the window cannot show.
+ * Blur is the one optical effect this host draws, and only while a GPU renderer is drawing: software rasterisation
+ * reports false here instead of paying a per-frame CPU blur. Refraction stays off until a native owner reports it, so
+ * the glass policy never promises an effect the window cannot show.
  */
-internal val DesktopOpticalCapabilities = OpticalCapabilities(blur = true, refraction = false)
+internal val DesktopOpticalCapabilities: OpticalCapabilities get() = DesktopRendererDiagnostics.capabilities
 
 /**
  * The root's bindings over the one session graph. The queue, the player, the settings and the external links are real.
@@ -123,6 +127,8 @@ internal fun desktopHostBindings(
         },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
+        // The window's account avatar reads the same picture the account settings page stores, through that client.
+        accountAvatar = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         // Feed dates are epoch seconds, the unit the Android host stores and formats.
         formatNewsDate = { epochSeconds -> dates.format(Date(epochSeconds * 1_000L)) },
@@ -150,6 +156,10 @@ internal fun desktopHostBindings(
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
             DesktopLyricsShareNotice(lyricsTools)
+            // Device Connect spans playback, queue handoff and remote control on this window. Mounting it
+            // once here means an incoming pairing/hand-off prompt or the Connected devices sheet can show
+            // over any page, and its settings row stays reachable through the settings tree.
+            DesktopDeviceConnectHost(graph) { ownRoutes.trySend("settings/integrations/device_connect") }
         },
         playerSlots = { expanded, active, _ -> desktopPlayerSlots(graph, canvas, canvasFrames, lyricsTools, expanded, active) },
         // Native volume and output state come from the same engine as playback.
@@ -268,11 +278,16 @@ private fun desktopPlayerSlots(
     graph: DesktopSessionGraph, canvas: DesktopCanvasOwner, canvasFrames: DesktopCanvasFrames,
     tools: DesktopLyricsTools, expanded: Boolean, active: Boolean,
 ): PlayerSlots {
-    val document by graph.lyrics.current.collectAsState()
+    val published by graph.lyrics.current.collectAsState()
     val playback by graph.player.snapshot.collectAsState()
     val queue by graph.queue.state.collectAsState()
+    // The occurrence on screen: the player's, or the queue's before playback starts or after it failed. The player
+    // publishes a track change before the lyrics owner has read it, so the owner's document is the previous track's
+    // until then; every slot below works from the document that belongs to this occurrence.
+    val activeOccurrenceId = activeLyricsOccurrence(playback?.occurrenceId, queue.currentOccurrenceId)
+    val document = published.belongingTo(activeOccurrenceId)
     val occurrenceId = document?.occurrenceId
-    val current = queue.entries.firstOrNull { it.occurrenceId == occurrenceId }
+    val current = queue.entries.firstOrNull { it.occurrenceId == activeOccurrenceId }
     val matching = occurrenceId != null && playback?.occurrenceId == occurrenceId
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
@@ -300,7 +315,9 @@ private fun desktopPlayerSlots(
         canvas.setVisible(expanded && active && style.capabilities.artworkCanvas)
     }
     val lyrics = playerLyricsSlots(
-        lines = document?.lines.orEmpty().takeIf { matching }.orEmpty(),
+        // The document belongs to the queue occurrence on screen, so its lines stay readable while playback has not
+        // started or has failed: the player snapshot is the highlight clock, not a condition for showing the text.
+        lines = document?.lines.orEmpty(),
         sessionKey = sessionKey,
         playback = graph.player.snapshot,
         romanization = romanization,
@@ -313,7 +330,7 @@ private fun desktopPlayerSlots(
         ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
-        credits = if (matching) document?.credits else null,
+        credits = document?.credits,
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
@@ -329,7 +346,17 @@ private fun desktopPlayerSlots(
                     storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
                     { if (ref != null) tools.offsets.reset(ref) }, enabled = matching && ref != null,
                 )
-                Box(Modifier.weight(1f)) { lyrics.full(Modifier.fillMaxSize()) }
+                Box(Modifier.weight(1f)) {
+                    // The pane resolves the published document itself: a track change shows the read of the track on
+                    // screen, never the previous track's lines. With no document for this occurrence it names the
+                    // state it is in, and an ordinary miss offers the lookup again.
+                    DesktopLyricsPane(
+                        document = published,
+                        playbackOccurrenceId = playback?.occurrenceId,
+                        queueOccurrenceId = queue.currentOccurrenceId,
+                        onRetry = graph.lyrics::retry,
+                    ) { bodyModifier -> lyrics.full(bodyModifier.fillMaxSize()) }
+                }
             }
         },
         compactLyrics = lyrics.compact,

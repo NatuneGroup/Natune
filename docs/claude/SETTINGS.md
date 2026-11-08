@@ -4,6 +4,12 @@
 
 Settings search uses parent routes and `?scrollTo=` anchors. Preserve both when changing groups. There is no manual-login gate: every sign-in row on Integration (Tidal, Qobuz, Deezer, Amazon, Apple Music, QQ Music, Telegram) is always visible. The `Use pool accounts` switch at the top of the Music Sources group (default on; rendered only where a pool URL is baked in) decides whether the community Source Pool's shared accounts are consulted at all — off means no pool fetch, and the "Refresh from pool" row is hidden.
 
+Android's Sources > Refresh from pool explicitly forces the account feed refresh,
+while retaining rejected-key backoff. The row observes the feed owner's status:
+loading, cached counts for all five services, last network attempt and errors.
+Cached accounts do not turn a failed fetch into success. Feed errors survive restart,
+and initial disk loading shares the refresh mutex so it cannot replace a newer feed.
+
 Important Integration anchors include `external_sources`, `spotify`, `music_sources`, `use_pool_accounts`, `lastfm_scrobbling`, `lastfm_account`, `listenbrainz`, and `cross_service_import`.
 
 Player → Queue exposes **Infinite queue** at `infinite_queue`, also searchable by
@@ -19,6 +25,44 @@ The Android Player page carries one **Audio processing** switch after `bit_perfe
 Between `bit_perfect_usb` and the engines sits `usb_exclusive_audio` (`UsbExclusiveAudioKey`, off by default, search entry navigates only). It is sampled when the service starts: with it on, the standard sink gets `playback/dsp/UsbExclusiveAudioOutputProvider`, which opens an exclusive AAudio stream on the routed USB DAC and otherwise defers to a stock `AudioTrackAudioOutputProvider`; with it off the sink is built exactly as before. It and bit-perfect USB output, crossfade, automix and audio offload turn each other off (the provider re-checks the same switches live, so a stale combination still plays normally). The shared chain stays usable: it runs in the sink's processor list ahead of the output. The switch is disabled when `libarchivetune_dsp` fails to load. While engaged it publishes to `EngineRuntime`/`BitPerfectRuntime`, which shows the media-info pipeline row and the live chain pill's USB route; it never claims verified bit-perfect.
 
 Appearance (`settings/appearance`) is one scrolling page in three sections — Theme, Player and Interface — whose first groups carry the section anchors `appearance_theme`, `appearance_player` and `appearance_interface`. The former sub-page routes `settings/appearance/theme`, `/player` and `/interface` stay registered so old links and saved back stacks still open; each shows the same page scrolled to its section, or to its own `?scrollTo=` anchor when one is given. Search entries indexed under a section owner navigate to `settings/appearance` with the row's anchor. Extras, lyrics animations, navigation bar, AOD, icon, palette and theme creator remain separate pages.
+
+### Desktop settings tree
+
+The desktop window renders its own tree (`desktopSettingsNavRows` in
+`shared-ui/.../settings/DesktopSettingsNav.kt`), grouped as Metrolist's desktop overlay is:
+Playback (Player and audio, Queue, Equalizer, Sources, Lyrics, Lyrics providers,
+Romanisation, Lyrics animations, AI lyrics, YouTube attestation), Interface (Appearance,
+Content, Canvas, Additional downloads), Integrations (Connected services overlay,
+Integration, Tidal, Qobuz, Deezer, Spotify streaming, QQ Music, JioSaavn, Amazon, Apple
+Music, Telegram, Internet, Account), Privacy & security (Privacy, Crash reports),
+Storage & data (Storage, Downloads, Backup & import) and Application & about (Updates,
+Changelog, About, Listening stats, Devtools, Diagnostic log, Keyboard shortcuts). The
+two-pane pane lists routes and searches them; the narrow form renders the same tree as
+one list. Devtools and the diagnostic log carry `SettingsRow.Action.hidden`, so they are
+listed only while the search field has text.
+
+Connected services is the separate integrations overlay (`IntegrationsOverlay`): Discord,
+Last.fm / Libre.fm / ListenBrainz scrobbling, Listen Together, Device Connect, Telegram
+and Spotify streaming. It opens over the page the user was reading and dismisses back to
+it; the route-shaped row (`settings/integrations`) never replaces the page.
+
+Desktop-only choices on the merged Appearance page sit under a `Window` heading:
+`system_window_frame` (`desktop_system_window_frame`, off by default, the shell draws its own
+title bar otherwise) and `close_to_tray` (`desktop_hide_to_tray`). Both keys are shared so
+the shell and the page cannot disagree. `settings/player/queue` owns the queue rows for
+this host. The Privacy page owns the history pauses, the history duration (moved from
+Playback) and clearing stored listens.
+
+Rows whose only readers are Android are not rendered on desktop and their stored values
+stay untouched: PIP, wakelock, task-clear stop, Bluetooth auto-start, audio offload,
+decoded-PCM upscale rejection, bit-perfect and exclusive USB output, history duration on
+the Playback page, swipe gestures and sensitivity, AOD, home style, minimal home, density
+(`ui_scale`), splash, status bar, app icon, palette picker, random startup palette, Apple
+Music palette, compact mini player and the mobile-data artwork switch. The desktop host
+also does not mount the phone navigation-style page (`settings/appearance/navigation_bar`)
+or the `settings/appearance/player` alias; the shared page and the alias stay registered
+for Android and iOS, and the stored navigation-style keys are ignored on desktop rather
+than migrated or deleted.
 
 The Player section's **Player menu style** row (`player_menu_style`; search child `Player menu style`; scroll owner `player_menu_style` in `SettingsScreen` and the shared `SettingsRoutes`) chooses the three-dot and lyrics menu look: Apple Music (the default) or Material 3. A choice writes `PlayerMenuStyleKey` and the legacy `AppleMusicMenusKey` together. A stored legacy `apple_music_menus` value still decides when it is set, so presets and restores keep their meaning. The effective style is the Apple menus surface: the Apple menus toggle, its search result and the experience indicator all read it. On a fresh install they show the Apple Music menus, so the indicator reads Custom until the menu is set to Material 3.
 

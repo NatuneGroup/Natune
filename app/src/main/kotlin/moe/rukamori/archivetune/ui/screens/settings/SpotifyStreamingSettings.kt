@@ -65,7 +65,6 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamAccountNameKey
-import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethodKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
@@ -79,6 +78,11 @@ import moe.rukamori.archivetune.spotify.SpotifyLibrespotAccountNameKey
 import moe.rukamori.archivetune.spotify.SpotifyLibrespotRefreshTokenKey
 import moe.rukamori.archivetune.spotify.SpotifyProductKey
 import moe.rukamori.archivetune.spotify.SpotifyStreamEngineKey
+import moe.rukamori.archivetune.modules.SpotifyAlternateExtensionEnabledKey
+import moe.rukamori.archivetune.modules.SpotifyOfficialExtensionEnabledKey
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
@@ -99,7 +103,6 @@ fun SpotifyStreamingSettings(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val (enabledRaw, onEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
     val (spDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
     val (accountName, _) = rememberPreference(SpotifyStreamAccountNameKey, "")
     val (userId, _) = rememberPreference(SpotifyStreamUserIdKey, "")
@@ -111,6 +114,16 @@ fun SpotifyStreamingSettings(
     val (librespotAccountName, _) = rememberPreference(SpotifyLibrespotAccountNameKey, "")
     val (catalogSpDc, _) = rememberPreference(SpotifySpDcKey, "")
     val (libraryProduct, _) = rememberPreference(SpotifyProductKey, "")
+    val extensionPrefs = rememberPreferenceSnapshot()
+    val (alternateEnabled, onAlternateEnabledChange) = extensionPrefs.state(SpotifyAlternateExtensionEnabledKey,
+        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_ALTERNATE, extensionPrefs.current))
+    val (officialEnabled, onOfficialEnabledChange) = extensionPrefs.state(SpotifyOfficialExtensionEnabledKey,
+        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_OFFICIAL, extensionPrefs.current))
+    val accountEngine = when (scrollTo) {
+        "extension_alternate" -> SpotifyStreamEngine.UNOFFICIAL
+        "extension_official" -> SpotifyStreamEngine.LIBRESPOT
+        else -> engine
+    }
 
     val catalogSignedIn = catalogSpDc.isNotBlank()
     val librespotSignedIn = librespotRefresh.isNotBlank()
@@ -120,7 +133,6 @@ fun SpotifyStreamingSettings(
             SpotifyStreamEngine.UNOFFICIAL -> spDc.isNotBlank()
             SpotifyStreamEngine.LIBRESPOT -> librespotSignedIn
         }
-    val enabled = enabledRaw && signedIn
     var showLogin by remember { mutableStateOf(false) }
     var verifying by remember { mutableStateOf(false) }
     var librespotVerifying by remember { mutableStateOf(false) }
@@ -156,15 +168,6 @@ fun SpotifyStreamingSettings(
             } finally {
                 librespotVerifying = false
             }
-        }
-    }
-
-    // The toggle flips only its own flag. Spotify sits in the source order like every other
-    // source now; the user positions it in "Preferred sources", and while signed out the
-    // resolver treats the source as disabled anyway.
-    val onEnabledChange: (Boolean) -> Unit = { next ->
-        if (!next || signedIn) {
-            onEnabledChangeRaw(next)
         }
     }
 
@@ -270,7 +273,16 @@ fun SpotifyStreamingSettings(
             }
 
             PreferenceGroup(title = stringResource(R.string.spotify_stream_account)) {
-                if (engine == SpotifyStreamEngine.LIBRESPOT) {
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor(if (accountEngine == SpotifyStreamEngine.LIBRESPOT) "extension_official" else "extension_alternate"),
+                        title = { Text(stringResource(if (accountEngine == SpotifyStreamEngine.LIBRESPOT) R.string.extensions_spotify_official else R.string.extensions_spotify_alternate)) },
+                        checked = if (accountEngine == SpotifyStreamEngine.LIBRESPOT) officialEnabled else alternateEnabled,
+                        onCheckedChange = if (accountEngine == SpotifyStreamEngine.LIBRESPOT) onOfficialEnabledChange else onAlternateEnabledChange,
+                    )
+                }
+                if (accountEngine == SpotifyStreamEngine.LIBRESPOT) {
+                    item { Text(stringResource(R.string.extensions_spotify_official_unavailable), Modifier.padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)) }
                     if (librespotSignedIn) {
                         item {
                             PreferenceEntry(
@@ -412,24 +424,6 @@ fun SpotifyStreamingSettings(
                         },
                         isValueEnabled = { it != SpotifyStreamEngine.LIBRESPOT || librespotSelectable },
                         onValueSelected = onEngineChange,
-                    )
-                }
-
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("spotify_stream_enabled"),
-                        title = { Text(stringResource(R.string.spotify_stream_enabled)) },
-                        description =
-                            when {
-                                signedIn -> stringResource(R.string.spotify_stream_enabled_desc)
-                                engine == SpotifyStreamEngine.LIBRESPOT ->
-                                    stringResource(R.string.spotify_stream_needs_librespot)
-                                else -> stringResource(R.string.spotify_stream_needs_account)
-                            },
-                        icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
-                        checked = enabled,
-                        onCheckedChange = onEnabledChange,
-                        isEnabled = signedIn || enabledRaw,
                     )
                 }
 

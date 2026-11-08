@@ -134,6 +134,9 @@ class IosYouTubeBrowseTransport(
         when (browse) {
             is YouTubeBrowse.Playlist -> shelfPage(browseId = "VL${browse.playlistId}", continuation = continuation)
             is YouTubeBrowse.Album -> shelfPage(browseId = browse.browseId, continuation = continuation)
+            // The iOS host's podcast route is still a placeholder, so a show page has no surface to render; it
+            // refuses explicitly instead of parsing a show as the shelf it is not.
+            is YouTubeBrowse.Podcast -> throw UnsupportedContentOperation()
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.Section -> sectionPage(browse)
             is YouTubeBrowse.ArtistItems -> artistItemsPage(browse, continuation)
@@ -273,7 +276,7 @@ class IosYouTubeBrowseTransport(
             kind = ContentKind.SONG,
             id = videoId,
             title = title,
-            subtitle = item.longBylineText?.runs?.text().orEmpty(),
+            subtitle = youTubeArtistSubtitle(artists, item.longBylineText?.runs?.text().orEmpty()),
             artworkUri = item.thumbnail?.thumbnails?.lastOrNull()?.url,
             durationSeconds = item.lengthText?.runs?.text()?.toSeconds(),
             explicit = item.badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
@@ -495,6 +498,8 @@ private fun NavigationEndpoint?.endpointKind(): ContentKind? {
         return when {
             endpoint.browseId.startsWith("MPRE") -> ContentKind.ALBUM
             endpoint.browseId.startsWith("UC") || endpoint.browseId.startsWith("FEMC") -> ContentKind.ARTIST
+            // A podcast show arrives playlist-shaped; its own prefix names the show page, not a playlist.
+            isYouTubePodcastShowId(endpoint.browseId) -> ContentKind.PODCAST
             endpoint.browseId.startsWith("VL") || endpoint.browseId.startsWith("PL") ||
                 endpoint.browseId.startsWith("FEmusic") -> ContentKind.PLAYLIST
             else -> null
@@ -536,7 +541,7 @@ private fun ResponsiveItem.toEntry(): YouTubeEntry? {
         kind = kind,
         id = id,
         title = title,
-        subtitle = artists.joinToString(", ") { it.name }.ifBlank { groups.firstOrNull()?.text().orEmpty() },
+        subtitle = youTubeArtistSubtitle(artists, groups.firstOrNull()?.text().orEmpty()),
         artworkUri = thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
         durationSeconds = duration?.toSeconds(),
         explicit = badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
@@ -574,16 +579,7 @@ private fun String.contentKind(): ContentKind? =
     }
 
 private fun List<List<Run>>.artistCredits(): List<ContentCredit> =
-    firstOrNull()?.mapNotNull { run ->
-        val browseId = run.navigationEndpoint?.browseEndpoint?.browseId
-        val text = run.text.takeIf(String::isNotBlank)
-        when {
-            text == null -> null
-            browseId != null && (browseId.startsWith("UC") || browseId.startsWith("FEMC")) ->
-                ContentCredit(text, browseId)
-            else -> null
-        }
-    }.orEmpty()
+    youTubeArtistCredits(this, { it.text }, { it.navigationEndpoint?.browseEndpoint?.browseId })
 
 /** The (browseId, title) of the album credit, keyed on the album browse id's MPRE prefix. */
 private fun Run.albumId(): Pair<String, String>? {
@@ -596,11 +592,13 @@ private fun TwoRowItem.toEntry(): YouTubeEntry? {
     val kind = navigationEndpoint.endpointKind() ?: return null
     val id = navigationEndpoint.endpointId() ?: return null
     val name = title?.runs?.text().takeUnless { it.isNullOrBlank() } ?: return null
+    val artists = subtitle?.runs?.splitBySeparator().orEmpty().artistCredits()
     return YouTubeEntry(
         kind = kind,
         id = id,
         title = name,
-        subtitle = subtitle?.runs?.text().orEmpty(),
+        subtitle = youTubeArtistSubtitle(artists, subtitle?.runs?.text().orEmpty()),
+        artists = artists,
         artworkUri = thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
     )
 }

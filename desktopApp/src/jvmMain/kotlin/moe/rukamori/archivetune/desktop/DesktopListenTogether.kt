@@ -358,6 +358,9 @@ internal class DesktopListenTogether(
         return "https://${ListenTogetherServers.inviteHost(preferences.serverUrl())}/listen?code=$code"
     }
 
+    /** Device Connect refuses a transfer while this window is in a Listen Together room. */
+    fun isInRoom(): Boolean = client.isInRoom
+
     fun close() {
         job.cancel()
     }

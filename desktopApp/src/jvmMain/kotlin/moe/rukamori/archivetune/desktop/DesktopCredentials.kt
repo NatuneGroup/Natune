@@ -30,6 +30,15 @@ internal object DesktopCredentials {
         get() = client("ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID", "ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET")
 
     /**
+     * True when this deployment supplies its own BotGuard request/API keys, through the build, the environment or a
+     * system property. A blank build reads false, so PO token minting stays behind the stored preference and never
+     * turns into a request without credentials.
+     */
+    val botGuardConfigured: Boolean
+        get() = value("ARCHIVETUNE_POTOKEN_REQUEST_KEY").isNotBlank() &&
+            value("ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY").isNotBlank()
+
+    /**
      * The Telegram application identity for TDLight. The unprefixed names the Android build reads are accepted at run time
      * too. Without both values the same public Telegram Desktop identity the Android BuildConfig falls back to is used,
      * so sign-in works out of the box with just a phone number and login code.

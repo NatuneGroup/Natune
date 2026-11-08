@@ -17,6 +17,18 @@ import org.junit.Test
 
 class TitleMatchTest {
     @Test
+    fun acceptsLiveVerifiedTidalMatchAcrossQualityDowngrade() {
+        for ((mime, codec) in listOf("audio/flac" to "flac", "audio/mp4" to "mp4a.40.2")) {
+            val candidate = stream("Shape of You", "Ed Sheeran", "÷ (Deluxe)", 234_000)
+                .copy(mimeType = mime, codecs = codec)
+            assertTrue(TitleMatch.evaluate(
+                wantedTitle = "Shape of You", wantedArtists = listOf("Ed Sheeran"),
+                wantedAlbum = null, wantedDurationMs = 234_000, stream = candidate,
+            ).accepted)
+        }
+    }
+
+    @Test
     fun rejectsIdenticalTitleByDifferentArtist() {
         val result = evaluate(stream(title = "Stay", artist = "The Kid LAROI", durationMs = 141_000))
 

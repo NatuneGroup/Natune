@@ -16,8 +16,6 @@ import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeGaplessKey
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
 import moe.rukamori.archivetune.constants.EnablePipModeKey
-import moe.rukamori.archivetune.constants.EnableTranslatorKey
-import moe.rukamori.archivetune.constants.LowDataModeKey
 import moe.rukamori.archivetune.constants.LyricsClickKey
 import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
@@ -27,8 +25,6 @@ import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.ShowLyricsKey
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.StopMusicOnTaskClearKey
-import moe.rukamori.archivetune.constants.TidalArtworkFallbackEnabledKey
-import moe.rukamori.archivetune.constants.TranslateLyricsKey
 import moe.rukamori.archivetune.constants.WakelockKey
 
 internal fun playbackSettingsItem(
@@ -45,7 +41,6 @@ internal fun playbackSettingsItem(
         keywords = listOf("playback", "player", "audio", "quality", "equalizer", "eq", "volume", "crossfade", "gapless", "flac", "lossless", "hi-res", "sample rate", "bitrate", "video", "music video", "video playback", "pip", "picture in picture", "floating", "minimize"),
         onClick = { navController.navigate("settings/player") },
         children = listOf(
-            SettingsChild("Low data mode", "low_data_mode", listOf("data", "data saver", "low quality", "data mode")) { SearchResultSwitch(LowDataModeKey, true) },
             SettingsChild("Enable video playback", "enable_video_playback", listOf("video", "music video", "mv", "video playback", "captions", "subtitles")) { SearchResultSwitch(EnableVideoPlaybackKey, false) },
             SettingsChild("Enable PiP mode", "enable_pip_mode", listOf("pip", "picture in picture", "floating video", "minimize", "pop out", "overlay")) { SearchResultSwitch(EnablePipModeKey, false) },
             SettingsChild("History duration", "history_duration", listOf("history", "duration", "recent", "queue length")),
@@ -65,7 +60,6 @@ internal fun playbackSettingsItem(
             SettingsChild("ArchiveTune Canvas", "archive_tune_canvas", listOf("canvas", "animated artwork", "motion artwork", "live artwork", "canvas settings")),
             SettingsChild("Spotify Canvas", "spotify_canvas", listOf("spotify", "canvas", "spotify canvas", "looping video", "music video", "video artwork")) { SearchResultSwitch(SpotifyCanvasKey, false) },
             SettingsChild("Canvas resolvers", "canvas_resolvers", listOf("canvas resolver", "canvas resolvers", "canvas endpoint", "canvas fallback", "spotify canvas resolver")),
-            SettingsChild("Tidal artwork fallback", "tidal_artwork_fallback", listOf("tidal artwork", "artwork fallback", "tidal cover", "hi-res artwork")) { SearchResultSwitch(TidalArtworkFallbackEnabledKey, false) },
             SettingsChild("Persistent queue", "persistent_queue", listOf("queue", "persistent", "save queue", "resume")) { SearchResultSwitch(PersistentQueueKey, true) },
             SettingsChild(context.getString(R.string.queue_infinite), "infinite_queue", listOf("queue", "infinite", "autoplay", "endless", "radio", "continuation")) { SearchResultSwitch(AutoLoadMoreKey, true) },
             SettingsChild("Permanent shuffle", "permanent_shuffle", listOf("shuffle", "random", "permanent")) { SearchResultSwitch(PermanentShuffleKey, false) },
@@ -74,6 +68,7 @@ internal fun playbackSettingsItem(
             SettingsChild("Wakelock", "wakelock", listOf("wakelock", "wake lock", "keep awake", "cpu")) { SearchResultSwitch(WakelockKey, false) },
             SettingsChild("Artist separators", "artist_separators", listOf("artist", "separator", "split", "featuring")),
             SettingsChild("Manage playlist tags", "manage_playlist_tags", listOf("playlist tags", "tag management", "organize playlists")),
+            SettingsChild("Display codec on player", "show_codec_on_player", listOf("display codec", "show codec", "codec on player", "bitrate on player")),
             SettingsChild("Audio quality", "audio_quality", listOf("audio quality", "quality", "bitrate", "sound quality", "streaming quality", "high quality")),
             SettingsChild("Artwork priority", "artwork_priority", listOf("artwork priority", "artwork order", "cover priority", "artwork provider order", "artwork source order")),
             SettingsChild("Preferred sources", "preferred_sources", listOf("preferred sources", "source priority", "source order", "audio source order", "which source first")),
@@ -88,10 +83,12 @@ internal fun playbackSettingsItem(
             SettingsChild("Enable Tidal source", "tidal_enable", listOf("tidal", "enable tidal", "tidal source", "lossless", "hifi")),
             SettingsChild("Use my Tidal account first", "tidal_account_first", listOf("tidal account first", "my tidal account", "prefer my account")),
             SettingsChild("Tidal audio quality", "tidal_audio_quality", listOf("tidal quality", "tidal audio quality", "tidal hifi", "tidal max", "mqa")),
-            SettingsChild("Tidal animated covers", "tidal_animated_covers", listOf("tidal animated covers", "tidal canvas", "tidal video cover", "animated cover")),
             SettingsChild("Manage Tidal instances", "tidal_manage_instances", listOf("tidal instances", "tidal server", "tidal endpoint", "manage instances")),
             SettingsChild("Enable Qobuz source", "qobuz_enable", listOf("qobuz", "enable qobuz", "qobuz source", "hi-res", "flac")),
             SettingsChild("Qobuz audio quality", "qobuz_audio_quality", listOf("qobuz quality", "qobuz audio quality", "hi-res", "flac", "cd quality", "24 bit")),
+            SettingsChild("Amazon Music", "amazon_enable", listOf("amazon", "amazon music", "enable amazon", "amazon source")),
+            SettingsChild("Enable QQ Music", "qq_music_enable", listOf("qq", "qq music", "enable qq music", "qq source")),
+            SettingsChild("Enable Spotify streaming", "spotify_stream_enable", listOf("spotify streaming", "spotify source", "enable spotify streaming")),
             SettingsChild("Enable Qobuz backup server", "qobuz_backup_enable", listOf("qobuz backup", "backup server", "qobuz backup server", "lossless backup", "fallback server", "kouzu")),
             SettingsChild("Manage Qobuz instances", "qobuz_manage_instances", listOf("qobuz instances", "qobuz server", "qobuz endpoint", "manage instances")),
             SettingsChild("Enable Deezer source", "deezer_enable", listOf("deezer", "enable deezer", "deezer source", "flac")),
@@ -132,7 +129,6 @@ internal fun jioSaavnSettingsItem(
         onClick = { navController.navigate("settings/jiosaavn") },
         hidden = true,
         children = listOf(
-            SettingsChild("Enable JioSaavn source", "jiosaavn_enable", listOf("enable jiosaavn", "jiosaavn source", "turn on jiosaavn")),
             SettingsChild("JioSaavn audio quality", "jiosaavn_audio_quality", listOf("jiosaavn quality", "saavn audio quality", "jiosaavn bitrate")),
             SettingsChild("JioSaavn credit", "jiosaavn_credit", listOf("jiosaavn credit", "vivimusic", "jiosaavn about")),
         ),
@@ -177,7 +173,6 @@ internal fun qqMusicSettingsItem(
         hidden = true,
         children = listOf(
             SettingsChild("QQ Music account", "qq_music_account", listOf("qq music login", "qq music sign in", "qr code", "scan code")),
-            SettingsChild("Enable QQ Music", "qq_music_enabled", listOf("qq music enable", "turn on qq music")),
             SettingsChild("QQ Music quality", "qq_music_quality", listOf("qq quality", "qq lossless", "qq flac")),
         ),
     )
@@ -200,7 +195,6 @@ internal fun spotifyStreamingSettingsItem(
         children = listOf(
             SettingsChild("Spotify streaming risks", "spotify_stream_warning", listOf("spotify warning", "spotify ban", "spotify terms")),
             SettingsChild("Spotify streaming account", "spotify_stream_account", listOf("spotify streaming login", "spotify second account", "spotify sign out")),
-            SettingsChild("Enable Spotify streaming", "spotify_stream_enabled", listOf("spotify streaming enable", "play from spotify")),
             SettingsChild("Spotify resolve method", "spotify_stream_method", listOf("spotify method", "stopify", "echo", "spotify flac", "spotify vorbis")),
         ),
     )
@@ -273,8 +267,6 @@ internal fun lyricsSettingsItem(
             SettingsChild("Lyrics mode", "lyrics_mode", listOf("lyrics mode", "lyrics style", "lyrics display mode", "karaoke mode")),
             SettingsChild("Show lyrics", "show_lyrics", listOf("show lyrics", "display lyrics", "lyrics toggle", "lyrics show")) { SearchResultSwitch(ShowLyricsKey, false) },
             SettingsChild("Use lyrics V2", "use_lyrics_v2", listOf("lyrics v2", "new lyrics", "lyrics engine")),
-            SettingsChild("Translate lyrics", "translate_lyrics", listOf("translate", "translation", "lyrics translation")) { SearchResultSwitch(TranslateLyricsKey, false) },
-            SettingsChild("Enable translator", "enable_translator", listOf("translator", "translation engine", "lyrics translator")) { SearchResultSwitch(EnableTranslatorKey, false) },
             SettingsChild("Lyrics font size", "lyrics_font_size", listOf("font size", "lyrics size", "text size", "lyrics text size")),
             SettingsChild("Lyrics line spacing", "lyrics_line_spacing", listOf("line spacing", "lyrics spacing", "lyrics line gap", "lyrics padding")),
             SettingsChild("Lyrics animations", "lyrics_animations", listOf("animation", "animated lyrics", "lyrics effect")),

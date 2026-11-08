@@ -100,10 +100,14 @@ internal class IosBlendAudioGraph private constructor(
     fun play(): Boolean {
         if (closed) return false
         if (interrupted) {
-            // Keep the listener's intent without starting a manual node: the approved interruption end starts the graph.
-            at_audio_play(current.output)
+            // Native play reclaims the session: an interruption end is never guaranteed.
+            // Refused, the deck stays paused until an approved end; granted, rebuild for the route.
+            val reclaim = at_audio_play(current.output)
+            if (reclaim == 0) return false
             incoming?.let { at_audio_play(it.output) }
-            return true
+            if (reclaim == AT_AUDIO_PLAY_DEFERRED.toInt() || !current.nativeState().playWhenReady) return true
+            interrupted = false
+            graphDirty = true
         }
         if (at_audio_play(current.output) == 0) return false
         if (graphDirty && !rebuildWithFallback()) { failOutput(); return false }
@@ -198,6 +202,8 @@ internal class IosBlendAudioGraph private constructor(
                 incoming?.pauseNode()
                 if (at_graph_pause(engine) == 0) failOutput()
             } else {
+                // An explicit play may have reclaimed the session; a late end must not hold it.
+                if (!interrupted) return@addObserverForName
                 graphDirty = true
                 interrupted = false
                 val options = (note?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue ?: 0uL

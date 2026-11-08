@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.spotify
 
+import moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative
+
 import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.MutablePreferences
@@ -15,6 +17,8 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
 import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_ME_ENDPOINT
 import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_TOKEN_ENDPOINT
 import moe.rukamori.archivetune.shared.domain.source.SpotifyOAuthAccountFacts
@@ -63,7 +67,8 @@ data class SpotifyLibrespotAuthorizationSession(
 /**
  * The OAuth grant the Librespot engine streams with. It is the library account's own session — the
  * authorize step verifies the account equals the catalog sign-in and is Premium — so the engine
- * appears to Spotify as an ordinary Connect device the listener owns. The grant lives apart from
+ * opens a protocol audio session owned by that account; it does not advertise a Connect receiver.
+ * The grant lives apart from
  * the catalog's sp_dc session and mints its own access tokens by refresh grant; the stored access
  * token is only a cache so the engine can start without waiting on the token endpoint.
  *
@@ -253,6 +258,7 @@ object SpotifyLibrespotAccount {
         withContext(Dispatchers.IO) {
             tokenMutex.withLock {
                 val prefs = context.dataStore.data.first()
+                if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_OFFICIAL, prefs)) return@withLock null
                 val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
                 // The stored fingerprint is the catalog sp_dc the grant was minted under. The grant
                 // dies with that cookie — a replaced catalog session invalidates it here, before
@@ -281,6 +287,18 @@ object SpotifyLibrespotAccount {
                             context.dataStore.edit { it.clearLibrespotSession() }
                             return@withLock null
                         }
+                        // Bind a grant created while the catalog was signed out as soon as the
+                        // same-account comparison succeeds, including the cached-token path.
+                        var catalogChanged = false
+                        context.dataStore.edit {
+                            if (it[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                                it.clearLibrespotSession()
+                                catalogChanged = true
+                            } else {
+                                it[SpotifyLibrespotCatalogSpDcKey] = catalogSpDc
+                            }
+                        }
+                        if (catalogChanged) return@withLock null
                     }
                 }
 
@@ -458,4 +476,6 @@ internal fun MutablePreferences.clearLibrespotSession() {
     if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
         this[SpotifyStreamEnabledKey] = false
     }
+    // Revoke AP work and plaintext read guards at the credential edit, before observers catch up.
+    SpotifyLibrespotNative.close()
 }

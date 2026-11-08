@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
 import moe.rukamori.archivetune.shared.ui.settings.JapaneseLanguagePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenGeneration
+import moe.rukamori.archivetune.shared.ui.settings.PoTokenHelperStatus
 import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
 import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
@@ -47,6 +48,9 @@ import moe.rukamori.archivetune.shared.ui.settings.SourcePoolRefreshOutcome
 import moe.rukamori.archivetune.shared.ui.settings.UpdateCommit
 import moe.rukamori.archivetune.shared.ui.settings.UpdateFeedResult
 import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeStatus
+
+/** One manifest asset as this legacy desktop check reads it; the digest is carried, never dropped. */
+private data class DesktopFeedAsset(val name: String, val url: String, val sha256: String?)
 
 /**
  * The host behaviours behind the settings pages the desktop mounts. Every action here does real
@@ -84,9 +88,9 @@ internal class DesktopSettingsServices(
             val obj = runCatching { asset.jsonObject }.getOrNull() ?: return@mapNotNull null
             val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val assetUrl = obj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
-            name to assetUrl
+            DesktopFeedAsset(name, assetUrl, obj["sha256"]?.jsonPrimitive?.content)
         }
-        val downloadUrl = selectDesktopAsset(assets)
+        val asset = selectDesktopAsset(assets)
             ?: return@withContext UpdateFeedResult.NoInstallable
         // Desktop packages carry no integer build code; only the tag equality check can prove the
         // running build is already the published one, so an unverifiable code reports 0 and any
@@ -98,8 +102,9 @@ internal class DesktopSettingsServices(
             buildCode = versionCode,
             versionName = versionName,
             notes = root["notes"]?.jsonPrimitive?.content,
-            downloadUrl = downloadUrl.takeIf { it.startsWith("http") },
+            downloadUrl = asset.url.takeIf { it.startsWith("http") },
             installedCode = installedCode,
+            sha256 = asset.sha256,
         )
         when {
             tag == DesktopBuildIdentity.VERSION_NAME -> UpdateFeedResult.UpToDate
@@ -109,17 +114,17 @@ internal class DesktopSettingsServices(
     }
 
     /** Desktop manifests carry platform-named assets; pick the one for this OS, else null. */
-    private fun selectDesktopAsset(assets: List<Pair<String, String>>): String? {
+    private fun selectDesktopAsset(assets: List<DesktopFeedAsset>): DesktopFeedAsset? {
         val os = System.getProperty("os.name").lowercase()
         val markers = when {
             "mac" in os || "darwin" in os -> listOf("macos", "darwin", "dmg", "mac")
             "win" in os -> listOf("windows", "win", "msi", "exe")
             else -> listOf("linux", "appimage", "deb", "rpm")
         }
-        return assets.firstOrNull { (name, _) ->
+        return assets.firstOrNull { (name, _, _) ->
             val lower = name.lowercase()
             markers.any { lower.contains(it) }
-        }?.second
+        }
     }
 
     suspend fun loadUpdateCommits(channel: UpdateChannel): List<UpdateCommit> = withContext(Dispatchers.IO) {
@@ -301,6 +306,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.APPLE -> probeReachable("https://amp-api.music.apple.com/v1/catalog/us/genres")
                 AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
                     ?.let { probeReachable(it) } ?: false
+                AudioSourceType.MODULES -> false // Android-only module host
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY ->
                     preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective())
@@ -515,6 +521,12 @@ internal class DesktopSettingsServices(
      */
     suspend fun generatePoTokens(sourceUrl: String): PoTokenGeneration =
         graph.poTokens.generate(sourceUrl, controller.store.snapshots.value)
+
+    /**
+     * Reports the managed helper's lifecycle for the PO token settings row. It reads the current
+     * state only; opening the page never downloads or starts the helper.
+     */
+    suspend fun poTokenProviderStatus(): PoTokenHelperStatus = graph.poTokens.localHelperStatus()
 
     private suspend fun httpGet(url: String, vararg headers: Pair<String, String>): String? =
         runCatching {

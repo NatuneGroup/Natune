@@ -15,9 +15,9 @@ internal class IosPlaybackPollCadence {
     var appActive: Boolean = true
 
     fun intervalMs(busy: Boolean, blending: Boolean): Long = when {
+        !busy -> if (appActive) IDLE_MS else BACKGROUND_MS
+        blending -> BLEND_MS // ~170 ms of PCM per deck, pumped only by this read
         !appActive -> BACKGROUND_MS
-        !busy -> IDLE_MS
-        blending -> BLEND_MS
         else -> ACTIVE_MS
     }
 

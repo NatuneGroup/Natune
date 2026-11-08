@@ -17,14 +17,41 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 
 private const val TRANSLATION_REVEAL_MS = 600
 
 /**
+ * A syllable line's text with the character range each syllable occupies in it. Joining is verbatim: only
+ * the whitespace the source put in each [KaraokeSyllable.content] survives, so syllable tokens of ONE
+ * word ("a" + "gain", "mo" + "ment") stay one word instead of being split by an invented gap. The karaoke
+ * sweep clips against these ranges, so two syllables with no whitespace between them are adjacent slices
+ * and the sweep crosses such a word continuously. One shared join keeps every renderer's text and boxes
+ * identical.
+ */
+internal class JoinedSyllables(
+    val text: String,
+    val ranges: List<IntRange?>,
+)
+
+/** Joins syllable content verbatim, keeping the range each syllable occupies for the per-syllable sweep. */
+internal fun List<KaraokeSyllable>.joinSyllables(): JoinedSyllables {
+    val builder = StringBuilder()
+    val ranges = ArrayList<IntRange?>(size)
+    for (syllable in this) {
+        val first = builder.length
+        builder.append(syllable.content)
+        ranges += if (builder.length > first) first until builder.length else null
+    }
+    return JoinedSyllables(builder.toString(), ranges)
+}
+
+/** The plain text of a syllable line. Both the plain [Text] and the swept line read [joinSyllables]. */
+internal fun List<KaraokeSyllable>.joinSyllableContents(): String = joinSyllables().text
+
+/**
  * Word-timed karaoke sweep: each syllable's colour interpolates from the dimmed rest colour to the
- * full text colour across its own [start, end].
+ * full text colour across its own [start, end], over the verbatim text so the sweep never invents a gap.
  */
 @Composable
 internal fun KaraokeSweepText(
@@ -35,19 +62,19 @@ internal fun KaraokeSweepText(
 ) {
     val position = currentPosition()
     val unsungColor = textColor.copy(alpha = 0.45f)
+    val joined = remember(syllables) { syllables.joinSyllables() }
     val annotated =
         buildAnnotatedString {
+            append(joined.text)
             syllables.forEachIndexed { index, syllable ->
+                val range = joined.ranges[index] ?: return@forEachIndexed
                 val span = (syllable.end - syllable.start).coerceAtLeast(1)
                 val progress = ((position - syllable.start).toFloat() / span).coerceIn(0f, 1f)
-                val color = lerp(unsungColor, textColor, progress)
-                withStyle(SpanStyle(color = color)) {
-                    append(syllable.content)
-                    val next = syllables.getOrNull(index + 1)
-                    if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-                        append(" ")
-                    }
-                }
+                addStyle(
+                    SpanStyle(color = lerp(unsungColor, textColor, progress)),
+                    range.first,
+                    range.last + 1,
+                )
             }
         }
     Text(text = annotated, style = textStyle)
@@ -92,31 +119,6 @@ internal fun TranslationStack(
                 }
         }
     }
-}
-
-/** A separating space only between Latin-script words — CJK syllables join seamlessly. */
-internal fun needsLatinWordGap(previous: String, next: String): Boolean {
-    val prevTail = previous.lastOrNull() ?: return false
-    val nextHead = next.firstOrNull() ?: return false
-    if (!isLatinWordChar(nextHead) || prevTail.isWhitespace() || nextHead.isWhitespace()) return false
-    return isLatinWordChar(prevTail) || prevTail in SENTENCE_PUNCTUATION
-}
-
-private const val SENTENCE_PUNCTUATION = ".,!?;:…"
-
-private fun isLatinWordChar(ch: Char): Boolean =
-    ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\''
-
-internal fun List<KaraokeSyllable>.joinSyllableContents(): String {
-    val builder = StringBuilder()
-    forEachIndexed { index, syllable ->
-        builder.append(syllable.content)
-        val next = getOrNull(index + 1)
-        if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-            builder.append(' ')
-        }
-    }
-    return builder.toString()
 }
 
 internal fun extractTtmlWriters(lyrics: String?): String {

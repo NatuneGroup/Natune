@@ -27,6 +27,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.LastFmPreferYtThumbnailsKey
 import moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext
 import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerDialog
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmArtworkRequest
 import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmDashboardBinding
@@ -35,7 +36,7 @@ import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmDashboa
 import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmDashboardTrack
 
 /** The dashboard is a settings route on this host, so the settings screen mounts it without a new shared destination. */
-internal const val DesktopLastFmDashboardRoute = "settings/lastfm/dashboard"
+internal const val DesktopLastFmDashboardRoute = ArchiveRoutes.LASTFM_DASHBOARD_ROUTE
 
 /**
  * The Last.fm dashboard over the graph's scrobbling account. The binding runs on the graph scope, so a load or a queue

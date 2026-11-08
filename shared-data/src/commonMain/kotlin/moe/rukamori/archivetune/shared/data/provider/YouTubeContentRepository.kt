@@ -28,6 +28,12 @@ sealed interface YouTubeBrowse {
 
     data class Album(val browseId: String) : YouTubeBrowse
 
+    /**
+     * A podcast show page: a `MPSP…` browse id answered with the show's header and its episodes. The page is not a
+     * playlist or an album, so it keeps its own browse rather than being parsed by a shape it does not have.
+     */
+    data class Podcast(val browseId: String) : YouTubeBrowse
+
     data class Search(val query: String, val filter: ContentSearchFilter) : YouTubeBrowse
 
     /**
@@ -292,8 +298,28 @@ internal data class YouTubeContinuation(val requestKey: String, val offset: Int,
 
 private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C")
 
+/**
+ * The surfaces a podcast show id can arrive on. Search files a show as a playlist row, the library and the account
+ * pages as album-shaped cards, and the podcast route itself names the surface directly.
+ */
+private val PODCAST_SHOW_SURFACES =
+    setOf(
+        ContentSurface.PLAYLIST,
+        ContentSurface.ALBUM,
+        ContentSurface.PODCAST,
+        ContentSurface.EXPLORE,
+        ContentSurface.DISCOVERY,
+    )
+
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
     val section = section
+    // A podcast show id names a show page whichever route carried it there: YouTube files shows as playlist-shaped
+    // rows ("MPSPPL…"), so a playlist, album or podcast request for one still opens the show and its episodes
+    // instead of failing on a playlist/album parse the page never had.
+    val namedId = parent?.id ?: section?.id
+    if (namedId != null && isYouTubePodcastShowId(namedId) && surface in PODCAST_SHOW_SURFACES) {
+        return YouTubeBrowse.Podcast(namedId)
+    }
     // A song-seeded watch names its video id in the request text; blank text names none.
     val textSeed = text?.trim()?.takeIf(String::isNotEmpty)
     if (section != null && surface != ContentSurface.RADIO) {
@@ -322,9 +348,14 @@ private fun ContentRequest.toBrowse(): YouTubeBrowse {
         ContentSurface.PLAYLIST -> {
             val playlist = parent?.takeIf { it.kind == ContentKind.PLAYLIST } ?: throw UnsupportedContentOperation()
             val normalized = FinitePlaylistIds.normalize(playlist.id)
-            // Radio and mix ids are endless and need the watch-next transport, not a finite playlist browse.
-            if (!FinitePlaylistIds.isFinite(normalized)) throw UnsupportedContentOperation()
-            YouTubeBrowse.Playlist(normalized)
+            // Radio and mix ids are endless watch queues, not finite playlist browses: YouTube Music's "Presenting …"
+            // mixes, artist mixes and the automix all arrive as RD… ids. The watch-next endpoint serves their first
+            // page and their continuations, so the same route opens them instead of refusing the page.
+            if (!FinitePlaylistIds.isFinite(normalized)) {
+                YouTubeBrowse.WatchNext(playlistId = normalized)
+            } else {
+                YouTubeBrowse.Playlist(normalized)
+            }
         }
         ContentSurface.ALBUM -> {
             val album = parent?.takeIf { it.kind == ContentKind.ALBUM } ?: throw UnsupportedContentOperation()
@@ -363,6 +394,7 @@ private fun YouTubeBrowse.requestKey(): String =
     when (this) {
         is YouTubeBrowse.Playlist -> "playlist:$playlistId"
         is YouTubeBrowse.Album -> "album:$browseId"
+        is YouTubeBrowse.Podcast -> "podcast:$browseId"
         is YouTubeBrowse.Search -> "search:${filter.name}:$query"
         is YouTubeBrowse.Section -> "section:$browseId:$params"
         is YouTubeBrowse.ArtistItems -> "artist-items:$browseId:$params"

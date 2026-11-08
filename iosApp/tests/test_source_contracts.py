@@ -81,8 +81,11 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("AVAudioSessionInterruptionOptionShouldResume", ended)
         self.assertIn("if (resume) at_audio_play(output); else at_audio_pause(output);", ended)
         play = audio.split("int at_audio_play", 1)[1].split("\n}", 1)[0]
-        self.assertIn("if (p->interrupted.load())", play)
+        self.assertIn("if (!reclaim_interrupted_session(p))", play)
         self.assertIn("p->resume_after_interruption.store(true)", play)
+        self.assertIn("return AT_AUDIO_PLAY_DEFERRED;", play)
+        self.assertIn("return start_output(p) ? 1 : 0;", play)
+        self.assertNotIn("return 1;", play)
         pause = audio.split("void at_audio_pause", 1)[1].split("\n}", 1)[0]
         self.assertIn("p->resume_after_interruption.store(false)", pause)
         snapshot = audio.split("void at_audio_snapshot", 1)[1].split("\n}", 1)[0]
@@ -92,6 +95,30 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("dispatch_async(dispatch_get_main_queue())", interruption)
         self.assertIn("current.nativeState().playWhenReady", interruption)
         self.assertNotIn("ShouldResume != 0uL && current.nativeState().playWhenReady", interruption)
+
+    def test_an_explicit_play_reclaims_a_session_whose_interruption_never_ended(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        reclaim = audio.split("static bool reclaim_interrupted_session", 1)[1].split("\n}", 1)[0]
+        self.assertIn("configure_playback_locked()", reclaim)
+        self.assertIn("p->interrupted.store(false)", reclaim)
+        play = audio.split("int at_audio_play", 1)[1].split("\n}", 1)[0]
+        self.assertIn("if (!reclaim_interrupted_session(p))", play)
+        for loader in ("uint64_t at_audio_load(", "uint64_t at_audio_load_stream("):
+            body = audio.split(loader, 1)[1].split("\n}", 1)[0]
+            self.assertIn("reclaim_interrupted_session(p)) start_output(p)", body)
+        ended = audio.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[1].split("});", 1)[0]
+        self.assertIn("if (!output->interrupted.exchange(false)) return;", ended)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        play = blend.split("fun play(): Boolean {", 1)[1].split("private fun startEngine", 1)[0]
+        reclaim = play.split("if (interrupted) {", 1)[1].split("interrupted = false", 1)[0]
+        self.assertIn("val reclaim = at_audio_play(current.output)", reclaim)
+        self.assertIn("if (reclaim == 0) return false", reclaim)
+        self.assertIn("if (reclaim == AT_AUDIO_PLAY_DEFERRED.toInt() || !current.nativeState().playWhenReady) return true", reclaim)
+        self.assertIn("interrupted = false", play)
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn("#define AT_AUDIO_PLAY_DEFERRED 2", header)
+        blend_ended = blend.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[1]
+        self.assertIn("if (!interrupted) return@addObserverForName", blend_ended.split("val options", 1)[0])
 
     def test_blend_keeps_the_prepared_successor_through_an_interruption(self):
         blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
@@ -201,6 +228,21 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("continuation.invokeOnCancellation", artwork)
         self.assertIn("session.invalidateAndCancel()", artwork)
         self.assertIn("HTTPCookieStorage = null", artwork)
+
+    def test_remote_seeks_use_one_bounded_shared_policy(self):
+        controls = (KOTLIN / "IosNowPlaying.kt").read_text()
+        policy = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/playback/NowPlayingSeekPolicy.kt").read_text()
+        # The scrubber sends an absolute position in seconds; the interval skip sends a relative one.
+        # Both must go through the shared millisecond policy, not a raw * 1000 cast that can wrap, and
+        # must share the on-screen controls' duration/overflow bounds.
+        self.assertIn("nowPlayingSeekTargetMs", controls)
+        self.assertEqual(2, controls.count("nowPlayingSeekTargetMs("))
+        self.assertIn("fun nowPlayingSeekTargetMs(", policy)
+        self.assertIn("deltaSeconds * 1_000.0", policy)
+        self.assertIn("coerceIn(0.0, upper)", policy)
+        self.assertIn("durationMs?.takeIf { it > 0L }", policy)
+        # A live stream with no positive duration is unbounded, not clamped to zero.
+        self.assertNotIn("coerceIn(0L, duration)", controls)
 
     def test_long_form_playback_restores_the_previous_route_sharing_policy(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()

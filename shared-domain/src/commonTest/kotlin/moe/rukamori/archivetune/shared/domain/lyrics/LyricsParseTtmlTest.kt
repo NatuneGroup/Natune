@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsPhonetics
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.timedLyricsPresentation
 
 class LyricsParseTtmlTest {
     private val duet =
@@ -95,6 +97,108 @@ class LyricsParseTtmlTest {
         val words = assertIs<KaraokeLine>(lines.single()).words
         assertEquals(listOf("Hi", "echo"), words.map { it.text })
         assertEquals(listOf(false, true), words.map { it.isBackground })
+    }
+
+    @Test
+    fun whitespaceInsideTimedSpansStaysAWordBoundary() {
+        val lines =
+            LyricsParser.parseTtml(
+                """
+                <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+                <p begin="1.000" end="4.000"><span begin="1.000" end="1.500">Hello </span><span begin="1.500" end="2.000">a</span><span begin="2.000" end="2.500">gain</span><span begin="2.500" end="3.000"> my</span><span begin="3.000" end="3.500">  friend</span></p>
+                </div></body></tt>
+                """.trimIndent(),
+            )
+
+        val line = assertIs<KaraokeLine>(lines.single())
+        val words = line.words
+        assertEquals(listOf("Hello ", "a", "gain ", "my ", "friend"), words.map { it.text })
+        assertEquals("Hello again my friend", words.joinToString("") { it.text })
+        // Collapsed word texts and line.text must agree, or the presentation cannot locate a word
+        // whose span carried a whitespace run ("  friend") and its timing range disappears.
+        assertEquals(words.joinToString("") { it.text }, line.text)
+        assertTrue(timedLyricsPresentation(line, LyricsPhonetics()).ranges.all { it != null })
+    }
+
+    @Test
+    fun whitespaceRunsInsideTimedSpansStayLocatableByThePresentation() {
+        val line =
+            assertIs<KaraokeLine>(
+                LyricsParser.parseTtml(
+                    """
+                    <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+                    <p begin="1.000" end="4.000"><span begin="1.000" end="1.500">Hello  world</span> <span begin="1.500" end="2.000">sing&#10;&#9;along</span></p>
+                    </div></body></tt>
+                    """.trimIndent(),
+                ).single(),
+            )
+
+        // Two spaces and a newline+tab run inside timed spans are collapsed in the word texts, so
+        // line.text must be built from the SAME collapsed strings. The presentation locates each
+        // timed word in line.text by substring; when the two disagree a word becomes unlocatable
+        // and loses its timing range / sweep.
+        assertEquals("Hello world sing along", line.text)
+        assertEquals(listOf("Hello world ", "sing along"), line.words.map { it.text })
+        assertEquals(
+            line.words.joinToString("") { it.text },
+            line.text,
+            "line.text must equal the joined word texts for every word to be locatable",
+        )
+
+        val ranges = timedLyricsPresentation(line, LyricsPhonetics()).ranges
+        assertEquals(line.words.size, ranges.size)
+        assertEquals(
+            line.words.map { it.text },
+            ranges.map { line.text.substring(checkNotNull(it) { "a timed word lost its timing range in line.text" }) },
+        )
+    }
+
+    @Test
+    fun whitespaceRunsInsideBackgroundSpansStayLocatableForTheSplit() {
+        val line =
+            assertIs<KaraokeLine>(
+                LyricsParser.parseTtml(
+                    """
+                    <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+                    <p begin="1.000" end="4.000" ttm:agent="v1"><span begin="1.000" end="2.000">lead</span> <span ttm:role="x-bg" begin="2.000" end="3.000">back  vocals</span></p>
+                    </div></body></tt>
+                    """.trimIndent(),
+                ).single(),
+            )
+
+        val leading = line.words.filter { !it.isBackground }
+        val background = line.words.filter { it.isBackground }
+        assertEquals(listOf("lead "), leading.map { it.text })
+        assertEquals(listOf("back vocals"), background.map { it.text })
+        // The x-bg split locates the trimmed background words in the tail of line.text after the
+        // lead words, so line.text must be the verbatim join of ALL word texts (lead + background).
+        assertEquals("lead back vocals", line.text)
+        assertEquals(
+            line.words.joinToString("") { it.text },
+            line.text,
+            "line.text must equal the joined lead and background word texts",
+        )
+
+        // The shared-domain presentation covers the lead words.
+        val ranges = timedLyricsPresentation(line, LyricsPhonetics()).ranges
+        assertEquals(leading.size, ranges.size)
+        ranges.forEachIndexed { index, range ->
+            assertTrue(range != null, "lead word $index lost its timing range in line.text")
+        }
+
+        // Mirror splitTrailingBackground: find the first trimmed background word after the last lead
+        // range, then each background word in that tail, so the background split and sweep survive.
+        val leadEnd = ranges.filterNotNull().lastOrNull()?.let { it.last + 1 } ?: 0
+        val start = line.text.indexOf(background.first().text.trim(), leadEnd)
+        assertTrue(start > 0, "first background word must be found after the lead words in line.text")
+        val tail = line.text.substring(start)
+        var offset = 0
+        background.forEach { word ->
+            val fragment = word.text.trim()
+            val at = tail.indexOf(fragment, offset)
+            assertTrue(at >= 0, "background word '$fragment' lost its split sweep in line.text")
+            offset = at + fragment.length
+        }
     }
 
     @Test
