@@ -178,3 +178,15 @@ The shared player's title and artist actions now reach the existing desktop albu
 route/item menu and artist picker. The existing capability-dispatch contract test
 was updated for those callbacks; it has not been run locally. Output routing/Cast
 remains unavailable in the player.
+
+## Module metadata pages
+
+Enabled modules now expose their declared search/home/library/album/artist/playlist
+methods through the details page. The host projects bounded catalog fields into
+readable rows and uses the one queue for playback. Audio-module track IDs preserve
+the installation and the provider ID, and try that enabled module before the
+ordinary fallback chain; metadata-only rows use normal title/artist matching.
+Changed or disabled installations invalidate in-flight responses. Arbitrary JSON
+and session fields are not rendered. Pagination and provider-specific catalog
+schemas beyond the supported containers remain partial; live providers are
+unverified. This addition changes desktop JVM sources only.

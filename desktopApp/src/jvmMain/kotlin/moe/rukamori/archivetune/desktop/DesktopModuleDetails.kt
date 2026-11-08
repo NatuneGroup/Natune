@@ -27,6 +27,7 @@ internal fun DesktopModuleDetails(graph: DesktopSessionGraph, entry: DesktopModu
     var operation by remember { mutableStateOf<Job?>(null) }
     var authenticated by remember(entry.id, entry.source) { mutableStateOf<Boolean?>(null) }
     var updateAddress by remember(entry.id) { mutableStateOf("") }
+    var browsing by remember(entry.id) { mutableStateOf(false) }
     fun run(action: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -43,6 +44,10 @@ internal fun DesktopModuleDetails(graph: DesktopSessionGraph, entry: DesktopModu
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { failed = true }
         }
+    }
+    if (browsing) {
+        DesktopModuleMetadataPage(graph, entry) { browsing = false }
+        return
     }
     Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TextButton(onClick = back) { Text(DesktopStrings["desktop_modules_back"]) }
@@ -67,6 +72,9 @@ internal fun DesktopModuleDetails(graph: DesktopSessionGraph, entry: DesktopModu
             TextButton(enabled = !busy && manifest.settings.isNotEmpty(), onClick = { run {
                 values = graph.modules.settings(entry); editing = true
             } }) { Text(DesktopStrings["desktop_modules_settings"]) }
+        }
+        if (manifest.capabilities.any { it in DESKTOP_MODULE_METADATA_FUNCTIONS }) {
+            TextButton(enabled = !busy && entry.enabled, onClick = { browsing = true }) { Text(DesktopStrings["desktop_modules_browse"]) }
         }
         if (manifest.authentication) {
             HorizontalDivider()
