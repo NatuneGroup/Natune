@@ -116,9 +116,11 @@ object ArchiveRoutes {
 
     /** The track-info page for one track. The id is one encoded segment, so a provider id cannot split the route. */
     fun trackInfo(trackId: String): String = "track_info/${encode(trackId)}"
+    fun trackInfo(trackId: String, provider: String): String = trackInfo(trackId) + "?provider=${encode(provider)}"
 
     /** The media-info page for one media id, encoded like [trackInfo]. */
     fun mediaInfo(mediaId: String): String = "media_info/${encode(mediaId)}"
+    fun mediaInfo(mediaId: String, provider: String): String = mediaInfo(mediaId) + "?provider=${encode(provider)}"
 
     fun resolve(value: String): ArchiveRoute? {
         val path = value.substringBefore('?').split('/').map(::decode)

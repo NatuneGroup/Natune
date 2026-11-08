@@ -215,7 +215,7 @@ private class IosSongMenuHost(
 
     override fun openTrackInfo(song: ContentRef) {
         state.dismiss()
-        openRoute(ArchiveRoutes.trackInfo(song.id))
+        openRoute(ArchiveRoutes.trackInfo(song.id, song.provider))
     }
 }
 
@@ -333,7 +333,7 @@ internal fun IosSongMenu(
         )
         addAll(songLibraryAndDownloadActions(facts, songHost))
         // The shared menu has no media-info row, so this host adds the Details row that opens the mounted route.
-        add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
+        add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id, ref.provider)) })
         // The shared tempo/pitch dialog is owned by the session graph, so the row opens it like the timer row.
         add(OverflowAction("tempo_pitch", Res.string.m5pq_tempo_and_pitch) { menu.dismiss(); tempoSheet.open = true })
         // The equalizer sheet and the acoustic audit dialog are owned by the session graph too.
