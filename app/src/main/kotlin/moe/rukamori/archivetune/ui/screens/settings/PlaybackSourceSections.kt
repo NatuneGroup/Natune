@@ -65,7 +65,6 @@ import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.spotify.rememberSpotifyPlaybackExtensionAvailable
-import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
 import moe.rukamori.archivetune.constants.SaavnAudioQuality
@@ -151,7 +150,6 @@ internal fun PlaybackSourceSections(
     val (amazonEnabled, onAmazonEnabledChangeRaw) = rememberPreference(AmazonEnabledKey, false)
     val (qqMusicEnabled, onQqMusicEnabledChangeRaw) = rememberPreference(QqMusicEnabledKey, false)
     val (spotifyStreamEnabledRaw, onSpotifyStreamEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
-    val (spotifyStreamSpDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
     val spotifyStreamSignedIn = rememberSpotifyPlaybackExtensionAvailable()
     // Matches MusicService.isSpotifyStreamingConfigured: the switch alone does nothing without an
     // account, so the order picker must not show the source as active.
