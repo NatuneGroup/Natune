@@ -1,8 +1,8 @@
 # Desktop parity follow-up
 
 Branch `feat/r3-desktop-parity`, based on `origin/dev` at `c289e50f`.
-Implementation is source-reviewed only until the orchestrator integrates it and runs CI.
-No local Gradle/JVM build, lint, tests or Windows/Linux device playback is claimed.
+CI has compiled an intermediate branch revision; newer edits still need exact-head CI.
+No local Gradle/JVM build, lint, JVM tests or Windows/Linux device playback is claimed.
 
 ## Spotify
 
@@ -256,3 +256,50 @@ provider adapters. Scheduled backups still require a running desktop process, an
 advanced Automix/refraction remain limited by the current mixer/renderer. Live
 accounts, clipboard integration, physical output and the reported nightly UI
 behavior need Windows/Linux runtime validation.
+
+## Remaining desktop boundaries
+
+- Other unofficial Spotify methods and protected Apple playback require licensed
+  WebView/MediaDrm/CDM hosts absent from this JVM adapter. Echo/Librespot remain
+  independently selected, and refusal keeps the established source fallback.
+- Bit-perfect and USB-exclusive output stay disabled: the existing decoder and
+  two-deck miniaudio output use mixed float PCM at a fixed output rate. There is no
+  validated WASAPI-exclusive/ALSA-hw format/route negotiation or raw USB host.
+- Google Cast and speech search have no portable receiver/STT host in the retained
+  dependencies. OS routing and microphone recognition are existing separate features.
+- Folder/Drive schedules remain process-bound. A standalone OS service/task entry
+  point with isolated database, vault and lifecycle ownership is not implemented.
+- Generic module DASH needs a source-preserving shared native recipe; Android
+  binary extensions require desktop binaries/load contracts. Script packages, HLS,
+  signed-session controls, settings and metadata pages are mounted.
+- Advanced Automix stretch/bass/sweep execution and optional models remain
+  unsupported by this mixer. Account-only Amazon and Spotify pool streaming tiers
+  remain outside their existing desktop account contracts.
+- Launcher icon packs, refraction, Cast/output actions and Android-specific live
+  pipeline diagnostics are not implied by the working desktop editors/menus.
+
+## Validation
+
+`python3 scripts/check_repository.py --worktree`: zero findings.
+`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`: 28 passed.
+The observed [desktop/Android compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983487),
+[unit workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983501) and
+[iOS compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983516)
+passed at intermediate `192942d3`. This does not establish exact-head compile
+success, optional Librespot binaries, native desktop packaging or audible/device QA
+for later four-seed theme, module HLS and clipboard edits. The orchestrator owns
+the next coherent CI batch.
+
+Common changes are additive: downloaded-episode index admission; account lyrics
+and QQ chart methods on existing repositories; optional HostLyrics persistence/extra
+providers and root saved-theme callbacks; desktop-only settings links/resources;
+and the desktop icon preference key/registry. Android module source gained only
+the additive immutable stream-permission accessor. No iOS source set was edited by
+this implementation work.
+
+Module streaming also binds the retained per-installation encrypted cookie jar to
+its accepted stream scope. Only that module's cookies can reach its origin; catalog
+and unrelated provider cookie jars remain separate. Librespot honors Android's
+global quality cap/low-data policy, verifies ISRC matches, and uses the shared
+failure policy to avoid reconnecting a healthy session after audio-key denial.
+These final adapters remain source-checked pending exact-head CI.
