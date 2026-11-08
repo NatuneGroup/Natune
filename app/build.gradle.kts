@@ -649,7 +649,9 @@ android {
             }
             keepDebugSymbols += listOf(
                 "**/libandroidx.graphics.path.so",
-                "**/libdatastore_shared_counter.so"
+                "**/libdatastore_shared_counter.so",
+                // Cargo already strips this library; preserve the bytes checked by the CI manifest.
+                "**/libnatune_librespot.so"
             )
         }
         resources {

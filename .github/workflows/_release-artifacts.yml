@@ -197,6 +197,7 @@ jobs:
           echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-${CHANNEL_SUFFIX}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Build Librespot audio for the shipping ABI
+        id: librespot
         uses: ./.github/actions/build-librespot
         with:
           variant: ${{ matrix.variant }}
@@ -206,6 +207,13 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2
+
+      - name: Verify Librespot in the shipping APK
+        shell: bash
+        env:
+          LIBRESPOT_VARIANT: ${{ matrix.variant }}
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk "$LIBRESPOT_VARIANT" --available "$LIBRESPOT_AVAILABLE"
 
       - name: Stage APK
         shell: bash

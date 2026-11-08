@@ -12,20 +12,8 @@ if [[ ! -x "$toolchain_dir/llvm-ar" ]]; then
 fi
 
 selection="${1:-universal}"
-case "$selection" in
-    arm64-v8a|armeabi-v7a|x86|x86_64) abis=("$selection") ;;
-    *)
-        case "${selection##*-}" in
-            universal) abis=(arm64-v8a x86_64) ;;
-            arm64) abis=(arm64-v8a) ;;
-            armeabi) abis=(armeabi-v7a) ;;
-            x86) abis=(x86) ;;
-            x86_64) abis=(x86_64) ;;
-            all) abis=(arm64-v8a armeabi-v7a x86 x86_64) ;;
-            *) echo 'Unsupported Android ABI selection' >&2; exit 1 ;;
-        esac
-        ;;
-esac
+selected_abis="$(python3 "$recipe_dir/android-artifact.py" abis "$selection")"
+read -r -a abis <<< "$selected_abis"
 
 bash "$recipe_dir/prepare.sh"
 for abi in "${abis[@]}"; do
@@ -49,3 +37,4 @@ for abi in "${abis[@]}"; do
     "$toolchain_dir/llvm-readelf" -l "$library"
     wc -c "$library"
 done
+python3 "$recipe_dir/android-artifact.py" record "$selection" --toolchain "$toolchain_dir"
