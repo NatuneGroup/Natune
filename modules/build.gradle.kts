@@ -19,6 +19,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.quickjs.kt)
     implementation(libs.jsoup)
+    implementation(libs.gson)
     testImplementation(libs.junit)
     testImplementation("org.json:json:20250517")
 }
