@@ -113,44 +113,8 @@ internal class DesktopMediaInfoOwner(
                 providerIsLocal(item?.ref?.provider, mediaId),
             isLiveTrack = isLive,
             playbackVolume = null,
-            live = if (isLive) liveState(technical, output) else null,
+            live = if (isLive) desktopMediaInfoLive(technical, output) else null,
             outputStats = outputStats(output),
-        )
-    }
-
-    /** Decoded and direct PCM facts for the DAC section; the Android mixer labels are not used here. */
-    private fun liveState(technical: MediaTechnicalInfo?, output: DesktopOutputState): MediaInfoLiveState {
-        val direct = output.directPcm
-        val sourceRateHz = technical?.sampleRate?.takeIf { it > 0 }
-            ?: output.inputRateHz.takeIf { it > 0 }
-            ?: 0
-        return MediaInfoLiveState(
-            stream = technical?.let { MediaInfoLiveStream(sampleRateHz = it.sampleRate, bitDepth = it.bitDepth) },
-            pipeline = MediaInfoPipelineFacts(
-                decodedBits = output.inputBits.takeIf { it > 0 },
-                decodedFloat = output.inputFormat == DesktopPcmFormat.F32,
-                decodedChannels = output.inputChannels.takeIf { it > 0 },
-                chainChannels = output.outputChannels.takeIf { it > 0 },
-                decoderName = "FFmpeg",
-                routedName = output.deviceName.ifBlank { output.backend },
-                halSampleRateHz = output.outputRateHz.takeIf { it > 0 },
-                engineName = output.backend.takeIf { it.isNotBlank() },
-                hostDesktop = true,
-                exclusiveDirect = direct,
-            ),
-            bitPerfect = if (direct && output.outputBits > 0) {
-                MediaInfoBitPerfectStatus(
-                    sourceSampleRateHz = sourceRateHz,
-                    sourceIsLossy = technical?.codec.isLossy(),
-                    sourceFloatEncoding = technical?.codec == MediaCodec.PCM_FLOAT,
-                    sourceBitDepth = technical?.bitDepth ?: output.inputBits,
-                    outputFloatEncoding = output.outputFormat == DesktopPcmFormat.F32,
-                    outputBitDepth = output.outputBits,
-                    mixerBitPerfectActive = DesktopExclusiveOutputPolicy.decision(output).verifiedBitPerfect,
-                )
-            } else {
-                null
-            },
         )
     }
 
@@ -165,9 +129,6 @@ internal class DesktopMediaInfoOwner(
             hostDesktop = true,
         )
     }
-
-    private fun MediaCodec?.isLossy(): Boolean =
-        this == MediaCodec.MP3 || this == MediaCodec.VORBIS || this == MediaCodec.OPUS || this == MediaCodec.AAC
 
     /** A local ref's media id is its absolute path; a gone library row can still name a local file. */
     private fun providerIsLocal(provider: String?, mediaId: String): Boolean =
@@ -194,3 +155,49 @@ internal class DesktopMediaInfoOwner(
     private fun String.toAudioSource(): AudioSourceType? =
         AudioSourceType.entries.firstOrNull { it.name == this }
 }
+
+/**
+ * Decoded and direct PCM facts for the media-info DAC section. The source rate/depth prefer the file's
+ * own header and fall back to what the native engine decoded; the bit-perfect row appears only while a
+ * direct lane is actually playing, so a refused exclusive request keeps describing shared output.
+ */
+internal fun desktopMediaInfoLive(
+    technical: MediaTechnicalInfo?,
+    output: DesktopOutputState,
+): MediaInfoLiveState {
+    val direct = output.directPcm
+    val sourceRateHz = technical?.sampleRate?.takeIf { it > 0 }
+        ?: output.inputRateHz.takeIf { it > 0 }
+        ?: 0
+    return MediaInfoLiveState(
+        stream = technical?.let { MediaInfoLiveStream(sampleRateHz = it.sampleRate, bitDepth = it.bitDepth) },
+        pipeline = MediaInfoPipelineFacts(
+            decodedBits = output.inputBits.takeIf { it > 0 },
+            decodedFloat = output.inputFormat == DesktopPcmFormat.F32,
+            decodedChannels = output.inputChannels.takeIf { it > 0 },
+            chainChannels = output.outputChannels.takeIf { it > 0 },
+            decoderName = "FFmpeg",
+            routedName = output.deviceName.ifBlank { output.backend },
+            halSampleRateHz = output.outputRateHz.takeIf { it > 0 },
+            engineName = output.backend.takeIf { it.isNotBlank() },
+            hostDesktop = true,
+            exclusiveDirect = direct,
+        ),
+        bitPerfect = if (direct && output.outputBits > 0) {
+            MediaInfoBitPerfectStatus(
+                sourceSampleRateHz = sourceRateHz,
+                sourceIsLossy = technical?.codec.isLossy(),
+                sourceFloatEncoding = technical?.codec == MediaCodec.PCM_FLOAT,
+                sourceBitDepth = technical?.bitDepth ?: output.inputBits,
+                outputFloatEncoding = output.outputFormat == DesktopPcmFormat.F32,
+                outputBitDepth = output.outputBits,
+                mixerBitPerfectActive = DesktopExclusiveOutputPolicy.decision(output).verifiedBitPerfect,
+            )
+        } else {
+            null
+        },
+    )
+}
+
+private fun MediaCodec?.isLossy(): Boolean =
+    this == MediaCodec.MP3 || this == MediaCodec.VORBIS || this == MediaCodec.OPUS || this == MediaCodec.AAC
