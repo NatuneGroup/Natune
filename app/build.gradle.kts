@@ -998,7 +998,8 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
 val librespotLibraries = layout.buildDirectory.dir("generated/librespot/jniLibs")
 val requireLibrespotAudio = providers.gradleProperty("requireLibrespotAudio").map(String::toBoolean).orElse(false)
 android {
-    sourceSets.getByName("main").jniLibs.srcDir(librespotLibraries)
+    // The SourceSet API refuses Provider values; the directory is fixed under build/, so resolve it eagerly.
+    sourceSets.getByName("main").jniLibs.srcDir(librespotLibraries.get().asFile)
 }
 
 androidComponents {
