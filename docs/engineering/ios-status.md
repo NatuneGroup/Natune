@@ -402,3 +402,9 @@ retain the existing export policy, font payloads are bounded but not installed, 
 paths from an Android backup do not acquire iOS file access. The existing journaled iOS restore
 stages the converted database and applies chosen sections on restart. Android-format export is
 still absent. Real archives, Apple compilation and restore/device recovery remain unverified.
+
+Podcast browse/search and show episode pages now use the existing InnerTubeX transport and
+shared Compose podcast screens. Local follows persist in vault-backed settings and are labelled
+as local subscriptions. Episodes keep their own content kind and use the normal finite queue and
+progress store. Header parsing shares the provider header parser; date/description extraction and
+remote subscription mutation are still incomplete. No live podcast/device evidence is claimed.

@@ -103,8 +103,8 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.TAGS -> iosTagsPage(graph, tags)
     ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
     ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
-    ArchiveDestination.PODCASTS -> iosPodcastsPage()
-    ArchiveDestination.PODCAST -> iosPodcastPage(route.arguments.getValue("browseId"))
+    ArchiveDestination.PODCASTS -> iosPodcastsPage(graph)
+    ArchiveDestination.PODCAST -> iosPodcastPage(graph, route.arguments.getValue("browseId"))
     ArchiveDestination.TRACK_INFO -> iosTrackInfoPage(graph, route.arguments.getValue("trackId"))
     ArchiveDestination.MEDIA_INFO -> iosMediaInfoPage(graph, host, route.arguments.getValue("mediaId"))
     else -> null
