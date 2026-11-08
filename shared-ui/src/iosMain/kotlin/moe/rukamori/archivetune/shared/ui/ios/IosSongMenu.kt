@@ -119,7 +119,7 @@ private class IosSongMenuHost(
         graph.pageOwners.history.remove(HistoryOrigin.LOCAL, setOf(id))
     }
 
-    override suspend fun removeFromCache(song: ContentRef) = state.unavailable()
+    override suspend fun removeFromCache(song: ContentRef) = graph.songCache.remove(song)
 
     /**
      * A download resolves under the user's download source order and is stored in the app container. A provider this
@@ -254,6 +254,7 @@ internal fun IosSongMenu(
             false
         }
     }
+    val cached by produceState(false, ref) { value = graph.songCache.file(ref) != null }
     val isTelegram = ref.id.startsWith("telegram://")
     val isLocal = ref.provider == ContentProvider.LOCAL.id
     val artistRef = occurrence.item.artists.firstNotNullOfOrNull { it.ref(ref.provider) }
@@ -294,7 +295,7 @@ internal fun IosSongMenu(
         download = download,
         downloadExtension = downloadExtension,
         fromHistory = occurrence.occurrenceId.startsWith("history:"),
-        fromCache = false,
+        fromCache = cached,
         albumId = occurrence.item.albumId,
         artworkUrl = occurrence.item.artworkUri,
         recommendationBlocked = ref.iosYouTubeSong() &&
@@ -412,6 +413,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // A speed-dial pin holds a YouTube song id; other providers keep the row's unavailable answer.
         if (!facts.isLocal) add("speed_dial")
         if (facts.fromHistory) add("remove_history")
+        if (facts.fromCache) add("remove_cache")
         if (facts.albumId != null) add("view_album")
         // The shared sleep timer sheet is owned by the session graph, so the row is always connected.
         add("sleep_timer")

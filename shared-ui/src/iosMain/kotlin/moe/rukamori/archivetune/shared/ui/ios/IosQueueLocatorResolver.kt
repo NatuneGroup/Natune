@@ -113,6 +113,7 @@ internal class IosQueueLocatorResolver(
     private val localFile: (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
     /** The stored file of a completed download, or null when the song is not a stored download. */
     private val downloadedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
+    private val cachedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef, Set<AudioSourceType>) -> String? = { _, _ -> null },
 ) : QueueLocatorResolver {
     override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator = locate(occurrence, QueueSourceRecovery())
 
@@ -127,6 +128,7 @@ internal class IosQueueLocatorResolver(
         }
         // A stored download plays from the app container before any provider is asked for it.
         downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
+        cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
         // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
         if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)

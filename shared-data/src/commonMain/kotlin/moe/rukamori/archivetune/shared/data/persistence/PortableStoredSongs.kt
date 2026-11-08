@@ -304,7 +304,7 @@ private fun storedRow(
     bytes: Long?,
     atMs: Long,
 ): PortableStoredSongRow {
-    require(song.ref.kind == ContentKind.SONG) { "Only songs are stored" }
+    require(song.ref.kind in setOf(ContentKind.SONG, ContentKind.EPISODE)) { "Only songs and episodes are stored" }
     val occurrence = ContentOccurrence(song.ref.id, song.copy(artworkUri = null))
     return PortableStoredSongRow(
         origin,
