@@ -1798,7 +1798,6 @@
     <string name="modules_playback_source">Playback source</string>
     <string name="modules_quality_title">Quality</string>
     <string name="modules_priority_title">Priority</string>
-    <string name="modules_authorize">Sign in</string>
     <string name="modules_use_own_account">Use my own account</string>
     <string name="modules_account_configured">Account configured</string>
     <string name="modules_account_sign_in_required">Add your account credentials below</string>
@@ -1808,11 +1807,5 @@
     <string name="modules_pool_configuration_required">Enable ArchivePool and configure its read key</string>
     <string name="modules_own_account_first">Try my own account before the pool</string>
     <string name="modules_own_account_first_description">When off, try the pool first, then your account</string>
-    <string name="modules_quality_low">Low</string>
-    <string name="modules_quality_high">High</string>
-    <string name="modules_quality_lossless">Lossless</string>
-    <string name="modules_quality_hires">Hi-Res</string>
-    <string name="modules_quality_mp3">MP3</string>
-    <string name="modules_quality_96khz">96 kHz</string>
-    <string name="modules_quality_192khz">192 kHz</string>
+    <string name="modules_provider_description">Description</string>
 </resources>

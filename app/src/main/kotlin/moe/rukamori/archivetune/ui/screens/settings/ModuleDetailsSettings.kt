@@ -7,6 +7,16 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.EditTextPreference
+import moe.rukamori.archivetune.ui.component.ListPreference
+import moe.rukamori.archivetune.ui.component.NumberEditTextPreference
+import moe.rukamori.archivetune.ui.component.PreferenceEntry
+import moe.rukamori.archivetune.ui.component.PreferenceGroup
+import moe.rukamori.archivetune.ui.component.PreferenceGroupTitle
+import moe.rukamori.archivetune.ui.component.SwitchPreference
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.key
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -22,19 +32,14 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,15 +56,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -176,8 +178,13 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
     val focus = LocalFocusManager.current
     val save = remember(focus, onAction) { { focus.clearFocus(); onAction(ModuleSettingsAction.Save) } }
     var informationExpanded by rememberSaveable(detail.row.id) { mutableStateOf(false) }
+    val sourceTitle = stringResource(R.string.modules_playback_source)
+    val qualityTitle = stringResource(R.string.modules_quality_title)
+    val priorityTitle = stringResource(R.string.modules_priority_title)
+    val informationTitle = stringResource(R.string.modules_metadata_information)
     val quality = detail.fields.firstOrNull { it.key == "quality" }
     val connection = detail.fields.firstOrNull { it.key == "mode" }
+    val configuration = detail.fields.filter { it.key != quality?.key && it.key != connection?.key }
     val showSave = detail.fields.isNotEmpty() && detail.dirty
     val bottomPadding by animateDpAsState(SettingsDimensions.ScreenBottomPadding +
         if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
@@ -185,12 +192,13 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier.widthIn(max = ModuleSettingsLayout.ContentMaxWidth).fillMaxWidth().fillMaxHeight().imePadding(),
-            contentPadding = PaddingValues(start = SettingsDimensions.ScreenHorizontalPadding, end = SettingsDimensions.ScreenHorizontalPadding,
-                top = 8.dp, bottom = bottomPadding), verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
+            contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+            verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
         ) {
             item(key = "hero", contentType = "hero") { ModuleDetailHero(detail, model, onAction, moduleItemMotion()) }
             if (!model.enabled) item(key = "playback_off", contentType = "notice") {
-                Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
+                Surface(Modifier.fillMaxWidth().padding(horizontal = SettingsDimensions.ScreenHorizontalPadding),
+                    shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(painterResource(R.drawable.info), null, Modifier.size(20.dp))
@@ -199,50 +207,57 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
                 }
             }
             if (model.message != null || model.busy != null) item(key = "message", contentType = "message") {
-                ModuleMessage(model, onAction, moduleItemMotion())
+                ModuleMessage(model, onAction, moduleItemMotion().padding(horizontal = SettingsDimensions.ScreenHorizontalPadding))
             }
-            item(key = "source_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_playback_source) }
-            item(key = "source", contentType = "source") {
-                ModulePlaybackSourcePanel(detail, connection, model, onAction)
+            preferenceGroup(title = sourceTitle) {
+                connection?.let { field -> item { ModuleField(field, model, onAction, Modifier) } }
+                if (detail.supportsPool) {
+                    item { ModuleOwnAccountPreference(detail, model, onAction) }
+                    if (detail.poolInstalled) {
+                        item { ModulePoolPreference(detail, model, onAction) }
+                        item { ModuleAccountOrderPreference(detail, model, onAction) }
+                    }
+                } else if (connection == null) item {
+                    PreferenceEntry(title = { Text(stringResource(R.string.modules_capabilities)) }, content = {
+                        detail.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+                    })
+                }
+                configuration.forEach { field -> item { ModuleField(field, model, onAction, Modifier) } }
+                if (detail.authentication) item {
+                    PreferenceEntry(title = { Text(stringResource(R.string.modules_session_verify)) },
+                        icon = { Icon(painterResource(R.drawable.login), null) },
+                        onClick = { onAction(ModuleSettingsAction.Authorize(detail.row.id)) }, isEnabled = model.busy == null)
+                }
             }
             quality?.let { field ->
-                item(key = "quality_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_quality_title) }
-                item(key = "quality", contentType = "quality") { ModuleField(field, model, onAction, moduleItemMotion()) }
+                preferenceGroup(title = qualityTitle) { item { ModuleField(field, model, onAction, Modifier) } }
             }
-            item(key = "priority_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_priority_title) }
-            item(key = "priority", contentType = "priority") { ModulePriorityPanel(detail, model, onAction, moduleItemMotion()) }
-            val configuration = detail.fields.filter { it.key != quality?.key && it.key != connection?.key }
-            if (configuration.isNotEmpty()) item(key = "configuration_header", contentType = "heading") {
-                ModuleSectionHeading(R.string.modules_configuration)
-            }
-            items(configuration, key = { it.key }, contentType = { it.type.name }) { field ->
-                ModuleField(field, model, onAction, moduleItemMotion())
-            }
+            preferenceGroup(title = priorityTitle) { item { ModulePriorityPanel(detail, model, onAction, Modifier) } }
             if (detail.information.isNotEmpty() || detail.description.isNotBlank()) {
                 item(key = "information_header", contentType = "heading") {
-                    Surface(onClick = { informationExpanded = !informationExpanded }, modifier = Modifier.fillMaxWidth(),
-                        color = Color.Transparent, shape = MaterialTheme.shapes.medium) {
-                        Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.modules_metadata_information), style = MaterialTheme.typography.titleSmallEmphasized,
-                                color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                            Icon(painterResource(if (informationExpanded) R.drawable.expand_less else R.drawable.expand_more),
-                                stringResource(if (informationExpanded) R.string.modules_hide_details else R.string.modules_show_details))
-                        }
+                    Row(Modifier.fillMaxWidth().clickable { informationExpanded = !informationExpanded }
+                        .padding(horizontal = SettingsDimensions.ScreenHorizontalPadding, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        PreferenceGroupTitle(informationTitle, modifier = Modifier.weight(1f))
+                        Icon(painterResource(if (informationExpanded) R.drawable.expand_less else R.drawable.expand_more),
+                            stringResource(if (informationExpanded) R.string.modules_hide_details else R.string.modules_show_details))
                     }
                 }
-                if (informationExpanded) item(key = "information", contentType = "information") {
-                    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                        Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (detail.description.isNotBlank()) Text(detail.description, style = MaterialTheme.typography.bodyMedium)
-                            detail.information.forEach { ModuleInformation(it, onAction) }
-                        }
+                if (informationExpanded) preferenceGroup {
+                    if (detail.description.isNotBlank()) item {
+                        PreferenceEntry(title = { Text(stringResource(R.string.modules_provider_description)) }, description = detail.description)
                     }
+                    detail.information.forEach { information -> item { ModuleInformation(information, onAction) } }
                 }
             }
             item(key = "diagnostics_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_diagnostics) }
-            item(key = "diagnostics", contentType = "diagnostics") { ModuleDiagnosticsPanel(detail, model, onAction) }
+            item(key = "diagnostics", contentType = "diagnostics") {
+                Box(Modifier.padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)) { ModuleDiagnosticsPanel(detail, model, onAction) }
+            }
             item(key = "maintenance_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_updates) }
-            item(key = "maintenance", contentType = "maintenance") { ModuleMaintenancePanel(detail, model, onAction) }
+            item(key = "maintenance", contentType = "maintenance") {
+                Box(Modifier.padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)) { ModuleMaintenancePanel(detail, model, onAction) }
+            }
         }
         ModuleSaveToolbar(visible = showSave, enabled = detail.fields.none { it.error != null } && model.busy == null, onSave = save)
     }
@@ -250,114 +265,73 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
 
 @Composable
 private fun ModuleDetailHero(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier) {
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLargeIncreased, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.padding(ModuleSettingsLayout.CardPadding), horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(64.dp).background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.large),
-                contentAlignment = Alignment.Center) {
-                detail.row.icon?.let { ModuleProviderIcon(it, size = 48.dp) }
-                    ?: Icon(painterResource(R.drawable.extension), null, Modifier.size(32.dp))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(detail.row.name, style = MaterialTheme.typography.headlineSmallEmphasized)
-                Surface(shape = CircleShape, color = if (detail.row.enabled) MaterialTheme.colorScheme.tertiaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    Text(stringResource(if (detail.row.enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
-                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+    PreferenceGroup(modifier = modifier) {
+        item {
+            SwitchPreference(title = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(detail.row.name, style = MaterialTheme.typography.headlineSmallEmphasized)
+                    Surface(shape = CircleShape, color = if (detail.row.enabled) MaterialTheme.colorScheme.tertiaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHighest) {
+                        Text(stringResource(if (detail.row.enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
+                            style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                    }
                 }
-            }
-            Switch(checked = detail.row.enabled, enabled = model.busy == null,
+            }, icon = {
+                detail.row.icon?.let { ModuleProviderIcon(it, size = SettingsDimensions.SegmentedIconSize) }
+                    ?: Icon(painterResource(R.drawable.extension), null)
+            }, checked = detail.row.enabled, isEnabled = model.busy == null,
                 onCheckedChange = { onAction(ModuleSettingsAction.Enable(detail.row.id, it)) })
         }
     }
 }
 
 @Composable
-private fun ModulePlaybackSourcePanel(detail: ModuleDetailUi, connection: ModuleFieldUi?, model: ModuleSettingsUiModel,
-    onAction: (ModuleSettingsAction) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap)) {
-        if (connection != null) ModuleField(connection, model, onAction, Modifier)
-        if (detail.supportsPool) {
-            val ownEnabled = detail.accountSettings.useOwnAccount && !detail.publicInstance
-            val poolEnabled = detail.accountSettings.poolEnabled(detail.poolInstalled)
-            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    ModuleAccountToggleRow(R.string.modules_use_own_account,
-                        if (detail.publicInstance) R.string.modules_public_instance_active else if (detail.ownAccountConfigured)
-                            R.string.modules_account_configured else R.string.modules_account_sign_in_required,
-                        ownEnabled, model.busy == null && !detail.publicInstance) {
-                        onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
-                            moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_OWN_ACCOUNT, it))
-                    }
-                    if (detail.poolInstalled) {
-                        HorizontalDivider()
-                        ModuleAccountToggleRow(R.string.modules_use_archivepool,
-                            if (detail.poolReady) R.string.modules_pool_fallback_description else R.string.modules_pool_configuration_required,
-                            poolEnabled, model.busy == null) {
-                            onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
-                                moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_POOL, it))
-                        }
-                        HorizontalDivider()
-                        ModuleAccountToggleRow(R.string.modules_own_account_first, R.string.modules_own_account_first_description,
-                            detail.accountSettings.ownAccountFirst, model.busy == null && ownEnabled && poolEnabled) {
-                            onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
-                                moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.OWN_ACCOUNT_FIRST, it))
-                        }
-                    }
-                }
-            }
-        } else if (connection == null) Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased,
-            color = MaterialTheme.colorScheme.surfaceContainerLow) {
-            Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(detail.row.name, style = MaterialTheme.typography.titleMediumEmphasized)
-                detail.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
-                if (detail.authentication) FilledTonalButton(onClick = { onAction(ModuleSettingsAction.Authorize(detail.row.id)) },
-                    enabled = model.busy == null) { Text(stringResource(R.string.modules_authorize)) }
-            }
-        }
-    }
+private fun ModuleOwnAccountPreference(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
+    SwitchPreference(title = { Text(stringResource(R.string.modules_use_own_account)) },
+        description = stringResource(if (detail.publicInstance) R.string.modules_public_instance_active else if (detail.ownAccountConfigured)
+            R.string.modules_account_configured else R.string.modules_account_sign_in_required),
+        checked = detail.accountSettings.useOwnAccount && !detail.publicInstance,
+        isEnabled = model.busy == null && !detail.publicInstance,
+        onCheckedChange = { onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+            moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_OWN_ACCOUNT, it)) })
 }
 
 @Composable
-private fun ModuleAccountToggleRow(@StringRes title: Int, @StringRes description: Int, checked: Boolean,
-    enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
-        .padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(title), style = MaterialTheme.typography.titleSmallEmphasized)
-            Text(stringResource(description), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked, onCheckedChange = null, enabled = enabled)
-    }
+private fun ModulePoolPreference(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
+    SwitchPreference(title = { Text(stringResource(R.string.modules_use_archivepool)) },
+        description = stringResource(if (detail.poolReady) R.string.modules_pool_fallback_description else R.string.modules_pool_configuration_required),
+        checked = detail.accountSettings.poolEnabled(detail.poolInstalled), isEnabled = model.busy == null,
+        onCheckedChange = { onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+            moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_POOL, it)) })
+}
+
+@Composable
+private fun ModuleAccountOrderPreference(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
+    SwitchPreference(title = { Text(stringResource(R.string.modules_own_account_first)) },
+        description = stringResource(R.string.modules_own_account_first_description), checked = detail.accountSettings.ownAccountFirst,
+        isEnabled = model.busy == null && !detail.publicInstance && detail.accountSettings.useOwnAccount &&
+            detail.accountSettings.poolEnabled(detail.poolInstalled),
+        onCheckedChange = { onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+            moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.OWN_ACCOUNT_FIRST, it)) })
 }
 
 @Composable
 private fun ModulePriorityPanel(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier) {
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Row(Modifier.padding(ModuleSettingsLayout.CardPadding), horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.large).clearAndSetSemantics {},
-                contentAlignment = Alignment.Center) {
-                ModuleCounter(detail.row.position, MaterialTheme.typography.headlineSmallEmphasized, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(stringResource(R.string.modules_position, detail.row.position, model.rows.size), style = MaterialTheme.typography.titleSmallEmphasized)
-                Text(stringResource(R.string.modules_priority_description), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+    PreferenceEntry(modifier = modifier, title = { Text(stringResource(R.string.modules_position, detail.row.position, model.rows.size)) },
+        description = stringResource(R.string.modules_priority_description), icon = {
+            ModuleCounter(detail.row.position, MaterialTheme.typography.labelLarge)
+        }, trailingContent = {
             Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
-                FilledTonalIconButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, -1)) } },
+                FilledTonalIconButton(onClick = { onAction(ModuleSettingsAction.Move(detail.row.id, -1)) },
                     shapes = IconButtonDefaults.shapes(), enabled = model.busy == null && detail.row.position > 1) {
                     Icon(painterResource(R.drawable.arrow_upward), stringResource(R.string.modules_move_up))
                 }
-                FilledTonalIconButton(onClick = remember(detail.row.id, onAction) { { onAction(ModuleSettingsAction.Move(detail.row.id, 1)) } },
+                FilledTonalIconButton(onClick = { onAction(ModuleSettingsAction.Move(detail.row.id, 1)) },
                     shapes = IconButtonDefaults.shapes(), enabled = model.busy == null && detail.row.position < model.rows.size) {
                     Icon(painterResource(R.drawable.arrow_downward), stringResource(R.string.modules_move_down))
                 }
             }
-        }
-    }
+        })
 }
 
 @Composable
@@ -373,25 +347,11 @@ internal fun ModuleSectionHeading(title: Int, description: Int? = null) {
 
 @Composable
 internal fun ModuleInformation(item: ModuleInfoUi, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier = Modifier) {
-    if (item.link) {
-        Surface(onClick = { onAction(ModuleSettingsAction.OpenLink(item.value)) }, modifier = modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.link), null, tint = MaterialTheme.colorScheme.primary)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(if (item.label == R.string.modules_metadata_repository) R.string.modules_source_code else item.label),
-                        style = MaterialTheme.typography.titleSmallEmphasized)
-                    Text(item.value, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary, softWrap = true)
-                }
-                Icon(painterResource(R.drawable.open_in_new), null)
-            }
-        }
-    } else Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(stringResource(item.label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(item.value, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium, softWrap = true)
-    }
+    PreferenceEntry(modifier = modifier, title = {
+        Text(stringResource(if (item.label == R.string.modules_metadata_repository) R.string.modules_source_code else item.label))
+    }, description = item.value, icon = if (item.link) { { Icon(painterResource(R.drawable.link), null) } } else null,
+        trailingContent = if (item.link) { { Icon(painterResource(R.drawable.open_in_new), null) } } else null,
+        onClick = if (item.link) { { onAction(ModuleSettingsAction.OpenLink(item.value)) } } else null)
 }
 
 @Composable
@@ -517,115 +477,41 @@ private fun BoxScope.ModuleSaveToolbar(visible: Boolean, enabled: Boolean, onSav
 
 @Composable
 private fun ModuleField(field: ModuleFieldUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier) {
-    val change = remember(field.key, onAction) { { value: String -> onAction(ModuleSettingsAction.Field(field.key, value)) } }
-    val interactive = model.busy == null
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = if (field.error != null) BorderStroke(1.dp, MaterialTheme.colorScheme.error) else null) {
-        if (field.type == ModuleSettingType.BOOLEAN) {
-            Row(Modifier.toggleable(value = field.checked, enabled = interactive, role = Role.Switch,
-                onValueChange = remember(change) { { checked: Boolean -> change(checked.toString()) } })
-                .padding(horizontal = ModuleSettingsLayout.CardPadding, vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(field.label, style = MaterialTheme.typography.bodyLargeEmphasized)
-                    ModuleFieldSupportingText(field)
-                }
-                Switch(field.checked, onCheckedChange = null, enabled = interactive)
-            }
-        } else Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (field.type) {
-                ModuleSettingType.SELECT -> if (field.options.size in 2..4) {
-                    Text(field.label, style = MaterialTheme.typography.titleSmallEmphasized)
-                    val choices = remember(field.key, field.options) {
-                        val qualityOrder = listOf("LOW", "HIGH", "LOSSLESS", "HI_RES_LOSSLESS", "5", "6", "7", "27")
-                        if (field.key == "quality") field.options.sortedBy { option ->
-                            qualityOrder.indexOf(option.json.trim('"')).takeIf { it >= 0 } ?: Int.MAX_VALUE
-                        } else field.options
-                    }
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        choices.forEachIndexed { index, option ->
-                            SegmentedButton(selected = option.json == field.json, enabled = interactive,
-                                onClick = { change(option.json) }, shape = SegmentedButtonDefaults.itemShape(index, field.options.size),
-                                icon = {}) {
-                                Text(moduleOptionLabel(field, option), style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                } else {
-                    val expanded = model.menu == "field:${field.key}"
-                    ExposedDropdownMenuBox(expanded = expanded,
-                        onExpandedChange = remember(field.key, onAction) { { open -> onAction(ModuleSettingsAction.Menu(if (open) "field:${field.key}" else null)) } }) {
-                        OutlinedTextField(value = field.selectedLabel, onValueChange = remember { {} }, readOnly = true,
-                            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = interactive),
-                            label = { Text(field.label) }, enabled = interactive, isError = field.error != null,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                            maxLines = 3, shape = MaterialTheme.shapes.medium)
-                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = remember(onAction) { { onAction(ModuleSettingsAction.Menu(null)) } }) {
-                            field.options.forEach { option ->
-                                DropdownMenuItem(text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(option.label)
-                                        if (option.description.isNotBlank()) Text(option.description, style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                },
-                                    onClick = remember(option.json, change, onAction) { { change(option.json); onAction(ModuleSettingsAction.Menu(null)) } },
-                                    trailingIcon = if (option.json == field.json) { { Icon(painterResource(R.drawable.check), null) } } else null,
-                                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding)
-                            }
-                        }
-                    }
-                }
-                ModuleSettingType.UNSUPPORTED -> {
-                    Text(field.label, style = MaterialTheme.typography.bodyLargeEmphasized)
-                    Text(stringResource(R.string.modules_setting_unsupported), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-                else -> {
-                    val transformation = remember(field.sensitive, field.revealed) {
-                        if (field.sensitive && !field.revealed) PasswordVisualTransformation() else VisualTransformation.None
-                    }
-                    val keyboard = remember(field.type, field.sensitive) { KeyboardOptions(keyboardType = when {
-                        field.sensitive -> KeyboardType.Password
-                        field.type == ModuleSettingType.NUMBER -> KeyboardType.Decimal
-                        else -> KeyboardType.Text
-                    }) }
-                    OutlinedTextField(value = field.text, onValueChange = change, modifier = Modifier.fillMaxWidth(),
-                        label = { Text(field.label) }, enabled = interactive, singleLine = true,
-                        isError = field.error != null, visualTransformation = transformation, keyboardOptions = keyboard,
-                        shape = MaterialTheme.shapes.medium,
-                        trailingIcon = if (field.sensitive) { {
-                            IconButton(onClick = remember(field.key, onAction) { { onAction(ModuleSettingsAction.Reveal(field.key)) } },
-                                shapes = IconButtonDefaults.shapes()) {
-                                Icon(if (field.revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    stringResource(if (field.revealed) R.string.modules_hide_password else R.string.modules_show_password))
-                            }
-                        } } else null)
-                }
-            }
-            ModuleFieldSupportingText(field)
+    key(field.key) {
+        val change = remember(field.key, onAction) { { value: String -> onAction(ModuleSettingsAction.Field(field.key, value)) } }
+        val interactive = model.busy == null
+        val supporting = listOfNotNull(field.description.takeIf(String::isNotBlank), field.error?.let { stringResource(it) }).joinToString("\n")
+        when (field.type) {
+            ModuleSettingType.BOOLEAN -> SwitchPreference(modifier = modifier, title = { Text(field.label) },
+                description = supporting.takeIf(String::isNotBlank), checked = field.checked,
+                onCheckedChange = { change(it.toString()) }, isEnabled = interactive)
+            ModuleSettingType.SELECT -> ListPreference(modifier = modifier, title = { Text(field.label) },
+                description = supporting.takeIf(String::isNotBlank), selectedValue = field.json,
+                values = field.options.map { it.json },
+                valueText = { value -> field.options.firstOrNull { it.json == value }?.label ?: field.selectedLabel },
+                valueDescription = { value -> field.options.firstOrNull { it.json == value }?.description.orEmpty() },
+                onValueSelected = change, isEnabled = interactive)
+            ModuleSettingType.NUMBER -> NumberEditTextPreference(modifier = modifier, title = { Text(field.label) },
+                value = field.text, onValueChange = { change(it.trim().toBigDecimalOrNull()?.stripTrailingZeros()?.toString() ?: "null") }, integerOnly = field.integerOnly,
+                description = listOf(field.text, supporting).filter(String::isNotBlank).joinToString("\n"),
+                isInputValid = { input ->
+                    if (input.isBlank()) !field.required else input.trim().toBigDecimalOrNull()?.let { decimal ->
+                        val value = decimal.toDouble()
+                        value.isFinite() && (!field.integerOnly || decimal.remainder(java.math.BigDecimal.ONE).signum() == 0) &&
+                            (field.minimum == null || value >= field.minimum) && (field.maximum == null || value <= field.maximum)
+                    } == true
+                }, isEnabled = interactive)
+            ModuleSettingType.TEXT, ModuleSettingType.PASSWORD -> EditTextPreference(modifier = modifier, title = { Text(field.label) },
+                value = field.text, onValueChange = change, masked = field.sensitive,
+                description = listOf(if (field.sensitive && field.text.isNotEmpty()) "••••••••" else field.text, supporting)
+                    .filter(String::isNotBlank).joinToString("\n"),
+                keyboardOptions = KeyboardOptions(keyboardType = when {
+                    field.sensitive -> KeyboardType.Password
+                    field.key.contains("url", ignoreCase = true) -> KeyboardType.Uri
+                    else -> KeyboardType.Text
+                }), isInputValid = { !field.required || it.isNotBlank() }, isEnabled = interactive)
+            ModuleSettingType.UNSUPPORTED -> PreferenceEntry(modifier = modifier, title = { Text(field.label) },
+                description = stringResource(R.string.modules_setting_unsupported), isEnabled = false)
         }
     }
-}
-
-@Composable
-private fun moduleOptionLabel(field: ModuleFieldUi, option: moe.rukamori.archivetune.viewmodels.ModuleOptionUi): String {
-    if (field.key != "quality") return option.label
-    val label = when (option.json.trim('"')) {
-        "LOW" -> R.string.modules_quality_low
-        "HIGH" -> R.string.modules_quality_high
-        "LOSSLESS", "6" -> R.string.modules_quality_lossless
-        "HI_RES_LOSSLESS", "HI_RES" -> R.string.modules_quality_hires
-        "5" -> R.string.modules_quality_mp3
-        "7" -> R.string.modules_quality_96khz
-        "27" -> R.string.modules_quality_192khz
-        else -> null
-    }
-    return label?.let { stringResource(it) } ?: option.label
-}
-
-@Composable
-private fun ModuleFieldSupportingText(field: ModuleFieldUi) {
-    if (field.description.isNotBlank()) Text(field.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    field.error?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 }
