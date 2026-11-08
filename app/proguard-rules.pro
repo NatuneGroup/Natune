@@ -266,3 +266,7 @@
 -keepclassmembers class moe.rukamori.archivetune.listentogether.** { *; }
 # JNI symbols bind this class and its native method names, including release/minified builds.
 -keep class moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative { *; }
+
+# Optional Social SDK JNI callbacks and the AAR's documented Activity initialization hook.
+-keep class moe.rukamori.archivetune.discord.DiscordNativeSdkBridge { *; }
+-keep class com.discord.socialsdk.DiscordSocialSdkInit { *; }

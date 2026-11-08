@@ -468,7 +468,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data android:scheme="${discordRedirectScheme}" />
+                <data android:scheme="${discordOAuthCallbackScheme}" />
             </intent-filter>
         </activity>
 
