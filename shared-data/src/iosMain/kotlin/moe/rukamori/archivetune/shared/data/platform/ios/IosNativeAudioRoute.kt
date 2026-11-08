@@ -13,6 +13,9 @@ import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.cookiesForLease
 import moe.rukamori.archivetune.shared.data.bytesource.toByteSourceAccount
 import moe.rukamori.archivetune.shared.data.stream.AdmittedCiphertextOpener
+import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
+import moe.rukamori.archivetune.shared.data.stream.deezer.DeezerCrypto
+import moe.rukamori.archivetune.shared.data.stream.deezer.DeezerChunkByteSource
 import moe.rukamori.archivetune.shared.data.stream.NativePlaintextHandle
 import moe.rukamori.archivetune.shared.data.stream.NativePlaybackRoute
 import moe.rukamori.archivetune.shared.data.stream.NativePreparation
@@ -100,7 +103,7 @@ internal class IosNativeAudioRoute(
                 scope = prepared.accountScope
             }
             is PreparedAudio.Progressive -> return@withContext admitProgressive(prepared.stream)
-            is PreparedAudio.DeezerEncrypted -> return@withContext Outcome.Refused("The stream is not native-prepared")
+            is PreparedAudio.DeezerEncrypted -> return@withContext prepareDeezer(prepared)
         }
         if (scope.isNullOrBlank()) {
             return@withContext Outcome.Refused("The ${source.name} account scope is missing; nothing was read")
@@ -152,6 +155,23 @@ internal class IosNativeAudioRoute(
                 Outcome.Refused(outcome.reason)
             }
         }
+    }
+
+    private suspend fun prepareDeezer(prepared: PreparedAudio.DeezerEncrypted): Outcome {
+        val scope = prepared.stream.accountScope ?: ANONYMOUS_ACCOUNT_SCOPE
+        val captured = if (scope == ANONYMOUS_ACCOUNT_SCOPE) null else accounts.admit("deezer", scope)
+            ?: return Outcome.Refused("No accepted Deezer account")
+        val transport = IosCiphertextOpener(scope,
+            captured?.toByteSourceAccount() ?: ByteSourceAccount("deezer", null),
+            captured?.let { admission -> { lease: ByteSourceLease -> PersonalCookieRecheck(accounts, cookies, admission, lease) } },
+            headers = prepared.stream.headers)
+        return try {
+            val source = transport.open(prepared.stream.uri, scope)
+                ?: run { transport.close(); return Outcome.Refused("Deezer stream unavailable") }
+            val plain = DeezerChunkByteSource(source, DeezerCrypto.deriveKey(prepared.trackId))
+            Outcome.Ready(NativePlaintextHandle(NativePlaintext(plain, prepared.stream.mimeType,
+                prepared.stream.codecs, plain.lease.lengthBytes, plain.lease.expiresAtEpochMs)), transport)
+        } catch (error: Throwable) { transport.close(); throw error }
     }
 
     /**

@@ -278,7 +278,7 @@ internal class IosCanvasOwner(private val graph: IosSessionGraph) {
 }
 
 /** The storefront the Apple/TIDAL lookups read: the region the system locale reports, or "us". */
-private fun iosCanvasStorefront(): String =
+internal fun iosCanvasStorefront(): String =
     (NSLocale.currentLocale.objectForKey(NSLocaleCountryCode) as? String)
         ?.lowercase()?.takeIf { it.length == 2 } ?: "us"
 

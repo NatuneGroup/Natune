@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import moe.rukamori.archivetune.shared.ui.resources.ios_aod_unavailable
+import moe.rukamori.archivetune.shared.domain.settings.ModulesEnabledKey
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,10 +84,9 @@ import platform.Foundation.localizedStringForLanguageCode
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
-    "settings/appearance/icon", "settings/appearance/navigation_bar",
-    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/discord/experimental",
-    "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
+    "settings/appearance/icon", "settings/appearance/theme_creator", "settings/appearance/navigation_bar",
+    "settings/appearance/aod_customized", "settings/appearance/liquid_glass", "settings/discord/experimental",
+    "settings/android_auto", "settings/modules", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
     TelegramLoginRoute, IosLastFmDashboardRoute, "customize_background", "settings/customize_background",
@@ -92,10 +94,8 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/appearance/palette_picker", "settings/appearance/icon", "settings/android_auto",
     // Pages whose rows are Android-only and which this host does not mount.
-    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/discord/experimental",
+    "settings/appearance/aod_customized",
 )
 
 /** One mounted lane page; the host, notices and the unavailable snackbar come from [IosSettingsScreen]. */
@@ -113,7 +113,15 @@ internal fun IosLaneSettingsPage(
     scrollTo: String?,
 ) {
     when (path) {
-        in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
+        in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage(stringResource(Res.string.ios_aod_unavailable))
+        "settings/android_auto" -> IosSystemIntegrationsPage()
+        "settings/modules" -> IosModulesPage(host, owners.graph)
+        "settings/appearance/icon" -> IosIconEditor(onFailure)
+        "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
+        "settings/appearance/liquid_glass" -> moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings(
+            owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo)
+        "settings/discord/experimental" -> moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalSettings(
+            owners.controller, onFailure, scrollTo)
         "settings/hidden_playlists" -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
         "settings/backup_restore" ->
             IosBackupRestorePage(host, owners.graph, owners.controller, onNotice, onFailure, scrollTo)
@@ -158,10 +166,10 @@ internal fun IosLaneSettingsPage(
 
 /** The unavailable page: one honest line, no dead controls. */
 @Composable
-internal fun IosLaneUnavailablePage() {
+internal fun IosLaneUnavailablePage(reason: String? = null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            stringResource(Res.string.ios_settings_feature_unavailable),
+            reason ?: stringResource(Res.string.ios_settings_feature_unavailable),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(24.dp),
@@ -308,12 +316,12 @@ private fun IosLaneSourceSettingsPage(
     SourceSettings(
         controller = owners.controller,
         spotifyStreamingReady =
-            preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective()),
-        // This host has no Spotify streaming transport, so the row reads as not available here.
-        spotifyStreamingPlatformSupported = false,
+            iosSpotifyStreamingReady(preferences),
+        // The Echo transport is present; the selected engine/method and account still gate readiness.
+        spotifyStreamingPlatformSupported = true,
         poolConfigured = owners.poolConfigured,
         refreshPool = { iosLaneRefreshPool(owners) },
-        checkSource = { type, prefs -> iosLaneCheckSource(owners.graph.http, type, prefs) },
+        checkSource = { type, prefs -> if (type == AudioSourceType.MODULES) prefs[ModulesEnabledKey] == true && owners.graph.modules.installed().isNotEmpty() else iosLaneCheckSource(owners.graph.http, type, prefs) },
         navigate = navigate,
         onFailure = onFailure,
         scrollTo = scrollTo,
@@ -352,9 +360,9 @@ internal suspend fun iosLaneCheckSource(
         ?.let { iosLaneProbe(http, it) } ?: false
     AudioSourceType.QQ -> iosLaneProbe(http, "https://c.y.qq.com/")
     // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
-    AudioSourceType.SPOTIFY -> false
-    // Modules run only in the Android host.
-    AudioSourceType.MODULES -> false
+    AudioSourceType.SPOTIFY -> iosLaneProbe(http, "https://open.spotify.com/")
+    // The mounted API-v1 host additionally checks installed audio packages in the settings binding.
+    AudioSourceType.MODULES -> preferences[ModulesEnabledKey] == true
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
     AudioSourceType.YOUTUBE -> iosLaneProbe(http, "https://music.youtube.com/generate_204")
