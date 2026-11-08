@@ -39,6 +39,7 @@ internal class DesktopAudioSources(
 ) {
     private val librespot = DesktopSpotifyLibrespotAudio(http, preferences, admissions, cacheDirectory)
     fun bindLibrespotAccessToken(provider: suspend () -> String?) { librespot.accessToken = provider }
+    fun revokeLibrespot() { moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative.close() }
     private val qobuz = DesktopQobuzSource(http, preferences, admissions, pool)
     private val spotify = DesktopSpotifySource(http, preferences, admissions,
         DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) }, librespot)
