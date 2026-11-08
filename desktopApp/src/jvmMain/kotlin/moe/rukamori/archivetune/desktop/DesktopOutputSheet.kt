@@ -36,6 +36,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.playback.DesktopOutputDevice
+import moe.rukamori.archivetune.desktop.playback.DesktopOutputState
 import moe.rukamori.archivetune.shared.domain.settings.BitPerfectUsbOutputKey
 import moe.rukamori.archivetune.shared.domain.settings.DesktopOutputDeviceIdKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
@@ -48,6 +49,15 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 internal class DesktopOutputSheetState {
     var open by mutableStateOf(false)
 }
+
+private data class DesktopOutputSheetModel(
+    val output: DesktopOutputState,
+    val exclusive: Boolean,
+    val selectedId: String?,
+    val devices: List<DesktopOutputDevice>,
+    val loading: Boolean,
+    val busy: Boolean,
+)
 
 /**
  * The player's OUTPUT action: the same device picker and exclusive switch the playback settings page owns, over the
@@ -176,24 +186,46 @@ internal fun DesktopOutputSheet(state: DesktopOutputSheetState, graph: DesktopSe
         }
     }
 
+    DesktopOutputDialog(
+        model = DesktopOutputSheetModel(
+            output,
+            exclusive,
+            preferences[DesktopOutputDeviceIdKey],
+            devices,
+            loading,
+            busy,
+        ),
+        onSelect = { select(it) },
+        onExclusive = { setExclusive(it) },
+        onClose = { state.open = false },
+    )
+}
+
+@Composable
+private fun DesktopOutputDialog(
+    model: DesktopOutputSheetModel,
+    onSelect: (String) -> Unit,
+    onExclusive: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
     AlertDialog(
-        onDismissRequest = { if (!busy) state.open = false },
+        onDismissRequest = { if (!model.busy) onClose() },
         title = { Text(DesktopStrings["desktop_output_device"]) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DesktopOutputStatus(output)
-                DesktopOutputExclusiveRow(exclusive, busy) { setExclusive(it) }
+                DesktopOutputStatus(model.output)
+                DesktopOutputExclusiveRow(model.exclusive, model.busy, onExclusive)
                 Text(DesktopStrings["desktop_output_device_scope"], style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(enabled = !busy, onClick = { select("") }) {
+                TextButton(enabled = !model.busy, onClick = { onSelect("") }) {
                     Text(DesktopStrings["desktop_output_default_device"])
                 }
-                DesktopOutputDeviceList(loading, devices, preferences[DesktopOutputDeviceIdKey], busy) { select(it) }
+                DesktopOutputDeviceList(model.loading, model.devices, model.selectedId, model.busy, onSelect)
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy, onClick = { state.open = false }) { Text(DesktopStrings["close"]) }
+            TextButton(enabled = !model.busy, onClick = onClose) { Text(DesktopStrings["close"]) }
         },
     )
 }
