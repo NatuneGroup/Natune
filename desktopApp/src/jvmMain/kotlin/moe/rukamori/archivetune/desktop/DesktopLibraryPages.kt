@@ -285,7 +285,7 @@ private fun desktopPlaylistPage(
     route: ArchiveRoute,
 ): ArchiveGraphPage =
     if (route.arguments["playlistType"] == "spotify_playlist") {
-        desktopSpotifyPlaylistPage(graph, spotify, route.arguments.getValue("playlistId"))
+        desktopSpotifyPlaylistPage(graph, menu, spotify, route.arguments.getValue("playlistId"))
     } else {
         hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
             ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
@@ -303,6 +303,7 @@ private fun desktopPlaylistPage(
 @Composable
 private fun desktopSpotifyPlaylistPage(
     graph: DesktopSessionGraph,
+    menu: DesktopItemMenuState,
     spotify: DesktopSpotifyAccounts,
     playlistId: String,
 ): ArchiveGraphPage {
@@ -384,7 +385,8 @@ private fun desktopSpotifyPlaylistPage(
                     val index = page.items.indexOfFirst { it.occurrenceId == occurrence.occurrenceId }
                     if (index >= 0) play(index, false)
                 },
-                more = null,
+                // The track row's "More" opens the same desktop track menu the other playlist and search pages use.
+                more = { occurrence -> menu.open(occurrence) },
                 loadMore = {},
                 retry = { attempt += 1 },
             ),
