@@ -8,3 +8,7 @@ internal class SpotifyByteOutput(capacity: Int = 32) {
     fun size(): Int = bytes.size
     fun toByteArray(): ByteArray = bytes.toByteArray()
 }
+
+internal fun playPlayRotateLeft(value: Long, bits: Int): Long = value.rotateLeft(bits)
+internal fun playPlayRotateRight(value: Long, bits: Int): Long = value.rotateRight(bits)
+internal fun playPlayIntRotateRight(value: Int, bits: Int): Int = value.rotateRight(bits)

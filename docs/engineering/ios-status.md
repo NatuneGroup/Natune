@@ -510,3 +510,9 @@ CarPlay browsing remains unavailable: an audio-app entitlement approved by Apple
 CarPlay scene/device integration are absent. The iOS system integrations settings page
 states this boundary and describes the widget and existing AirPlay/Now Playing surfaces.
 Android custom always-on-display controls now explain the iOS lock-screen limitation.
+
+CI run 42483275829 reached Kotlin/Native compilation and found a missing retained PlayPlay
+transform plus an iOS-inapplicable QuickJS import. The transform is now generated for commonMain
+from the original Android pure-Kotlin pipeline/leaves, changing only the package and JVM rotate
+intrinsics. No duplicate generated algorithm is committed. The QuickJS import was removed; new
+code remains unverified until a subsequent CI compile succeeds.
