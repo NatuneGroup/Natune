@@ -270,6 +270,16 @@ a refused key buys hours of silence instead of a retry per launch, and `429`/`50
 server's `Retry-After`. Reports are deduplicated per account and capped per five-minute window,
 and they are never retried after a refusal.
 
+Android's explicit Settings refresh bypasses the account-feed interval, while
+respecting rejected-key backoff. TIDAL playback and downloads share
+`TidalPoolPlayback` and the pure `TidalPlaybackPolicy`: `401/5003` is a subscription
+quality ceiling, so one track's playback request steps down HiRes → lossless → HIGH
+without refreshing or reporting its token dead. Genuine credential rejection retains
+the existing bounded re-lease. A `429` skips that account until its bounded cooldown
+expires; a successful AAC fallback cannot hide a later pooled FLAC result. Returned
+manifest quality and metadata stay attached to the stream. Empty community-instance
+lists skip that resolver. See [live incident evidence](../engineering/tidal-pool-lossless.md).
+
 ## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
 
 `shared-domain/.../dsp/acoustic/` owns the audit state machine (`AcousticAuditOwner`), the FFT

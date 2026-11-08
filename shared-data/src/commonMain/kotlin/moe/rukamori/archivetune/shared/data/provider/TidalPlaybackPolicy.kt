@@ -25,12 +25,21 @@ fun classifyTidalFailure(status: Int, subStatus: Int?, message: String?): TidalF
             (detail.contains("not allowed") || detail.contains("not available")) &&
             detail.contains("subscription")) -> TidalFailureKind.QUALITY_RESTRICTED
         status == 402 || detail.contains("user is not premium") || detail.contains("user not premium") ||
+            detail.contains("not_premium") || detail.contains("does not have premium") ||
             detail.contains("no active subscription") || detail.contains("subscription expired") ->
             TidalFailureKind.ENTITLEMENT_LOST
         status == 401 || status == 403 -> TidalFailureKind.AUTH_REJECTED
         status == 404 -> TidalFailureKind.CONTENT_UNAVAILABLE
         else -> TidalFailureKind.TRANSIENT
     }
+}
+
+fun TidalFailureKind.toPoolFailureKind(): PoolFailureKind = when (this) {
+    TidalFailureKind.QUALITY_RESTRICTED, TidalFailureKind.CONTENT_UNAVAILABLE -> PoolFailureKind.CONTENT_UNAVAILABLE
+    TidalFailureKind.AUTH_REJECTED -> PoolFailureKind.AUTH_REJECTED
+    TidalFailureKind.ENTITLEMENT_LOST -> PoolFailureKind.ENTITLEMENT_LOST
+    TidalFailureKind.RATE_LIMITED -> PoolFailureKind.RATE_LIMITED
+    TidalFailureKind.TRANSIENT -> PoolFailureKind.TRANSIENT
 }
 
 /** Never raises the user's ceiling, retries a token/rate failure, or requests free preview quality. */

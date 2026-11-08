@@ -575,7 +575,8 @@ object TidalAccountManager {
 
     /** Read the error before interpreting 401: 401/5003 is a subscription ceiling, not token rejection. */
     private fun accountFailure(response: okhttp3.Response): Exception {
-        val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+        val json = runCatching { JSONObject(response.body?.string().orEmpty()) }
+            .onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
         val subStatus = json?.optInt("subStatus")?.takeIf { it > 0 }
         val kind = classifyTidalFailure(response.code, subStatus, json?.optString("userMessage"))
         Timber.tag("TidalAccount").w("TIDAL account API refused: HTTP=%d substatus=%s kind=%s", response.code, subStatus, kind)

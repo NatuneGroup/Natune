@@ -8,6 +8,16 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class TidalPlaybackPolicyTest {
+    @Test fun onlyRealTokenRejectionsReLeaseAndOnlyLostEntitlementsReportNotPremium() {
+        for (kind in listOf(TidalFailureKind.QUALITY_RESTRICTED, TidalFailureKind.RATE_LIMITED)) {
+            assertEquals(false, PoolDeadReportPolicy.needsRecovery(kind.toPoolFailureKind()))
+            assertNull(PoolDeadReportPolicy.reportTypeFor(kind.toPoolFailureKind()))
+        }
+        assertEquals(true, PoolDeadReportPolicy.needsRecovery(TidalFailureKind.AUTH_REJECTED.toPoolFailureKind()))
+        assertEquals(PoolDeadReportPolicy.NOT_PREMIUM,
+            PoolDeadReportPolicy.reportTypeFor(TidalFailureKind.ENTITLEMENT_LOST.toPoolFailureKind()))
+    }
+
     @Test fun observedSubscription401DoesNotRejectTheToken() {
         assertEquals(TidalFailureKind.QUALITY_RESTRICTED, classifyTidalFailure(401, 5003,
             "Requested quality is not allowed in user's subscription"))

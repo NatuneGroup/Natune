@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
 import moe.rukamori.archivetune.shared.data.provider.TidalFailureKind
 import moe.rukamori.archivetune.shared.data.provider.TidalPlaybackFailure
 import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
+import moe.rukamori.archivetune.shared.data.provider.toPoolFailureKind
 import moe.rukamori.archivetune.tidal.TidalAccountManager
 import timber.log.Timber
 
@@ -92,19 +93,14 @@ object PoolAccountRecovery {
         while (stack.isNotEmpty()) {
             val t = stack.removeLast()
             if (!seen.add(t)) continue
-            if (t is TidalPlaybackFailure) return when (t.kind) {
-                TidalFailureKind.QUALITY_RESTRICTED -> {
-                    Timber.tag(TAG).w("TIDAL pool has no allowed full-stream quality; keeping credential (poolPremiumHint=%s)", account.premium)
-                    PoolFailureKind.CONTENT_UNAVAILABLE
+            if (t is TidalPlaybackFailure) {
+                when (t.kind) {
+                    TidalFailureKind.QUALITY_RESTRICTED -> Timber.tag(TAG).w(
+                        "TIDAL pool has no allowed full-stream quality; keeping credential (poolPremiumHint=%s)", account.premium)
+                    TidalFailureKind.RATE_LIMITED -> TidalPoolPlayback.noteRateLimit(account, t.retryAfterMs)
+                    else -> Unit
                 }
-                TidalFailureKind.AUTH_REJECTED -> PoolFailureKind.AUTH_REJECTED
-                TidalFailureKind.ENTITLEMENT_LOST -> PoolFailureKind.ENTITLEMENT_LOST
-                TidalFailureKind.RATE_LIMITED -> {
-                    TidalPoolPlayback.noteRateLimit(account, t.retryAfterMs)
-                    PoolFailureKind.RATE_LIMITED
-                }
-                TidalFailureKind.CONTENT_UNAVAILABLE -> PoolFailureKind.CONTENT_UNAVAILABLE
-                TidalFailureKind.TRANSIENT -> PoolFailureKind.TRANSIENT
+                return t.kind.toPoolFailureKind()
             }
             if (t is ProviderHttpFailure) return classifyPoolFailure(t)
             t.cause?.let { stack.addLast(it) }

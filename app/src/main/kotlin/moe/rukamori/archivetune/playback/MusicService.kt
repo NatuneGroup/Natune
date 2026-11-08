@@ -9612,9 +9612,7 @@ class MusicService :
             return applyDirectStream(dataSpec, mediaId, winningStream, cacheGeneration)
         }
 
-        // A non-YouTube source was requested but none matched the title accurately enough; silently
-        // fall back to YouTube (no user-facing notice — the track just plays from YouTube). Kept as a
-        // debug log only.
+        // Empty resolvers and rejected metadata both continue to the existing YouTube fallback.
         Timber.tag("MusicService").w("No alternate source produced an accepted full stream for \"%s\"; falling back to YouTube", query.title)
         tidalActiveMediaIds.remove(mediaId)
         return null
@@ -10291,19 +10289,20 @@ class MusicService :
                     try {
                         attempt(token, accountCountry)
                     } catch (e: Throwable) {
-                        // A 401 may surface directly, or wrapped as a *suppressed*/cause exception
-                        // inside an InterruptedException when ExoPlayer interrupts the loader thread
-                        // mid-request. Detect it anywhere in the chain so the refresh path still runs.
+                        e.rethrowIfAudioSourceCancelled()
+                        // Only genuine token rejection may refresh; caller cancellation remains terminal.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
-                            // Clear any pending interrupt on this loader thread; otherwise the
-                            // runBlocking calls in refresh + retry would immediately abort.
+                            // Clear an old interrupt before refreshing on this loader thread.
                             Thread.interrupted()
                             val refreshed = refreshTidalToken(rejectedToken = token)
                             if (refreshed != null && refreshed != token) {
                                 token = refreshed
                                 runCatching { attempt(refreshed, accountCountry) }
-                                    .onFailure { Timber.tag("MusicService").w(it, "Tidal account retry failed for %s", query.mediaId) }
+                                    .onFailure {
+                                        it.rethrowIfAudioSourceCancelled()
+                                        Timber.tag("MusicService").w(it, "Tidal account retry failed for %s", query.mediaId)
+                                    }
                                     .getOrNull()
                             } else {
                                 null
