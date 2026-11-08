@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -13,6 +15,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -198,10 +202,16 @@ internal fun DesktopItemMenuDialog(
         menu.message?.let { DesktopMenuNotice(it, menu::dismissMessage) }
         return
     }
-    if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
-        DesktopSongMenu(menu, graph, occurrence, sleepSheet, canvasSave, openRoute)
-    } else {
-        DesktopCollectionRowMenu(menu, graph, occurrence, openRoute)
+    // The shared row menu is a DropdownMenu, so it needs an anchor host on the window or its popup has no position to
+    // open at and the row's "More" appears to do nothing. The playlist overflow menu anchors its dropdown the same way.
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box {
+            if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
+                DesktopSongMenu(menu, graph, occurrence, sleepSheet, canvasSave, openRoute)
+            } else {
+                DesktopCollectionRowMenu(menu, graph, occurrence, openRoute)
+            }
+        }
     }
     menu.message?.let { DesktopMenuNotice(it, menu::dismissMessage) }
 }
