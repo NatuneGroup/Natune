@@ -138,7 +138,7 @@ fun BottomSheetPlayer(
                             }
                         }
                     } else if(landscape) {
-                        Row(Modifier.fillMaxSize().padding(16.dp),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
+                        Row(Modifier.fillMaxSize().padding(top=48.dp).padding(16.dp),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
                             Box(Modifier.weight(1f).fillMaxHeight()) { PlayerStyleDispatch(c) }
                             if(presentation.style!=PlayerDesignStyle.FLAMINGO &&
                                 (interaction.panel!=PlayerPanel.ARTWORK || presentation.style==PlayerDesignStyle.METROLIST_KMP)) {
@@ -146,10 +146,21 @@ fun BottomSheetPlayer(
                             }
                         }
                     } else {
-                        Box(Modifier.fillMaxSize().padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
                         if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
-                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp))
+                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
                         }
+                    }
+                    // Every phone/tablet style shares this hit target above artwork and panels.
+                    // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
+                    if (!desktop && !interaction.fullscreenLyrics) {
+                        PlayerIcon(
+                            PlayerSymbol.BACK, stringResource(Res.string.m5_back),
+                            { actions.onAction(PlayerAction.COLLAPSE) },
+                            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
+                                .testTag("player-close"),
+                            size = 48.dp, iconSize = 24.dp,
+                        )
                     }
                     }
                 }

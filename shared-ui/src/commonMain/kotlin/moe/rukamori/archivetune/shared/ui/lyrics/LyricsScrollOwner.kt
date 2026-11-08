@@ -2,7 +2,7 @@ package moe.rukamori.archivetune.shared.ui.lyrics
 
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.Composable
@@ -154,9 +154,15 @@ internal fun LyricsAutoFollow(
 private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
-/** The one animated scroll speed of a line change: a fixed ease-in-out over this many ms. */
-private const val AUTO_SCROLL_MS = 280
-private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+/**
+ * The one animated scroll of a line change. ArchiveTune's active-line scroll starts at once and
+ * settles at the anchor (FastOutSlowIn on its line effects, a fast-response spring on the list), while a
+ * symmetric ease-in-out held the first ~40% of a line change almost still and read as sluggish / ~30 Hz.
+ * Keep the short duration but front-load it so the follow responds on the very frame the line changes.
+ */
+internal const val AUTO_SCROLL_MS = 280
+// FastOutSlowIn still holds the first tenth nearly still (~3%); a pure decelerate curve moves at once.
+internal val AUTO_SCROLL_EASE = LinearOutSlowInEasing
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
 private suspend fun LazyListState.awaitViewportHeight(): Int {

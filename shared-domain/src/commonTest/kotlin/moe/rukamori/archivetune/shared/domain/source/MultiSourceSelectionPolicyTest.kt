@@ -4,6 +4,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.AMAZON
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.APPLE
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.DEEZER
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.JIOSAAVN
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.MODULES
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QOBUZ
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QOBUZ_BACKUP
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QQ
@@ -29,9 +30,9 @@ class MultiSourceSelectionPolicyTest {
 
     @Test
     fun baseChainTriesEveryEnabledSourceInPriorityOrderWithYouTubeLast() {
-        // JioSaavn sits before Amazon here, as in the shipped order. Spotify streaming sits just above YouTube.
+        // JioSaavn sits before Amazon here, as in the shipped order. Modules, then Spotify streaming, sit just above YouTube.
         assertEquals(
-            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, SPOTIFY),
+            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, MODULES, SPOTIFY),
             PlaybackSourceChain.baseChain(snapshot()),
         )
     }

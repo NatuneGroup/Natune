@@ -418,7 +418,8 @@ static at_audio_output *create_output(char *error, size_t error_len, bool plain)
                 at_audio_pause(output);
                 output->resume_after_interruption.store(resumeIntent);
             } else {
-                output->interrupted.store(false);
+                // An explicit play may already have reclaimed the session; a late end must not pause that playback.
+                if (!output->interrupted.exchange(false)) return;
                 output->graph_dirty = true;
                 const bool resume = output->resume_after_interruption.exchange(false) &&
                     (options & AVAudioSessionInterruptionOptionShouldResume);
@@ -492,13 +493,30 @@ void at_audio_destroy(at_audio_output *p) {
     }
     if (drained) { ae_engine_destroy(p->core); delete p; }
 }
+/* iOS never promises an interruption end: an app that takes the session without notifying others leaves an output
+ * interrupted forever. An explicit play or playing load therefore asks for the session back. True when the output is
+ * not interrupted or the system granted the session again; false while it still refuses it (a call in progress), in
+ * which case the intent waits for an approved ShouldResume. */
+static bool reclaim_interrupted_session(at_audio_output *p) {
+    if (!p->interrupted.load()) return true;
+    bool reclaimed = false;
+    {
+        std::lock_guard<std::mutex> guard(g_session_lock);
+        reclaimed = configure_playback_locked();
+    }
+    if (!reclaimed) return false;
+    p->interrupted.store(false);
+    p->resume_after_interruption.store(false);
+    p->graph_dirty = true;
+    return true;
+}
 uint64_t at_audio_load(at_audio_output *p, const char *source, uint64_t start, int play) {
     require_main();
     p->wants_play.store(play != 0);
     p->resume_after_interruption.store(play != 0);
     if (!play) release_playback(p);
     uint64_t generation = ae_engine_load(p->core, source, start, play);
-    if (generation && play && !p->interrupted.load()) start_output(p);
+    if (generation && play && reclaim_interrupted_session(p)) start_output(p);
     return generation;
 }
 uint64_t at_audio_load_stream(at_audio_output *p, const ae_stream_io *io, uint64_t start, int play) {
@@ -507,18 +525,18 @@ uint64_t at_audio_load_stream(at_audio_output *p, const ae_stream_io *io, uint64
     p->resume_after_interruption.store(play != 0);
     if (!play) release_playback(p);
     uint64_t generation = ae_engine_load_stream(p->core, io, start, play);
-    if (generation && play && !p->interrupted.load()) start_output(p);
+    if (generation && play && reclaim_interrupted_session(p)) start_output(p);
     return generation;
 }
 int at_audio_play(at_audio_output *p) {
     require_main();
     p->wants_play.store(true);
     ae_engine_play(p->core);
-    if (p->interrupted.load()) {
-        // The system owns the session until the interruption ends. Accept the listener's intent and start only on an
+    if (!reclaim_interrupted_session(p)) {
+        // The system still refuses the session (a call in progress). Keep the listener's intent and start only on an
         // approved ShouldResume; the blend path guards its nodes before reaching this call, so no queued PCM starts.
         p->resume_after_interruption.store(true);
-        return 1;
+        return AT_AUDIO_PLAY_DEFERRED;
     }
     return start_output(p) ? 1 : 0;
 }

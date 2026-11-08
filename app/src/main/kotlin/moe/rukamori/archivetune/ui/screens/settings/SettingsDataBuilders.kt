@@ -57,6 +57,13 @@ fun buildSettingsGroups(
                 SettingsChild("Logout", "account_logout", listOf("logout", "log out", "sign out", "disconnect")),
             ),
         )
+    val modules = SettingsItem(
+        key = "modules", icon = R.drawable.extension,
+        title = context.getString(R.string.modules_title),
+        subtitle = context.getString(R.string.modules_subtitle), accentColor = colorScheme.primary,
+        keywords = listOf("modules", "extensions", "catalog", "arch", "sources"),
+        onClick = { navController.navigate("settings/modules") },
+    )
     val stats =
         SettingsItem(
             key = "stats",
@@ -415,6 +422,7 @@ fun buildSettingsGroups(
                     playback,
                     canvas,
                     sources,
+                    modules,
                     jioSaavn,
                     amazon,
                     qqMusic,

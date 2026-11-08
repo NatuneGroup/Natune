@@ -1,5 +1,33 @@
 # Lyrics
 
+## Android Enhanced upstream restoration (2026-11-08)
+
+Android's Enhanced style uses `rukamori/ArchiveTune` `dev` at `8f25a9e21`, including
+the `f71c0c086` frame-paced synchronization fix. `LyricsEnhanced.kt` retains upstream's
+`KaraokeLyricsView`, playback clock, 64 dp / 25% focus anchor, 700 ms scroll tween,
+72 dp keep-alive zone, word timestamps and offset-aware tap-to-seek. Word-synced and
+TTML lyrics have no lead; line-synced LRC has upstream's 300 ms lead. The dependency
+versions match upstream: `lyrics-ui 2.0.0-rc.2` and `lyrics-core 0.5.0`.
+
+`NatuneLyricsEnhanced.kt` adapts the current provider flow, existing LRC/TTML parsers,
+saved preferences, provider phonetics, Japanese pack state and settings-bound AI results
+to upstream's prepared-lyrics model. The underlying TTML parser's line ends are retained.
+An unaligned AI reading stays a line caption rather than being attached to the first word.
+The renderer reports scroll/selection activity to the existing sheet controls and retains
+the original copyright attribution. Those are the Natune adaptations; its animation,
+auto-scroll and highlighting use upstream's implementation.
+
+Spotify mode and TikTok's compact strip retain the previous implementation through
+`LyricsAlternate.kt`, `LyricsAlternateData.kt` and `LyricsAlternateContent.kt`. Their
+custom helpers and tests remain because they still have callers. The unused library
+comparison branch was removed from `EnhancedKaraokePane` for the new library API; its
+active `BasicSyncedLyricsList` path is unchanged. V2, SimpMusic, the shared desktop/iOS
+renderer, the lyrics screen layout and `LyricsTrackHeader.kt` are unchanged. The Android
+custom-renderer tuning history below applies to the alternate renderer after this restoration.
+
+Source/reference review and the permitted Python checks do not establish Android
+compilation or device rendering; CI supplies build/test validation.
+
 ## Parsing
 
 One parser for everyone: `lyrics/LyricsUtils` (`parseLyrics`, `parseTtml`,
@@ -64,7 +92,8 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 
 | Renderer | Where |
 |---|---|
-| `ui/component/LyricsEnhanced.kt` | The default full-screen renderer; also drawn inside SimpMusic's lyrics card for every mode except SIMPMUSIC |
+| `ui/component/LyricsEnhanced.kt` via `NatuneLyricsEnhanced.kt` | Upstream Enhanced mode in full-screen and inline lyrics surfaces |
+| `ui/component/LyricsAlternate.kt` | Existing Spotify mode and compact TikTok strip |
 | `ui/component/LyricsV2.kt` | Alternate full-screen renderer |
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 
@@ -360,3 +389,54 @@ The single-active-line strip (TikTok main lyrics) has no list and no fade.
 - **Truncation.** A one-line strip with `TextOverflow.Ellipsis` ended most lyrics in
   a "…". The strips reserve two lines and hold that height whether they fill it or
   not; growing to fit would move the controls underneath every time the line changed.
+
+## Round 3: feel and word-sync fixes
+
+These follow the screenshot and feel reports after rounds 1-2. Every change keeps the Natune
+implementation; the ArchiveTune tree was consulted only as a behaviour/timing reference.
+
+- **Syllable tokens of one word are no longer split.** Enhanced LRC / TTML can hand a renderer
+  several syllables for a single word ("a" + "gain", "mo" + "ment"). `LyricsSublines.kt` now joins
+  syllable content **verbatim** through one shared helper (`joinSyllables` -> `JoinedSyllables` holding
+  the text and the range each syllable occupies); only whitespace the source put in `KaraokeSyllable.content`
+  survives. `KaraokeSweepText`, `joinSyllableContents` and `EnhancedSweptLine.joinWithRanges` all derive
+  from that one join, so the plain `Text`, the single-active strip and the swept line lay out the same
+  string and adjacent syllables of a word produce contiguous ranges — the karaoke sweep crosses them
+  without a hole while each syllable keeps its own timing. `app/.../LyricsSyllableJoinTest.kt` pins it.
+  The shared-UI renderer already used the source `LyricsLine.text` + word ranges verbatim.
+- **The sync lead follows the timing shape, not the container.** `LyricsRenderTiming` (`app/lyrics`)
+  picks `hasWordTiming`/`leadMsFor` from the parsed entries, matching shared `LyricsFeedTiming.leadMsFor`:
+  word-timed rows (TTML *and* enhanced LRC) take no lead, line-only rows keep the 300 ms LRC lead. Previously
+  `isTtml` decided, so enhanced LRC with word stamps got LRC lead 300 + visual tuning 150 = +450 ms and a
+  short word was fully lit before it was sung. `LyricsEnhanced`, `LyricsV2` and `SimpMusicLyrics` read this
+  helper; the same shape decides whether V2/SimpMusic drive a live span from `withFrameNanos` at display
+  refresh (instead of a coarse 50 ms / `delay(16)` tick). The single-active-line strip now also gates its
+  `KaraokeSweepText` on `ISyncedLine.hasWordTiming()`, so a line-synced row built only to carry a reading
+  never shows a word sweep. `LyricsRenderTimingTest.kt` pins the classification; `LyricsSyncClassificationTest`
+  pins the strip rule.
+- **Less work per frame.** `rememberLyricsClock` published `feedMs` twice per frame (loop top and inside
+  `withFrameNanos`); it now publishes once and the frame callback only waits for vsync.
+  `LyricsFullscreenRenderer` rebuilt a `Set` over every row on every frame for `passedRows`;
+  `PassedRowCounter` (`LyricsInteraction.kt`) builds one prefix-max array once and answers each frame with an
+  allocation-free Int binary search (the prefix max keeps overlapping duet/second-voice rows honest). The
+  `LyricsAutoFollow` line-change scroll kept its 280 ms duration but switched from a symmetric ease-in-out
+  to `FastOutSlowInEasing`, matching ArchiveTune's fast-response active-line follow; a slow-in curve held
+  the first part of a line change almost still and read as ~30 Hz. `LyricsFrameCostTest.kt` pins both.
+- **The V2 interlude dots never restart.** `LyricsInterludeDots.kt` used a `rememberInfiniteTransition`
+  composed only while a break was active, so the pulse snapped back to phase 0 on every break. It now reads
+  `EnhancedInterludeMotion.breath()`/`dotLight()` from the absolute lyrics position in `graphicsLayer`
+  (draw phase), with a `withFrameNanos` projection advancing that position smoothly between coarse polls —
+  the same timeline-driven cosine cycles the Enhanced dots use. `V2InterludeDotsContinuityTest.kt` pins that
+  the phase depends on absolute position, not on a break's own progress.
+- **Background vocals sweep in sync in the shared renderer.** TTML `x-bg` spans and enhanced-LRC bracket
+  runs both arrive as `LyricsWord.isBackground`; `LyricsRenderRows(splitBackground = true)` splits them into
+  `row.background` + `row.backgroundWords`, and the feed (same `LyricsClock`) and deadline schedule (which
+  already walks `backgroundWords`) covered them. The draw path did not: `LyricsRowItems` drew them as a plain
+  `Text`. `LyricsBackgroundSweep.sungFraction` maps each word's range to a contiguous horizontal slice and
+  fills the active word over its own span; `SweptBackgroundLine` draws dim + clipped bright over one measured
+  layout, reading `clock.feedMs` in the draw phase and keeping the backing voice's dimmer alpha.
+  `LyricsBackgroundSweepTest.kt` pins the fractional sweep, reduced motion and the live-frame cover.
+
+All of the above are source-reviewed and unit-tested but not run on a device or through the Kotlin
+compiler locally (CI is the compile signal); the Blacksmith BUILD/TESTS jobs at the pushed head are the
+compile/test evidence.

@@ -1474,7 +1474,7 @@ private fun DashboardTrackRow(
                     text = names.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = trackTitleColor,
                 )
@@ -1627,7 +1627,7 @@ private fun DashboardArtistRow(
                     text = name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = theme.textPrimary,
                 )
@@ -1731,7 +1731,7 @@ private fun DashboardAlbumRow(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = theme.textPrimary,
                 )

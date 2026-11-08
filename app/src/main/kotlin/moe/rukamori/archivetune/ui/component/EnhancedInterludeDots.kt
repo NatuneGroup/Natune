@@ -74,7 +74,7 @@ internal class EnhancedInterludeGate(private val lyrics: () -> SyncedLyrics) {
 
 /**
  * Whether the row carries real per-word timing. A line-synced row built as a [KaraokeLine] only to hang
- * a romanisation on has every "syllable" pegged at [MIN_KARAOKE_SYLLABLE_DURATION_MS] and every one of
+ * a romanisation on has every "syllable" pegged at [ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS] and every one of
  * them starting at the line's own time; a word-synced row has at least one genuinely timed word and
  * more than one start. Both conditions are required: a single word spanning the line is a line-synced
  * line too, and sweeping it would light the row in one go.
@@ -84,7 +84,7 @@ internal fun ISyncedLine.hasWordTiming(): Boolean {
     val timed = syllables
     if (timed.size < 2) return false
     if (timed.all { it.start == timed.first().start }) return false
-    return timed.any { it.end - it.start > MIN_KARAOKE_SYLLABLE_DURATION_MS }
+    return timed.any { it.end - it.start > ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS }
 }
 
 /**

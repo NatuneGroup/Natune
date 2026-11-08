@@ -182,6 +182,18 @@ jobs:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
 
+      # The macOS runners keep timing out on services.gradle.org; fetch the wrapper distribution with retries
+      # before Gradle runs, so a slow mirror does not fail the compile.
+      - name: Download the Gradle distribution
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./gradlew --version >/dev/null && exit 0
+            echo "Gradle download attempt $attempt failed; retrying."
+            sleep $((attempt * 15))
+          done
+          exit 1
+
       - name: Compile shared modules and iosTest sources for the iOS simulator
         # Test-source compilation only: this does not link a test binary, execute tests, build the native
         # closure, run the simulator app or create an IPA.

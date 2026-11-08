@@ -149,10 +149,26 @@ internal fun LyricsRowItem(
         )
         row.background?.let { background ->
             val backgroundStyle = remember(mainStyle) { lyricsBackgroundStyle(mainStyle) }
-            Text(
+            // The backing voice stays dimmer than the lead even while its own words are swept.
+            val backgroundPalette = remember(palette) {
+                palette.copy(
+                    bright = palette.bright.copy(alpha = palette.bright.alpha * BACKGROUND_ACTIVE_ALPHA),
+                    glow = palette.glow.copy(alpha = palette.glow.alpha * BACKGROUND_ACTIVE_ALPHA),
+                )
+            }
+            // The backing vocal has its own word timings, so it sweeps on the same feed as the lead
+            // line instead of lighting up as one static block while the lead karaoke runs above it.
+            SweptBackgroundLine(
                 text = background,
+                words = row.backgroundWords,
                 style = backgroundStyle,
-                color = if (active) palette.bright.copy(alpha = BACKGROUND_ACTIVE_ALPHA) else palette.dim,
+                palette = backgroundPalette,
+                clock = clock,
+                active = active,
+                passed = passed,
+                minSweepMs = minSweepMs,
+                reduceMotion = reduceMotion,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         val autoCreatedLabel = stringResource(Res.string.lyrics_auto_created)

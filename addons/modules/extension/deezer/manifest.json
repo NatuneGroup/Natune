@@ -1,0 +1,62 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.deezer",
+    "name": "Deezer instance",
+    "displayName": "Deezer instance",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "Deezer public catalog matched against a user-configured plaintext instance. Probes FLAC/MP3 bytes; never returns public previews. Direct ARL encrypted streams require Natune native playback and are not part of API v1.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "description": "Your HTTPS community or private instance; no built-in account or server list.",
+        "defaultValue": null,
+        "required": true
+      },
+      "instanceToken": {
+        "type": "password",
+        "label": "Instance token",
+        "description": "Optional access credential for your own instance.",
+        "defaultValue": null,
+        "required": false,
+        "secret": true
+      },
+      "quality": {
+        "type": "select",
+        "label": "Audio quality",
+        "description": "",
+        "defaultValue": "FLAC",
+        "required": false,
+        "options": [
+          {
+            "label": "FLAC only",
+            "value": "FLAC"
+          },
+          {
+            "label": "Plain FLAC or MP3",
+            "value": "AUTO"
+          }
+        ]
+      }
+    }
+  }
+}

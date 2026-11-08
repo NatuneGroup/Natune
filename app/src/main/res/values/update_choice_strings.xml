@@ -4,6 +4,7 @@
     <string name="update_no_installable_title">No newer installable build</string>
     <string name="update_no_installable_build">Your channel choice is saved. Wait for a verified build newer than the installed app; older builds and releases without a verified build number are not offered.</string>
     <string name="update_feed_unavailable">Unable to check this channel. Try again.</string>
+    <string name="update_already_in_progress">The update download is already in progress.</string>
     <string name="update_archive_not_newer">The downloaded APK does not match the selected update or is not newer than the installed app.</string>
     <string name="update_download_complete_offer">%1$s %2$s downloaded</string>
     <string name="update_offer_failure">%1$s %2$s: %3$s</string>

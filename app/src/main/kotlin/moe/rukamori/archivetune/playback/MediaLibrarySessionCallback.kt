@@ -66,12 +66,14 @@ import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.filterExplicit
 import moe.rukamori.archivetune.innertube.models.filterVideo
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
+import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.isLocalMediaId
+import timber.log.Timber
 import java.text.Collator
 import java.time.LocalDateTime
 import java.util.Locale
@@ -90,6 +92,10 @@ class MediaLibrarySessionCallback
         private var pendingSearchJob: Job? = null
         private val onlineSearchItemCache = LruCache<String, MediaItem>(256) // a long Auto session runs many searches
         private val spotifyPlaylistItemCache = LruCache<String, List<MediaItem>>(8) // one entry can hold a whole playlist
+        private val browseChildrenCache = AutoBrowseChildrenCache<MediaItem>()
+
+        fun invalidateBrowseChildren() = browseChildrenCache.clear()
+
         var toggleLike: () -> Unit = {}
         var toggleStartRadio: () -> Unit = {}
         var toggleLibrary: () -> Unit = {}
@@ -117,17 +123,6 @@ class MediaLibrarySessionCallback
                 putBoolean(EXTRA_CONTENT_STYLE_SUPPORTED, true)
                 putInt(EXTRA_CONTENT_STYLE_PLAYABLE_HINT, playableHint)
             }
-
-        private fun List<MediaItem>.paged(
-            page: Int,
-            pageSize: Int,
-        ): List<MediaItem> {
-            if (page < 0 || pageSize <= 0) return this
-            val from = page.toLong() * pageSize.toLong()
-            if (from >= size) return emptyList()
-            val to = min(from + pageSize, size.toLong()).toInt()
-            return subList(from.toInt(), to)
-        }
 
         override fun onConnect(
             session: MediaSession,
@@ -396,7 +391,7 @@ class MediaLibrarySessionCallback
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
             scope.future(Dispatchers.IO) {
-                val items =
+                val load: suspend () -> List<MediaItem> = {
                     when (parentId) {
                         MusicService.ROOT -> {
                             listOfNotNull(
@@ -649,8 +644,11 @@ class MediaLibrarySessionCallback
                             }
                         }
                     }
-
-                LibraryResult.ofItemList(items.paged(page, pageSize), params)
+                }
+                // The queue folder mirrors the live player, so it is never served from a snapshot.
+                val items = if (parentId == MusicService.QUEUE) load() else browseChildrenCache.children(parentId, page, load)
+                val visibleItems = spotifyAutoVisibleChildren(items, context.spotifyMetadataExtensionEnabled()) { it.mediaId }
+                LibraryResult.ofItemList(visibleItems.autoBrowsePage(page, pageSize), params)
             }
 
         override fun onGetItem(
@@ -821,7 +819,7 @@ class MediaLibrarySessionCallback
                                 .first()
                                 .shuffled()
                                 .take(AUTO_BROWSE_LIMIT)
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.HOME_FORGOTTEN_FAVORITES -> {
@@ -831,27 +829,27 @@ class MediaLibrarySessionCallback
                                 .first()
                                 .shuffled()
                                 .take(AUTO_BROWSE_LIMIT)
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.HOME_KEEP_LISTENING -> {
                         val songs = homeKeepListeningSongs()
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.HOME_SUGGESTED_SONGS -> {
                         val songs = homeSuggestedSongs().map { it.toMediaItem() }
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.QUICK_PICKS -> {
                         val songs = database.quickPicks().first()
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.RECENT -> {
                         val songs = database.recentSongs(AUTO_BROWSE_LIMIT).first()
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.LIKED -> {
@@ -861,33 +859,25 @@ class MediaLibrarySessionCallback
                                     SongSortType.CREATE_DATE,
                                     descending = true,
                                 ).first()
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.DOWNLOADED -> {
                         val songs = downloadedSongs().first()
-                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs)
+                        songs.toMediaItemsWithStartPosition(path.getOrNull(1), startPositionMs, defaultResult)
                     }
 
                     MusicService.SONG -> {
                         val songId = path.getOrNull(1) ?: return@future defaultResult
                         val allSongs = database.songsByCreateDateAsc().first()
-                        MediaSession.MediaItemsWithStartPosition(
-                            allSongs.map { it.toMediaItem() },
-                            allSongs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                            startPositionMs,
-                        )
+                        allSongs.toMediaItemsWithStartPosition(songId, startPositionMs, defaultResult)
                     }
 
                     MusicService.ARTIST -> {
                         val songId = path.getOrNull(2) ?: return@future defaultResult
                         val artistId = path.getOrNull(1) ?: return@future defaultResult
                         val songs = database.artistSongsByCreateDateAsc(artistId).first()
-                        MediaSession.MediaItemsWithStartPosition(
-                            songs.map { it.toMediaItem() },
-                            songs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                            startPositionMs,
-                        )
+                        songs.toMediaItemsWithStartPosition(songId, startPositionMs, defaultResult)
                     }
 
                     MusicService.ALBUM -> {
@@ -895,12 +885,7 @@ class MediaLibrarySessionCallback
                         val albumId = path.getOrNull(1) ?: return@future defaultResult
                         val albumWithSongs =
                             database.albumWithSongs(albumId).first() ?: return@future defaultResult
-                        MediaSession.MediaItemsWithStartPosition(
-                            albumWithSongs.songs.map { it.toMediaItem() },
-                            albumWithSongs.songs.indexOfFirst { it.id == songId }.takeIf { it != -1 }
-                                ?: 0,
-                            startPositionMs,
-                        )
+                        albumWithSongs.songs.toMediaItemsWithStartPosition(songId, startPositionMs, defaultResult)
                     }
 
                     MusicService.PLAYLIST -> {
@@ -937,38 +922,18 @@ class MediaLibrarySessionCallback
                                 mediaSession.player.shuffleModeEnabled = true
                             }
                         }
-                        MediaSession.MediaItemsWithStartPosition(
-                            songs.map { it.toMediaItem() },
-                            selectedSongId?.let { songId ->
-                                songs.indexOfFirst { it.id == songId }.takeIf { it != -1 }
-                            } ?: 0,
-                            startPositionMs,
-                        )
+                        songs.toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
                     }
 
                     MusicService.SPOTIFY_LIKED -> {
                         val selectedSongId = path.getOrNull(1)
-                        val songs = spotifyLikedMediaItems()
-                        MediaSession.MediaItemsWithStartPosition(
-                            songs,
-                            selectedSongId?.let { songId ->
-                                songs.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
-                            } ?: 0,
-                            startPositionMs,
-                        )
+                        spotifyLikedMediaItems().toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
                     }
 
                     MusicService.SPOTIFY_PLAYLIST -> {
                         val playlistId = path.getOrNull(1) ?: return@future defaultResult
                         val selectedSongId = path.getOrNull(2)
-                        val songs = spotifyPlaylistMediaItems(playlistId)
-                        MediaSession.MediaItemsWithStartPosition(
-                            songs,
-                            selectedSongId?.let { songId ->
-                                songs.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
-                            } ?: 0,
-                            startPositionMs,
-                        )
+                        spotifyPlaylistMediaItems(playlistId).toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
                     }
 
                     MusicService.ONLINE_PLAYLIST -> {
@@ -985,14 +950,9 @@ class MediaLibrarySessionCallback
                                 mediaSession.player.shuffleModeEnabled = true
                             }
                         }
-                        val mediaItems = songs.map { it.toMediaItem() }
-                        MediaSession.MediaItemsWithStartPosition(
-                            mediaItems,
-                            selectedSongId?.let { songId ->
-                                mediaItems.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
-                            } ?: 0,
-                            startPositionMs,
-                        )
+                        songs
+                            .map { it.toMediaItem() }
+                            .toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
                     }
 
                     MusicService.QUEUE -> {
@@ -1037,11 +997,7 @@ class MediaLibrarySessionCallback
                         val matchedSongs = database.searchSongs(query, previewSize = 50).first()
                         val songId = matchedSongs.firstOrNull()?.id ?: return@future defaultResult
                         val allSongs = database.songsByCreateDateAsc().first()
-                        MediaSession.MediaItemsWithStartPosition(
-                            allSongs.map { it.toMediaItem() },
-                            allSongs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                            startPositionMs,
-                        )
+                        allSongs.toMediaItemsWithStartPosition(songId, startPositionMs, defaultResult)
                     }
                 }
             }
@@ -1093,18 +1049,7 @@ class MediaLibrarySessionCallback
         /** The "Liked Songs" folder for the Auto browse tree. */
         private suspend fun spotifyLikedFolder(
             showSpotifyPlaylists: Boolean = context.dataStore.get(ShowSpotifyPlaylistsKey, false),
-        ): List<MediaItem> {
-            if (!showSpotifyPlaylists) return emptyList()
-            return listOf(
-                browsableMediaItem(
-                    MusicService.SPOTIFY_LIKED,
-                    context.getString(R.string.spotify_liked_songs),
-                    null,
-                    drawableUri(R.drawable.favorite),
-                    MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                ),
-            )
-        }
+        ): List<MediaItem> = spotifyAutoLikedFolder(context, showSpotifyPlaylists, drawableUri(R.drawable.favorite), ::browsableMediaItem)
 
         /**
          * The liked songs as playable items, resolved to real streams and cached for the session.
@@ -1115,8 +1060,9 @@ class MediaLibrarySessionCallback
          * browse callback that times out.
          */
         private suspend fun spotifyLikedMediaItems(): List<MediaItem> {
+            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyPlaylistItemCache.get(SPOTIFY_LIKED_CACHE_KEY)?.let { return it }
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) return emptyList()
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) return emptyList()
             val resolved =
                 runCatching {
                     spotifyLibraryRepository
@@ -1143,7 +1089,7 @@ class MediaLibrarySessionCallback
         private suspend fun spotifyPlaylistFolder(
             showSpotifyPlaylists: Boolean = context.dataStore.get(ShowSpotifyPlaylistsKey, false),
         ): List<MediaItem> {
-            if (!showSpotifyPlaylists) return emptyList()
+            if (!showSpotifyPlaylists || !context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyLibraryRepository.restoreCachedPlaylists()
             val cached = spotifyLibraryRepository.playlists.value.orEmpty()
             return listOf(
@@ -1161,7 +1107,7 @@ class MediaLibrarySessionCallback
 
         /** The playlists themselves — fetched when the folder is opened, not when it is listed. */
         private suspend fun spotifyPlaylistsForAuto() =
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) {
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) {
                 emptyList()
             } else {
                 spotifyLibraryRepository.restoreCachedPlaylists()
@@ -1212,6 +1158,7 @@ class MediaLibrarySessionCallback
         }
 
         private suspend fun spotifyPlaylistMediaItems(playlistId: String): List<MediaItem> {
+            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyPlaylistItemCache.get(playlistId)?.let { return it }
             val resolved =
                 runCatching {
@@ -1724,17 +1671,39 @@ class MediaLibrarySessionCallback
                 )
             }
 
+        /**
+         * Build a playback queue from a freshly rebuilt folder. The car tapped a child in a cached
+         * browse snapshot (see [AutoBrowseChildrenCache]), but this queue is rebuilt from a fresh
+         * shuffle/network feed, so [selectedMediaId] may be absent. Starting at index 0 then plays
+         * the wrong song: instead we log and hand back the no-op [defaultResult], which is the same
+         * "cannot fulfil this request" result the callback already uses for unparseable ids.
+         */
+        private fun <T> playbackStart(
+            source: List<T>,
+            selectedMediaId: String?,
+            idOf: (T) -> String,
+            toMediaItems: (List<T>) -> List<MediaItem>,
+            startPositionMs: Long,
+            defaultResult: MediaSession.MediaItemsWithStartPosition,
+        ): MediaSession.MediaItemsWithStartPosition {
+            val startIndex = autoBrowseStartIndex(source, selectedMediaId, idOf)
+            if (startIndex == null) {
+                Timber.tag(TAG).w(
+                    "Auto play-from id %s not in rebuilt queue (%d items); ignoring",
+                    selectedMediaId,
+                    source.size,
+                )
+                return defaultResult
+            }
+            return MediaSession.MediaItemsWithStartPosition(toMediaItems(source), startIndex, startPositionMs)
+        }
+
         @JvmName("mediaItemsToMediaItemsWithStartPosition")
         private fun List<MediaItem>.toMediaItemsWithStartPosition(
             selectedMediaId: String?,
             startPositionMs: Long,
-        ) = MediaSession.MediaItemsWithStartPosition(
-            this,
-            selectedMediaId?.let { mediaId ->
-                indexOfFirst { it.mediaId == mediaId }.takeIf { it != -1 }
-            } ?: 0,
-            startPositionMs,
-        )
+            defaultResult: MediaSession.MediaItemsWithStartPosition,
+        ) = playbackStart(this, selectedMediaId, { it.mediaId }, { it }, startPositionMs, defaultResult)
 
         internal fun SongItem.toMediaItem(path: String): MediaItem =
             toMediaItem()
@@ -1902,12 +1871,14 @@ class MediaLibrarySessionCallback
         private fun List<Song>.toMediaItemsWithStartPosition(
             selectedSongId: String?,
             startPositionMs: Long,
-        ) = MediaSession.MediaItemsWithStartPosition(
-            map { it.toMediaItem() },
-            selectedSongId?.let { id ->
-                indexOfFirst { it.id == id }.takeIf { it != -1 }
-            } ?: 0,
+            defaultResult: MediaSession.MediaItemsWithStartPosition,
+        ) = playbackStart(
+            this,
+            selectedSongId,
+            { it.id },
+            { songs -> songs.map { it.toMediaItem() } },
             startPositionMs,
+            defaultResult,
         )
 
         private fun downloadedSongs(): Flow<List<Song>> {
@@ -2051,6 +2022,7 @@ class MediaLibrarySessionCallback
         }
 
         companion object {
+            private const val TAG = "MediaLibrarySessionCallback"
             private const val EXTRA_CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
             private const val EXTRA_CONTENT_STYLE_BROWSABLE_HINT =
                 "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"

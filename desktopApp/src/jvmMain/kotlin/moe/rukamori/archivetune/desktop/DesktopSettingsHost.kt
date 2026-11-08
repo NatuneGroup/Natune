@@ -91,6 +91,7 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.DesktopEqualizerRoute
 import moe.rukamori.archivetune.shared.ui.settings.DesktopIntegrationsRoute
+import moe.rukamori.archivetune.shared.ui.settings.DesktopConnectedDevicesRoute
 import moe.rukamori.archivetune.shared.ui.settings.DesktopQueueRoute
 import moe.rukamori.archivetune.shared.ui.settings.DesktopShortcutsRoute
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationsOverlay
@@ -397,6 +398,7 @@ private fun DesktopSettingsRouteBody(
                             openIntegrations = { showIntegrations = true },
                             openEqualizer = { graph.equalizer.openSheet() },
                             openShortcuts = { showShortcuts = true },
+                            openConnectedDevices = { graph.deviceConnect.openConnectedDevices() },
                         ),
                         preferences = preferences,
                         controller = owners.controller,
@@ -711,6 +713,7 @@ private fun DesktopSettingsRouteBody(
                 navigate = navigate,
                 onFailure = onFailure,
                 scrollTo = scrollTo,
+                desktop = true,
             )
             "settings/internet" -> InternetSettings(
                 controller = owners.controller,
@@ -854,6 +857,7 @@ private fun DesktopSettingsRouteBody(
                 openIntegrations = openIntegrations,
                 openEqualizer = { graph.equalizer.openSheet() },
                 openShortcuts = { showShortcuts = true },
+                openConnectedDevices = { graph.deviceConnect.openConnectedDevices() },
             ),
             onSelect = { target ->
                 when (target) {
@@ -861,6 +865,7 @@ private fun DesktopSettingsRouteBody(
                     DesktopIntegrationsRoute -> openIntegrations()
                     DesktopEqualizerRoute -> graph.equalizer.openSheet()
                     DesktopShortcutsRoute -> showShortcuts = true
+                    DesktopConnectedDevicesRoute -> graph.deviceConnect.openConnectedDevices()
                     else -> openTarget(target)
                 }
             },

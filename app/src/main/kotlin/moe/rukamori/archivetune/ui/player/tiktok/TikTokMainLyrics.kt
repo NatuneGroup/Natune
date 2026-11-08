@@ -23,7 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.constants.TikTokMainLyricsEnabledKey
 import moe.rukamori.archivetune.lyrics.LyricsUtils
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.component.LyricsAlternate
 import moe.rukamori.archivetune.utils.rememberPreference
 
 /**
@@ -70,7 +70,7 @@ internal fun TikTokMainLyrics(
         modifier = modifier,
         contentAlignment = Alignment.BottomStart,
     ) {
-        LyricsEnhanced(
+        LyricsAlternate(
             sliderPositionProvider = sliderPositionProvider,
             lyricsSyncOffset = lyricsSyncOffset,
             singleActiveLine = true,

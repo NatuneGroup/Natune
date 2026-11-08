@@ -657,7 +657,7 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
                                     text = row.title,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
-                                    maxLines = 2,
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 if (row.artist.isNotBlank()) {

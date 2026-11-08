@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +54,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopListScrollbar
 import moe.rukamori.archivetune.shared.ui.navigation.desktopSettingsNavWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
@@ -67,14 +72,17 @@ private data class SettingsNavItem(
 )
 
 /**
- * The desktop settings shell: a searchable category pane beside the selected page. The categories are the same rows the
- * single-column settings home renders, so an entry cannot exist in one and be missing in the other. Selection rewrites
- * the current settings route instead of pushing a page, which keeps one settings entry on the navigation stack.
+ * The desktop settings shell: a searchable category pane beside the selected page. The categories
+ * are the same rows the single-column settings home renders, so an entry cannot exist in one and be
+ * missing in the other. Selection rewrites the current settings route instead of pushing a page,
+ * which keeps one settings entry on the navigation stack.
  *
- * [selectedRoute] is the route the page currently shows; [detail] is that page. Phone hosts never compose this.
+ * [selectedRoute] is the route the page currently shows; [detail] is that page. Phone hosts never
+ * compose this.
  *
- * [navScroll] is hoisted by the host on purpose: a desktop window keeps the reader's place in the category list while
- * they open page after page, and the list is otherwise re-laid-out from the top as soon as the detail changes.
+ * [navScroll] is hoisted by the host on purpose: a desktop window keeps the reader's place in the
+ * category list while they open page after page, and the list is otherwise re-laid-out from the top
+ * as soon as the detail changes.
  */
 @Composable
 fun SettingsTwoPane(
@@ -94,11 +102,15 @@ fun SettingsTwoPane(
     for (row in rows) {
         when {
             row is SettingsRow.Header -> group = row
-            // A hidden row (a developer page) is listed only while the user searches for it, so it stays reachable
+            // A hidden row (a developer page) is listed only while the user searches for it, so it
+            // stays reachable
             // without being offered to every user.
-            row is SettingsRow.Action && row.navRoute != null && (!row.hidden || query.isNotEmpty()) -> {
+            row is SettingsRow.Action &&
+                row.navRoute != null &&
+                (!row.hidden || query.isNotEmpty()) -> {
                 val descriptionRes = row.description
-                val description = if (descriptionRes != null) stringResource(descriptionRes) else null
+                val description =
+                    if (descriptionRes != null) stringResource(descriptionRes) else null
                 navItems.add(
                     SettingsNavItem(
                         route = row.navRoute,
@@ -110,18 +122,24 @@ fun SettingsTwoPane(
             }
         }
     }
-    val visible = if (query.isEmpty()) {
-        navItems
-    } else {
-        navItems.filter { item ->
-            item.title.lowercase().contains(query) || item.description?.lowercase()?.contains(query) == true
+    val visible =
+        if (query.isEmpty()) {
+            navItems
+        } else {
+            navItems.filter { item ->
+                item.title.lowercase().contains(query) ||
+                    item.description?.lowercase()?.contains(query) == true
+            }
         }
-    }
-    val selectedTitle = navItems.firstOrNull { it.route == selectedRoute }?.title
-        ?: selectedRoute?.let { route ->
-            navItems.filter { route.startsWith(it.route + "/") }.maxByOrNull { it.route.length }?.title
-        }
-        ?: fallbackTitle
+    val selectedTitle =
+        navItems.firstOrNull { it.route == selectedRoute }?.title
+            ?: selectedRoute?.let { route ->
+                navItems
+                    .filter { route.startsWith(it.route + "/") }
+                    .maxByOrNull { it.route.length }
+                    ?.title
+            }
+            ?: fallbackTitle
     BoxWithConstraints(modifier.fillMaxSize()) {
         val navWidth = desktopSettingsNavWidth(maxWidth)
         Row(Modifier.fillMaxSize()) {
@@ -131,14 +149,27 @@ fun SettingsTwoPane(
                 width = navWidth,
                 filter = filter,
                 onFilter = { filter = it },
-                onClearFilter = { filter = ""; focusManager.clearFocus() },
+                onClearFilter = {
+                    filter = ""
+                    focusManager.clearFocus()
+                },
                 onSelect = onSelect,
                 scroll = navScroll,
             )
-            Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
+            Box(
+                Modifier.width(1.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = Space.md, end = Space.md, top = Space.md, bottom = Space.xs),
+                    Modifier.fillMaxWidth()
+                        .padding(
+                            start = Space.md,
+                            end = Space.md,
+                            top = Space.md,
+                            bottom = Space.xs,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -170,7 +201,9 @@ private fun SettingsNavigationPane(
     scroll: LazyListState,
 ) {
     Column(
-        Modifier.width(width).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceContainerLow)
+        Modifier.width(width)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .testTag("settings-two-pane"),
     ) {
         SettingsSearchField(
@@ -179,50 +212,71 @@ private fun SettingsNavigationPane(
             onClear = onClearFilter,
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
         )
-        var lastGroup: String? = null
-        LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = Space.xs).testTag("settings-nav-list"),
-            state = scroll,
-        ) {
-            items.forEach { item ->
-                val header = item.group
-                if (header != null && header.anchor != lastGroup) {
-                    lastGroup = header.anchor
-                    item(key = "header-${header.anchor}") {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            val scrollbar = LocalDesktopListScrollbar.current
+            var lastGroup: String? = null
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = Space.xs).testTag("settings-nav-list"),
+                state = scroll,
+            ) {
+                items.forEach { item ->
+                    val header = item.group
+                    if (header != null && header.anchor != lastGroup) {
+                        lastGroup = header.anchor
+                        item(key = "header-${header.anchor}") {
+                            Text(
+                                stringResource(header.title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier =
+                                    Modifier.padding(
+                                        start = Space.xs,
+                                        top = Space.sm,
+                                        bottom = Space.xxs,
+                                    ),
+                            )
+                        }
+                    }
+                    item(key = item.route) {
+                        SettingsNavRow(item, item.route == selectedRoute) { onSelect(item.route) }
+                    }
+                }
+                if (items.isEmpty()) {
+                    item(key = "empty") {
                         Text(
-                            stringResource(header.title),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = Space.xs, top = Space.sm, bottom = Space.xxs),
+                            stringResource(Res.string.m6_settings_search_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(Space.sm).testTag("settings-nav-empty"),
                         )
                     }
                 }
-                item(key = item.route) {
-                    SettingsNavRow(item, item.route == selectedRoute) { onSelect(item.route) }
-                }
+                item(key = "bottom-space") { Spacer(Modifier.height(Space.sm)) }
             }
-            if (items.isEmpty()) {
-                item(key = "empty") {
-                    Text(
-                        stringResource(Res.string.m6_settings_search_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(Space.sm).testTag("settings-nav-empty"),
-                    )
-                }
-            }
-            item(key = "bottom-space") { Spacer(Modifier.height(Space.sm)) }
+            // The reference desktop build draws a thin scrollbar at the list's right edge. The host
+            // owns the
+            // desktop-only API; a phone composes the no-op and keeps its touch scrolling unchanged.
+            scrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
     }
 }
 
 @Composable
 private fun SettingsNavRow(item: SettingsNavItem, selected: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val background =
+        when {
+            selected -> MaterialTheme.colorScheme.secondaryContainer
+            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        }
     Column(
         Modifier.fillMaxWidth()
             .heightIn(min = RowHeights.setting)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(background)
+            .hoverable(interaction)
             .clickable(onClick = onClick)
             .padding(horizontal = Space.xs, vertical = Space.xs)
             .testTag("settings-nav-${item.route}"),
@@ -230,17 +284,20 @@ private fun SettingsNavRow(item: SettingsNavItem, selected: Boolean, onClick: ()
     ) {
         Text(
             item.title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            style = DesktopType.rowTitle(),
+            color =
+                if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         item.description?.let { description ->
             Text(
                 description,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = DesktopType.rowBody(),
+                color =
+                    if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -275,20 +332,24 @@ private fun SettingsSearchField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                textStyle =
+                    MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {}),
-                modifier = Modifier.weight(1f)
-                    .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                            onClear()
-                            true
-                        } else {
-                            false
+                modifier =
+                    Modifier.weight(1f)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                                onClear()
+                                true
+                            } else {
+                                false
+                            }
                         }
-                    }
-                    .testTag("settings-search-field"),
+                        .testTag("settings-search-field"),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (value.isEmpty()) {
@@ -304,7 +365,10 @@ private fun SettingsSearchField(
                 },
             )
             if (value.isNotEmpty()) {
-                IconButton(onClick = onClear, modifier = Modifier.size(32.dp).testTag("settings-search-clear")) {
+                IconButton(
+                    onClick = onClear,
+                    modifier = Modifier.size(32.dp).testTag("settings-search-clear"),
+                ) {
                     Icon(
                         painterResource(Res.drawable.m4_icon_close),
                         contentDescription = stringResource(Res.string.m4_close),

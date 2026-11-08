@@ -1,0 +1,62 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.qobuz.instance",
+    "name": "Qobuz public instance",
+    "displayName": "Qobuz public instance",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "No account required. Uses your community instance /api/get-music and /api/download-music protocols. Direct full audio only; no queued jobs or preview URLs.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "description": "Your HTTPS community or private instance; no built-in account or server list.",
+        "defaultValue": null,
+        "required": true
+      },
+      "quality": {
+        "type": "select",
+        "label": "Audio quality",
+        "description": "",
+        "defaultValue": 6,
+        "required": false,
+        "options": [
+          {
+            "label": "FLAC CD",
+            "value": 6
+          },
+          {
+            "label": "FLAC Hi-Res",
+            "value": 27
+          },
+          {
+            "label": "FLAC 24-bit",
+            "value": 7
+          },
+          {
+            "label": "MP3 320",
+            "value": 5
+          }
+        ]
+      }
+    }
+  }
+}

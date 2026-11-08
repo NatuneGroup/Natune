@@ -60,7 +60,7 @@ internal fun karaokeAlignmentOf(entry: LyricsEntry): KaraokeAlignment =
  *
  * A line-synced LRC line becomes a [com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine];
  * when it carries a reading it becomes a [KaraokeLine.MainKaraokeLine] whose syllables are only pegs
- * for that reading (see [buildLineSyncedLrcLine]), which the renderers never sweep.
+ * for that reading (see [buildAlternateLineSyncedLrcLine]), which the renderers never sweep.
  */
 internal fun buildSyncedLyrics(
     entries: List<LyricsEntry>,
@@ -83,7 +83,7 @@ internal fun buildSyncedLyrics(
 
             // A row that answers the lead voice: background-only lines and the document's second voice.
             if (voices.isBackgroundOnly || alignment == KaraokeAlignment.End) {
-                val syllables = voices.background.ifEmpty { voices.lead }.toKaraokeSyllables(emptyList())
+                val syllables = voices.background.ifEmpty { voices.lead }.toAlternateKaraokeSyllables(emptyList())
                 val start = syllables.first().start
                 val end = syllables.last().end
                 if (end > start) {
@@ -100,14 +100,14 @@ internal fun buildSyncedLyrics(
                 return@forEachIndexed
             }
 
-            val mainSyllables = voices.lead.toKaraokeSyllables(wordPhonetics)
+            val mainSyllables = voices.lead.toAlternateKaraokeSyllables(wordPhonetics)
             val lineStart = mainSyllables.first().start
             val lineEnd = mainSyllables.last().end
             if (lineEnd <= lineStart) return@forEachIndexed
 
             val accompanimentLines =
                 if (voices.isMixed) {
-                    val bgSyllables = voices.background.toKaraokeSyllables(emptyList())
+                    val bgSyllables = voices.background.toAlternateKaraokeSyllables(emptyList())
                     val bgStart = bgSyllables.first().start
                     val bgEnd = bgSyllables.last().end
                     if (bgEnd > bgStart) {
@@ -155,7 +155,7 @@ internal fun buildSyncedLyrics(
                     (entry.time + LINE_SYNCED_TRAILING_LINE_DURATION_MS).toInt()
                 }
             lines.add(
-                buildLineSyncedLrcLine(
+                buildAlternateLineSyncedLrcLine(
                     entry = entry,
                     romanizedText = romanizationMap[index]?.line,
                     start = entry.time.toInt(),
@@ -169,7 +169,7 @@ internal fun buildSyncedLyrics(
 }
 
 /** One word per syllable, clipped to the next word's start so two words never both sweep. */
-internal fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): List<KaraokeSyllable> =
+internal fun List<WordTimestamp>.toAlternateKaraokeSyllables(phonetics: List<String?>): List<KaraokeSyllable> =
     mapIndexed { index, word ->
         val start = word.startTime.toMilliseconds()
         val nextStart = getOrNull(index + 1)?.startTime?.toMilliseconds()
@@ -182,7 +182,7 @@ internal fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): L
         KaraokeSyllable(
             content = word.text,
             start = start,
-            end = end.coerceAtLeast(start + MIN_KARAOKE_SYLLABLE_DURATION_MS),
+            end = end.coerceAtLeast(start + ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS),
             phonetic = phonetics.getOrNull(index),
         )
     }
