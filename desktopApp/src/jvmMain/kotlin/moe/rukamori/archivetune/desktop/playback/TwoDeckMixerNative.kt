@@ -9,7 +9,13 @@ package moe.rukamori.archivetune.desktop.playback
  * snapshot; nothing else should call these directly.
  */
 internal object TwoDeckMixerNative {
-    @JvmStatic external fun create(backend: Int, sampleRate: Int, ringMs: Int, prebufferMs: Int): Long
+    @JvmStatic external fun create(backend: Int, sampleRate: Int, ringMs: Int, prebufferMs: Int, exclusive: Boolean, deviceId: String): Long
+    @JvmStatic external fun setOutput(handle: Long, exclusive: Boolean, deviceId: String)
+    @JvmStatic external fun prepareTrack(handle: Long)
+    @JvmStatic external fun outputEnabled(handle: Long, enabled: Boolean)
+    @JvmStatic external fun outputTick(handle: Long)
+    @JvmStatic external fun outputSnapshot(handle: Long, values: LongArray, texts: Array<String?>)
+    @JvmStatic external fun outputDevices(): Array<String>
 
     @JvmStatic external fun destroy(handle: Long)
 

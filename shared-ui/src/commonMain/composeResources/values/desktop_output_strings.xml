@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_bit_perfect_output">Bit-perfect output</string>
+    <string name="desktop_exclusive_output">Exclusive / native PCM output</string>
+    <string name="desktop_output_device">Output device</string>
+    <string name="desktop_output_status">Active sink</string>
+</resources>

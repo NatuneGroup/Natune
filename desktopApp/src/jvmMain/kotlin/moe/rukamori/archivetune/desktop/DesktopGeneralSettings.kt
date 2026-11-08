@@ -47,6 +47,7 @@ internal val DESKTOP_GENERAL_SETTINGS_ROUTES = setOf(
 @Composable
 internal fun DesktopGeneralSettingsPage(
     path: String,
+    graph: DesktopSessionGraph,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
@@ -80,19 +81,15 @@ internal fun DesktopGeneralSettingsPage(
         )
         "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows(desktop = true) }
         "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }
-        "settings/player" -> PlaybackSettings(
+        "settings/player" -> DesktopPlaybackOutputSettings(
+            graph = graph,
             controller = controller,
-            bitPerfectSupported = false,
-            bitPerfectSinkActive = false,
-            usbExclusiveSupported = false,
-            releaseBitPerfectSink = { },
             navigate = navigate,
             arrangeArtworkProviders = { editor = DesktopGeneralEditor.ARTWORK_PROVIDERS },
             managePlaylistTags = { navigate(DesktopTagsRoute) },
             onFailure = onFailure,
             scrollTo = scrollTo,
             onOpenEqualizer = openEqualizer,
-            desktop = true,
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)

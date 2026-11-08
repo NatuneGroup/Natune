@@ -35,6 +35,18 @@ import moe.rukamori.archivetune.shared.ui.navigation.writeM4Screenshot
  */
 @OptIn(ExperimentalTestApi::class)
 class DesktopTitleBarTest {
+    @Test
+    fun onePointerClickOnSettingsDismissesTheOpenToolbarMenuAndNavigates() = runComposeUiTest {
+        val rows = Rows()
+        var settings = 0
+        setContent { Bar(1440.dp, rows, { settings++ }) }
+        onNodeWithTag("desktop-account-button").performClick()
+        onNodeWithTag("desktop-account-menu").assertIsDisplayed()
+        onNodeWithTag("desktop-settings-button").performMouseInput { click() }
+        onNodeWithTag("desktop-account-menu").assertDoesNotExist()
+        runOnIdle { assertEquals(1, settings) }
+    }
+
     private class Rows : ProfileMenuHost {
         val opened = mutableListOf<String>()
 

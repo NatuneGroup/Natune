@@ -268,7 +268,7 @@ fun ArtistScreen(
                                     label = stringResource(Res.string.m5_artist_latest_release),
                                     metadata = releaseMetadata(release),
                                     artwork = artwork,
-                                    onClick = { host.openContent(release.album) },
+                                    onClick = { host.openAlbum(release.album) },
                                 )
                             }
                         }

@@ -13,9 +13,10 @@ class SettingsController(
     val store: SettingsStore,
     runningPreferences: PreferenceSnapshot,
     private val bitPerfectSupported: Boolean,
+    private val bitPerfectRestartRequired: Boolean = bitPerfectSupported,
 ) {
     private val lock = Mutex()
-    private val running = restartSettingValues(runningPreferences, bitPerfectSupported)
+    private val running = restartSettingValues(runningPreferences, bitPerfectSupported && bitPerfectRestartRequired)
     private val prompt = RestartPromptPolicy()
     private val state = MutableStateFlow(SettingsRestartState())
     val restart = state.asStateFlow()
@@ -23,8 +24,8 @@ class SettingsController(
     suspend fun edit(change: PreferenceEditor.() -> Unit): SettingsChange = lock.withLock {
         val committed = store.edit(change)
         prompt.committed(
-            restartSettingValues(committed.before, bitPerfectSupported),
-            restartSettingValues(committed.after, bitPerfectSupported), running,
+            restartSettingValues(committed.before, bitPerfectSupported && bitPerfectRestartRequired),
+            restartSettingValues(committed.after, bitPerfectSupported && bitPerfectRestartRequired), running,
         )
         publish()
         committed

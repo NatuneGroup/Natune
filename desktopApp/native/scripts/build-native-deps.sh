@@ -9,8 +9,9 @@
 # Fetches, verifies and builds the pinned native media closure used by the desktop playback
 # engine: zlib 1.3.2, OpenSSL 3.5.9, libxml2 2.15.4 (DASH demuxer XML) and FFmpeg 8.1.3 shared
 # libraries, plus the miniaudio 0.11.25 single header for device I/O. Every download is checked
-# against a pinned SHA-256, and the FFmpeg tarball is also checked against the FFmpeg release
-# signing key. Outputs stay under desktopApp/build/native, which Git ignores.
+# against a pinned SHA-256. FFmpeg's release signature is additionally checked when its pinned
+# signing key is reachable; key download failure retains the mandatory tarball hash check.
+# Outputs stay under desktopApp/build/native, which Git ignores.
 #
 # Re-running is cheap: finished steps leave a stamp file and are skipped. Set
 # ARCHIVETUNE_NATIVE_BUILD to move the tree, and ARCHIVETUNE_NATIVE_JOBS to change parallelism.
@@ -132,9 +133,44 @@ fetch() {
     fi
 }
 
+fetch_ffmpeg_signing_key() {
+    local dest="$DOWNLOADS/ffmpeg-devel.asc" candidate="$DOWNLOADS/ffmpeg-devel.asc.part" attempt url
+    mkdir -p "$DOWNLOADS"
+    if [ -f "$dest" ] && sha256_check "$FFMPEG_DEVEL_ASC_SHA256" "$dest"; then return 0; fi
+    rm -f "$dest" "$candidate"
+    # A small key must not spend the release tarball's eight long retries on one unavailable endpoint.
+    for attempt in 1 2; do
+        for url in \
+            "https://ffmpeg.org/ffmpeg-devel.asc" \
+            "https://www.ffmpeg.org/ffmpeg-devel.asc" \
+            "https://raw.githubusercontent.com/FFmpeg/web/master/htdocs/ffmpeg-devel.asc"; do
+            if curl --fail --silent --show-error --location --connect-timeout 4 --max-time 12 \
+                -o "$candidate" "$url"; then
+                if sha256_check "$FFMPEG_DEVEL_ASC_SHA256" "$candidate"; then
+                    mv "$candidate" "$dest"
+                    return 0
+                fi
+                log "discarding a release key that does not match its pinned SHA-256"
+            fi
+            rm -f "$candidate"
+            log "FFmpeg key endpoint unavailable on attempt $attempt; rotating mirror"
+        done
+        if [ "$attempt" -eq 1 ]; then sleep 1; fi
+    done
+    return 1
+}
+
 verify_ffmpeg_signature() {
     local tarball="$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz"
     local gnupg="$BUILD/gnupg"
+    if ! sha256_check "$FFMPEG_SHA256" "$tarball"; then
+        log "FFmpeg tarball SHA-256 verification FAILED"
+        exit 1
+    fi
+    if ! fetch_ffmpeg_signing_key; then
+        log "FFmpeg release key unavailable after retries and mirror rotation; accepted tarball by pinned SHA-256 $FFMPEG_SHA256"
+        return 0
+    fi
     if ! command -v gpg >/dev/null 2>&1; then
         log "gpg is required to verify the FFmpeg release signature"
         exit 1
@@ -147,7 +183,8 @@ verify_ffmpeg_signature() {
         fail_log "$LOGS/ffmpeg-signature.log"
     fi
     if GNUPGHOME="$gnupg" gpg --batch --status-fd 1 --verify "$tarball.asc" "$tarball" \
-        2>>"$LOGS/ffmpeg-signature.log" | grep -q "^\[GNUPG:\] VALIDSIG .* $FFMPEG_SIGNING_FPR\$"; then
+        >"$LOGS/ffmpeg-signature-status.log" 2>>"$LOGS/ffmpeg-signature.log" && \
+        grep -q "^\[GNUPG:\] VALIDSIG .* $FFMPEG_SIGNING_FPR\$" "$LOGS/ffmpeg-signature-status.log"; then
         log "FFmpeg $FFMPEG_VERSION signature verified against $FFMPEG_SIGNING_FPR"
     else
         log "FFmpeg signature verification FAILED; see $LOGS/ffmpeg-signature.log"
@@ -251,7 +288,6 @@ stage_miniaudio() {
 
 main() {
     mkdir -p "$DOWNLOADS" "$SRC" "$PREFIX" "$LOGS"
-    fetch "https://ffmpeg.org/ffmpeg-devel.asc" "$DOWNLOADS/ffmpeg-devel.asc" "$FFMPEG_DEVEL_ASC_SHA256"
     fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz.asc" \
         "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz.asc" "$FFMPEG_ASC_SHA256"
     fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \

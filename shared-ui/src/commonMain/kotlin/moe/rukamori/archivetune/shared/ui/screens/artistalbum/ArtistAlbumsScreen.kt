@@ -94,7 +94,7 @@ fun ArtistAlbumsScreen(
                         subtitle = release.year?.toString().orEmpty(),
                         artwork = artwork,
                         active = release.album.id == nowPlaying.albumId,
-                        onClick = { host.openContent(release.album) },
+                                    onClick = { host.openAlbum(release.album) },
                         onLongClick = { host.openMenu(ArtistAlbumMenuTarget(release.album)) },
                         width = null,
                     )

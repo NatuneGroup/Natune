@@ -8,6 +8,16 @@ import moe.rukamori.archivetune.shared.domain.settings.*
  * that only appear while searching, and the rows each desktop page leaves to the phone hosts.
  */
 class DesktopSettingsNavTest {
+    @Test fun nativeDesktopOutputRowsAreAvailableAndDefaultOff() {
+        val rows = playbackSettingsRows(PreferenceSnapshot.EMPTY, true, false, true, {}, {}, {}, desktop = true)
+        for (anchor in listOf("bit_perfect_usb", "usb_exclusive_audio")) {
+            val row = rows.single { it.anchor == anchor } as SettingsRow.Toggle
+            assertTrue(row.enabled)
+            assertFalse(row.read(PreferenceSnapshot.EMPTY))
+        }
+        assertTrue(rows.none { it.anchor == "audio_offload" })
+    }
+
     private fun navRows() =
         desktopSettingsNavRows(
             navigate = {},

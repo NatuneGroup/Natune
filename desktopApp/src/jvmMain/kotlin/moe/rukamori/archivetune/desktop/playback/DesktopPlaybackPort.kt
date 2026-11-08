@@ -120,17 +120,14 @@ class DesktopPlaybackPort(
     /** Confined to [executor]. The software stages the user asked for, before the bit-perfect gate narrows them. */
     private var stages = StageConfig()
 
-    /** Confined to [executor]. The listener's output volume, applied on top of each deck's normalization gain. */
-    private var outputVolume = 1f
-
     /** Confined to [executor]. The complete shared DSP document. */
     private var dspSettings = DspSettings()
 
-    /** Confined to [executor]. The host output mute: silence applied as gain zero on every live deck. */
-    private var outputEnabled = true
-
-    /** The published [outputEnabled], so a mute-transition policy outside the executor can follow it. */
-    private val outputEnabledFlow = MutableStateFlow(true)
+    private val output = DesktopPlaybackOutput()
+    internal val outputState get() = output.state
+    fun configureOutput(exclusive: Boolean, deviceId: String) = submitTask {
+        output.configure(mixer, exclusive, deviceId); applyStages()
+    }
 
     /** The published suspended flag, so a lifecycle owner or a test can follow the parked output. */
     private val outputSuspendedFlow = MutableStateFlow(false)
@@ -172,7 +169,7 @@ class DesktopPlaybackPort(
      * Whether host output is enabled: false mutes every live deck as gain zero. Mirrored off the
      * executor for the session's mute-transition policy, which reads it next to the stored volume.
      */
-    val audioOutputEnabled: StateFlow<Boolean> = outputEnabledFlow.asStateFlow()
+    val audioOutputEnabled: StateFlow<Boolean> = output.enabledState
 
     /** True while [releaseOutput] has parked the device; the next play or seek reopens it at the held position. */
     val outputSuspended: StateFlow<Boolean> = outputSuspendedFlow.asStateFlow()
@@ -205,7 +202,7 @@ class DesktopPlaybackPort(
     fun setVolume(volume: Float) {
         require(volume.isFinite() && volume in 0f..1f) { "volume must be between 0 and 1, was $volume" }
         submitTask {
-            outputVolume = volume
+            output.volume(volume)
             applyStages()
         }
     }
@@ -219,8 +216,7 @@ class DesktopPlaybackPort(
      */
     fun setAudioOutputEnabled(enabled: Boolean) {
         submitTask {
-            outputEnabled = enabled
-            outputEnabledFlow.value = enabled
+            output.enabled(mixer, enabled)
             applyStages()
         }
     }
@@ -384,7 +380,7 @@ class DesktopPlaybackPort(
         if (!closed.compareAndSet(false, true)) return
         nextPoll?.cancel(false)
         val teardown = executor.submit(Runnable {
-            mixer?.close()
+            output.close(mixer)
             mixer = null
             sessions.fill(null)
         })
@@ -462,6 +458,7 @@ class DesktopPlaybackPort(
         // A new occurrence replaces whatever was queued behind the playing one, so no stale preload can commit.
         cancelArmed(mix)
         val index = activeIndex()
+        output.prepareTrack(mix)
         val generation = mix.deck(index).load(source, command.startPositionMs * MICROS_PER_MILLI, command.playWhenReady)
         if (generation == REJECTED_LOAD) {
             stopSession()
@@ -615,7 +612,7 @@ class DesktopPlaybackPort(
 
     private fun openMixer(request: PlaybackRequest): NativeTwoDeckMixer? =
         try {
-            NativeTwoDeckMixer.create(backend).also {
+            output.create(backend).also {
                 mixer = it
                 // A fresh mixer always starts on its own first deck, which a parked scheduler may not
                 // still name: adopt the mixer's deck like [resumeOutput] so [activeIndex] is its deck.
@@ -649,19 +646,15 @@ class DesktopPlaybackPort(
 
     private fun applySession(mix: NativeTwoDeckMixer, index: Int, plan: SoftwareStagePlan) {
         val session = sessions[index] ?: return
-        mix.deck(index).configurePcm(dspSettings.copy(equalizerBands = stages.bands,
-            linearGain = NormalizationGain.linearGain(session.trackGainDb, session.trackPeak)), plan)
-        mix.setDeckGain(index, gainFor(plan, session.trackGainDb, session.trackPeak))
+        mix.deck(index).configurePcm(output.settings(dspSettings, stages.bands, session.trackGainDb, session.trackPeak), plan)
+        mix.setDeckGain(index, output.gain())
         mix.deck(index).setSpeed(desktopEffectiveSpeed(plan, stages.request))
         mix.deck(index).setPitch(if (plan.tempoPitch) stages.request.pitchSemitones.toFloat() else 0f)
         mix.deck(index).setSkipSilence(plan.silenceSkipping)
     }
 
     /** The stages that run now: what this host can honour, narrowed by the shared bit-perfect gate. */
-    private fun currentPlan(): SoftwareStagePlan = desktopStagePlan(stages)
-
-    private fun gainFor(plan: SoftwareStagePlan, trackGainDb: Double?, trackPeak: Double?): Float =
-        outputVolume * (if (outputEnabled) 1f else 0f)
+    private fun currentPlan(): SoftwareStagePlan = output.plan(stages)
 
     private fun activeIndex(): Int = scheduler.activeDeck.ordinal
 
@@ -729,6 +722,7 @@ class DesktopPlaybackPort(
         val mix = mixer ?: return false
         return try {
             syncHandoff()
+            if (output.refresh(mix)) applyStages()
             val now = clock.nowNanos()
             val timing = mix.snapshot()
             trackTimeline(timing.timelineFrames, now)
@@ -737,6 +731,13 @@ class DesktopPlaybackPort(
             for (index in 0 until DECK_COUNT) {
                 val engine = mix.deck(index)
                 val state = engine.snapshot()
+                output.failureReason()?.takeIf { index == activeIndex() && state.hasSource && !state.isEnded && state.errorCode == 0 }?.let { reason ->
+                    sessions[index]?.let { failed ->
+                        stopSession()
+                        fail(failed.request, PlaybackFailureReason.OUTPUT_FAILED, reason)
+                        return false
+                    }
+                }
                 failureMappers[index].failure(
                     state,
                     httpStatus = { sessions[index]?.lease?.failureStatus() },
@@ -850,7 +851,7 @@ class DesktopPlaybackPort(
         failureMappers[index].stopped(nowNanos)
         stallWatchdogs[index].reset()
         lastTimelineFrames = NO_TIMELINE
-        mix.close()
+        output.close(mix)
         mixer = null
         outputSuspendedFlow.value = true
     }
@@ -864,7 +865,7 @@ class DesktopPlaybackPort(
         val session = suspendedSession ?: return
         val positionUs = suspendedPositionUs
         val fresh = try {
-            NativeTwoDeckMixer.create(backend)
+            output.create(backend)
         } catch (error: VirtualMachineError) {
             throw error
         } catch (error: Throwable) {
@@ -874,6 +875,7 @@ class DesktopPlaybackPort(
         suspendedSession = null
         outputSuspendedFlow.value = false
         mixer = fresh
+        output.prepareTrack(fresh)
         val timing = fresh.snapshot()
         committedSequence = timing.commitSequence
         scheduler.adoptActive(TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST })
@@ -927,7 +929,7 @@ class DesktopPlaybackPort(
         val positionUs = state.positionUs.coerceAtLeast(0L)
         val playWhenReady = state.playWhenReady
         cancelArmed(mix)
-        mix.close()
+        output.close(mix)
         mixer = null
         lastTimelineFrames = NO_TIMELINE
         // The decks died with their mixer; only the bookkeeping remains, so no deck is stopped here.
@@ -935,7 +937,7 @@ class DesktopPlaybackPort(
         failureMappers[index].stopped(nowNanos)
         stallWatchdogs[index].reset()
         val fresh = try {
-            NativeTwoDeckMixer.create(backend)
+            output.create(backend)
         } catch (error: VirtualMachineError) {
             throw error
         } catch (error: Throwable) {

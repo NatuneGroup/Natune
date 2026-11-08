@@ -64,6 +64,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         DynamicThemeKey,
         CustomThemeColorKey,
         DesktopAppIconPathKey,
+        DesktopOutputDeviceIdKey,
         RandomThemeOnStartupKey,
         DarkModeKey,
         PureBlackKey,

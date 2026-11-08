@@ -60,7 +60,8 @@ fun playbackSettingsRows(
 ): List<SettingsRow> = buildList {
     val crossfade = preferences[CrossfadeEnabledKey, false]
     val offload = preferences[AudioOffload, false]
-    val blocked = preferences.bitPerfectOutputSelected() || bitPerfectSinkActive
+    val blocked = preferences.bitPerfectOutputSelected() || bitPerfectSinkActive ||
+        (desktop && preferences[UsbExclusiveAudioKey, false] && !crossfade && !preferences[AutomixEnabledKey, false])
     val bypassReason = Res.string.m6_processing_bypassed_bit_perfect.takeIf { blocked }
     // The page's own title, as the other subpages carry one; the one processing switch heads it so a host without
     // bit-perfect output shows the chain's master control without scrolling past crossfade and offload.
@@ -125,8 +126,7 @@ fun playbackSettingsRows(
     add(SettingsRow.Choice("audio_quality", Res.string.m6_audio_quality, AudioQualityKey, "AUTO", listOf(
         SettingsRow.Option("HIGHEST", Res.string.m6_highest), SettingsRow.Option("HIGH", Res.string.m6_high),
         SettingsRow.Option("AUTO", Res.string.m6_quality_auto), SettingsRow.Option("LOW", Res.string.m6_low))))
-    // Offload, USB and bit-perfect are the Android engine's routes; this host renders neither, so it offers no switch
-    // that could only write a preference nothing reads. The stored values stay untouched.
+    // Hardware offload remains Android-specific. Portable hosts provide their measured output capabilities below.
     if (!desktop) {
         add(SettingsRow.Toggle("reject_suspected_upscaled_audio", Res.string.m6_reject_upscaled, RejectSuspectedUpscaledAudioKey, false,
             enabled = !blocked, description = bypassReason, write = { setAuthenticityRejection(it) }))
@@ -135,11 +135,13 @@ fun playbackSettingsRows(
             description = if (preferences[RejectSuspectedUpscaledAudioKey, false])
                 Res.string.m6_offload_unavailable_authenticity else Res.string.m6_offload_exclusions,
             write = { setPlaybackOutputPreference(AudioOffload, it) }))
-        add(SettingsRow.Toggle("bit_perfect_usb", Res.string.m6_bit_perfect_usb, BitPerfectUsbOutputKey, false,
+    }
+    if (!desktop || bitPerfectSupported || usbExclusiveSupported) {
+        add(SettingsRow.Toggle("bit_perfect_usb", if (desktop) Res.string.desktop_bit_perfect_output else Res.string.m6_bit_perfect_usb, BitPerfectUsbOutputKey, false,
             description = Res.string.m6_usb_exclusions,
             enabled = bitPerfectSupported, read = { bitPerfectSupported && it[BitPerfectUsbOutputKey, false] },
             write = { setPlaybackOutputPreference(BitPerfectUsbOutputKey, it) }))
-        add(SettingsRow.Toggle("usb_exclusive_audio", Res.string.m6_usb_exclusive, UsbExclusiveAudioKey, false,
+        add(SettingsRow.Toggle("usb_exclusive_audio", if (desktop) Res.string.desktop_exclusive_output else Res.string.m6_usb_exclusive, UsbExclusiveAudioKey, false,
             description = Res.string.m6_usb_exclusions,
             enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
             write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))

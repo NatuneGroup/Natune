@@ -14,10 +14,47 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.home.*
 import moe.rukamori.archivetune.shared.ui.screens.*
+import moe.rukamori.archivetune.shared.ui.screens.artistalbum.*
 import kotlin.test.*
 
 @OptIn(ExperimentalTestApi::class)
 class ArchiveNavigationHostTest {
+    @Test fun latestReleaseOpensAlbumEvenWhenItsBrowseReferenceHasAPodcastHint() = runComposeUiTest {
+        val navigation = ShellNavigation().apply { open("artist/daft-punk?provider=youtube") }
+        val artist = ContentRef("youtube", ContentKind.ARTIST, "daft-punk")
+        val release = ArtistReleaseUi(ContentRef("youtube", ContentKind.PODCAST, "MPREb_drumless"),
+            "Random Access Memories (Drumless Edition)", null, 2023, ArtistReleaseType.ALBUM)
+        val page = ArtistPageUi(ContentItem(artist, "Daft Punk"), null, null, null, emptyList(), listOf(release), "")
+        val owner = java.lang.reflect.Proxy.newProxyInstance(ArtistAlbumHost::class.java.classLoader,
+            arrayOf(ArtistAlbumHost::class.java)) { proxy, method, arguments ->
+            when (method.name) {
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === arguments?.firstOrNull()
+                "toString" -> "Artist navigation fixture"
+                "loadArtistPage" -> null
+                else -> error("Unexpected artist host action: ${method.name}")
+            }
+        } as ArtistAlbumHost
+        setContent { MaterialTheme {
+            ArchiveNavigationHost(navigation, { route -> when (route.destination) {
+                ArchiveDestination.ARTIST -> ArchiveGraphPage.Artist(artist, page, false, null,
+                    ArtistBlockUiState.Known(false), ArtistAlbumNowPlaying(), owner)
+                ArchiveDestination.ALBUM -> ArchiveGraphPage.Detail(DetailKind.Album,
+                    ContentItem(release.album.copy(kind = ContentKind.ALBUM), release.title), PagedContentState(initialized = true),
+                    DetailActions(ContentActions({}, null, {}, {}), {}, null, null, null, null))
+                else -> error("Latest release opened ${route.destination}")
+            } }, ArchiveGraphActions({ _, _ -> error("not playing") }, { error("not playing") }, null, {}),
+                { _, modifier -> Box(modifier) }, { _, modifier -> Box(modifier) }, { "Date" }, {},
+                { _, _ -> error("No host route expected") }, {}, Modifier.size(1000.dp, 900.dp))
+        } }
+        onNodeWithText(release.title).performScrollTo().performClick()
+        onNodeWithTag("detail-Album").assertIsDisplayed()
+        val opened = requireNotNull(ArchiveRoutes.resolve(navigation.route))
+        assertEquals(ArchiveDestination.ALBUM, opened.destination)
+        assertEquals(release.album.id, opened.arguments["albumId"])
+        assertEquals("youtube", opened.arguments["provider"])
+    }
+
     @Test fun homeMenuReachesNewsArticleAndBackWithoutHostRouting() = runComposeUiTest {
         val navigation = ShellNavigation()
         val news = ContentNews("id/with?params", "A real headline", "Summary", emptyList(), false, "Author", 5)
