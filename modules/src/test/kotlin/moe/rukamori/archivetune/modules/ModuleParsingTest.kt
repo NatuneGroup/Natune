@@ -54,6 +54,37 @@ class ModuleParsingTest {
         assertEquals(ModuleFailure.INTEGRITY, failure.failure)
     }
 
+    @Test fun upstreamAudioTypesAndCapabilitiesAreUnchanged() = runBlocking {
+        for (types in listOf(emptyList(), listOf("audio_provider"), listOf("music", "lossless"))) {
+            val data = metadata().put("type", JSONArray(types))
+            val manifest = ModuleManifest.parse(data)
+            assertEquals(ModuleKind.AUDIO_SOURCE, manifest.kind)
+            assertEquals(types, manifest.types)
+            assertEquals(listOf("searchTracks", "getTrackStreamUrl"), manifest.capabilities)
+            assertTrue(ModulePackageReader.read(archive("module.exports = {searchTracks() {}, getTrackStreamUrl() {}};", data),
+                ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION).contains("Provider capability mismatch"))
+        }
+    }
+
+    @Test fun natuneKindsParseWithoutAudioRequirements() = runBlocking {
+        for ((kind, methods) in listOf(ModuleKind.METADATA to listOf("getHome", "getLibrary", "searchTracks"),
+            ModuleKind.LYRICS to listOf("getLyrics"), ModuleKind.PLAYBACK to listOf("searchTracks", "getTrackStreamUrl"))) {
+            val data = metadata().put("type", kind.wireType).put("capabilities", JSONArray(methods))
+                .put("requiredRuntimeFeatures", JSONArray(listOf("natuneExtensions@1")))
+            val manifest = ModuleManifest.parse(data)
+            manifest.requireCompatible(ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION)
+            assertEquals(kind, manifest.kind)
+            val script = "module.exports = {" + methods.joinToString(",") { "$it() {}" } + "};"
+            assertTrue(ModulePackageReader.read(archive(script, data), ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION).contains(kind.wireType))
+        }
+    }
+
+    @Test fun ambiguousKindsAndWrongCapabilitiesAreRejected() {
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", JSONArray(listOf("lyrics_provider", "metadata_provider")))) }
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", "lyrics_provider")) }
+        assertThrows(ModuleException::class.java) { ModuleManifest.parse(metadata().put("type", "metadata_provider").put("capabilities", JSONArray(listOf("getLyrics")))) }
+    }
+
     @Test fun compatibilityFloorUsesUpstreamContractAndRejectsFutureRequirements() {
         ModuleManifest.parse(metadata().put("minAppVersion", "15.1.0")).requireCompatible(ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION)
         val failure = assertThrows(ModuleException::class.java) {

@@ -345,15 +345,27 @@ def validate(manifest, entries, issues, app_version=None, verify_hashes=False):
     for key in ("labels", "tags"):
         if key in module and (not isinstance(module[key], list) or any(not isinstance(item, str) for item in module[key])):
             issue(issues, "module." + key, "Use an array of strings")
+    kinds = {
+        "metadata_provider": ("searchTracks", "getHome", "getLibrary", "getAlbum", "getArtist", "getPlaylist"),
+        "lyrics_provider": ("getLyrics",),
+        "playback_provider": ("searchTracks", "getTrackStreamUrl"),
+    }
+    types = string_list(module.get("type", []), "module.type", issues, allow_string=True)
+    selected = [kind for kind in kinds if kind in types]
+    if len(selected) > 1 or (selected and "audio_provider" in types) or (selected and extension):
+        issue(issues, "module.type", "Declare one Natune kind using the archivetune runtime")
+    kind = selected[0] if selected else None
+    supported = kinds[kind] if kind else CAPABILITIES
     for key in ("type", "requiredRuntimeFeatures"):
         values = string_list(module.get(key, []), "module." + key, issues, allow_string=True)
         if key == "requiredRuntimeFeatures":
             for feature in values:
-                if feature not in (EXTENSION_FEATURES if extension else FEATURES):
+                if feature not in (EXTENSION_FEATURES if extension else FEATURES + (("natuneExtensions@1", "lyrics@1", "metadata@1") if kind else ())):
                     issue(issues, "module.requiredRuntimeFeatures", f"Unsupported host feature: {feature}")
     capabilities = string_list(module.get("capabilities", []), "module.capabilities", issues)
-    if len(set(capabilities)) != len(capabilities) or any(item not in CAPABILITIES for item in capabilities) or not set(CAPABILITIES[:2]).issubset(capabilities):
-        issue(issues, "module.capabilities", "Declare unique supported methods, including searchTracks and getTrackStreamUrl")
+    required = supported if kind == "lyrics_provider" else CAPABILITIES[:2] if kind != "metadata_provider" else ()
+    if len(set(capabilities)) != len(capabilities) or any(item not in supported for item in capabilities) or not set(required).issubset(capabilities) or not capabilities:
+        issue(issues, "module.capabilities", "Declare unique supported methods required by the module kind")
     minimum = module.get("minAppVersion", "")
     if isinstance(minimum, str) and minimum.strip():
         if not re.fullmatch(r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}", minimum):
