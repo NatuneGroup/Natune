@@ -74,3 +74,15 @@ interface DownloadTaskStore {
 interface DownloadedFileLocator {
     suspend fun fileOf(task: DownloadTask): String?
 }
+
+/** Optional capability for hosts that can store validated plaintext from native preparations. */
+interface PreparedDownloadTransfer : DownloadTransfer {
+    suspend fun transferPrepared(
+        task: DownloadTask,
+        audio: PreparedAudio,
+        resumeFromBytes: Long,
+        song: ContentItem?,
+        progress: suspend (bytesDone: Long, totalBytes: Long?) -> Unit,
+    ): Long
+    fun releasePreparation(taskId: String) {}
+}
