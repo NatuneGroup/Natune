@@ -3252,22 +3252,14 @@ class MainActivity : ComponentActivity() {
                                         val navSlideDistance =
                                             bottomInset + floatingBarsBottomPadding + navVisibleHeight
 
+                                        if (shouldShowNavigationBar && bottomNavigationBarHeight > 0.dp &&
+                                            playerBottomSheetState.progress < 1f && bottomUiCompactFractionState.value < 1f) {
                                         Box(
                                             modifier =
                                                 Modifier
                                                     .align(Alignment.BottomCenter)
                                                     .height(navSlideDistance)
-                                                    // Why `graphicsLayer.translationY` and not
-                                                    // `Modifier.offset`: offset runs in the LAYOUT
-                                                    // phase, so every spring frame (nav bar height
-                                                    // animating when the mini player docks) and
-                                                    // every sheet-drag frame (player progress)
-                                                    // re-lays-out the whole
-                                                    // FloatingNavigationToolbar subtree — every
-                                                    // onGloballyPositioned callback cascades, the
-                                                    // kyant drawBackdrop shaders re-position, and
-                                                    // the app-wide layerBackdrop recording on the
-                                                    // NavHost root is invalidated.
+                                                    // Animate placement in the layer while the visible chrome remains composed.
                                                     .graphicsLayer {
                                                         translationY =
                                                             if (bottomNavigationBarHeight == 0.dp) {
@@ -3361,6 +3353,8 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
 
+                                        }
+
                                         // The round buttons share the slim mini player's centre line. Animated so
                                         // the row glides with the sheet when the tab bar comes or goes.
                                         val compactRowBottom by animateDpAsState(
@@ -3381,7 +3375,7 @@ class MainActivity : ComponentActivity() {
                                                     (1f - playerBottomSheetState.progress.coerceIn(0f, 1f)) > 0.01f
                                             }
                                         }
-                                        if (compactRowVisible) {
+                                        if (compactRowVisible && isBottomUiCompact) {
                                             // The circles stand in for the tab bar, so they are glass only when the
                                             // tab bar would be; otherwise they are solid Material 3 surfaces.
                                             // The SukiSU style is a glass bar by definition, so its circles qualify too.
@@ -3711,7 +3705,7 @@ class MainActivity : ComponentActivity() {
 
                         BottomSheetPage(
                             state = LocalBottomSheetPageState.current,
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(Alignment.BottomCenter).zIndex(100f),
                         )
 
                         NetworkStatusBanner(

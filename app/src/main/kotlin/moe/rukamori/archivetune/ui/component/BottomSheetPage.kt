@@ -45,7 +45,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +54,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import moe.rukamori.archivetune.ui.utils.top
 
 val LocalBottomSheetPageState = compositionLocalOf { BottomSheetPageState() }
@@ -66,14 +66,26 @@ class BottomSheetPageState(
 ) {
     var isVisible by mutableStateOf(isVisible)
     var content by mutableStateOf(content)
+    private var owner: Any? = null
 
     fun show(content: @Composable ColumnScope.() -> Unit) {
+        owner = null
         isVisible = true
         this.content = content
     }
 
+    fun show(owner: Any, content: @Composable ColumnScope.() -> Unit) {
+        show(content)
+        this.owner = owner
+    }
+
+    fun dismiss(owner: Any) {
+        if (this.owner === owner) dismiss()
+    }
+
     fun dismiss() {
         isVisible = false
+        owner = null
     }
 }
 
@@ -85,7 +97,6 @@ fun BottomSheetPage(
     contentWindowInsets: WindowInsets = WindowInsets.navigationBars,
 ) {
     val focusManager = LocalFocusManager.current
-    val coroutineScope = rememberCoroutineScope()
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
     val predictiveBack = rememberPredictiveSheetBackState()
@@ -95,90 +106,92 @@ fun BottomSheetPage(
         onBack = state::dismiss,
     )
 
-    AnimatedVisibility(
-        visible = state.isVisible,
-        enter = fadeIn(animationSpec = tween(300)),
-        exit = fadeOut(animationSpec = tween(300)),
-    ) {
-        Spacer(
-            modifier =
-                Modifier
-                    .pointerInput(Unit) {
-                        detectTapGestures {
-                            state.dismiss()
-                        }
-                    }.background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f))
-                    .fillMaxSize(),
-        )
-    }
-
-    AnimatedVisibility(
-        visible = state.isVisible,
-        enter =
-            slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = tween(300),
-            ),
-        exit =
-            slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = tween(300),
-            ),
-        modifier = modifier,
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        val p = predictiveBack.progress.value
-                        if (p > 0f) {
-                            val scale = 1f - 0.06f * p
-                            scaleX = scale
-                            scaleY = scale
-                            alpha = 1f - 0.3f * p
-                        }
-                    }
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
-                    .padding(top = 100.dp) // Give enough space from top
-                    .clip(ShapeDefaults.Large.top())
-                    .background(background)
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (dragOffset > 100) {
-                                    state.dismiss()
-                                }
-                                dragOffset = 0f
-                            },
-                        ) { _, dragAmount ->
-                            dragOffset += dragAmount
-                        }
-                    },
+    Box(modifier.fillMaxSize().zIndex(100f)) {
+        AnimatedVisibility(
+            visible = state.isVisible,
+            enter = fadeIn(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300)),
         ) {
-            // Drag handle at the top center
-            Box(
+            Spacer(
                 modifier =
                     Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(vertical = 12.dp)
-                        .size(width = 32.dp, height = 4.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(2.dp),
-                        ),
+                        .pointerInput(Unit) {
+                            detectTapGestures {
+                                state.dismiss()
+                            }
+                        }.background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f))
+                        .fillMaxSize(),
             )
+        }
 
-            // Content with proper spacing
+        AnimatedVisibility(
+            visible = state.isVisible,
+            enter =
+                slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(300),
+                ),
+            exit =
+                slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(300),
+                ),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
             Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .windowInsetsPadding(contentWindowInsets),
+                        .graphicsLayer {
+                            val p = predictiveBack.progress.value
+                            if (p > 0f) {
+                                val scale = 1f - 0.06f * p
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = 1f - 0.3f * p
+                            }
+                        }
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
+                        .padding(top = 100.dp) // Give enough space from top
+                        .clip(ShapeDefaults.Large.top())
+                        .background(background),
             ) {
-                state.content(this)
+                // Drag handle at the top center
+                Box(
+                    modifier =
+                        Modifier
+                            .align(Alignment.CenterHorizontally)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (dragOffset > 100) {
+                                        state.dismiss()
+                                    }
+                                    dragOffset = 0f
+                                },
+                            ) { _, dragAmount ->
+                                dragOffset += dragAmount
+                            }
+                        }
+                            .padding(horizontal = 8.dp, vertical = 22.dp)
+                            .size(width = 32.dp, height = 4.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(2.dp),
+                            ),
+                )
+
+                // Content with proper spacing
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .windowInsetsPadding(contentWindowInsets),
+                ) {
+                    state.content(this)
+                }
             }
         }
     }
