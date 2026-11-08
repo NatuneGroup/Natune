@@ -3,11 +3,16 @@ set -euo pipefail
 
 recipe_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_dir="$(cd "$recipe_dir/../.." && pwd)"
-sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 ndk_dir="${ANDROID_NDK_HOME:-$sdk_dir/ndk/30.0.16248370}"
 toolchain_dir="$ndk_dir/toolchains/llvm/prebuilt/linux-x86_64/bin"
-if [[ ! -x "$toolchain_dir/llvm-ar" ]]; then
+if [[ ! -x "$toolchain_dir/llvm-ar" || ! -f "$ndk_dir/source.properties" ]]; then
     echo 'Install the pinned Android NDK on the CI build host first.' >&2
+    exit 1
+fi
+ndk_revision="$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$ndk_dir/source.properties" | tr -d '\r')"
+if [[ "$ndk_revision" != '30.0.16248370' ]]; then
+    echo 'Librespot JNI requires NDK 30.0.16248370; the selected NDK does not match the cache/build contract.' >&2
     exit 1
 fi
 
