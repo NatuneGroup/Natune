@@ -87,3 +87,9 @@ internal class IosSpotifySource(
         transport.resolve(cookie, request, scope.name, ::active)
     }
 }
+
+internal fun iosSpotifyStreamingReady(prefs: PreferenceSnapshot?): Boolean = prefs != null &&
+    prefs.spotifyStreamEngineEffective() == SpotifyStreamEngine.UNOFFICIAL &&
+    prefs.spotifyStreamResolveMethod() == SpotifyStreamResolveMethod.ECHO &&
+    !prefs[SpotifyStreamSpDcKey].isNullOrBlank() && !prefs[SpotifyStreamUserIdKey].isNullOrBlank() &&
+    prefs[SpotifyStreamSpDcKey] != prefs[SpotifySpDcKey]
