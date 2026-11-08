@@ -426,3 +426,11 @@ text (256 bounded entries) and preserves edits across restarts. `HostLyricsStora
 raw-document replacement are additive commonMain hooks; other hosts keep their default behavior.
 Direct/account-bound and module lyric providers remain incomplete. AI service configuration,
 Apple compilation, share sheets and offline/device behavior remain unverified.
+
+Spotify catalog search (tracks/albums/artists/playlists) and QQ track search are mounted in the
+shared search page. Spotify GraphQL Home and QQ Toplist GetAll/GetDetail charts use the existing
+shared Spotify/QQ Home variants and honour saved home-source choices. Spotify uses the catalog
+token only and reuses the existing track-to-YouTube queue mapping; QQ shelves use the ordinary
+source chain. The retained iOS REST client was extracted without changing desktop sources.
+Other provider searches and live feed/provider/account validation remain incomplete/unverified.
+The small additive QQ home RPC method is in shared-data/commonMain.
