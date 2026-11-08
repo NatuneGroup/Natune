@@ -126,9 +126,12 @@ internal class IosQueueLocatorResolver(
                 ?: throw IllegalStateException("the imported file of this local song is gone")
             return PlaybackLocator.LocalFile(path)
         }
-        // A stored download plays from the app container before any provider is asked for it.
-        downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
-        cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
+        // An explicit source choice must reach the ordered resolver, rather than playing another source's stored bytes.
+        val explicitSource = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
+        if (explicitSource == null) {
+            downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
+            cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
+        }
         // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
         if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)

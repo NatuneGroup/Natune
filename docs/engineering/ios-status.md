@@ -609,3 +609,15 @@ picker, and local-song Share uses the imported file rather than requiring a publ
 These actions use the existing graph, routes and menus; they create no second player or
 native app renderer. #88's lyrics-header/module/chrome changes remain deferred until its
 Android reference is merged into dev.
+
+
+### Follow-up: per-song source chooser
+
+The song menu now opens the existing shared source dialog through a source-only host
+contract. It refreshes enabled choices from the live source settings, persists the
+existing `songId=SOURCE` pin format, and reloads a playing occurrence at its current
+position through the queue's normal ordered resolver. Explicit pins reach that resolver
+instead of silently playing a downloaded/cache file from another source; Automatic
+restores stored-file-first behavior. The dialog wires bounded YouTube search/radio and
+marks other provider search filters unavailable. Global source order, credentials and
+native stream admission remain with their existing owners. No Android file was edited.

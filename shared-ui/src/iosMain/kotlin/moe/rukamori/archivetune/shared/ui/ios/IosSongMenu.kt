@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_refresh
 import moe.rukamori.archivetune.shared.ui.resources.m6_settings_home_lyrics_providers
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_undo
 import moe.rukamori.archivetune.shared.ui.resources.m6_save_canvas
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_play_from
 import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
@@ -318,6 +319,9 @@ internal fun IosSongMenu(
     )
     val lyricDocument by graph.lyrics.current.collectAsState()
     val actions = buildList {
+        if (ref.kind == ContentKind.SONG && !facts.isLocal && !facts.isTelegram) add(OverflowAction("play_from", Res.string.m5pq_play_from) {
+            menu.sourceTarget = occurrence; menu.dismiss()
+        })
         addAll(
             songOverflowActions(
                 selected = occurrence,
@@ -427,7 +431,7 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
 /** The rows this host connects end to end, per the opened occurrence. */
 internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("refresh_lyrics", "lyrics_providers", "lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        addAll(listOf("play_from", "refresh_lyrics", "lyrics_providers", "lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
         add("share")
