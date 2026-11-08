@@ -96,7 +96,7 @@ class ArchiveMiniPlayerTest {
             }
         }
         onNodeWithTag("compact-mini-player").assertExists()
-        onNodeWithText("Pause").performClick()
+        onNodeWithTag("mini-player-play-pause").performClick()
         assertEquals(1, playPause)
 
         runOnIdle { wide = true }
