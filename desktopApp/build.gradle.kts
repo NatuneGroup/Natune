@@ -63,6 +63,7 @@ kotlin {
             // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
             implementation(project(":spotifycore"))
             implementation(project(":canvas"))
+            implementation("com.github.RouHim:jaudiotagger:1.4.31")
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
@@ -84,6 +85,11 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         include("SpotifyLibrespotNative.kt")
         filter { line: String -> line.replace("System.loadLibrary(\"natune_librespot\")",
             "moe.rukamori.archivetune.desktop.DesktopLibrespotLibrary.load()") }
+    }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback")) {
+        include("AudioTagger.kt")
+        filter { line: String -> line.replace("import timber.log.Timber",
+            "import moe.rukamori.archivetune.desktop.DesktopTagLog as Timber") }
     }
     into(desktopPlayPlaySources)
 }

@@ -544,6 +544,11 @@ internal suspend fun assembleDesktopSessionOwners(
     )
     val downloadsOwner = DesktopDownloadsOwner(
         playback = playback,
+        exportTags = { item, file ->
+            val document = lyrics.current.value
+            val activeItem = queue.state.value.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }?.item
+            tagDesktopExport(http, item, document?.raw?.takeIf { activeItem?.ref == item.ref }, file)
+        },
         downloads = downloadStore,
         storedSongs = database.storedSongs(),
         resolver = audioResolver,

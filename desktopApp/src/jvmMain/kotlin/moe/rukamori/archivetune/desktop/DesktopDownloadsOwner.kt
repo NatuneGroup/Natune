@@ -42,6 +42,7 @@ internal class DesktopDownloadsOwner(
     private val scope: CoroutineScope,
     private val report: (String) -> Unit,
     private val playback: moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort,
+    private val exportTags: suspend (ContentItem, Path) -> Unit = { _, _ -> },
 ) : DownloadActions {
 
     private val transfers = DesktopDownloadTransfers(scope, ::runTransfer, report)
@@ -154,7 +155,10 @@ internal class DesktopDownloadsOwner(
 
     suspend fun export(ref: ContentRef, destination: Path) {
         val completed = completedFile(ref) ?: throw IllegalStateException("No completed download is available")
-        copyDesktopDownload(completed, destination)
+        val item = library.findSong(ref.id, ref.provider)
+            ?: storedSongs.find(DOWNLOAD_ORIGIN, ref.provider, ref.id)?.storedOccurrence()?.item
+            ?: error("Downloaded metadata is missing")
+        copyDesktopDownload(completed, destination) { file -> exportTags(item, file) }
     }
 
     /** Every committed download row, so the page can show each stored item and the locator can
