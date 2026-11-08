@@ -141,3 +141,18 @@ check is not simulator compilation or device evidence.
   the existing cancellable presenter. Network latency is separate from editor state.
   These state-lifetime fixes need continuous typing/autocorrect/CJK and tab-return device
   verification; the recording alone cannot prove an IME framework defect.
+
+## Implementation: Solar vectors and controls
+
+- `PlayerComponents.PlayerGlyph`, volume/sleep glyphs in `PlayerStyleParts`, and shell
+  `TabMark` now load the Android Solar vector paths, retaining shared animation, tint,
+  selected semantics and control sizes. Repeat-one has its actual icon; liked hearts
+  use the filled asset.
+- Shared m4/m6 aliases were reconciled with Android originals. Every shared vector has
+  literal colours and every stroke-only path an explicit transparent fill. No theme or
+  colour references were found in the original shared set; repeated placeholder paths
+  were not found either. Missing-fill portability and hand-drawn controls were concrete
+  issues; the claim that every XML file was broken is not established by source checks.
+- `iosApp/tests/test_shared_vectors.py` checks all vectors, finite path coordinates,
+  command arity/arc flags and exact Android player paths. This validates portable input,
+  not iOS pixels; simulator rendering of every resource still needs CI/device verification.
