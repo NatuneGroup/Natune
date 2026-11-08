@@ -60,6 +60,8 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_timing
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_edit
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_translate
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_romanize
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_refresh
+import moe.rukamori.archivetune.shared.ui.resources.m6_settings_home_lyrics_providers
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_undo
 import moe.rukamori.archivetune.shared.ui.resources.m6_save_canvas
 import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
@@ -354,7 +356,15 @@ internal fun IosSongMenu(
             menu.canvasSaveTarget = occurrence.item; menu.dismiss()
         })
         add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
-        val lyricDocument = graph.lyrics.current.value
+        val lyricDocument by graph.lyrics.current.collectAsState()
+        val activeId = graph.player.snapshot.value?.occurrenceId
+        val activeRef = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == activeId }?.item?.ref
+        if (activeRef == ref) add(OverflowAction("refresh_lyrics", Res.string.ios_lyrics_refresh) {
+            graph.lyrics.retry(); menu.dismiss()
+        })
+        add(OverflowAction("lyrics_providers", Res.string.m6_settings_home_lyrics_providers) {
+            menu.dismiss(); openRoute("settings/lyrics/providers")
+        })
         val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
         if (playing?.item?.ref == ref && lyricDocument?.hasLines == true) {
             add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
@@ -417,7 +427,7 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
 /** The rows this host connects end to end, per the opened occurrence. */
 internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        addAll(listOf("refresh_lyrics", "lyrics_providers", "lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
         add("share")
