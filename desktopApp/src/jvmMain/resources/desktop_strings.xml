@@ -301,4 +301,20 @@
     <string name="content_menu_canvas_export_unsupported">Canvas export is not connected on desktop. Custom artwork can still set or remove a local Canvas.</string>
     <string name="search_placeholder">Search songs, albums and artists</string>
     <string name="search_shortcut">Ctrl+K</string>
+    <string name="desktop_output_device">Output device</string>
+    <string name="desktop_output_status">Active sink</string>
+    <string name="desktop_output_default_device">Default output / available hardware output</string>
+    <string name="desktop_output_device_scope">Select the physical device for exclusive playback. Shared-only routes may refuse exclusive access; the active sink and fallback reason are shown on the player settings page.</string>
+    <string name="desktop_output_no_devices">No output devices were reported by the native backend.</string>
+    <string name="desktop_output_muted">Output muted; the bit-perfect claim is withheld.</string>
+    <string name="desktop_output_direct">Bit-perfect PCM route active</string>
+    <string name="desktop_output_switching">Exclusive output is changing to the selected mode.</string>
+    <string name="desktop_output_fallback">Exclusive request refused; shared playback is active.</string>
+    <string name="desktop_output_waiting">Waiting for a track and native output negotiation.</string>
+    <string name="desktop_output_inactive">No active output device</string>
+    <string name="desktop_output_shared">Shared output mode</string>
+    <string name="desktop_output_source_pcm">Decoded PCM</string>
+    <string name="desktop_output_sink_pcm">Sink PCM transport</string>
+    <string name="desktop_output_mode_scope">Exclusive modes request the decoded rate and PCM format. Fades, DSP, normalization, tempo/pitch and silence skipping are suspended. Linux hardware may be busy while PipeWire or PulseAudio holds it.</string>
+    <string name="desktop_output_volume_scope">Use the DAC or system hardware volume for direct playback. App volume is retained for shared playback; app mute still silences output.</string>
 </resources>

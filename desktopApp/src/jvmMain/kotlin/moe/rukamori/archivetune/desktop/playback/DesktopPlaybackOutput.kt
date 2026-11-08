@@ -63,5 +63,8 @@ internal class DesktopPlaybackOutput {
             linearGain = NormalizationGain.linearGain(gainDb, peak))
     }
 
-    fun released() { observed.value = DesktopOutputState(requested = requested) }
+    fun close(mixer: NativeTwoDeckMixer?) {
+        mixer?.close()
+        observed.value = DesktopOutputState(requested = requested, muted = !enabled)
+    }
 }
