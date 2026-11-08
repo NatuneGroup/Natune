@@ -1,6 +1,7 @@
 // Consumes the static iOS closure written by scripts/build_ios_native_core.sh (macOS and Xcode only; not run on Linux).
 // Keep the -l names below in step with that script's CLOSURE_ARCHIVES list, in the same dependency order.
 // Never point an iOS linker at desktop binaries or recovered reference libraries.
+#include "SharedSigning.xcconfig"
 ARCHIVETUNE_NATIVE_ROOT = $(SRCROOT)/../shared-data/build/ios-native/$(PLATFORM_NAME)
 FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared-ui/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
 HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Native" "$(SRCROOT)/../desktopApp/native/include" "$(ARCHIVETUNE_NATIVE_ROOT)/include"
@@ -85,5 +86,3 @@ NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid
 
 CODE_SIGN_ENTITLEMENTS = ArchiveTune/Natune.entitlements
-
-ARCHIVETUNE_APP_GROUP = group.moe.rukamori.archivetune

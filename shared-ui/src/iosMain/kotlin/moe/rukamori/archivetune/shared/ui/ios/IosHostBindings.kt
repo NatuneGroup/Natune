@@ -120,13 +120,6 @@ internal fun iosHostBindings(
     val sleepSheet = IosSleepTimerSheetState()
     val tempoSheet = IosTempoPitchSheetState()
     val tempoPitchActions = IosTempoPitchActions(graph)
-    val controls = IosPlayerControls(graph, host, sleepSheet, itemMenu)
-    // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
-    // its controls report availability so a canvas-capable style knows a loop answered.
-    val canvas = createIosCanvas(graph)
-    val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
-    val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.browser, host.appleMusicSheet) { host.viewController }
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.
@@ -135,6 +128,13 @@ internal fun iosHostBindings(
     // rebuild the owner on every root recomposition.
     val openOwnRoute: (String) -> Unit = { target -> ownRoutes.trySend(target) }
     val goBack: () -> Unit = { backChannel.trySend(Unit) }
+    val controls = IosPlayerControls(graph, host, sleepSheet, itemMenu, openOwnRoute)
+    // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
+    // its controls report availability so a canvas-capable style knows a loop answered.
+    val canvas = createIosCanvas(graph)
+    val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
+    val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.browser, host.appleMusicSheet) { host.viewController }
     val catalogOwners = IosCatalogOwners(graph)
     val playlistCreation = IosPlaylistCreation(graph.scope, graph.libraryContent, openOwnRoute)
     val playlistTags = IosPlaylistTagsState(openOwnRoute)
@@ -185,6 +185,7 @@ internal fun iosHostBindings(
             IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             IosTempoPitchOverlay(tempoSheet, graph, tempoPitchActions)
             IosEqualizerOverlay(graph.equalizer)
+            IosPlayerNavigationDialogs(controls)
             AcousticQualityOverlay(graph.acoustic)
         },
         playerSlots = { expanded, active, _ ->

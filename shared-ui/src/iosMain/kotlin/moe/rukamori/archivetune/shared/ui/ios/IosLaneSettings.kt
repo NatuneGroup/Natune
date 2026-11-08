@@ -78,15 +78,15 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (the palette picker, the icon picker, Android Auto, the Android-only AOD and Liquid Glass tuning pages,
- * and the Discord button editor) mount an honest unavailable page instead of the unbound boundary.
+ * this host (the Android-only AOD tuning page and the Android Auto route) mount an honest unavailable or system page
+ * instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/theme_creator", "settings/appearance/navigation_bar",
     "settings/appearance/aod_customized", "settings/appearance/liquid_glass", "settings/discord/experimental",
-    "settings/android_auto", "settings/modules", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
+    "settings/android_auto", "settings/system_integrations", "settings/modules", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
     TelegramLoginRoute, IosLastFmDashboardRoute, "customize_background", "settings/customize_background",
@@ -114,7 +114,7 @@ internal fun IosLaneSettingsPage(
 ) {
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage(stringResource(Res.string.ios_aod_unavailable))
-        "settings/android_auto" -> IosSystemIntegrationsPage()
+        "settings/android_auto", "settings/system_integrations" -> IosSystemIntegrationsPage()
         "settings/modules" -> IosModulesPage(host, owners.graph)
         "settings/appearance/icon" -> IosIconEditor(onFailure)
         "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)

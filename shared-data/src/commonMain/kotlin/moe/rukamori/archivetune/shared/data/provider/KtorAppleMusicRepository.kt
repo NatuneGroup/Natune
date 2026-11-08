@@ -55,7 +55,7 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
                 http.json("$api/v1/me/storefront",
                     headers = mapOf("Authorization" to "Bearer ${access.developerToken}",
                         "Media-User-Token" to access.mediaUserToken)).jsonObject
-                    .array("data")?.firstOrNull()?.jsonObject?.obj("attributes")?.text("name")
+                    .array("data")?.firstOrNull()?.jsonObject?.text("id")
                     ?: "us"
             } catch (e: ProviderHttpFailure) {
                 if (e.status == 401 || e.status == 403) throw AppleAuthException()

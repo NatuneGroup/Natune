@@ -54,17 +54,22 @@ class IosModulesRepository(
     }
     private val lock = Mutex()
     private val manager = NSFileManager.defaultManager
+    private val order = IosModuleOrderStore(root)
     private val issues = MutableStateFlow<Map<String, IosModuleIssue>>(emptyMap())
     val status = issues.asStateFlow()
     private fun key(id: String) = CredentialKey("modules", CredentialScope.PERSONAL, id)
+    private fun enabledKey(id: String) = CredentialKey("modules-manager", CredentialScope.PERSONAL, id)
     private fun path(id: String): String { require(id.matches(Regex("^[A-Za-z0-9._-]{1,128}$")) && id != ".." && id != "."); return "$root/$id.json" }
-    fun installed(): List<IosModuleInfo> = manager.contentsOfDirectoryAtPath(root, null).orEmpty()
+    fun installed(): List<IosModuleInfo> {
+        val priority = order.read().withIndex().associate { it.value to it.index }
+        return manager.contentsOfDirectoryAtPath(root, null).orEmpty()
         .filterIsInstance<String>().filter { it.endsWith(".json") }.sorted().take(32).mapNotNull { name ->
             try { val data = Json.parseToJsonElement(readPortableFileBytes("$root/$name", 5L * 1024 * 1024).decodeToString()).jsonObject
                 val meta = validateModuleMetadata(data.getValue("metadata").jsonObject)
                 IosModuleInfo(meta.getValue("id").jsonPrimitive.content.also { moduleRequire(path(it) == "$root/$name") }, meta.getValue("name").jsonPrimitive.content, meta)
             } catch (_: Exception) { null }
-        }
+        }.sortedWith(compareBy<IosModuleInfo> { priority[it.id] ?: Int.MAX_VALUE }.thenBy { it.id })
+    }
     suspend fun install(bytes: ByteArray): IosModuleInfo = withContext(Dispatchers.Default) { lock.withLock {
         moduleRequire(bytes.size in 1..4 * 1024 * 1024)
         val entries = PortableZip.read(bytes, 3, { name -> when (name) {
@@ -113,9 +118,24 @@ class IosModulesRepository(
         issues.value = issues.value - id
     }
     suspend fun configuration(id: String): String { path(id); return credentials.read(key(id)) ?: "{}" }
+    suspend fun isEnabled(id: String): Boolean { path(id); return credentials.read(enabledKey(id)) != "false" }
+    suspend fun setEnabled(id: String, enabled: Boolean) = lock.withLock {
+        moduleRequire(installed().any { it.id == id })
+        credentials.write(enabledKey(id), enabled.toString())
+    }
+    suspend fun move(id: String, direction: Int) = withContext(Dispatchers.Default) { lock.withLock {
+        moduleRequire(direction == -1 || direction == 1)
+        val ids = installed().map { it.id }.toMutableList()
+        val index = ids.indexOf(id)
+        moduleRequire(index >= 0)
+        val destination = (index + direction).coerceIn(ids.indices)
+        ids.removeAt(index); ids.add(destination, id)
+        order.write(ids)
+    } }
     suspend fun remove(id: String) = lock.withLock {
         check(manager.removeItemAtPath(path(id), null))
-        credentials.remove(key(id)); issues.value = issues.value - id
+        credentials.remove(key(id)); credentials.remove(enabledKey(id))
+        order.write(installed().map { it.id }); issues.value = issues.value - id
     }
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? = lock.withLock {
@@ -123,6 +143,7 @@ class IosModulesRepository(
         // A bad package, expired credential or unsupported stream stands down for the next module/source.
         for (module in installed()) {
             try {
+                if (!isEnabled(module.id)) continue
                 val prepared = resolveModule(module, request)
                 issues.value = issues.value - module.id
                 if (prepared != null) return@withLock prepared
@@ -153,7 +174,7 @@ class IosModulesRepository(
             val title = row["title"]?.jsonPrimitive?.content ?: row["name"]?.jsonPrimitive?.content ?: return@let null
             val artists = (row["artists"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull ?: (it as? JsonObject)?.get("name")?.jsonPrimitive?.content }
                 ?: listOfNotNull(row["artist"]?.jsonPrimitive?.contentOrNull)
-            TrackMatching.Candidate(id, title, artists, row["album"]?.jsonPrimitive?.contentOrNull, row["durationMs"]?.jsonPrimitive?.longOrNull)
+            TrackMatching.Candidate(id, title, artists, row["album"]?.jsonPrimitive?.contentOrNull, moduleDurationMs(row))
         } }
         val track = TrackMatching.best(request.target, tracks) ?: return null
         val result = call(module, "getTrackStreamUrl", buildJsonArray {

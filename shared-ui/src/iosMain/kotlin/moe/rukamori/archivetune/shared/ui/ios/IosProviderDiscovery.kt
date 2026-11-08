@@ -7,6 +7,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
+import moe.rukamori.archivetune.shared.data.provider.KtorAppleMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.*
@@ -65,11 +66,33 @@ internal fun iosProviderSearchPage(graph: IosSessionGraph, owners: IosCatalogOwn
     recognition: () -> Unit): ArchiveGraphPage {
     val prefs by graph.settings.snapshots.collectAsState()
     val request = if (route.destination == ArchiveDestination.SEARCH_RESULTS) route.contentRequest() else null
-    val provider = request?.provider ?: if (prefs?.get(DefaultSearchSourceKey) == "SPOTIFY") ContentProvider.SPOTIFY_CATALOG else ContentProvider.YOUTUBE
+    val defaultSource = prefs?.get(DefaultSearchSourceKey)
+    val provider = request?.provider ?: when (defaultSource) {
+        "SPOTIFY" -> ContentProvider.SPOTIFY_CATALOG
+        "APPLE_MUSIC" -> ContentProvider.APPLE
+        else -> ContentProvider.YOUTUBE
+    }
     if (provider == ContentProvider.YOUTUBE || provider == ContentProvider.LOCAL) return hostSearchPage(owners.pages, route, recognition)
-    val repository = remember(graph, provider) { when (provider) {
+    // Apple search is admitted through the same personal/pool token ring the playback source uses.
+    var apple by remember(graph, provider, defaultSource) { mutableStateOf<KtorAppleMusicRepository?>(null) }
+    var appleLoaded by remember(graph, provider, defaultSource) { mutableStateOf(false) }
+    LaunchedEffect(graph, provider, defaultSource, request) {
+        if (provider == ContentProvider.APPLE && request != null) {
+            apple = try {
+                iosAppleMusicSearchRepository(graph.http, graph.accounts, { graph.settings.snapshots.value }, graph.playbackPool)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // No bearer or no admitted account: the failed page below reports the missing account.
+                null
+            }
+            appleLoaded = true
+        }
+    }
+    val repository: TypedContentRepository? = remember(graph, provider, apple) { when (provider) {
         ContentProvider.SPOTIFY_CATALOG -> IosSpotifySearchRepository(graph)
         ContentProvider.QQ -> KtorQqMusicRepository(graph.http, null, { "ios-catalog" })
+        ContentProvider.APPLE -> apple
         else -> null
     } }
     var query by remember(route.value) { mutableStateOf(route.searchQuery.orEmpty()) }
@@ -85,6 +108,9 @@ internal fun iosProviderSearchPage(graph: IosSessionGraph, owners: IosCatalogOwn
             if (provider == ContentProvider.SPOTIFY_CATALOG) iosRecordSpotifyRows(request, page.items)
             else owners.lists.recordShelf(request, "provider-search", page.items)
         }
+    } else if (request != null && appleLoaded) {
+        // No Apple account produced a repository: the page keeps its honest failed state instead of searching YouTube.
+        page = PagedContentState(request = request, initialized = true, failed = true)
     }
     return ArchiveGraphPage.Search(query, scope, provider, page, { query = it }, { scope = it }, null,
         recognition, load, retry, filter = request?.filter ?: ContentSearchFilter.ALL)
