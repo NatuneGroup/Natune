@@ -11,6 +11,8 @@ commit into an ignored recipe-owned directory and applies `embedding.patch`:
 - Remove the CLI's process exit on Premium loss; the JNI adapter denies the session.
 - Expose the existing upstream Keymaster constant for the OAuth StoredCredential
   profile documented in login5. No OAuth client id or credential is bundled.
+- Supply the real Android API level from `Build.VERSION.SDK_INT` when sysinfo
+  cannot report it; client-token/login5 must not receive an unknown Android version.
 - Return HTTP 429 and Retry-After without an internal retry; Natune owns the cooldown.
 
 The checked-in Cargo.lock pins the transitive graph for Rust 1.97.1. Lock generation

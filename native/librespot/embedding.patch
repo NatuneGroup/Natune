@@ -11,7 +11,7 @@
 @@ -367,8 +366,7 @@
                  error!("librespot does not support {account_type:?} accounts.");
                  info!("Please support Spotify and your artists and sign up for a premium account.");
- 
+
 -                // TODO: logout instead of exiting
 -                exit(1);
 +                // Embedded hosts reject this product and tear down their session; never exit the app.
@@ -20,19 +20,39 @@
      }
 --- a/core/src/config.rs
 +++ b/core/src/config.rs
-@@ -3,7 +3,7 @@
+@@ -2,8 +2,16 @@
+
  use librespot_protocol::devices::DeviceType as ProtoDeviceType;
  use url::Url;
- 
++use std::sync::atomic::{AtomicU32, Ordering};
+
 -pub(crate) const KEYMASTER_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
++static ANDROID_API_LEVEL: AtomicU32 = AtomicU32::new(0);
++
++/// The embedding Android host supplies its real Build.VERSION.SDK_INT.
++pub fn set_android_api_level(level: u32) {
++    if OS == "android" { ANDROID_API_LEVEL.store(level, Ordering::Relaxed); }
++}
++
 +pub const KEYMASTER_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
  pub(crate) const ANDROID_CLIENT_ID: &str = "9a8d2f0ce77a4e248bb71fefcb557637";
  pub(crate) const IOS_CLIENT_ID: &str = "58bd3c95768941ea9eb4350aaa033eb3";
- 
+
+@@ -18,6 +26,10 @@
+ // 'ios': 17
+ /// See [sysinfo::System::os_version]
+ pub fn os_version() -> String {
++    if OS == "android" {
++        let level = ANDROID_API_LEVEL.load(Ordering::Relaxed);
++        if level > 0 { return level.to_string(); }
++    }
+     sysinfo::System::os_version().unwrap_or("0".into())
+ }
+
 --- a/core/src/http_client.rs
 +++ b/core/src/http_client.rs
 @@ -42,6 +42,8 @@
- 
+
  #[derive(Debug, Error)]
  pub enum HttpClientError {
 +    #[error("Rate limited by service")]
@@ -50,7 +70,7 @@
                  match code {
 @@ -201,14 +204,10 @@
                  let code = response.status();
- 
+
                  if code == StatusCode::TOO_MANY_REQUESTS {
 -                    if let Some(duration) = Self::get_retry_after(response.headers()) {
 -                        warn!(
@@ -65,5 +85,5 @@
 +                            .and_then(|value| value.to_str().ok()).map(str::to_owned),
 +                    ).into());
                  }
- 
+
                  if !code.is_success() {

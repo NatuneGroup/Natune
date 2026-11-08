@@ -112,6 +112,9 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      - name: Build Librespot audio (universal)
+        uses: ./.github/actions/build-librespot
+
       - name: Build and Lint Mobile Universal Debug APK
         shell: bash
         run: |
@@ -878,6 +881,11 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Build Librespot audio (ARM64)
+        uses: ./.github/actions/build-librespot
+        with:
+          variant: arm64
 
       - name: Assemble only the GMS mobile ARM64 release APK
         shell: bash

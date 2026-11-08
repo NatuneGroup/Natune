@@ -167,6 +167,8 @@ tasks.configureEach {
 // plain crossfade path, which they already treat as a missing model. CI builds the full
 // variant as a separate artifact with -Pautomix=true.
 val automix = (project.findProperty("automix") as String?)?.toBoolean() ?: false
+apply(from = "librespot.gradle.kts")
+
 android {
     namespace = "moe.rukamori.archivetune"
     compileSdk = 37

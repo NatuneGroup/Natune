@@ -16,6 +16,8 @@ runs:
           ~/.cargo/git
           native/librespot/target
         key: librespot-${{ runner.os }}-ndk30-rust1.97.1-${{ inputs.variant }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision') }}
+        restore-keys: |
+          librespot-${{ runner.os }}-ndk30-rust1.97.1-${{ inputs.variant }}-
     - name: Cross-compile selected ABIs
       shell: bash
       env:
