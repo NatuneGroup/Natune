@@ -1,8 +1,8 @@
 # Desktop parity follow-up
 
 Branch `feat/r3-desktop-parity`, based on `origin/dev` at `c289e50f`.
-Implementation is source-reviewed only until the orchestrator integrates it and runs CI.
-No local Gradle/JVM build, lint, tests or Windows/Linux device playback is claimed.
+CI has compiled an intermediate branch revision; newer edits still need exact-head CI.
+No local Gradle/JVM build, lint, JVM tests or Windows/Linux device playback is claimed.
 
 ## Spotify
 
@@ -101,8 +101,12 @@ replace the same installation through the owner API; packages start disabled.
 Progressive module audio joins the existing source order and download path through
 revocable admissions; compatible script lyric extensions join HostLyrics.
 
-Module manifest audio and metadata-surface mounting, signed-session browser/callback
-UI, complete catalog update UI and binary native-extension loading remain incomplete.
+The concurrent module follow-up mounts manifest-driven settings, signed-session
+browser/callback controls and metadata browse pages. Module HLS now reuses the
+player's bounded clear/AES-128 preparation for playback and downloads; native child
+URLs retain the module's declared domain policy, and explicit stream headers stay
+on their original origin. Generic module DASH and binary native-extension loading
+remain incomplete.
 Android DEX/ABI extensions cannot be loaded as desktop JNI. This is Partial module
 parity, not a claim that every Android extension works. The shared settings list adds
 one desktop-only Modules row/resource; existing hosts keep their defaults. QuickJS
@@ -133,8 +137,9 @@ omit that section rather than retaining Android's preview fallback.
 Desktop mounts palette and seed-based theme creation with shared MaterialKolor
 schemes, preview swatches, persisted color/style and bounded theme JSON import/export.
 Custom application images update the live window/task-switcher icon; package/pinned
-launcher icons still follow the installer. Android's per-role theme editor and full
-launcher icon pack are not ported. The settings list adds desktop-only editor links
+launcher icons still follow the installer. Android's four-seed theme codec and color merge are now reused through generated
+desktop sources. The desktop theme creator edits all four seeds and reads/writes
+the Android preference and JSON formats. The full launcher icon pack is not ported. The settings list adds desktop-only editor links
 and the icon path key is additive in the shared preference registry. UI compilation
 and OS icon behavior remain unverified.
 
@@ -201,3 +206,109 @@ material and revocable admissions. The shared Amazon JWT safety policy is reused
 Account-only Amazon entries still cannot stream on this host; Spotify pool
 credentials are not mounted into its separately admitted streaming account.
 Provider playback and refreshed pool entries remain unverified.
+
+The shared root adds one optional saved-theme scheme callback for desktop's reused
+Android codec. Its default is absent, so other hosts keep their existing behavior.
+The codec/generator are extracted from the retained Android Theme.kt at build time
+with its original notice, and MaterialKolor uses the existing version pin. This
+source extraction and four-seed UI still need CI/runtime validation.
+
+The only retained Android module change for native HLS is an additive permission
+snapshot accessor on ModuleRuntime; its JS API and Android behavior are unchanged.
+Theme source extraction normalizes line endings for the Windows build, and the
+four-seed editor scrolls in smaller windows.
+
+Local-audio sharing now copies a native file-list clipboard item in the item/player
+menus and main player Share action, with Linux URI/clipboard variants. Users can
+paste into compatible apps/file managers; missing files or unavailable clipboards
+report failure. Download export remains the format-named, tagged file path. Clipboard
+behavior is unverified on Windows/Linux. The existing missing-file contract test is
+updated without running local JVM tests.
+
+## Desktop navigation follow-up
+
+Artist Latest release and release-grid cards now use an explicit album action,
+preserving the provider browse ID even when a stored reference has a podcast kind
+hint. A shared navigation UI regression uses the Daft Punk Drumless Edition title
+and verifies the album destination, ID and provider. The reported N20261108
+`f8893595` screenshot has not been reproduced on the follow-up build; that source
+already typed YouTube releases as albums, so its original runtime cause remains
+unverified.
+
+Desktop title-bar and destination dropdowns permit outside clicks to reach the
+underlying controls; the gear also clears the toolbar popup before opening
+Settings. A pointer regression covers the single-click action. The current title
+bar's list glyph toggles the sidebar; it does not own a dropdown. Phone destination
+menus retain their existing focus behavior.
+
+Generic album details and the dedicated album screen display aligned occurrence
+numbers and available track durations. Unknown durations stay absent, and the
+repeated-track UI regression verifies that numbering preserves selection identity.
+These fixes change shared-ui commonMain presentation/navigation only. The earlier
+four-seed scheme callback also lives in commonMain. No iosMain or iosApp files were
+edited. All new UI regressions await the orchestrator's follow-up PR CI; only the
+permitted repository check ran locally.
+
+Remaining material boundaries include module DASH/live/master or protected
+manifest forms, Android binary extensions, protected Apple audio, raw USB host
+control, Cast/output routing and voice capture. They need additional platform or
+provider adapters. Scheduled backups still require a running desktop process, and
+advanced Automix/refraction remain limited by the current mixer/renderer. Live
+accounts, clipboard integration, physical output and the reported nightly UI
+behavior need Windows/Linux runtime validation.
+
+## Remaining desktop boundaries
+
+- Other unofficial Spotify methods and protected Apple playback require licensed
+  WebView/MediaDrm/CDM hosts absent from this JVM adapter. Echo/Librespot remain
+  independently selected, and refusal keeps the established source fallback.
+- Optional exclusive output now uses WASAPI exclusive on Windows, direct ALSA
+  `hw:` on Linux, and Core Audio hog ownership with native rate/physical-format
+  selection on macOS. The decoded integer/float lane bypasses software stages;
+  rate/format changes reopen the sink, and device refusal has a visible shared
+  fallback. Output settings retain the device picker and publish sink diagnostics.
+  The raw lane drains the negotiated hardware queue after its last PCM before
+  closing on EOF or a format change. Stop/seek still discard obsolete output.
+  Native/WAVE speaker masks are passed to the sink; mismatched, custom or unknown
+  channel maps fall back to shared output rather than silently mix/reorder PCM.
+  Core Audio physical-format readback must match the rate, signedness, endian and
+  integer alignment of the direct lane before the hogged sink is accepted.
+  Physical DAC behavior remains unverified; raw USB-host control is not implemented.
+- Google Cast and speech search have no portable receiver/STT host in the retained
+  dependencies. OS routing and microphone recognition are existing separate features.
+- Folder/Drive schedules remain process-bound. A standalone OS service/task entry
+  point with isolated database, vault and lifecycle ownership is not implemented.
+- Generic module DASH needs a source-preserving shared native recipe; Android
+  binary extensions require desktop binaries/load contracts. Script packages, HLS,
+  signed-session controls, settings and metadata pages are mounted.
+- Advanced Automix stretch/bass/sweep execution and optional models remain
+  unsupported by this mixer. Account-only Amazon and Spotify pool streaming tiers
+  remain outside their existing desktop account contracts.
+- Launcher icon packs, refraction, Cast/output actions and Android-specific live
+  pipeline diagnostics are not implied by the working desktop editors/menus.
+
+## Validation
+
+`python3 scripts/check_repository.py --worktree`: zero findings.
+`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`: 28 passed.
+The observed [desktop/Android compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983487),
+[unit workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983501) and
+[iOS compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983516)
+passed at intermediate `192942d3`. This does not establish exact-head compile
+success, optional Librespot binaries, native desktop packaging or audible/device QA
+for later four-seed theme, module HLS and clipboard edits. The orchestrator owns
+the next coherent CI batch.
+
+Common changes are additive: downloaded-episode index admission; account lyrics
+and QQ chart methods on existing repositories; optional HostLyrics persistence/extra
+providers and root saved-theme callbacks; desktop-only settings links/resources;
+and the desktop icon preference key/registry. Android module source gained only
+the additive immutable stream-permission accessor. No iOS source set was edited by
+this implementation work.
+
+Module streaming also binds the retained per-installation encrypted cookie jar to
+its accepted stream scope. Only that module's cookies can reach its origin; catalog
+and unrelated provider cookie jars remain separate. Librespot honors Android's
+global quality cap/low-data policy, verifies ISRC matches, and uses the shared
+failure policy to avoid reconnecting a healthy session after audio-key denial.
+These final adapters remain source-checked pending exact-head CI.

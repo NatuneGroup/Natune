@@ -164,6 +164,14 @@ internal suspend fun assembleDesktopSessionOwners(
         cookies = sourceAdmissions,
         commandFailureText = { DesktopStrings["playback_failed"] },
     )
+    playback.configureOutput(moe.rukamori.archivetune.desktop.playback.desktopExclusiveRequested(vault.snapshots.value),
+        vault.snapshots.value?.get(moe.rukamori.archivetune.shared.domain.settings.DesktopOutputDeviceIdKey).orEmpty())
+    scope.launch {
+        vault.snapshots.map { preferences ->
+            moe.rukamori.archivetune.desktop.playback.desktopExclusiveRequested(preferences) to
+                preferences?.get(moe.rukamori.archivetune.shared.domain.settings.DesktopOutputDeviceIdKey).orEmpty()
+        }.distinctUntilChanged().collect { (exclusive, deviceId) -> playback.configureOutput(exclusive, deviceId) }
+    }
     vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
     val player = MusicPlayerController(playback, scope)
     // The opt-in "remember speed and pitch" restore: without the flag the port keeps neutral parameters.

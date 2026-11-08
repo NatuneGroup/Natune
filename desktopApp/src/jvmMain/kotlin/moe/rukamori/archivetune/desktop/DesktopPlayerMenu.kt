@@ -445,20 +445,9 @@ internal class DesktopPlayerQueueActions(
 
     override fun copyLink(url: String) = copyToDesktopClipboard(url)
 
-    /** The local song's file in the OS file manager; the share sheet has no desktop counterpart. */
+    /** Copies the original local audio as a native file-list clipboard item. */
     override fun shareLocalAudio(track: PlayerQueueTrack) {
-        val file = File(track.mediaId)
-        try {
-            if (file.isFile && Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browseFileDirectory(file)
-            } else if (file.parentFile?.isDirectory == true && Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().open(file.parentFile)
-            } else {
-                graph.report("no local file is on disk for ${track.mediaId}")
-            }
-        } catch (failure: Exception) {
-            graph.report("the local file was not shown: ${failure.javaClass.simpleName}")
-        }
+        graph.notify(DesktopStrings[if (copyDesktopAudioFile(File(track.mediaId))) "local_audio_copied" else "content_menu_local_share_unavailable"])
     }
 
     override fun showDetails(track: PlayerQueueTrack) {

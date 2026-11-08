@@ -214,7 +214,7 @@ internal class DesktopSpotifyEchoClient(
             if (artists.isEmpty()) return null
             return ProviderTrack(ContentItem(ContentRef(ContentProvider.SPOTIFY_STREAMING.id, ContentKind.SONG, id),
                 title, artists.joinToString(", "), durationMs = duration, album = album,
-                artists = artists.map { ContentCredit(it) }), artists, album, null, raw.toString())
+                artists = artists.map { ContentCredit(it) }), artists, album, raw.spotifyObject("external_ids")?.spotifyText("isrc"), raw.toString())
         }
     }
 }

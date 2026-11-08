@@ -65,6 +65,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         CustomThemeColorKey,
         IosUsbOutputSampleRateKey,
         DesktopAppIconPathKey,
+        DesktopOutputDeviceIdKey,
         RandomThemeOnStartupKey,
         DarkModeKey,
         PureBlackKey,

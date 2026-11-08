@@ -38,6 +38,7 @@ endforeach()
 add_library(archivetune_engine SHARED
     src/archivetune_engine.c
     src/archivetune_device.c
+    src/archivetune_coreaudio_exclusive.c
     src/archivetune_engine_jni.c
     src/archivetune_mixer.c
     src/archivetune_mixer_jni.c
@@ -110,7 +111,7 @@ install(TARGETS archivetune_engine LIBRARY DESTINATION . RUNTIME DESTINATION .)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(archivetune_realtime_test EXCLUDE_FROM_ALL tests/realtime_render_test.c src/archivetune_device.c)
+    add_executable(archivetune_realtime_test EXCLUDE_FROM_ALL tests/realtime_render_test.c src/archivetune_device.c src/archivetune_coreaudio_exclusive.c)
     target_include_directories(archivetune_realtime_test PRIVATE include src "${AE_MINIAUDIO_DIR}" "${AE_PREFIX}/include")
     target_compile_options(archivetune_realtime_test PRIVATE -Wall -Wextra)
     target_link_libraries(archivetune_realtime_test PRIVATE

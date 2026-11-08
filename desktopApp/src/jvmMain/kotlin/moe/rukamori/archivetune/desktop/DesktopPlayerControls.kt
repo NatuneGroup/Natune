@@ -186,7 +186,7 @@ internal class DesktopPlayerControls(
 
     /**
      * The Now Playing sheet's Share: copies the playing song's catalogue link, as the mobile hosts' share sheet does,
-     * and says what happened over the window. A local file or a provider catalog with no public link copies nothing.
+     * and says what happened over the window. Local audio uses the file clipboard; unsupported catalog links report a miss.
      */
     private fun share(occurrenceId: String?) {
         val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return

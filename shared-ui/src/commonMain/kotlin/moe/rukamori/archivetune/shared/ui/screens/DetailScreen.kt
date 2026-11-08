@@ -137,6 +137,7 @@ fun DetailScreen(
                 numbered = kind == DetailKind.Album || kind == DetailKind.Playlist,
                 move = moveAction,
                 drag = drag,
+                showDuration = kind == DetailKind.Album,
             )
         }
         if (glassHeader) {

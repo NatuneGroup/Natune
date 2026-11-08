@@ -74,6 +74,8 @@ class ArchiveTuneHostBindings(
     val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
     /** Loads the persisted custom font file into a family; a host without one falls back to the default family. */
     val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
+    /** Optional host adapter for an existing platform's richer saved palette format. */
+    val savedThemeScheme: ((PreferenceSnapshot, Boolean) -> androidx.compose.material3.ColorScheme?)? = null,
     /**
      * Draws the signed-in account's picture into a frame the shell hands it, the desktop title bar's avatar and the
      * profile menu's header. Null, or a blank uri, keeps the account icon: a host without an image loader must not
@@ -258,12 +260,14 @@ private fun ArchiveTuneLoadedRoot(
         // desktop's own seed stands in, so the window never opens in stock purple.
         val paletteSeed = preferences.savedPaletteSeed()
         val paletteStyle = preferences.themePaletteStyle()
+        val savedTheme = remember(preferences[moe.rukamori.archivetune.shared.domain.settings.CustomThemeColorKey],
+            preferences[DynamicThemeKey], darkTheme, host) { host.savedThemeScheme?.invoke(preferences, darkTheme) }
         val desktopDynamic = desktopShell && preferences[DynamicThemeKey, true] && paletteSeed == null
         val liveArtworkSeed = if (desktopDynamic) artworkPaletteSeed(nativeState.palette) else null
         val storedArtworkSeed = if (desktopDynamic) preferences.desktopArtworkSeed() else null
         val artworkSeed = liveArtworkSeed ?: storedArtworkSeed
-        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme, desktopDynamic) {
-            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
+        val colorScheme = remember(paletteSeed, artworkSeed, paletteStyle, darkTheme, desktopDynamic, savedTheme) {
+            savedTheme ?: paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) }
                 ?: artworkSurfaceScheme(artworkSeed, darkTheme, paletteStyle)
                 ?: if (desktopDynamic) {
                     desktopFirstFrameScheme(null, darkTheme, paletteStyle)

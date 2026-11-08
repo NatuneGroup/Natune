@@ -197,6 +197,12 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         lock.withLock { engines.keys.filter { it == id || it.startsWith("$id:") }.forEach { engines.remove(it)?.close() } }
     }
 
+    /** A prepared stream retains the same immutable domain policy for its native child resources. */
+    suspend fun streamNetworkPermissions(id: String): ModuleNetworkPermissions? = lock.withLock {
+        val engine = engines[id] ?: throw ModuleException(ModuleFailure.EXECUTION, diagnosticCode = "MODULE_RETIRED")
+        engine.host.networkPermissions
+    }
+
     private suspend fun call(id: String, source: String, origin: String, function: String, args: JSONArray): Any = withContext(Dispatchers.Default) {
         lock.withLock {
             var engine = engines[id]

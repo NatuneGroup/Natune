@@ -49,7 +49,7 @@ class DesktopItemSharingTest {
     }
 
     @Test
-    fun thePlayerShareOfALocalFileCopiesNothingAndSaysWhy() {
+    fun thePlayerShareOfAMissingLocalFileCopiesNoLinkAndSaysWhy() {
         val notices = mutableListOf<String>()
         var copies = 0
         shareDesktopSong(ref(ContentProvider.LOCAL, ContentKind.SONG, "/tmp/a.mp3"), notices::add) {
@@ -57,7 +57,7 @@ class DesktopItemSharingTest {
             true
         }
         assertEquals(0, copies)
-        assertEquals(listOf(DesktopStrings["share_link_unavailable"]), notices)
+        assertEquals(listOf(DesktopStrings["content_menu_local_share_unavailable"]), notices)
     }
 
     @Test

@@ -22,7 +22,7 @@ internal suspend fun shareDesktopItem(
     sharing: MenuShareHandler,
 ) {
     // Telegram's link needs the signed-in client's lookup, which the shared handler owns; any other id keeps the
-    // catalog link, and a local file keeps the reveal.
+    // catalog link, and a local file uses the native file clipboard.
     if (item.ref.id.startsWith("telegram://")) {
         if (!sharing.song(item.ref.id, isLocal = false)) {
             state.unavailable("content_menu_telegram_share_unsupported")
@@ -32,13 +32,8 @@ internal suspend fun shareDesktopItem(
     if (item.ref.provider == ContentProvider.LOCAL.id) {
         val file = graph.localMedia.localPathOf(item.ref.id)?.let { File(it) }
             ?: state.unavailable("content_menu_local_share_unavailable")
-        if (!Desktop.isDesktopSupported()) state.unavailable("content_menu_local_share_unavailable")
-        val desktop = Desktop.getDesktop()
-        when {
-            desktop.isSupported(Desktop.Action.BROWSE_FILE_DIR) -> desktop.browseFileDirectory(file)
-            desktop.isSupported(Desktop.Action.OPEN) -> desktop.open(file.parentFile)
-            else -> state.unavailable("content_menu_local_share_unavailable")
-        }
+        if (!copyDesktopAudioFile(file)) state.unavailable("content_menu_local_share_unavailable")
+        graph.notify(DesktopStrings["local_audio_copied"])
         return
     }
     val uri = desktopItemShareUri(item.ref) ?: state.unavailable(
@@ -118,9 +113,13 @@ internal fun copyDesktopText(text: String): Boolean = try {
 
 /**
  * The player's Share: a catalogue song copies its watch or catalogue link and says so, while a local file or a
- * provider without a public link leaves the notice that says why. Nothing is claimed without a copy.
+ * provider without a public link leaves the notice that says why. Local audio uses the file clipboard.
  */
 internal fun shareDesktopSong(ref: ContentRef, notify: (String) -> Unit, copy: (String) -> Boolean = ::copyDesktopText) {
+    if (ref.provider == ContentProvider.LOCAL.id) {
+        notify(DesktopStrings[if (copyDesktopAudioFile(File(ref.id))) "local_audio_copied" else "content_menu_local_share_unavailable"])
+        return
+    }
     val uri = desktopItemShareUri(ref)
     if (uri == null) {
         notify(DesktopStrings["share_link_unavailable"])
@@ -135,7 +134,11 @@ internal fun desktopMenuSharing(state: DesktopItemMenuState, graph: DesktopSessi
     override suspend fun copyLink(url: String) = copyDesktopMenuText(url)
 
     override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) {
-        if (!revealDesktopAudio(mediaId, graph)) state.unavailable("content_menu_local_share_unavailable")
+        val file = graph.localMedia.localPathOf(mediaId)?.let(::File)
+            ?: graph.library.findSong(mediaId, null)?.ref?.let { graph.downloads.completedFile(it)?.path?.toFile() }
+            ?: state.unavailable("content_menu_local_share_unavailable")
+        if (!copyDesktopAudioFile(file)) state.unavailable("content_menu_local_share_unavailable")
+        graph.notify(DesktopStrings["local_audio_copied"])
     }
 
     /** The channel message link of a Telegram song, fetched like the playlist share's own lookup. */
