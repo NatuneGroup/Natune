@@ -46,6 +46,12 @@ jobs:
           submodules: true
           persist-credentials: false
 
+      - name: Prepare optional Discord Social SDK
+        id: discord-sdk
+        uses: ./.github/actions/prepare-discord-sdk
+        with:
+          token: ${{ github.event_name != 'pull_request' && secrets.DISCORD_SDK_TOKEN || '' }}
+
       - name: Set up JDK 21
         timeout-minutes: 10
         uses: actions/setup-java@v5
@@ -82,6 +88,7 @@ jobs:
           # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
           # has more RAM, and the app module needs a bigger Kotlin daemon to compile.
           ./gradlew --console=plain --stacktrace --profile \
+            -Pnatune.discordSdk=${{ steps.discord-sdk.outputs.enabled }} \
             "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
             -I quality/unit-tests.init.gradle \
             :app:testGmsMobileUniversalDebugUnitTest --rerun :app:criticalPolicyCoverage
