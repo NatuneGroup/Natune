@@ -17,6 +17,20 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
  */
 class YouTubeShelfWireTest {
     @Test
+    fun typedSongSubtitleKeepsArtistInsteadOfSongLabel() {
+        val row = song("song_000001").replace(
+            "{\"text\":\"Artist\",",
+            "{\"text\":\"Song\"},{\"text\":\" • \"},{\"text\":\"Artist\",",
+        )
+        val page = youTubeHomeShelfPage(obj("""{"contents":[{"musicCarouselShelfRenderer":{
+            "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Songs"}]}}},
+            "contents":[$row]}}]}"""))
+        val entry = page.shelves.single().entries.single()
+        assertEquals("Artist", entry.subtitle)
+        assertEquals("UC-artist01", entry.artists.single().id)
+    }
+
+    @Test
     fun homeFeedKeepsItsChipsShelvesAndCursor() {
         val page = youTubeHomeShelfPage(obj("""
             {
