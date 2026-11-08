@@ -240,16 +240,7 @@ internal class IosSessionGraph private constructor(
 
     internal val youtubeLibrarySync = IosYouTubeLibrarySync(this)
 
-    /**
-     * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the
-     * lock screen offers a skip exactly when the queue reports one.
-     */
-    val transportAvailability: Flow<IosTransportAvailability> = combine(
-        queue.state, player.snapshot, settings.snapshots,
-    ) { queueState, playback, preferences ->
-        val native = iosNativeState(queueState, playback, preferences)
-        IosTransportAvailability(canPrevious = native.canPrevious, canNext = native.canNext)
-    }.distinctUntilChanged()
+    val transportAvailability: Flow<IosTransportAvailability> = iosTransportAvailability()
 
     /**
      * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player

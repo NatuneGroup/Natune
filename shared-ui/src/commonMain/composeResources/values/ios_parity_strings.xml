@@ -24,4 +24,10 @@
     <string name="ios_modules_import">Install .arch package</string>
     <string name="ios_modules_configure">Configure</string>
     <string name="ios_modules_remove">Remove</string>
+    <string name="ios_modules_contracts">Readable API-v1 audio .arch packages support search, direct audio URLs and settings stored in Keychain. Enable Modules in the source order to use them. Signed sessions, extension permissions, metadata and lyrics providers, native Android binaries and inline DASH/DRM contracts are unavailable on iOS.</string>
+    <string name="ios_modules_invalid">The package is invalid, corrupt or exceeds the package limits.</string>
+    <string name="ios_modules_unsupported">This package requires an extension contract or host version unavailable on iOS.</string>
+    <string name="ios_modules_bad_configuration">Check the module’s required settings, credentials and allowed values.</string>
+    <string name="ios_modules_execution_failed">The module could not resolve audio within its limits. The next enabled source can try.</string>
+    <string name="ios_modules_unsupported_stream">This module returned an unsupported inline, encrypted or DASH stream. The next enabled source can try.</string>
 </resources>

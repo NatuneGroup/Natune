@@ -114,7 +114,7 @@ internal fun IosLaneSettingsPage(
 ) {
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
-        "settings/modules" -> IosModulesPage(host, owners.graph, onFailure)
+        "settings/modules" -> IosModulesPage(host, owners.graph)
         "settings/appearance/icon" -> IosIconEditor(onFailure)
         "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
         "settings/appearance/liquid_glass" -> moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings(
@@ -320,7 +320,7 @@ private fun IosLaneSourceSettingsPage(
         spotifyStreamingPlatformSupported = true,
         poolConfigured = owners.poolConfigured,
         refreshPool = { iosLaneRefreshPool(owners) },
-        checkSource = { type, prefs -> iosLaneCheckSource(owners.graph.http, type, prefs) },
+        checkSource = { type, prefs -> if (type == AudioSourceType.MODULES) prefs[ModulesEnabledKey] == true && owners.graph.modules.installed().isNotEmpty() else iosLaneCheckSource(owners.graph.http, type, prefs) },
         navigate = navigate,
         onFailure = onFailure,
         scrollTo = scrollTo,
@@ -360,7 +360,7 @@ internal suspend fun iosLaneCheckSource(
     AudioSourceType.QQ -> iosLaneProbe(http, "https://c.y.qq.com/")
     // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
     AudioSourceType.SPOTIFY -> iosLaneProbe(http, "https://open.spotify.com/")
-    // Modules run only in the Android host.
+    // The mounted API-v1 host additionally checks installed audio packages in the settings binding.
     AudioSourceType.MODULES -> preferences[ModulesEnabledKey] == true
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")

@@ -477,3 +477,20 @@ is an additional request rather than reuse of the playback response; streaming S
 tracks are excluded. Lyrics cache usage/clearing is wired and clearing preserves durable edits.
 The stored-song writer now accepts episodes as well as songs, completing episode file commits.
 Device/offline behavior and new-source Apple compilation remain unverified.
+
+
+### API-v1 audio modules
+
+The iOS module page installs bounded readable `.arch` audio packages (4 MiB compressed,
+5 MiB stored, 32 installed modules), verifies script/icon checksums and API/host features,
+and validates settings before writing them exclusively to the personal Keychain scope.
+Providers receive API-v1 `{value: ...}` settings and run on a confined QuickJS worker
+with memory, stack, timer, request/body and execution limits. A separate HTTP client
+prevents the app's account cookies or default headers from entering module requests.
+Modules resolve in the existing configured audio-source order. Per-module errors stand
+down for the next candidate/source and appear as sanitized status in the manager.
+Signed/authentication callbacks, permission-bearing extensions, native Android binaries,
+lyrics/metadata modules, and inline DASH/DRM streams are explicitly unsupported in UI.
+Direct progressive and ordinary HLS URLs continue through the existing iOS preparation.
+Local Python checks are structural evidence; CI compilation and device playback remain
+separate gates.
