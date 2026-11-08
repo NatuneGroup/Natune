@@ -316,7 +316,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         Text(stringResource(R.string.modules_suggested_catalogs), style = MaterialTheme.typography.titleMedium)
                         TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
-                            "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/registry.json")) }) {
+                            "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/registry.json")) }) {
                             Text(stringResource(R.string.modules_natune_catalog))
                         }
                         TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
@@ -324,7 +324,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                             Text(stringResource(R.string.modules_upstream_catalog))
                         }
                         TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
-                            "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-spotify-ext/addons/modules/natune-extensions.json")) }) {
+                            "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/natune-extensions.json")) }) {
                             Text(stringResource(R.string.extensions_catalog))
                         }
                     }

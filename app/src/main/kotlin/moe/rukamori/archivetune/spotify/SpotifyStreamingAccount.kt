@@ -121,6 +121,21 @@ object SpotifyStreamingAccount {
         }
     }
 
+    /** React to the same preference snapshot as the source picker, including extension disablement. */
+    fun streamingSessionPresent(preferences: Preferences): Boolean {
+        val stored = SpotifyStreamEngine.fromPreference(preferences[SpotifyStreamEngineKey])
+        val product = when (stored.streamAccountBinding()) {
+            SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(preferences[SpotifyStreamProductKey])
+            SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(preferences[SpotifyProductKey])
+        }
+        return when (SpotifyPremiumPolicy.effectiveEngine(stored, product)) {
+            SpotifyStreamEngine.UNOFFICIAL -> NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, preferences) &&
+                !preferences[SpotifyStreamSpDcKey].isNullOrBlank()
+            SpotifyStreamEngine.LIBRESPOT -> NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_OFFICIAL, preferences) &&
+                !preferences[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
+        }
+    }
+
     data class Profile(
         val userId: String,
         val displayName: String?,

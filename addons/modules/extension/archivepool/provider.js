@@ -560,7 +560,13 @@ function providerContext(service,account,context){
   const c=account.credentials,values=service==='tidal'?{accessToken:c.token,countryCode:c.countryCode,refreshToken:c.refreshToken,clientId:Natune.text(context,'tidalClientId'),clientSecret:Natune.text(context,'tidalClientSecret')}:{userAuthToken:c.token,appId:c.appId,appSecret:c.appSecret};
   const settings={};for(const [key,value] of Object.entries(values))settings[key]={value:value||null};return {settings};
 }
-function services(context){return Natune.setting(context,'source')==='qobuz'?['qobuz','tidal']:['tidal','qobuz'];}
+function services(context){
+  const pinned=Natune.text(context,'service');
+  if(pinned){if(!['tidal','qobuz'].includes(pinned))throw Natune.error('INVALID_TRACK','Unsupported leased service');return [pinned];}
+  const preferred=Natune.setting(context,'source')==='qobuz'?['qobuz','tidal']:['tidal','qobuz'];
+  const allowed=Natune.setting(context,'services');
+  return Array.isArray(allowed)?preferred.filter(service=>allowed.includes(service)):preferred;
+}
 async function searchTracks(query,limit,context){
   const lease=await accounts(context),size=Natune.limit(limit);let failure;
   for(const service of services(context))for(const account of lease.byService[service].slice(0,4)){
@@ -571,10 +577,10 @@ async function searchTracks(query,limit,context){
 }
 async function getTrackStreamUrl(trackId,quality,context){
   const selected=Natune.unpack(trackId),lease=await accounts(context);
-  if(!['tidal','qobuz'].includes(selected.service))throw Natune.error('INVALID_TRACK','Unknown leased provider');
+  if(!services(context).includes(selected.service))throw Natune.error('INVALID_TRACK','Unknown leased provider');
   const account=lease.byService[selected.service].find(v=>v.id===selected.account);
   if(!account)throw Natune.error('VERIFY_REQUIRED','ArchivePool rotated this lease; search again');
-  const q=selected.service==='tidal'?(quality==='hires'?'HI_RES_LOSSLESS':quality==='lossy'?'HIGH':'LOSSLESS'):(quality==='hires'?27:quality==='lossy'?5:6);
+  const q=selected.service==='tidal'?(['HI_RES_LOSSLESS','LOSSLESS','HIGH','LOW'].includes(quality)?quality:quality==='hires'?'HI_RES_LOSSLESS':quality==='lossy'?'HIGH':'LOSSLESS'):([27,7,6,5].includes(Number(quality))?Number(quality):quality==='hires'?27:quality==='lossy'?5:6);
   const value=await (selected.service==='tidal'?PoolTidal:PoolQobuz).getTrackStreamUrl(selected.track,q,providerContext(selected.service,account,context));
   return Object.assign(value,{provider:'ArchivePool / '+selected.service,track:{sourceId:selected.track}});
 }

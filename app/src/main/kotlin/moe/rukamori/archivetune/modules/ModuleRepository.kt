@@ -36,6 +36,9 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import moe.rukamori.archivetune.shared.domain.settings.ModuleAccountSettings
+import moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle
+
 data class ModuleMetadata(val name: String, val author: String, val description: String)
 
 data class InstalledModule(
@@ -48,6 +51,7 @@ data class InstalledModule(
     val revision: String,
     val updateUrl: String = origin,
     val metadata: ModuleMetadata? = null,
+    val accountSettings: ModuleAccountSettings = ModuleAccountSettings(),
 )
 
 data class SavedModuleCatalog(
@@ -93,6 +97,14 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
 
     suspend fun setModuleEnabled(id: String, value: Boolean) = change { registry ->
         registry.copy(modules = registry.modules.map { if (it.id == id) it.copy(enabled = value) else it })
+    }
+
+    suspend fun accountSetting(id: String, toggle: ModuleAccountToggle, value: Boolean) = change { registry ->
+        require(registry.modules.any { it.id == id && modulePoolService(it) != null })
+        registry.copy(modules = registry.modules.map { module ->
+            if (module.id == id) module.copy(accountSettings = module.accountSettings.changed(toggle, value),
+                revision = UUID.randomUUID().toString()) else module
+        })
     }
 
     suspend fun metadata(id: String, value: ModuleMetadata) = change { registry ->
@@ -178,7 +190,7 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
                         field.key to (existing?.configuration?.get(field.key)?.takeIf { value -> validValue(field, value) } ?: field.defaultJson)
                     }
                     val module = InstalledModule(existing?.id ?: UUID.randomUUID().toString(), manifest, pending.document.source,
-                        pending.document.origin, existing?.enabled ?: true, configuration, UUID.randomUUID().toString(), pending.document.updateUrl, existing?.metadata)
+                        pending.document.origin, existing?.enabled ?: true, configuration, UUID.randomUUID().toString(), pending.document.updateUrl, existing?.metadata, existing?.accountSettings ?: ModuleAccountSettings())
                     registry.copy(modules = registry.modules.toMutableList().apply {
                         if (existing == null) add(module) else set(indexOfFirst { it.id == existing.id }, module)
                     })
@@ -203,6 +215,9 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
         for (module in snapshot().modules.filter { it.manifest.authentication }) {
             if (runtime.completeAuthorization(module.id, module.source, module.origin, callback)) {
                 runtime.unload(module.id)
+                change { registry -> registry.copy(modules = registry.modules.map {
+                    if (it.id == module.id) it.copy(revision = UUID.randomUUID().toString()) else it
+                }) }
                 return module.id
             }
         }
@@ -216,7 +231,7 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
 
     suspend fun restorePortable(bytes: ByteArray) = withContext(Dispatchers.IO) {
         if (bytes.size > MAX_REGISTRY_BYTES) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-        val restored = decode(JSONObject(bytes.toString(Charsets.UTF_8)), portable = true)
+        val restored = migrateProviders(decode(JSONObject(bytes.toString(Charsets.UTF_8)), portable = true))
         change(replacement = restored) { restored.copy(enabled = false, modules = restored.modules.map { it.copy(enabled = false) }) }
     }
 
@@ -259,23 +274,68 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
     private suspend fun change(replacement: ModuleRegistry? = null, transform: (ModuleRegistry) -> ModuleRegistry) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val current = replacement ?: mutableState.value ?: read()
-            val next = transform(current).copy(revision = UUID.randomUUID().toString())
+            val next = migrateProviders(transform(current).copy(revision = UUID.randomUUID().toString()))
             if (next.modules.size > 256 || next.catalogs.size > 128) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-            val bytes = encode(next, portable = false).toString().toByteArray()
-            if (bytes.size > MAX_REGISTRY_BYTES) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-            storage.baseFile.parentFile?.let { if (!it.isDirectory && !it.mkdirs()) throw java.io.IOException("Module storage unavailable") }
-            val output = storage.startWrite()
-            try { output.write(bytes); storage.finishWrite(output) }
-            catch (error: Throwable) { storage.failWrite(output); throw error }
+            persist(next)
             mutableState.value = next
         }
     }
 
-    private fun read(): ModuleRegistry {
+    private fun persist(next: ModuleRegistry) {
+        val bytes = encode(next, portable = false).toString().toByteArray()
+        if (bytes.size > MAX_REGISTRY_BYTES) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
+        storage.baseFile.parentFile?.let { if (!it.isDirectory && !it.mkdirs()) throw java.io.IOException("Module storage unavailable") }
+        val output = storage.startWrite()
+        try { output.write(bytes); storage.finishWrite(output) }
+        catch (error: Throwable) { storage.failWrite(output); throw error }
+    }
+
+
+    private suspend fun read(): ModuleRegistry {
         if (!storage.baseFile.exists() && !File(storage.baseFile.path + ".bak").exists()) return ModuleRegistry()
         val bytes = storage.openRead().use { it.readModuleBytes(MAX_REGISTRY_BYTES) }
         if (bytes.size > MAX_REGISTRY_BYTES) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
-        return decode(JSONObject(bytes.toString(Charsets.UTF_8)), portable = false)
+        val stored = decode(JSONObject(bytes.toString(Charsets.UTF_8)), portable = false)
+        return migrateProviders(stored).also { if (it != stored) persist(it) }
+    }
+
+    /** Offline upgrade: never install a provider the user did not already choose. */
+    private suspend fun migrateProviders(registry: ModuleRegistry): ModuleRegistry {
+        val upgrades = mutableMapOf<String, Pair<ModuleDocument, String>>()
+        suspend fun upgrade(service: String): Pair<ModuleDocument, String> = upgrades[service] ?: run {
+            val bytes = context.assets.open("module-migrations/$service.arch").use { it.readModuleBytes(ModuleSourceDecoder.MAX_SOURCE_BYTES) }
+            val url = "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/$service.arch"
+            val source = ModulePackageReader.read(bytes, ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION)
+            val document = ModuleDocument(source, url, runtime.inspect(source, url))
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+            (document to digest).also { upgrades[service] = it }
+        }
+        val modules = registry.modules.map { module ->
+            val service = listOf("tidal", "qobuz", "archivepool").firstOrNull { name ->
+                module.manifest.id in setOf("app.natune.provider.$name", "app.natune.provider.$name.instance") &&
+                    (if (name == "archivepool") module.manifest.version == "1.0.0" else module.manifest.version in setOf("1.0.0", "1.1.0", "1.2.0"))
+            } ?: return@map module
+            val document = upgrade(service).first
+            module.copy(manifest = document.manifest, source = document.source, origin = document.origin,
+                updateUrl = document.origin, revision = UUID.randomUUID().toString(),
+                configuration = unifiedProviderConfiguration(module, document.manifest))
+        }
+        val catalogs = registry.catalogs.map { catalog ->
+            if (!catalog.url.startsWith("https://raw.githubusercontent.com/NatuneGroup/Natune/")) return@map catalog
+            val entries = catalog.entries.map { entry ->
+                val service = listOf("tidal", "qobuz", "archivepool").firstOrNull { name ->
+                    entry.id in setOf("app.natune.provider.$name", "app.natune.provider.$name.instance") &&
+                        (entry.id.endsWith(".instance") || (if (name == "archivepool") entry.version == "1.0.0" else entry.version in setOf("1.0.0", "1.1.0", "1.2.0")))
+                } ?: return@map entry
+                val (document, digest) = upgrade(service)
+                entry.copy(id = document.manifest.id, name = document.manifest.name, version = document.manifest.version,
+                    description = document.manifest.description, downloadUrl = document.origin, sha256 = digest)
+            }.distinctBy { it.id }
+            catalog.copy(entries = entries, url = catalog.url
+                .replace("/feat/r3-modules/", "/dev/").replace("/feat/r3-spotify-ext/", "/dev/"))
+        }
+        return if (modules == registry.modules && catalogs == registry.catalogs) registry
+            else registry.copy(modules = modules, catalogs = catalogs, revision = UUID.randomUUID().toString())
     }
 
     internal fun encode(registry: ModuleRegistry, portable: Boolean): JSONObject = JSONObject()
@@ -289,6 +349,8 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
                 put(JSONObject().put("id", module.id).put("manifest", manifestJson(module.manifest)).put("source", module.source)
                     .put("origin", module.origin).put("enabled", module.enabled).put("revision", module.revision)
                     .put("updateUrl", module.updateUrl)
+                    .put("accountSettings", JSONObject().put("useArchivePool", module.accountSettings.useArchivePool ?: JSONObject.NULL)
+                        .put("useOwnAccount", module.accountSettings.useOwnAccount).put("ownAccountFirst", module.accountSettings.ownAccountFirst))
                     .put("metadata", module.metadata?.let { JSONObject().put("name", it.name).put("author", it.author).put("description", it.description) })
                     .put("configuration", if (portable) settings else encrypt(settings.toString(), module.id)))
             }
@@ -321,7 +383,7 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
             InstalledModule(id, manifest, source, item.optString("origin"), item.optBoolean("enabled"), values, item.getString("revision"),
                 item.optString("updateUrl", item.optString("origin")), item.optJSONObject("metadata")?.let {
                     ModuleMetadata(it.getString("name").also { name -> require(name.isNotBlank()) }, it.getString("author"), it.getString("description"))
-                })
+                }, decodeAccountSettings(item.optJSONObject("accountSettings")))
         }, (0 until catalogs.length()).map { index ->
             val item = catalogs.getJSONObject(index)
             val entries = item.getJSONArray("entries")
@@ -336,6 +398,14 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
             if ((!allowRepeatedInstallations && registry.modules.distinctBy { it.id }.size != registry.modules.size) ||
                 registry.catalogs.distinctBy { it.id }.size != registry.catalogs.size) throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
         }
+    }
+
+    private fun decodeAccountSettings(value: JSONObject?): ModuleAccountSettings {
+        if (value == null) return ModuleAccountSettings()
+        fun boolean(key: String, default: Boolean): Boolean = if (!value.has(key)) default else
+            value.opt(key) as? Boolean ?: throw ModuleException(ModuleFailure.INVALID_DOCUMENT)
+        val pool = if (!value.has("useArchivePool") || value.isNull("useArchivePool")) null else boolean("useArchivePool", true)
+        return ModuleAccountSettings(pool, boolean("useOwnAccount", true), boolean("ownAccountFirst", true))
     }
 
     private fun manifestJson(manifest: ModuleManifest): JSONObject = JSONObject()
