@@ -26,6 +26,7 @@
 #include <stdint.h>
 
 #include "archivetune_engine.h"
+#include "archivetune_output.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -80,6 +81,23 @@ typedef struct ae_mixer_state {
 
 /* Returns NULL and writes a NUL-terminated message into error when the output cannot start. */
 AE_EXPORT ae_mixer *ae_mixer_create(const ae_mixer_config *config, char *error, size_t error_len);
+AE_EXPORT ae_mixer *ae_mixer_create_output(const ae_mixer_config *config, int exclusive, const char *device_id,
+                                         char *error, size_t error_len);
+
+typedef struct ae_mixer_output_state {
+    ae_pcm_format input;
+    ae_device_state sink;
+    uint32_t requested, direct_pcm, muted;
+    char reason[512];
+} ae_mixer_output_state;
+
+/* Output control calls share one host command owner; never call them from the audio callback. */
+AE_EXPORT void ae_mixer_set_output(ae_mixer *mixer, int exclusive, const char *device_id);
+AE_EXPORT void ae_mixer_prepare_track(ae_mixer *mixer);
+AE_EXPORT void ae_mixer_output_tick(ae_mixer *mixer);
+AE_EXPORT void ae_mixer_output_snapshot(ae_mixer *mixer, ae_mixer_output_state *out);
+AE_EXPORT void ae_mixer_output_enabled(ae_mixer *mixer, int enabled);
+AE_EXPORT uint32_t ae_mixer_output_devices(ae_device_description *out, uint32_t capacity, char *error, size_t error_len);
 
 /* Stops the device before the decks, so no callback can run during teardown. */
 AE_EXPORT void ae_mixer_destroy(ae_mixer *mixer);

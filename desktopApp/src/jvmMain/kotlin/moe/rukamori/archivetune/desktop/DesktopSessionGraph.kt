@@ -346,6 +346,15 @@ class DesktopSessionGraph internal constructor(
 
     /** The crossfade or automix blend armed into the next song, which the player artwork follows. */
     internal val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+    internal val outputState get() = playback.outputState
+    internal suspend fun outputDevices() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        moe.rukamori.archivetune.desktop.playback.NativeTwoDeckMixer.outputDevices()
+    }
+    internal fun refreshOutputSelection() {
+        val preferences = settings.snapshots.value
+        playback.configureOutput(moe.rukamori.archivetune.desktop.playback.desktopExclusiveRequested(preferences),
+            preferences?.get(moe.rukamori.archivetune.shared.domain.settings.DesktopOutputDeviceIdKey).orEmpty())
+    }
 
     /**
      * Sets the output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player does, so the
