@@ -63,6 +63,12 @@ timeouts/cancellation cannot publish a result from an old generation. Reconnect
 happens on a later playback request, never in a background retry loop.
 JNI checks the generation captured before queuing each operation, so a pending
 connect cannot resurrect a session after logout.
+Credential deletion also closes JNI inside the DataStore edit. A Kotlin revocation
+epoch invalidates existing plaintext/cache guards immediately, including before
+the preference observer receives the edit. A later request can rebuild after a
+rapid sign-out/sign-in of the same account. Missing native libraries fail before
+OAuth refresh/search; cache-alignment errors reject the candidate rather than
+letting a new rendition read incompatible cached bytes.
 
 The source is not an official Spotify SDK. In particular, the upstream account
 restriction in [the implementation plan](../../docs/engineering/librespot-audio-plan.md)
