@@ -156,3 +156,19 @@ check is not simulator compilation or device evidence.
 - `iosApp/tests/test_shared_vectors.py` checks all vectors, finite path coordinates,
   command arity/arc flags and exact Android player paths. This validates portable input,
   not iOS pixels; simulator rendering of every resource still needs CI/device verification.
+
+## Implementation: artist credits and artwork palette
+
+- `YouTubeArtistCredits.kt` is the common linked-credit policy used by both wire and
+  iOS InnerTubeX parsers. It inspects every subtitle group, preserves artist order,
+  deduplicates IDs and excludes album/type/duration runs. Two-row tiles and the iOS
+  playback byline now project those credits too. An absent artist no longer becomes
+  the literal subtitle `Song`.
+- `QueueMetadataProjection` already preserves user overrides and publishes the same
+  item to shared player/mini player and native metadata; it needed no rewrite. Existing
+  persisted queue rows with bad provider metadata need reloading, not a destructive migration.
+- `ArtworkPalette.kt` moves the desktop palette algorithm into common UI; desktop keeps
+  a forwarding adapter. iOS computes it off the main dispatcher from its existing bounded
+  artwork loader, observes cover overrides, cancels obsolete work and rejects stale covers.
+- Added common parser-policy and actual shelf-fixture tests. Verify artist/Lock Screen
+  refresh and artwork-tinted styles on device, including custom cover replacement.
