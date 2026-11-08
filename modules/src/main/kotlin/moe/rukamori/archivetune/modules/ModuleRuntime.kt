@@ -87,6 +87,11 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         }
     }
 
+    suspend fun lyrics(id: String, source: String, origin: String, track: ModuleTrack, settings: Map<String, String>): ModuleLyrics? {
+        val context = context(settings, track)
+        return ModuleLyrics.parse(call(id, source, origin, "getLyrics", JSONArray().put(context.getJSONObject("track")).put(context)))
+    }
+
     suspend fun stream(id: String, source: String, origin: String, trackId: String, settings: Map<String, String>, metadata: ModuleTrack? = null): ModuleStream {
         val quality = settings["quality"]?.let(::parseJsonValue) ?: JSONObject.NULL
         val value = call(id, source, origin, "getTrackStreamUrl", JSONArray().put(trackId).put(quality).put(context(settings, metadata))) as? JSONObject
@@ -236,6 +241,7 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
                     val detail = listOf(name, code, envelope.optString("frame"), problem?.code.orEmpty()).filter(String::isNotBlank).joinToString("/")
                     throw ModuleException(failure, stage = ModuleLoadStage.PROVIDER, diagnosticCode = detail)
                 }
+                if (function == "getLyrics" && envelope.has("value") && envelope.isNull("value")) return@withLock JSONObject.NULL
                 if (!envelope.has("value") || envelope.isNull("value")) {
                     throw ModuleException(ModuleFailure.EXECUTION, stage = ModuleLoadStage.PROVIDER, diagnosticCode = "INVALID_RESULT")
                 }
@@ -360,13 +366,16 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
     }
 
     private suspend fun manifest(runtime: QuickJs, host: ModuleExtensionHost): ModuleManifest {
+        val kinds = JSONObject().apply { ModuleKind.entries.forEach { put(it.wireType, JSONArray(it.capabilities)) } }
         val manifest = evaluate(runtime, host,
             "JSON.stringify((()=>{const p=globalThis.__provider;if(!p||typeof p!=='object')return {};" +
                 "return {id:p.id,name:p.name,version:p.version,author:p.author,description:p.description," +
                 "displayName:p.displayName,homepage:p.homepage,repository:p.repository,license:p.license,type:p.type," +
                 "minAppVersion:p.minAppVersion,requiredRuntimeFeatures:p.requiredRuntimeFeatures,iconBase64:p.iconBase64,authentication:p.authentication," +
                 "labels:[...(Array.isArray(p.labels)?p.labels:[]),...(Array.isArray(p.tags)?p.tags:[])]," +
-                "settings:p.settings||{},capabilities:['searchTracks','getTrackStreamUrl','getAlbum','getArtist','getPlaylist'].filter(k=>typeof p[k]==='function')};})());",
+                "settings:p.settings||{},capabilities:(()=>{const kinds=$kinds;const types=Array.isArray(p.type)?p.type:[p.type];" +
+                "const kind=types.find(t=>['metadata_provider','lyrics_provider','playback_provider'].includes(t))||'audio_provider';" +
+                "return kinds[kind].filter(k=>typeof p[k]==='function');})()};})());",
         )
         return ModuleManifest.parse(JSONObject(manifest).put("authentication", host.authentication))
     }
