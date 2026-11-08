@@ -29,8 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -44,6 +42,8 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.shared.domain.settings.setPlaybackOutputPreference
 import moe.rukamori.archivetune.shared.ui.resources.*
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 /** The player's output control and the sheet it opens. Owned by the host bindings, not by a page. */
 internal class DesktopOutputSheetState {
