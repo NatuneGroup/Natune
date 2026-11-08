@@ -340,6 +340,7 @@ private class NavigationArtistAlbumHost(
     override fun back() { navigation.back() }
     override fun backToMain() = navigation.backToMain()
     override fun openContent(ref: ContentRef) = navigation.open(ArchiveRoutes.content(ref))
+    override fun openAlbum(ref: ContentRef) = navigation.open(ArchiveRoutes.content(ref.copy(kind = ContentKind.ALBUM)))
     override fun openArtistSongs(artist: ContentRef) = navigation.open(ArchiveRoutes.artistSongs(artist))
     override fun openArtistAlbums(artist: ContentRef) = navigation.open(ArchiveRoutes.artistAlbums(artist))
     override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) =

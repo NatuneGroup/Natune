@@ -129,6 +129,8 @@ interface ArtistAlbumHost {
 
     /** Opens an artist, album, playlist or podcast detail route through the navigation owner. */
     fun openContent(ref: ContentRef)
+    /** Release cards always open an album, preserving the provider's opaque browse ID. */
+    fun openAlbum(ref: ContentRef) = openContent(ref.copy(kind = moe.rukamori.archivetune.shared.domain.repository.ContentKind.ALBUM))
     fun openArtistSongs(artist: ContentRef)
     fun openArtistAlbums(artist: ContentRef)
     /** Opens the complete provider section with the given layout; the items screen owns paging and complete play. */
