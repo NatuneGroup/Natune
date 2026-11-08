@@ -137,7 +137,7 @@ internal fun iosLibraryOrSpotifyPage(
     val stored = snapshot?.get(LibrarySourceKey).toEnum(LibraryDefaults.source)
     return when (stored.resolved(snapshot.iosSpotifyLibraryAvailable())) {
         LibrarySource.YTM ->
-            hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
+            iosTopMixLibraryPage(graph, hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute), openRoute)
         LibrarySource.SPOTIFY ->
             iosSpotifyLibraryPage(graph, snapshot, openRoute)
     }

@@ -188,6 +188,7 @@ internal class IosSessionGraph private constructor(
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
+    val topMixes by lazy { IosTopMixes(this) }
     val lyricsTools by lazy { IosLyricsTools(this) }
 
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
@@ -379,6 +380,7 @@ internal class IosSessionGraph private constructor(
         uploads.close()
         listenDriver.close()
         progressDriver.close()
+        topMixes.close()
         lyricsSurface.close()
         lyrics.close()
         newsFeed.close()

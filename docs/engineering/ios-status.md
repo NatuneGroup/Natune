@@ -434,3 +434,9 @@ token only and reuses the existing track-to-YouTube queue mapping; QQ shelves us
 source chain. The retained iOS REST client was extracted without changing desktop sources.
 Other provider searches and live feed/provider/account validation remain incomplete/unverified.
 The small additive QQ home RPC method is in shared-data/commonMain.
+
+AI top mixes now have a user-triggered generation action in the shared library header. The
+existing common plan parser/binder validates model output against actual listening-history songs;
+success creates durable local playlists and honours the saved hide preference and ten-minute
+refresh bound. It does not fabricate ids, generate on page visit or silently call AI. New-track
+recommendations are not resolved in this increment. AI/provider and device behavior is unverified.
