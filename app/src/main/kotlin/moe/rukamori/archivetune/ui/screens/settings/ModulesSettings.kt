@@ -192,7 +192,7 @@ private fun ModuleSettingsContent(state: ModuleSettingsState, onAction: (ModuleS
         val insets = LocalPlayerAwareWindowInsets.current
         val contentModifier = remember(padding, insets) {
             Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                .windowInsetsPadding(insets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)).clipToBounds()
+                .windowInsetsPadding(insets.only(WindowInsetsSides.Horizontal)).clipToBounds()
         }
         AnimatedContent(
             targetState = state,
@@ -253,7 +253,7 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
             state = listState,
             modifier = Modifier.widthIn(max = ModuleSettingsLayout.ContentMaxWidth).fillMaxWidth().fillMaxHeight(),
             contentPadding = PaddingValues(start = SettingsDimensions.ScreenHorizontalPadding, end = SettingsDimensions.ScreenHorizontalPadding,
-                top = 8.dp, bottom = SettingsDimensions.ScreenBottomPadding + ModuleSettingsLayout.FloatingActionClearance),
+                top = 8.dp, bottom = settingsListBottomPadding() + ModuleSettingsLayout.FloatingActionClearance),
             verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
         ) {
             item(key = "master", contentType = "control") { ModuleControlDeck(model, onAction, moduleItemMotion()) }
@@ -339,7 +339,9 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
             }
         }
         ModuleAddMenu(visible = model.busy == null && fabVisible, onAction = onAction,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))
+                .padding(end = 16.dp, bottom = 16.dp))
     }
 }
 
@@ -607,7 +609,7 @@ private fun ModuleCatalogDetails(detail: ModuleCatalogDetailUi, model: ModuleSet
     LazyColumn(
         modifier = Modifier.widthIn(max = ModuleSettingsLayout.ContentMaxWidth).fillMaxWidth().fillMaxHeight(),
         contentPadding = PaddingValues(start = SettingsDimensions.ScreenHorizontalPadding, end = SettingsDimensions.ScreenHorizontalPadding,
-            top = 8.dp, bottom = SettingsDimensions.ScreenBottomPadding),
+            top = 8.dp, bottom = settingsListBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
     ) {
         if (model.message != null || model.busy != null) item(key = "message", contentType = "message") {
