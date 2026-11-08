@@ -3,17 +3,22 @@
 This library embeds only librespot-core and librespot-metadata. It returns a
 playable Vorbis file's key, signed CDN URLs and reported track metadata; Android
 decrypts below Media3's cache and Media3 owns decoding/output. No librespot player,
-discovery, downloader, disk credential cache or second audio output is linked.
+discovery, downloader or second audio output is linked, and no disk credential
+cache is configured.
 
 `upstream-revision` pins MIT-licensed librespot. `prepare.sh` fetches that exact
 commit into an ignored recipe-owned directory and applies `embedding.patch`:
 
 - Remove the CLI's process exit on Premium loss; the JNI adapter denies the session.
 - Expose the existing upstream Keymaster constant for the OAuth StoredCredential
-  profile documented in login5. No OAuth client id or credential is bundled.
+  profile documented in login5. Natune PKCE still requires its registered,
+  build-time public OAuth client id; the upstream protocol profiles are separate.
+  No OAuth secret or user credential is bundled.
 - Supply the real Android API level from `Build.VERSION.SDK_INT` when sysinfo
   cannot report it; client-token/login5 must not receive an unknown Android version.
 - Return HTTP 429 and Retry-After without an internal retry; Natune owns the cooldown.
+- Stop on client-token authentication/throttle failures and login5 protocol
+  timeout/throttle responses. The required challenge exchange remains bounded.
 
 The checked-in Cargo.lock pins the transitive graph for Rust 1.97.1. Lock generation
 uses registry metadata only. The constrained implementation host has not compiled
@@ -35,6 +40,8 @@ upstream trace logs can expose tokens. OAuth bearer and AP reusable credentials
 stay in memory. `nativeClose` revokes the generation and shuts down the session;
 timeouts/cancellation cannot publish a result from an old generation. Reconnect
 happens on a later playback request, never in a background retry loop.
+JNI checks the generation captured before queuing each operation, so a pending
+connect cannot resurrect a session after logout.
 
 The source is not an official Spotify SDK. In particular, the upstream account
 restriction in [the implementation plan](../../docs/engineering/librespot-audio-plan.md)

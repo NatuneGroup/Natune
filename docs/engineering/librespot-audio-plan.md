@@ -32,6 +32,9 @@ Evidence read online on 2026-11-08:
   it does not use xyz.gianlu's JVM library. It is evidence of Android integration,
   not proof Natune's own OAuth app or every Premium account works. The historical
   [librespot-android](https://github.com/devgianlu/librespot-android) example uses Java.
+  Outify's gitlink names fork commit `2f13c2374beb78323e1d03d31232c5d6df535c8f`;
+  reading that exact fork source returned HTTP 404/422. Its dependencies verify
+  the Rust/JNI choice, but the fork's audio-key implementation was not inspected.
 - [Session::connect](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/core/src/session.rs)
   accepts `Credentials::with_access_token`, receives reusable AP credentials,
   reconnects with them and retains their auth data for
@@ -124,3 +127,53 @@ registered OAuth app, an eligible Premium account and an affected #1649 account,
 96/160/320 availability, seeks, cache replay, network loss/reconnect, token rotation,
 logout/account replacement, source fallback, low-data mode and concurrent prefetch.
 A green compiler or fixture result is not device playback evidence.
+
+
+## Implemented source and file map
+
+The plan was committed as `40a35e37`; native core/policy work as `30f9e5fc`;
+Android routing/packaging as `7fd33083`; queued-session/cache admission and native
+request-policy fixes as `b4e53650`, all pushed on `feat/r3-librespot-audio`.
+No PR or per-feature CI was created. This is source implementation evidence,
+not a compiled or device-tested playback result.
+
+| Area | Files / behavior |
+|---|---|
+| Native | [JNI/session](../../native/librespot/src/lib.rs), [Cargo lock](../../native/librespot/Cargo.lock), [embedding patches](../../native/librespot/embedding.patch), [ABI recipe](../../native/librespot/build-android.sh) |
+| Policy/tests | [Audio policy](../../shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/SpotifyLibrespotAudioPolicy.kt), [common tests](../../shared-domain/src/commonTest/kotlin/moe/rukamori/archivetune/shared/domain/source/SpotifyLibrespotAudioPolicyTest.kt) |
+| Android session | [Audio lifecycle/descriptors](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotAudio.kt), [JNI worker](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt), [OAuth search](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotTrackSearch.kt) |
+| Data source | [Guarded Media3 source](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotDataSource.kt), [reused Echo decryptor](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo/EchoDecryptingDataSource.kt) |
+| Source-chain adapter/cache | [SpotifyAudioResolver](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioResolver.kt), [SpotifyAudioCache](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioCache.kt), [MusicService](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/MusicService.kt) |
+| OAuth binding | [Account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyLibrespotAccount.kt) persists a newly verified catalog binding even when returning a cached token; [streaming account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyStreamingAccount.kt) exposes its existing effective-engine calculation |
+| Packaging | [Gradle ABI gate](../../app/librespot.gradle.kts), [R8 JNI keep](../../app/proguard-rules.pro), [MIT asset](../../app/src/main/assets/licenses/librespot-MIT.txt), [CI action](../../.github/actions/build-librespot/action.yml) |
+| CI callers | Android assembly/lint and ARM64 candidate in [Build Pull Request](../../.github/workflows/build_pull_request.yml), shipping matrix in [release artifacts](../../.github/workflows/_release-artifacts.yml), [emulator QA](../../.github/workflows/android_emulator_qa.yml) |
+
+The binding supplies the actual Android API level (sysinfo can be unknown) and
+keeps the upstream OAuth StoredCredential/Keymaster profile. Native cancellation
+uses a watch signal in addition to generation checks, dropping in-flight futures
+on logout/cancellation. Entry checks also reject native work queued before logout.
+Client-token authentication/throttle failures and login5 protocol timeout/throttle
+responses do not dispatch another native request; challenge exchange stays bounded.
+Cache admission is outside both playback caches, with a
+separate guard on resolved private streams. Vorbis decoding reuses the existing
+CTR implementation at a 32 KiB read size; the Unofficial default remains 16 bytes.
+Cache tags are validated under the read guard's captured account/engine/quality;
+read-admission failures re-prepare through the source chain at the current position.
+Shared tests cover cache account/engine/quality separation and malformed renditions.
+No Maven dependency, extra output engine or existing Gradle/NDK version was changed.
+
+Local validation: repository check **0 findings**; iOS Python fixtures **26 passed**.
+Only Cargo lock metadata was generated locally (no Rust compiler invoked); the
+small reference checkout and temporary registry/research data were removed.
+Kotlin/common tests, Rust ABI compilation, lint, APK assembly, native/JNI loading,
+codec/seek/device testing, actual library/APK size and CI duration remain **UNRUN**.
+
+The implementation deliberately does not advertise or control a Connect receiver.
+It opens a protocol audio session for local playback; no Spirc/player/discovery
+backend is linked. Desktop and iOS still return source unavailable while using
+Librespot. SOCKS and authenticated HTTP proxy configurations also fail the Android
+source rather than bypassing the selected proxy. An upstream audio-key-denied
+account remains unsupported even with Premium; it falls through to the next source.
+Modules UI/registry code and catalog metadata/queue mapping are untouched. The
+concurrent built-in-extension branch must keep its existing source-enable gate
+around this adapter when the branches integrate.
