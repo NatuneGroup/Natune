@@ -268,7 +268,9 @@ behavior need Windows/Linux runtime validation.
   rate/format changes reopen the sink, and device refusal has a visible shared
   fallback that resumes the stored equalizer/normalization instead of leaving the
   processing switches written but inactive. Output settings retain the device
-  picker and publish sink diagnostics.
+  picker and publish sink diagnostics, the player supplies its own output action
+  over the same stored selection, and the media-info DAC/output cards report the
+  routed device, decoded/direct PCM, hardware clock and verified bit-perfect state.
   The raw lane drains the negotiated hardware queue after its last PCM before
   closing on EOF or a format change. Stop/seek still discard obsolete output.
   Native/WAVE speaker masks are passed to the sink; mismatched, custom or unknown
@@ -286,13 +288,14 @@ behavior need Windows/Linux runtime validation.
 - Advanced Automix stretch/bass/sweep execution and optional models remain
   unsupported by this mixer. Account-only Amazon and Spotify pool streaming tiers
   remain outside their existing desktop account contracts.
-- Launcher icon packs, refraction, Cast/output actions and Android-specific live
-  pipeline diagnostics are not implied by the working desktop editors/menus.
+- Launcher icon packs, refraction and Cast are not implied by the working desktop
+  editors/menus. The media-info live cards cover the native sink; Android-specific
+  AudioTrack mix diagnostics remain Android-only.
 
 ## Validation
 
 `python3 scripts/check_repository.py --worktree`: zero findings.
-`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`: 28 passed.
+`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`: 31 passed.
 The observed [desktop/Android compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983487),
 [unit workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983501) and
 [iOS compile workflow](https://github.com/NatuneGroup/Natune/actions/runs/42488983516)
