@@ -81,6 +81,10 @@ data class MediaInfoPipelineFacts(
     val usbVendorId: Int = -1,
     val usbProductId: Int = -1,
     val usbExclusiveRateHz: Int = 0,
+    /** The desktop native engine reports host-neutral route labels instead of Android mixer wording. */
+    val hostDesktop: Boolean = false,
+    /** The sink is an exclusive direct lane, which is not necessarily USB on a desktop. */
+    val exclusiveDirect: Boolean = false,
 )
 
 /**
@@ -124,6 +128,8 @@ data class MediaInfoOutputStats(
     val deviceTypeLabel: String,
     val deviceSampleRates: List<Int> = emptyList(),
     val mixSampleRateHz: Int = 0,
+    /** The desktop native sink has a sink rate, not an Android mixer rate. */
+    val hostDesktop: Boolean = false,
 ) {
     val hasData: Boolean
         get() = mixSampleRateHz > 0 || deviceSampleRates.isNotEmpty()

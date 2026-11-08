@@ -195,10 +195,12 @@ internal fun desktopMediaInfoPage(
 ): ArchiveGraphPage {
     val queueState = graph.queue.state.value
     val currentId = queueState.entries.firstOrNull { it.occurrenceId == queueState.currentOccurrenceId }?.item?.ref?.id
+    val output by graph.outputState.collectAsState()
     var state by remember(mediaId, currentId) {
         mutableStateOf<moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoUi?>(null)
     }
-    LaunchedEffect(mediaId, currentId) {
+    // The live DAC rows follow the sink state, so a route or exclusive-mode change refreshes this page.
+    LaunchedEffect(mediaId, currentId, output) {
         try {
             state = graph.mediaInfo.mediaInfo(mediaId, isLive = currentId == mediaId)
         } catch (cancelled: CancellationException) {

@@ -612,6 +612,7 @@ internal suspend fun assembleDesktopSessionOwners(
             val state = owner.state.value
             state.entries.firstOrNull { it.occurrenceId == state.currentOccurrenceId }?.item?.ref?.id
         },
+        outputState = { playback.outputState.value },
     )
     // The override folders sit directly in the instance directory, as Android keeps them in its files directory.
     val customArtworkFiles = JvmCustomArtworkFiles(directory)
