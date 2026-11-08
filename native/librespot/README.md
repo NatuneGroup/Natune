@@ -30,8 +30,11 @@ bash native/librespot/build-android.sh universal
 ```
 
 The recipe requires Linux, Rust 1.97.1 and NDK 30.0.16248370 (verified from
-`source.properties`). It honors the SDK/NDK environment paths, with the workflows'
-`/usr/local/lib/android/sdk` fallback when both SDK variables are unset. It builds API-24
+`source.properties`). It selects that version under the configured SDK, with the
+workflows' `/usr/local/lib/android/sdk` fallback when both SDK variables are unset.
+Only if the pinned directory is absent does it try `ANDROID_NDK_HOME`, still
+checking its version; a runner's generic NDK variable cannot override an installed
+pinned package. It builds API-24
 libraries with 16 KiB ELF alignment, writes them under
 `app/build/generated/librespot/jniLibs/<abi>/`, and reports ELF segments and size.
 The composite CI action first restores an exact prepared-JNI cache. Its manifest

@@ -105,13 +105,20 @@ CI cross-compiles using the existing pinned Android NDK, Rust, rustls with WebPK
 roots and JNI. Package a stripped, size-optimized .so per shipped ABI with 16 KiB
 ELF page alignment. No new Maven playback dependency and no duplicate native decoder,
 CPAL/ALSA, OpenSSL or discovery closure. Rust compilation increases CI cost; share
-cached Cargo inputs under existing trust rules and select only each build's ABIs.
+cached Cargo inputs and exact prepared libraries under existing trust rules and
+select only each build's ABIs.
 Expected native size is several MiB per ABI; **actual APK/library size and build
 minutes must be measured in CI**, not asserted from source. Kotlin-only unit-test
-jobs need no native library; APK assembly must require the selected ABI libraries.
+jobs need no native library. After successful native preparation, APK assembly
+requires the selected ABI libraries and CI audits their packaged bytes. The
+continuation request explicitly permits native-toolchain failure: without an exact
+valid cache, remove partial JNI, warn, and assemble an APK with this optional source
+unavailable. A green APK job alone is not native-build evidence.
 
-Desktop would need JNI library staging for Linux/macOS/Windows plus a decrypting
-transport into the existing playback port. This Rust choice intentionally does not
+Desktop would need JNI library staging for Linux/macOS/Windows and a portable
+OAuth-owned JNI/source adapter. Its existing native AES-CTR/FFmpeg recipe can
+potentially consume the returned key, but the Android Context/DataStore/Media3
+owner cannot be reused as a JVM host adapter. This Rust choice intentionally does not
 pretend the JVM branch now plays; retain source-unavailable fallback and document it.
 iOS needs a C/Swift bridge, per-target static libraries and AVFoundation byte transport;
 JNI is not an iOS solution. Existing OAuth on both hosts stays intact.
@@ -177,3 +184,45 @@ account remains unsupported even with Premium; it falls through to the next sour
 Modules UI/registry code and catalog metadata/queue mapping are untouched. The
 concurrent built-in-extension branch must keep its existing source-enable gate
 around this adapter when the branches integrate.
+
+## Continuation audit (2026-11-08)
+
+Reviewed the existing plan and `8adb6cd9...b66bcf54` source changes without repeating
+the earlier protocol research. The bridge's used API signatures and Vorbis/audio-key
+types were checked against a bounded, temporary checkout of the same upstream pin;
+this was source inspection, with no Rust compilation. The scratch source was removed.
+
+The missing source pieces at hand-off were native-build failure resilience, an
+exact prepared-library cache, complete TV ABI selection, the public OAuth client
+id in Debug CI, an APK library audit, immediate credential-edit revocation and
+fail-closed cache alignment. Continuation fixes:
+
+- `0dbf07ab`: exact JNI cache/manifest plus Cargo caching, ABI/export/ELF checks,
+  all four TV-universal ABIs, Debug public client-id input, packaged-byte audits
+  and explicit JNI-unavailable APKs after native preparation failure.
+- `0c67fccc`: credential deletion closes JNI synchronously; a Kotlin revocation
+  epoch kills existing live/cache guards before preference observers run. Later
+  requests can rebuild after rapid same-account sign-out/sign-in. Missing JNI
+  fails before OAuth/search, and cache-alignment errors reject the candidate.
+- `d9fbefff` and the documentation follow-up: SDK-path fallback, NDK version
+  verification, and preference for the installed pinned NDK over a runner's
+  unrelated generic `ANDROID_NDK_HOME`.
+
+| End-to-end requirement | Current source state / evidence still missing |
+|---|---|
+| Native library / APK | `build_pull_request.yml` builds universal Debug and ARM64 candidate; `nightly.yml`/`release.yml` delegate to `_release-artifacts.yml`; emulator QA also prepares JNI. Mobile universal uses arm64-v8a/x86_64; TV universal also uses armeabi-v7a/x86. Per-ABI flavors keep their own ABI. Exact JNI/Cargo caches and APK-byte audits are wired; no compiled/library/APK result yet. |
+| JNI names | Five Rust exports match the Kotlin object's externals by source inspection, with an R8 keep rule. CI compares actual dynamic exports on fresh builds; JNI loading/minified invocation remains unrun. |
+| Stored OAuth grant | `SpotifyLibrespotAccount.accessToken()` returns the fresh cached/refresh grant; AP `Credentials::with_access_token` yields in-memory reusable credentials for login5. Catalog cookie/token is used only for binding checks. Registered client/redirect and real Premium login remain unverified. |
+| Audio key / decrypt | AP key request and CDN URLs feed opaque descriptors, then AES-128-CTR with the existing IV and decrypted 0xA7 Vorbis header skip. Key denial returns source failure. Real decrypted/Ogg audio is unverified. |
+| Media3 seeking | Logical positions add the header skip, align the CDN range to 16 bytes and derive the counter from the absolute block position. Reported length removes the skipped prefix. Nonzero/near-end seeks and cached replay need device evidence. |
+| Quality | LOW/low-data 96, HIGH 160 then 96, HIGHEST/AUTO 320 then lower available Vorbis tiers. Pure tests exist; Kotlin tests and account-specific file availability are unrun. |
+| Reconnect | Healthy sessions reused; rotated token/invalid session rebuilt on a later request, with deadline/cancellation/generation guards. Network-loss/token-rotation QA is pending. |
+| Fallback | Missing JNI, metadata/key/format/auth/throttle failure yields no source candidate; the configured chain continues. Read-admission failure rejects Spotify and preserves position during re-prepare. Device fallback remains unverified. |
+| Sign-out | Grant deletion closes JNI at the edit; native watch/generation and Kotlin read epochs revoke queued/in-flight work and descriptors. Account replacement, engine change and service destruction also invalidate. Actual device cleanup is unverified. |
+| Desktop / iOS | Existing OAuth remains. Desktop needs JVM JNI/session/source and per-host packaging; iOS needs C/Swift/static-library/AVFoundation range transport. Both still report Librespot unavailable. |
+
+The remaining acceptance work is CI compilation and physical playback validation,
+not another replacement engine. Allowed local checks still report **0 repository
+findings**, **26 iOS Python fixtures passed**. No PR, feature workflow dispatch,
+local Gradle/JVM/Rust build, lint, emulator or account playback probe was performed.
+Affected upstream #1649 accounts remain unsupported, even with Premium.
