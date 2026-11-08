@@ -1,6 +1,10 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -30,6 +34,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_settings_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.CrashReportActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.CrashReportDialog
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -52,7 +57,15 @@ internal fun IosMountedRoot(host: IosHost) {
 @Composable
 private fun IosMountedState(host: IosHost, session: IosSessionState, active: Boolean, safeArea: SafeAreaPadding) {
     when (val state = session) {
-        IosSessionState.Opening -> IosBoundary(safeArea) { CircularProgressIndicator() }
+        IosSessionState.Opening -> IosBoundary(safeArea) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Image(painterResource(Res.drawable.natune_logo), null, Modifier.size(80.dp))
+                Text(stringResource(Res.string.app_name), style = MaterialTheme.typography.headlineMedium)
+                Text(stringResource(Res.string.ios_opening_library), style = MaterialTheme.typography.bodyMedium)
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
         IosSessionState.SettingsUnavailable -> IosBoundary(safeArea) { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary(safeArea) { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {

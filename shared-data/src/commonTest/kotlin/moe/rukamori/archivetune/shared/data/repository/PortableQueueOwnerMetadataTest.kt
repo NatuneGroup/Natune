@@ -10,6 +10,9 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
+import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
+import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -99,6 +102,33 @@ class PortableQueueOwnerMetadataTest {
             songMetadata = songMetadata,
             autoLoadMoreEnabled = { autoLoadMore },
         )
+    }
+
+    @Test
+    fun deferredLaunchRestoreRespectsAQueueAlreadyChosenByTheListener() = scope.runTest {
+        val metadata = FakeSongMetadata(emptyMap())
+        val previous = Harness(backgroundScope, metadata)
+        previous.owner.withQueueAccess {
+            previous.owner.replace(listOf(ContentOccurrence("saved", song)), "saved", false)
+        }
+        val saved = previous.owner.withQueueAccess { previous.owner.capture() }
+        var reads = 0
+        val store = object : QueueCheckpointStore {
+            override suspend fun read(): QueueCheckpoint { reads++; return saved }
+            override suspend fun write(checkpoint: QueueCheckpoint, expectedRevision: Long?) = false
+            override suspend fun updatePosition(expectedRevision: Long, occurrenceId: String, positionMs: Long) = false
+        }
+        val fresh = Harness(backgroundScope, metadata)
+        assertTrue(TypedDelegatingQueueController(fresh.owner, store).resumeIfPristine())
+        assertEquals("saved", fresh.owner.state.value.currentOccurrenceId)
+        assertFalse(assertIs<PlaybackCommand.Load>(fresh.port.commands.last()).playWhenReady)
+        val chosen = Harness(backgroundScope, metadata)
+        chosen.owner.withQueueAccess {
+            chosen.owner.replace(listOf(ContentOccurrence("chosen", other)), "chosen", true)
+        }
+        assertFalse(TypedDelegatingQueueController(chosen.owner, store).resumeIfPristine())
+        assertEquals("chosen", chosen.owner.state.value.currentOccurrenceId)
+        assertEquals(1, reads)
     }
 
     @Test

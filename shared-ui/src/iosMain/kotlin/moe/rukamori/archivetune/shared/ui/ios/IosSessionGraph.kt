@@ -12,6 +12,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -341,7 +342,28 @@ internal class IosSessionGraph private constructor(
     internal val deviceConnect: IosDeviceConnect
         get() = deviceConnectOwner ?: IosDeviceConnect(this).also { deviceConnectOwner = it }
 
+    private var startupJob: Job? = null
+
+    /** Called after Ready is published. Source resolution and file reconciliation do not gate first paint. */
+    fun startAfterMount() {
+        if (startupJob != null || backup.recoveryMode.value) return
+        startupJob = scope.launch {
+            // Local paths must be known before a saved local song asks the locator for one.
+            localMedia.start()
+            downloads.start()
+            try {
+                queue.resumeIfPristine()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reportLine("saved queue was not restored: ${failure::class.simpleName}")
+            }
+        }
+    }
+
     suspend fun close() = withContext(NonCancellable) {
+        startupJob?.cancelAndJoin()
+        startupJob = null
         deviceConnectOwner?.close()
         deviceConnectOwner = null
         outputMutePolicy.close()
@@ -746,13 +768,6 @@ internal class IosSessionGraph private constructor(
                 recommendation = queueRecommendation,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
-            try {
-                queue.resume()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                report("saved queue was not restored: ${failure::class.simpleName}")
-            }
             // The Discord owner borrows the host's ephemeral OAuth sheet and the shared websocket wrapper; it only
             // acts on playback and settings reads, so it costs nothing until the settings page starts its driver.
             val discord = IosDiscordPresence(
@@ -947,9 +962,6 @@ internal class IosSessionGraph private constructor(
             playbackPool.start()
             lastFm.start()
             listenTogether.start()
-            // Re-arms a persisted download queue and publishes the imported songs the last session listed.
-            downloads.start()
-            localMedia.start()
             // Re-arms the Drive schedule; its uploads only live as long as this process, like the desktop host's.
             driveBackup.start()
             return graph
