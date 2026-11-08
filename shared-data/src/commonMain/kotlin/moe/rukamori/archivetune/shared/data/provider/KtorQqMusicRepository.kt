@@ -2,6 +2,10 @@ package moe.rukamori.archivetune.shared.data.provider
 
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
@@ -56,6 +60,24 @@ class KtorQqMusicRepository(client: HttpClient, private val access: QqMusicAcces
         }
         return sub.obj("data") ?: throw ProviderProtocolFailure()
     }
+    data class HomeChart(val id: String, val title: String, val tracks: List<ProviderTrack>)
+
+    /** Same Toplist GetAll/GetDetail calls as Android's QqMusicApi.home, with bounded parallel charts. */
+    suspend fun home(): List<HomeChart> = coroutineScope {
+        val listing = requireNotNull(rpc("music.musicToplist.Toplist", "GetAll", buildJsonObject {}))
+        val charts = listing.array("group") ?: throw ProviderProtocolFailure()
+        charts.flatMap { group -> (group as? JsonObject)?.array("toplist").orEmpty() }.take(6).map { entry -> async {
+            val chart = entry.jsonObject
+            val id = chart.long("topId") ?: throw ProviderProtocolFailure()
+            val detail = rpc("music.musicToplist.Toplist", "GetDetail", buildJsonObject {
+                put("topId", id); put("offset", 0); put("num", 20); put("withTags", false)
+            }) ?: throw ProviderProtocolFailure()
+            HomeChart(id.toString(), chart.text("title").orEmpty(), detail.array("songInfoList").orEmpty()
+                .mapNotNull { try { parse(it.jsonObject) } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { null } })
+        } }.awaitAll().filter { it.tracks.isNotEmpty() }
+    }
+
     override suspend fun tracks(request: ContentRequest, offset: Int, limit: Int): ProviderTrackPage {
         if (request.surface != ContentSurface.SEARCH) throw UnsupportedContentOperation()
         require(offset % limit == 0)

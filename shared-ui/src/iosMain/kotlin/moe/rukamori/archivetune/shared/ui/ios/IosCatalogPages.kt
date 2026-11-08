@@ -64,7 +64,7 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.MOODS -> iosMoodsPage(graph)
     ArchiveDestination.RELEASES -> iosReleasesPage(graph)
     ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
-        hostSearchPage(owners.pages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
+        iosProviderSearchPage(graph, owners, route) { openRoute(ArchiveRoutes.musicRecognition()) }
     ArchiveDestination.ALBUM ->
         if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
             iosSpotifyAlbumPage(graph, owners, route, menu, back)
