@@ -120,8 +120,9 @@ object PlaybackSourceChain {
             AudioSourceType.QOBUZ_BACKUP -> "qobuz_backup:$mediaId"
             AudioSourceType.DEEZER -> "deezer:$mediaId"
             AudioSourceType.JIOSAAVN -> "jiosaavn:$mediaId"
+            AudioSourceType.MODULES -> "modules:$mediaId"
             AudioSourceType.YOUTUBE -> mediaId
-            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY, AudioSourceType.MODULES -> null
+            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
         }
 
     /**
