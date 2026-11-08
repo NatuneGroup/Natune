@@ -1,5 +1,5 @@
 // Natune OAuth-only Social SDK bridge. The licensed prefab/AAR owns transport.
-// Compiled only with NATUNE_DISCORD_SOCIAL_SDK; API verification awaits the AAR.
+// Compiled only with NATUNE_DISCORD_SOCIAL_SDK; uses the SDK 1.10.19337 header API.
 #define DISCORDPP_IMPLEMENTATION
 #include "discordpp.h"
 #include <jni.h>
@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace {
 JavaVM* vm = nullptr;
@@ -159,7 +158,6 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeUpdatePresenc
             if (end > 0) timestamps.SetEnd(end);
             activity.SetTimestamps(timestamps);
         }
-        std::vector<discordpp::ActivityButton> buttons;
         const auto count = labels && urls ? std::min<jsize>(2, std::min(env->GetArrayLength(labels), env->GetArrayLength(urls))) : 0;
         for (jsize index = 0; index < count; ++index) {
             auto label = static_cast<jstring>(env->GetObjectArrayElement(labels, index));
@@ -167,11 +165,10 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeUpdatePresenc
             discordpp::ActivityButton button;
             button.SetLabel(text(env, label));
             button.SetUrl(text(env, url));
-            buttons.push_back(button);
+            activity.AddButton(button);
             env->DeleteLocalRef(label);
             env->DeleteLocalRef(url);
         }
-        activity.SetButtons(buttons);
         auto expected = client;
         client->UpdateRichPresence(activity, [expected, id](auto result) {
             if (expected == client) operation(id, result.Successful(), result.Successful() ? "" : "SDK_PRESENCE_FAILED");
@@ -183,10 +180,9 @@ extern "C" JNIEXPORT void JNICALL
 Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeClear(JNIEnv*, jclass, jlong id) {
     if (!client) { operation(id, true, ""); return; }
     try {
-        auto expected = client;
-        client->ClearRichPresence([expected, id](auto result) {
-            if (expected == client) operation(id, result.Successful(), result.Successful() ? "" : "SDK_CLEAR_FAILED");
-        });
+        client->ClearRichPresence();
+        // Clearing is synchronous in SDK 1.10.19337; there is no completion callback.
+        operation(id, true, "");
     } catch (...) { operation(id, false, "SDK_CLEAR_FAILED"); }
 }
 
