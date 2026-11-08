@@ -454,6 +454,27 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_widget_controls_embed_extension_and_use_authoritative_queue(self):
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        self.assertIn('productType = "com.apple.product-type.app-extension"', project)
+        self.assertIn('name = "Embed App Extensions"', project)
+        self.assertIn('dependencies = (B00000000000000000000036)', project)
+        widget = (IOS / "Widgets/NatuneControls.swift").read_text()
+        self.assertIn('.supportedFamilies([.systemSmall, .systemMedium])', widget)
+        self.assertIn('natune://widget/', widget)
+        self.assertNotIn('ArchiveTuneShared', widget)
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn('host.widgetCommand(action:', session)
+        host = (UI_ROOT / "IosHost.kt").read_text()
+        command = host.split('fun widgetCommand(action: String)', 1)[1].split('/** One line', 1)[0]
+        self.assertIn('withTimeoutOrNull(15_000L)', command)
+        self.assertIn('sessionState.first', command)
+        self.assertIn('ready.graph.skipNext()', command)
+        self.assertIn('ready.graph.player.pause()', command)
+        workflow = (ROOT / ".github/workflows/ios_compile.yml").read_text()
+        self.assertIn('-application-extension', workflow)
+        self.assertIn('iosApp/Widgets/NatuneControls.swift', workflow)
+
     def test_native_bridge_is_built_and_tested_not_only_header_parsed(self):
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
         self.assertIn("path = Native/ATAudioGraph.mm", project)

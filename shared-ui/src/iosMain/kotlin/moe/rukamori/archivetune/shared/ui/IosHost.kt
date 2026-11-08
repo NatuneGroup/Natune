@@ -4,6 +4,7 @@ package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -265,6 +266,22 @@ class IosHost {
      */
     fun openLink(link: String) {
         if (!closed) linkRoutes.trySend(link)
+    }
+
+    /** Widget links foreground the app and wait once for the restored, authoritative queue. */
+    fun widgetCommand(action: String) {
+        if (closed || action !in setOf("play", "pause", "next", "previous")) return
+        scope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                val ready = sessionState.first { it !is IosSessionState.Opening } as? IosSessionState.Ready ?: return@withTimeoutOrNull
+                when (action) {
+                    "play" -> ready.graph.player.play()
+                    "pause" -> ready.graph.player.pause()
+                    "next" -> ready.graph.skipNext()
+                    "previous" -> ready.graph.skipPrevious()
+                }
+            }
+        }
     }
 
     /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */

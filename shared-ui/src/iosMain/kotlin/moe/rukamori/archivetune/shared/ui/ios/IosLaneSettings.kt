@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import moe.rukamori.archivetune.shared.ui.resources.ios_aod_unavailable
 import moe.rukamori.archivetune.shared.domain.settings.ModulesEnabledKey
 
 import androidx.compose.foundation.clickable
@@ -93,7 +94,6 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/android_auto",
     // Pages whose rows are Android-only and which this host does not mount.
     "settings/appearance/aod_customized",
 )
@@ -113,7 +113,8 @@ internal fun IosLaneSettingsPage(
     scrollTo: String?,
 ) {
     when (path) {
-        in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
+        in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage(stringResource(Res.string.ios_aod_unavailable))
+        "settings/android_auto" -> IosSystemIntegrationsPage()
         "settings/modules" -> IosModulesPage(host, owners.graph)
         "settings/appearance/icon" -> IosIconEditor(onFailure)
         "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
@@ -165,10 +166,10 @@ internal fun IosLaneSettingsPage(
 
 /** The unavailable page: one honest line, no dead controls. */
 @Composable
-internal fun IosLaneUnavailablePage() {
+internal fun IosLaneUnavailablePage(reason: String? = null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            stringResource(Res.string.ios_settings_feature_unavailable),
+            reason ?: stringResource(Res.string.ios_settings_feature_unavailable),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(24.dp),

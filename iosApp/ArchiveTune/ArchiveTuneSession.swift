@@ -58,6 +58,12 @@ final class ArchiveTuneSession {
     /// Both scheme opens and browsing activities use Kotlin's existing bounded link intake and classifier.
     /// HTTPS activation still needs associated domains; forwarding an activity grants no entitlement.
     func accept(_ url: URL) {
+        if url.scheme == "natune", url.host == "widget",
+           url.query == nil, url.fragment == nil, url.user == nil, url.password == nil,
+           url.port == nil, ["/open", "/play", "/pause", "/next", "/previous"].contains(url.path) {
+            if url.path != "/open" { host.widgetCommand(action: String(url.path.dropFirst())) }
+            return
+        }
         host.openLink(link: url.absoluteString)
     }
 
