@@ -10,8 +10,6 @@ package moe.rukamori.archivetune.playback
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
@@ -35,7 +33,7 @@ import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
-import moe.rukamori.archivetune.utils.PoolAccountRecovery
+import moe.rukamori.archivetune.utils.TidalPoolPlayback
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 import java.io.File
@@ -165,83 +163,20 @@ object LosslessStreamResolver {
                         )
                     }
                 }.onFailure {
+                    it.rethrowIfAudioSourceCancelled()
                     Timber.tag("LosslessResolver").w(it, "Tidal user-token resolve failed for %s", mediaId)
                 }.getOrNull()
                 if (stream != null) return stream
             }
 
-            // 2) Shared premium Tidal accounts from the community Source Pool. These are real
-            // subscriber tokens, so they resolve full-quality FLAC directly via the official API —
-            // no proxy instance needed.
-            var poolAccounts = PoolAccountManager.tidalAccounts()
-            // Pooled Tidal access tokens live about an hour, but the app's pool cache is held for
-            // hours, so the cached copies are usually already stale. Using one anyway guarantees a
-            // 401 — and the handler below then reports a healthy account dead, which is how good
-            // accounts used to get disabled. Check the token's own expiry and re-lease first.
-            if (poolAccounts.any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
-                runCatching {
-                    runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(context, force = true) }
-                }.onFailure {
-                    Timber.tag("LosslessResolver").w(it, "Tidal pool re-lease failed; using cached accounts")
-                }
-                val refreshed = PoolAccountManager.tidalAccounts()
-                if (refreshed.isNotEmpty()) {
-                    poolAccounts = refreshed
-                    Timber.tag("LosslessResolver").d("Re-leased %d fresh Tidal pool account(s)", refreshed.size)
-                }
+            // 2) Use the same quality fallback and rate-limit gate as foreground playback.
+            val pooledStream = runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                TidalPoolPlayback.resolve(
+                    context = context, title = title, artists = artists, durationMs = durationMs,
+                    audioQuality = apiQuality, cacheDir = cacheDir,
+                )
             }
-            if (poolAccounts.isNotEmpty()) {
-                // Race all pool accounts in parallel: the first hit wins and the rest are
-                // cancelled. With N pool accounts this reduces the worst-case wall time from
-                // N × resolve_time to ~1 × resolve_time (typical speedup: 10× for a 10-account
-                // pool where the user's first 9 accounts don't have the track).
-                //
-                // resolveTidal is NOT a suspend function, so we wrap the
-                // coroutineScope in runBlocking to bridge into the suspend world.
-                val stream = runCatching {
-                    runBlocking(Dispatchers.IO) {
-                        coroutineScope {
-                            val jobs = poolAccounts.map { poolAccount ->
-                                async(Dispatchers.IO) {
-                                    val poolCountry =
-                                        poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                                    PoolAccountRecovery.resolvePooledTidal(context, poolAccount, poolCountry) { token, country ->
-                                        TidalAccountManager.resolveDirectStream(
-                                            accessToken = token,
-                                            title = title,
-                                            artists = artists,
-                                            durationMs = durationMs,
-                                            audioQuality = apiQuality,
-                                            cacheDir = cacheDir,
-                                            countryCode = country,
-                                        )
-                                    }
-                                }
-                            }
-                            // First non-null wins; cancel the rest.
-                            var winner: DirectStream? = null
-                            for (job in jobs) {
-                                val result = job.await()
-                                if (result != null) {
-                                    winner = result
-                                    // Cancel any still-pending jobs — we have a winner.
-                                    jobs.forEach { other -> if (!other.isCompleted) other.cancel() }
-                                    break
-                                }
-                            }
-                            winner
-                        }
-                    }
-                }.onFailure {
-                    Timber.tag("LosslessResolver").w(it, "Tidal pool race failed for %s", mediaId)
-                }.getOrNull()
-                if (stream != null) {
-                    Timber.tag("LosslessResolver").d(
-                        "Tidal resolved via pool race for %s", mediaId,
-                    )
-                    return stream
-                }
-            }
+            if (pooledStream != null) return pooledStream
         }
 
         // 3) Fallback: public HiFi/QQDL instances (user-configured + pool-discovered).
@@ -255,6 +190,10 @@ object LosslessStreamResolver {
             addAll(discoveredInstances)
         }.toList()
         TidalAudioProvider.setInstances(mergedInstances)
+        if (TidalAudioProvider.activeInstanceUrls.isEmpty()) {
+            Timber.tag("LosslessResolver").d("TIDAL public-instance fallback skipped: no valid instances configured or discovered")
+            return null
+        }
 
         return runCatching {
             runBlocking(Dispatchers.IO) {
@@ -274,6 +213,7 @@ object LosslessStreamResolver {
                 )
             }
         }.onFailure {
+            it.rethrowIfAudioSourceCancelled()
             Timber.tag("LosslessResolver").w(it, "Tidal public-instance resolve failed for %s", mediaId)
         }.getOrNull()?.let { resolved ->
             DirectStream(
