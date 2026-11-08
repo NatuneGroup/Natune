@@ -83,7 +83,6 @@ import moe.rukamori.archivetune.constants.PoTokenSourceUrlKey
 import moe.rukamori.archivetune.constants.VisitorDataKey
 import moe.rukamori.archivetune.constants.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.ui.component.IconButton
-import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
@@ -263,10 +262,11 @@ fun PoTokenScreen(
         topBar = {
             LargeFlexibleTopAppBar(
                 title = {
-                    MarqueeText(
+                    Text(
                         text = stringResource(R.string.po_token_generation),
                         fontWeight = FontWeight.Bold,
-                        phaseKey = R.string.po_token_generation,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {

@@ -354,7 +354,6 @@ fun SettingsSegmentedItem(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        phaseKey = item.title,
                     )
                 }
             }
@@ -517,7 +516,6 @@ fun SettingsSearchResultItem(
                             text = result.parentTitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            phaseKey = result.title,
                         )
                     }
                 }
