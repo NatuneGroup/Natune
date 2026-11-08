@@ -153,7 +153,7 @@ class IosModulesRepository(
             val title = row["title"]?.jsonPrimitive?.content ?: row["name"]?.jsonPrimitive?.content ?: return@let null
             val artists = (row["artists"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull ?: (it as? JsonObject)?.get("name")?.jsonPrimitive?.content }
                 ?: listOfNotNull(row["artist"]?.jsonPrimitive?.contentOrNull)
-            TrackMatching.Candidate(id, title, artists, row["album"]?.jsonPrimitive?.contentOrNull, row["durationMs"]?.jsonPrimitive?.longOrNull)
+            TrackMatching.Candidate(id, title, artists, row["album"]?.jsonPrimitive?.contentOrNull, moduleDurationMs(row))
         } }
         val track = TrackMatching.best(request.target, tracks) ?: return null
         val result = call(module, "getTrackStreamUrl", buildJsonArray {
