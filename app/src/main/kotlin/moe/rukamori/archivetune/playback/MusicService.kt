@@ -8667,41 +8667,43 @@ class MusicService :
      * picker and the resolver always act on the same values. The enabled defaults come from
      * [AudioSourceConfig.DEFAULT_ENABLED], the same map the settings toggles use.
      */
-    private fun sourcePrefsSnapshot(): PlaybackSourceSnapshot =
-        PlaybackSourceSnapshot(
+    private fun sourcePrefsSnapshot(preferences: Preferences? = null): PlaybackSourceSnapshot {
+        fun <T> read(key: Preferences.Key<T>, default: T): T = preferences?.get(key) ?: dataStore.get(key, default)
+        return PlaybackSourceSnapshot(
             order =
                 AudioSourceConfig.parseOrder(
-                    dataStore.get(AudioSourceOrderKey, "").ifBlank { null },
+                    read(AudioSourceOrderKey, "").ifBlank { null },
                 ),
             enabled =
                 PlaybackSourceChain.enabledSet(
                     flags =
                         mapOf(
                             AudioSourceType.TIDAL to
-                                dataStore.get(TidalEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL)),
+                                read(TidalEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL)),
                             AudioSourceType.QOBUZ to
-                                dataStore.get(QobuzEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ)),
+                                read(QobuzEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ)),
                             AudioSourceType.QOBUZ_BACKUP to
-                                dataStore.get(QobuzBackupEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ_BACKUP)),
+                                read(QobuzBackupEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ_BACKUP)),
                             AudioSourceType.DEEZER to
-                                dataStore.get(DeezerEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.DEEZER)),
+                                read(DeezerEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.DEEZER)),
                             AudioSourceType.APPLE to
-                                dataStore.get(AppleMusicSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.APPLE)),
+                                read(AppleMusicSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.APPLE)),
                             AudioSourceType.AMAZON to
-                                dataStore.get(AmazonEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.AMAZON)),
+                                read(AmazonEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.AMAZON)),
                             AudioSourceType.QQ to
-                                dataStore.get(QqMusicEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QQ)),
+                                read(QqMusicEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QQ)),
                             AudioSourceType.SPOTIFY to
-                                dataStore.get(SpotifyStreamEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.SPOTIFY)),
+                                read(SpotifyStreamEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.SPOTIFY)),
                             AudioSourceType.JIOSAAVN to
-                                dataStore.get(JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN)),
+                                read(JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN)),
                             AudioSourceType.MODULES to moduleAudio.enabled(),
                             AudioSourceType.YOUTUBE to
-                                dataStore.get(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
+                                read(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
                         ),
-                    spotifySignedIn = SpotifyStreamingAccount.streamingSessionPresent(dataStore),
+                    spotifySignedIn = preferences?.let(SpotifyStreamingAccount::streamingSessionPresent) ?: SpotifyStreamingAccount.streamingSessionPresent(dataStore),
                 ),
         )
+    }
 
     /**
      * Returns true if [source] is currently enabled in the user's preferences. YouTube is enabled
@@ -8839,35 +8841,20 @@ class MusicService :
         }
     }
 
-    /**
-     * Sources the player's "Play from" chooser should offer for [mediaId], based on the last
-     * resolution result: any lossless source that matched the track, plus YouTube (always available
-     * as the fallback), plus the user's per-song override source (so the user can always see, change
-     * or clear their pinned choice even if the last resolution attempt failed transiently — e.g.
-     * "Qobuz token returned preview-only; skipping"). Returned in the canonical Tidal, Qobuz, YouTube
-     * order.
-     */
     fun availableSourcesForSong(mediaId: String): List<AudioSourceType> {
-        val resolved = resolvedSourcesByMediaId[mediaId].orEmpty()
-        val override = SongSourceOverride.get(dataStore.get(SongSourceOverrideKey, ""), mediaId)
-        // Sources are surfaced in the Source chooser when ANY of:
-        //   - Always-available: YouTube (the implicit fallback), provided the user has not
-        //     turned the YouTube source off.
-        //   - The source was previously resolved successfully for this media id.
-        //   - The user previously pinned this song to this source (override).
-        //   - The source is GLOBALLY ENABLED — the user has explicitly turned the source
-        //     on in Settings, so they should be able to pick it per-song even if the
-        //     initial resolution hasn't completed (or failed transiently).
-        // Every source is a first-class entry in DEFAULT_ORDER now, so the chooser rows follow
-        // the user's own preference order rather than a fixed canon.
-        val chooserOrder = AudioSourceConfig.DEFAULT_ORDER
-        return enabledPlaybackSources(
-            candidates = chooserOrder.filter {
-                it in resolved || it == override || isSourceEnabled(it)
-            },
-            enabledSources = AudioSourceType.entries.filter(::isSourceEnabled).toSet(),
-        )
+        val snapshot = sourcePrefsSnapshot()
+        return snapshot.order.filter { it in snapshot.enabled && moe.rukamori.archivetune.audiosource.availableBuiltinSource(it, dataStore) }
     }
+
+    /** Install, uninstall, settings, sign-in and source resolution all invalidate chooser rows. */
+    val availablePlaybackSources by lazy {
+        combine(dataStore.data, moduleAudio.availability, _resolvedSourcesRevision) { preferences, modulesAvailable, _ ->
+            val snapshot = sourcePrefsSnapshot(preferences)
+            snapshot.order.filter { it in snapshot.enabled && (it != AudioSourceType.MODULES || modulesAvailable) &&
+                moe.rukamori.archivetune.audiosource.availableBuiltinSource(it, dataStore, preferences) }
+        }.distinctUntilChanged()
+    }
+
 
     /**
      * Triggers a fresh resolution of every enabled non-YouTube source for [mediaId], bypassing the

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -102,12 +103,25 @@ class ResolveModuleAudioUseCase @Inject constructor(
 
     suspend fun resolveRegistry() { repository.snapshot() }
 
-    fun enabled(): Boolean = repository.state.value?.let { it.enabled && it.modules.any { module -> module.enabled && module.manifest.providesAudio } } == true
+    val availability = repository.state.map { registry ->
+        if (registry?.enabled != true) return@map false
+        registry.modules.any { module ->
+            if (!module.availableForPlayback()) false
+            else if (!module.manifest.authentication) true
+            else try {
+                repository.runtime.checkAuthorization(module.id, module.source, module.origin)
+                true
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) { false }
+        }
+    }
+
+    fun enabled(): Boolean = repository.state.value?.let { it.enabled && it.modules.any { module -> module.availableForPlayback() } } == true
 
     fun peek(id: String, metadata: ModuleMatchMetadata?): ModuleAudioSelection? {
         val registry = repository.state.value ?: return null
         if (!registry.enabled) return null
-        for (module in registry.modules.filter { it.enabled && it.manifest.providesAudio }) {
+        for (module in registry.modules.filter { it.availableForPlayback() }) {
             val entry = cache[cacheId(id, module.id)]?.takeIf {
                 it.moduleRevision == module.revision && (metadata == null || it.metadata == metadata) && it.expiresAtMs > System.currentTimeMillis()
             } ?: return null
@@ -123,13 +137,13 @@ class ResolveModuleAudioUseCase @Inject constructor(
             diagnostics.record("registry", ModuleDiagnostic(ModuleCheckStatus.FAILED, System.currentTimeMillis(), 0, ModuleFailure.INVALID_CONFIGURATION))
             return null
         }
-        if (!registry.enabled || registry.modules.none { it.enabled && it.manifest.providesAudio } || id.isLocalMediaId()) return null
+        if (!registry.enabled || registry.modules.none { it.availableForPlayback() } || id.isLocalMediaId()) return null
         val target = metadata ?: metadataRepository.get(id) ?: return null
         if (!target.eligible || target.title.isBlank() || target.artists.none(String::isNotBlank)) return null
         return withTimeoutOrNull(30_000) {
             mutex.withLock {
                 try {
-                for (module in registry.modules.filter { it.enabled && it.manifest.providesAudio }) {
+                for (module in registry.modules.filter { it.availableForPlayback() }) {
                     if (!stillCurrent(registry, module)) return@withTimeoutOrNull null
                     val key = cacheId(id, module.id)
                     val cached = cache[key]?.takeIf { it.moduleRevision == module.revision && it.metadata == target && it.expiresAtMs > System.currentTimeMillis() }
@@ -224,8 +238,8 @@ class ResolveModuleAudioUseCase @Inject constructor(
     private fun stillCurrent(expected: ModuleRegistry, module: InstalledModule): Boolean {
         val current = repository.state.value ?: return false
         if (!current.enabled) return false
-        val preceding = expected.modules.filter { it.enabled && it.manifest.providesAudio }.takeWhile { it.id != module.id } + module
-        return current.modules.filter { it.enabled && it.manifest.providesAudio }.take(preceding.size).map { it.id to it.revision } == preceding.map { it.id to it.revision }
+        val preceding = expected.modules.filter { it.availableForPlayback() }.takeWhile { it.id != module.id } + module
+        return current.modules.filter { it.availableForPlayback() }.take(preceding.size).map { it.id to it.revision } == preceding.map { it.id to it.revision }
     }
 }
 
