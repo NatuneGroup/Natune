@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.modules.*
+import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
+import moe.rukamori.archivetune.desktop.integration.auth.DesktopBrowserAuth
+import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthRequest
+import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.repository.*
@@ -51,8 +55,10 @@ internal class DesktopModules(private val root: Path, private val preferences: (
         val manifest = runtime.inspect(script, origin)
         manifest.requireCompatible(ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION)
         return gate.withLock {
-            val previous = entries.value.firstOrNull { it.id == updateId }
+            val previous = entries.value.firstOrNull { if (updateId != null) it.id == updateId else it.manifest.id == manifest.id }
+            require(updateId == null || previous != null) { "Module update installation is missing" }
             if (previous != null) require(previous.manifest.id == manifest.id) { "Module update identity changed" }
+            require(previous != null || entries.value.size < 64) { "Module installation limit reached" }
             val entry = Entry(previous?.id ?: UUID.randomUUID().toString(), script, origin, manifest, false)
             persist(entry)
             generation.incrementAndGet()
@@ -61,10 +67,10 @@ internal class DesktopModules(private val root: Path, private val preferences: (
             entry
         }
     }
-    suspend fun installUrl(url: String, digest: String? = null): Entry {
+    suspend fun installUrl(url: String, digest: String? = null, updateId: String? = null): Entry {
         val (bytes, origin) = http.source(url)
         if (!digest.isNullOrBlank()) require(ModuleRuntimeStorage.hashBytes(bytes) == digest.lowercase()) { "Module package digest mismatch" }
-        return install(bytes, origin)
+        return install(bytes, origin, updateId)
     }
     suspend fun catalog(url: String) = ModuleCatalogReader(http).read(url)
     suspend fun enable(id: String, enabled: Boolean) = gate.withLock {
@@ -85,10 +91,45 @@ internal class DesktopModules(private val root: Path, private val preferences: (
         val saved = withContext(Dispatchers.IO) { ModuleRuntimeStorage(environment, entry.id).read("settings") }
         return entry.manifest.settings.associate { field -> field.key to saved.optString(field.key, field.defaultJson) }
     }
-    suspend fun saveSettings(entry: Entry, values: Map<String, String>) = withContext(Dispatchers.IO) {
+    suspend fun saveSettings(entry: Entry, values: Map<String, String>) = withContext(Dispatchers.IO) { gate.withLock {
+        requireCurrent(entry)
+        require(values.keys == entry.manifest.settings.map { it.key }.toSet() &&
+            entry.manifest.settings.all { it.acceptsValue(values.getValue(it.key)) }) { "Invalid module settings" }
         ModuleRuntimeStorage(environment, entry.id).write("settings", JSONObject(values))
         generation.incrementAndGet()
         runtime.unload(entry.id)
+    } }
+    suspend fun checkAuthorization(entry: Entry): Boolean {
+        requireCurrent(entry)
+        return try { runtime.checkAuthorization(entry.id, entry.source, entry.origin); true }
+        catch (failure: ModuleException) {
+            if (failure.failure == ModuleFailure.INVALID_CONFIGURATION) false else throw failure
+        }
+    }
+    suspend fun authorize(entry: Entry) {
+        requireCurrent(entry)
+        val url = runtime.authorize(entry.id, entry.source, entry.origin)
+        if (url != null) {
+            val state = withContext(Dispatchers.IO) { ModuleRuntimeStorage(environment, entry.id).read("authorization").getString("state") }
+            val browser = DesktopBrowserAuth(DesktopLaunchIntake.links)
+            val callback = withTimeout(180_000L) { browser.authorizeModuleSession(BrowserAuthRequest(
+                "module-${entry.id}", CredentialScope.PERSONAL, url, ModuleSignedSession.CALLBACK, state)) }
+            gate.withLock {
+                requireCurrent(entry)
+                check(runtime.completeAuthorization(entry.id, entry.source, entry.origin, callback.callbackUri)) { "Module grant was declined" }
+            }
+        }
+        gate.withLock { requireCurrent(entry); generation.incrementAndGet(); runtime.unload(entry.id) }
+        check(checkAuthorization(entry)) { "Module verification is required" }
+    }
+    suspend fun clearAuthorization(entry: Entry) = withContext(Dispatchers.IO) { gate.withLock {
+        requireCurrent(entry)
+        ModuleRuntimeStorage(environment, entry.id).clearAuthorization()
+        generation.incrementAndGet()
+        runtime.unload(entry.id)
+    } }
+    private fun requireCurrent(entry: Entry) {
+        check(entries.value.any { it.id == entry.id && it.source == entry.source }) { "Module installation changed" }
     }
     private suspend fun persist(entry: Entry) = withContext(Dispatchers.IO) {
         Files.createDirectories(root)

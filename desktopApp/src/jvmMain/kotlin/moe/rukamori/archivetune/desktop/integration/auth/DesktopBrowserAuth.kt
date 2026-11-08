@@ -61,6 +61,15 @@ class DesktopBrowserAuth internal constructor(
 
     override suspend fun authorize(request: BrowserAuthRequest): BrowserAuthResult {
         validateRequest(request)
+        return authorizeValidated(request)
+    }
+
+    suspend fun authorizeModuleSession(request: BrowserAuthRequest): BrowserAuthResult {
+        validateModuleSessionRequest(request)
+        return authorizeValidated(request)
+    }
+
+    private suspend fun authorizeValidated(request: BrowserAuthRequest): BrowserAuthResult {
         val id = identity(request.provider, request.scope)
         val slot = slot(id)
         check(slot.mutex.tryLock()) { "An authorization or profile reset is already active" }
@@ -163,6 +172,34 @@ internal fun validateRequest(request: BrowserAuthRequest) {
         states.single().toByteArray(Charsets.UTF_8), request.state.toByteArray(Charsets.UTF_8),
     ))
     require(redirects.size == 1 && redirects.single() == request.redirectUri)
+}
+
+/** Module grants put their state in the nested callback, rather than OAuth's redirect_uri. */
+internal fun validateModuleSessionRequest(request: BrowserAuthRequest) {
+    require(request.provider.startsWith("module-") && request.scope == CredentialScope.PERSONAL)
+    require(request.redirectUri == "archivetune://module-session")
+    require(request.state.length in 16..256 && request.authorizationUrl.length <= 8192)
+    require(request.authorizationUrl.none { it.code < 32 })
+    val uri = URI(request.authorizationUrl)
+    require(uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.userInfo == null && uri.rawFragment == null)
+    require(uri.port == -1 || uri.port == 443)
+    fun parameters(uri: URI): List<Pair<String, String>> = uri.rawQuery.orEmpty().split('&').filter(String::isNotEmpty).map {
+        val pair = it.split('=', limit = 2)
+        URLDecoder.decode(pair[0], Charsets.UTF_8) to URLDecoder.decode(pair.getOrElse(1) { "" }, Charsets.UTF_8)
+    }
+    val query = parameters(uri)
+    val callbacks = query.filter { it.first == "cb" }.map { it.second }
+    require(callbacks.size == 1)
+    val callback = URI(callbacks.single())
+    require(callback.scheme == "archivetune" && callback.host == "module-session" && callback.port == -1 &&
+        callback.userInfo == null && callback.rawPath.isNullOrEmpty() && callback.rawFragment == null)
+    val nested = parameters(callback)
+    val versions = nested.filter { it.first == "cb_version" }.map { it.second }
+    val states = nested.filter { it.first == "state" }.map { it.second }
+    require(versions == listOf("v2grant") && states.size == 1 && MessageDigest.isEqual(
+        states.single().toByteArray(Charsets.UTF_8), request.state.toByteArray(Charsets.UTF_8)))
+    val outerStates = query.filter { it.first == "state" }.map { it.second }
+    require(outerStates.isEmpty() || outerStates == listOf(request.state))
 }
 
 internal fun stopOwnedProcess(process: Process) {
