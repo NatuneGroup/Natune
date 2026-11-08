@@ -75,7 +75,8 @@ data class ModuleInfoUi(@param:StringRes val label: Int, val value: String, val 
 @Immutable
 data class ModuleFieldUi(val key: String, val label: String, val description: String, val type: ModuleSettingType,
     val text: String, val json: String, val checked: Boolean, val sensitive: Boolean, val revealed: Boolean, @param:StringRes val error: Int?,
-    val options: ImmutableList<ModuleOptionUi>, val selectedLabel: String)
+    val options: ImmutableList<ModuleOptionUi>, val selectedLabel: String,
+    val required: Boolean = false, val minimum: Double? = null, val maximum: Double? = null, val integerOnly: Boolean = false)
 
 @Immutable
 data class ModuleDetailUi(val row: ModuleRowUi, val description: String, val origin: String,
@@ -434,7 +435,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                         parsed == true, field.secret, field.key in revealed,
                         if (valid) null else if (field.required && (parsed == "" || parsed == JSONObject.NULL)) R.string.modules_field_required else R.string.modules_field_invalid,
                         ImmutableList.copyOf(field.options.map { ModuleOptionUi(it.label, it.valueJson, it.description) }),
-                        selectedOption?.label.orEmpty())
+                        selectedOption?.label.orEmpty(), field.required, field.minimum, field.maximum, field.integerOnly)
                 }), item.manifest.settings.any { it.key.contains("quality", true) }, draft != item.configuration,
                 diagnostic.check?.let(::diagnosticUi), diagnostic.playback?.let(::diagnosticUi), information(item.manifest), item.manifest.authentication,
                 item.accountSettings, moe.rukamori.archivetune.modules.modulePoolService(item) != null,

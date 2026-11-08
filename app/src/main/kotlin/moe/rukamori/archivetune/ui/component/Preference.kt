@@ -798,36 +798,10 @@ fun EditTextPreference(
     keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
     isInputValid: (String) -> Boolean = { true },
     isEnabled: Boolean = true,
-) {
-    var showDialog by remember {
-        mutableStateOf(false)
-    }
-
-    if (showDialog) {
-        TextFieldDialog(
-            title = title,
-            initialTextFieldValue =
-                TextFieldValue(
-                    text = value,
-                    selection = TextRange(value.length),
-                ),
-            singleLine = singleLine,
-            keyboardOptions = keyboardOptions,
-            isInputValid = isInputValid,
-            onDone = onValueChange,
-            onDismiss = { showDialog = false },
-        )
-    }
-
-    PreferenceEntry(
-        modifier = modifier,
-        title = title,
-        description = value,
-        icon = icon,
-        onClick = { showDialog = true },
-        isEnabled = isEnabled,
-    )
-}
+    masked: Boolean = false,
+    description: String? = null,
+) = PreferenceTextEditor(modifier, title, icon, value, onValueChange, singleLine, keyboardOptions,
+    isInputValid, isEnabled, masked, description)
 
 @Composable
 fun NumberEditTextPreference(
