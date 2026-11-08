@@ -10,25 +10,31 @@ runs:
       run: |
         set -euo pipefail
         PROPS=gradle/wrapper/gradle-wrapper.properties
-        URL="$(sed -n 's/^distributionUrl=//p' "$PROPS" | sed 's/\\:/:/g')"
-        SHA="$(sed -n 's/^distributionSha256Sum=//p' "$PROPS")"
+        # Windows checkouts may carry CRLF line endings into these values.
+        URL="$(sed -n 's/^distributionUrl=//p' "$PROPS" | sed 's/\\:/:/g' | tr -d '\r')"
+        SHA="$(sed -n 's/^distributionSha256Sum=//p' "$PROPS" | tr -d '\r')"
         case "$URL" in
           http*) ;;
           *) echo "Wrapper already uses a local distribution."; exit 0 ;;
         esac
-        ZIP="$RUNNER_TEMP/$(basename "$URL")"
+        NAME="$(basename "$URL")"
+        ZIP="$RUNNER_TEMP/$NAME"
+        # Rotate through Gradle's own hosts too: the pinned checksum makes every mirror equivalent.
+        MIRRORS=("$URL" "https://services.gradle.org/distributions/$NAME" "https://downloads.gradle.org/distributions/$NAME")
         for attempt in 1 2 3 4 5 6; do
+          SOURCE="${MIRRORS[$(( (attempt - 1) % ${#MIRRORS[@]} ))]}"
+          echo "Downloading $SOURCE (attempt $attempt)"
           if curl --fail --location --silent --show-error --connect-timeout 30 \
-              --speed-limit 50000 --speed-time 60 "$URL" --output "$ZIP"; then
+              --speed-limit 20000 --speed-time 60 "$SOURCE" --output "$ZIP"; then
             if [[ -z "$SHA" ]]; then break; fi
             if command -v sha256sum >/dev/null; then ACTUAL="$(sha256sum "$ZIP" | cut -d' ' -f1)"; else ACTUAL="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"; fi
             if [[ "$ACTUAL" == "$SHA" ]]; then break; fi
-            echo "Checksum mismatch on attempt $attempt."
+            echo "Checksum mismatch on attempt $attempt: got $ACTUAL, expected $SHA."
           else
             echo "Gradle download attempt $attempt failed."
           fi
           rm -f "$ZIP"
-          if [[ "$attempt" == 6 ]]; then echo "::error::Could not download $URL"; exit 1; fi
+          if [[ "$attempt" == 6 ]]; then echo "::error::Could not download $NAME from any mirror"; exit 1; fi
           sleep $((attempt * 10))
         done
         LOCAL="$ZIP"
