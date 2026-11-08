@@ -316,6 +316,7 @@ internal fun IosSongMenu(
         externalDownloaderEnabled = false,
         externalDownloaderConfigured = false,
     )
+    val lyricDocument by graph.lyrics.current.collectAsState()
     val actions = buildList {
         addAll(
             songOverflowActions(
@@ -356,7 +357,6 @@ internal fun IosSongMenu(
             menu.canvasSaveTarget = occurrence.item; menu.dismiss()
         })
         add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
-        val lyricDocument by graph.lyrics.current.collectAsState()
         val activeId = graph.player.snapshot.value?.occurrenceId
         val activeRef = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == activeId }?.item?.ref
         if (activeRef == ref) add(OverflowAction("refresh_lyrics", Res.string.ios_lyrics_refresh) {
