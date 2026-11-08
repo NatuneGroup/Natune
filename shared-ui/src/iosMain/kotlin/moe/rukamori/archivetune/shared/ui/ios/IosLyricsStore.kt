@@ -7,7 +7,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.data.backup.readPortableFileBytes
 import moe.rukamori.archivetune.shared.data.backup.writePortableFileBytes
-import moe.rukamori.archivetune.shared.data.bytesource.Md5
+import moe.rukamori.archivetune.shared.data.lyrics.lyricsStorageFileKey
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.ui.host.HostLyricsStorage
 import platform.Foundation.NSFileManager
@@ -18,8 +18,7 @@ import platform.posix.rename
 /** Provider text and durable edits are source-bound; an edit always wins over a refreshed provider cache. */
 internal class IosLyricsStore(private val root: String) : HostLyricsStorage {
     private val lock = Mutex()
-    private fun path(item: ContentItem): String = "$root/" + Md5.hexDigest(
-        "${item.ref.provider}/${item.ref.kind}/${item.ref.id}".encodeToByteArray()) + ".json"
+    private fun path(item: ContentItem): String = "$root/" + lyricsStorageFileKey(item) + ".json"
     override suspend fun read(item: ContentItem, force: Boolean): String? = lock.withLock {
         val row = readRow(path(item)) ?: return@withLock null
         if (force && row["edited"]?.jsonPrimitive?.booleanOrNull != true) null else row["raw"]?.jsonPrimitive?.content
