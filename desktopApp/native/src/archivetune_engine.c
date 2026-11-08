@@ -130,6 +130,10 @@ typedef struct ae_source {
     ae_lease lease;     /* the host source behind avio; valid while leased is set */
     int leased;
     int interrupted_reads; /* consecutive reads the host answered as interrupted without an engine interrupt */
+    int direct_pcm;
+    ae_pcm_format pcm;
+    uint64_t output_revision;
+    uint64_t epoch;
 } ae_source;
 
 struct ae_engine {
@@ -145,6 +149,11 @@ struct ae_engine {
     uint32_t high_water; /* the producer stops reading ahead above this */
     uint32_t prebuffer;  /* frames needed before output starts or resumes */
     float *ring;
+    size_t ring_bytes;
+    uint32_t shared_rate, ring_ms, prebuffer_ms;
+    int direct_requested, direct_enabled, format_pending;
+    ae_pcm_format input_pcm, output_pcm;
+    uint64_t output_revision;
     uint32_t ring_head;
     uint32_t ring_count;
 
@@ -367,7 +376,7 @@ static uint32_t consume_locked(ae_engine *e, float *out, uint32_t frames, int mo
     uint32_t taken = 0;
 
     e->advancing = 0;
-    if (!e->has_source || e->failed || !e->play_intent || e->ended) {
+    if (e->direct_enabled || !e->has_source || e->failed || !e->play_intent || e->ended) {
         e->buffering = 0;
         silence(out, frames);
         return 0;
@@ -639,6 +648,7 @@ static void source_close(ae_source *s) {
     }
     s->flushed = 0;
     s->graph_tempo = 0.0;
+    s->direct_pcm = 0;
     s->trim_seconds = -1.0;
     s->seekable = 0;
     s->duration_us = -1;
@@ -847,7 +857,9 @@ static int drain_sink(ae_engine *e, ae_source *s, uint64_t epoch, char *message,
     }
 }
 
-/* Sends decoded frames through the graph. Returns 0 on success, 1 for stale work, or -1 on error. */
+#include "archivetune_engine_direct.h"
+
+/* Sends decoded frames through the graph or direct PCM lane. */
 static int receive_frames(ae_engine *e, ae_source *s, uint64_t epoch, char *message, size_t len) {
     for (;;) {
         int r = avcodec_receive_frame(s->decoder, s->frame);
@@ -860,6 +872,12 @@ static int receive_frames(ae_engine *e, ae_source *s, uint64_t epoch, char *mess
         }
         if (s->frame->pts == AV_NOPTS_VALUE) {
             s->frame->pts = s->frame->best_effort_timestamp;
+        }
+        if (s->direct_pcm) {
+            r = direct_frame(e, s, epoch, message, len);
+            av_frame_unref(s->frame);
+            if (r != 0) return r;
+            continue;
         }
         r = av_buffersrc_add_frame_flags(s->buffer_src, s->frame, 0);
         av_frame_unref(s->frame);
@@ -928,7 +946,11 @@ static int source_finish_open(ae_engine *e, ae_source *s, int64_t start_us, doub
     if (start_us > 0) {
         trim = (double)s->start_time * av_q2d(s->time_base) + (double)start_us / 1e6;
     }
-    if (build_graph(e, s, tempo, trim, e->rate, message, len) < 0) {
+    s->trim_seconds = trim;
+    ae_pcm_format pcm = decoded_format(s->decoder->sample_fmt, s->decoder->sample_rate,
+        s->decoder->ch_layout.nb_channels, s->decoder->bits_per_raw_sample > 0 ? s->decoder->bits_per_raw_sample : stream->codecpar->bits_per_raw_sample);
+    if (prepare_direct_output(e, s, &pcm, s->epoch, message, len) < 0 ||
+        (!s->direct_pcm && build_graph(e, s, tempo, trim, e->rate, message, len) < 0)) {
         source_close(s);
         return -1;
     }
@@ -1060,8 +1082,11 @@ static int seek_source(ae_engine *e, ae_source *s, int64_t target_us, double tem
         return -1;
     }
     avcodec_flush_buffers(s->decoder);
+    s->flushed = 0;
     double trim = (double)s->start_time * av_q2d(s->time_base) + (double)target_us / 1e6;
-    return build_graph(e, s, tempo, trim, e->rate, message, len);
+    s->trim_seconds = trim;
+    if (prepare_direct_output(e, s, &s->pcm, s->epoch, message, len) < 0) return -1;
+    return s->direct_pcm ? 0 : build_graph(e, s, tempo, trim, e->rate, message, len);
 }
 
 /*
@@ -1072,6 +1097,7 @@ static void finish_input(ae_engine *e, ae_source *s, uint64_t epoch, char *messa
     int status;
     avcodec_send_packet(s->decoder, NULL);
     status = receive_frames(e, s, epoch, message, len);
+    if (status == 0 && !s->flushed && s->direct_pcm) s->flushed = 1;
     if (status == 0 && !s->flushed) {
         s->flushed = 1;
         int r = av_buffersrc_add_frame(s->buffer_src, NULL);
@@ -1192,10 +1218,11 @@ static int work_pending_locked(const ae_engine *e, const ae_source *s) {
     if (e->pending_seek) {
         return 1;
     }
+    if (s->output_revision != e->output_revision) return 1;
     if (!e->ready) {
         return 0;
     }
-    if (!s->flushed && (e->speed != s->graph_tempo || e->pitch_semitones != s->graph_pitch)) {
+    if (!s->direct_pcm && !s->flushed && (e->speed != s->graph_tempo || e->pitch_semitones != s->graph_pitch)) {
         return 1;
     }
     return !s->flushed && e->ring_count < e->high_water;
@@ -1243,6 +1270,7 @@ static void *producer_main(void *argument) {
             pthread_mutex_unlock(&e->mutex);
 
             source_close(&s);
+            s.epoch = epoch;
             int rc;
             if (stream) {
                 rc = source_open_stream(e, &s, &io, start_us, tempo, message, sizeof message);
@@ -1296,7 +1324,31 @@ static void *producer_main(void *argument) {
                 }
             }
             pthread_cond_broadcast(&e->changed);
-        } else if (!s.flushed && (e->speed != s.graph_tempo || e->pitch_semitones != s.graph_pitch)) {
+        } else if (s.output_revision != e->output_revision) {
+            uint64_t epoch = e->epoch;
+            double tempo = e->speed;
+            int64_t position = (int64_t)e->position_us;
+            pthread_mutex_unlock(&e->mutex);
+            int status = 0;
+            if (s.seekable) {
+                pthread_mutex_lock(&e->mutex); ring_clear_locked(e); e->ready = 0; pthread_mutex_unlock(&e->mutex);
+                status = seek_source(e, &s, position, tempo, message, sizeof message);
+            } else {
+                if (s.buffer_src && !s.flushed) {
+                    status = av_buffersrc_add_frame(s.buffer_src, NULL);
+                    if (status >= 0) status = drain_sink(e, &s, epoch, message, sizeof message);
+                }
+                if (status == 0) status = drain_before_output_change(e, epoch);
+                s.trim_seconds = -1.0;
+                if (status == 0) status = prepare_direct_output(e, &s, &s.pcm, epoch, message, sizeof message);
+                if (status == 0 && !s.direct_pcm) status = build_graph(e, &s, tempo, -1.0, e->rate, message, sizeof message);
+            }
+            pthread_mutex_lock(&e->mutex);
+            if (epoch == e->epoch) {
+                if (status == 0) { e->ready = 1; e->filling = 1; e->seek_generation++; }
+                else if (status < 0) fail_locked(e, AE_ERROR_OUTPUT, message);
+            }
+        } else if (!s.direct_pcm && !s.flushed && (e->speed != s.graph_tempo || e->pitch_semitones != s.graph_pitch)) {
             /* Speed changed: drain the old graph with its own tempo, then start a new graph. */
             uint64_t epoch = e->epoch;
             double tempo = e->speed;
@@ -1396,6 +1448,7 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     }
     e->manual = config->output_mode == AE_OUTPUT_MANUAL;
     e->rate = rate;
+    e->shared_rate = rate;
     e->speed = 1.0;
     e->duration_us = -1;
     e->position_us = 0.0;
@@ -1403,6 +1456,7 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     atomic_init(&e->advancing, 0);
 
     uint32_t ring_ms = config->ring_ms ? config->ring_ms : AE_DEFAULT_RING_MS;
+    e->ring_ms = ring_ms;
     uint64_t capacity = (uint64_t)rate * ring_ms / 1000u;
     if (capacity < AE_MIN_RING_FRAMES) {
         capacity = AE_MIN_RING_FRAMES;
@@ -1411,6 +1465,7 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     e->high_water = e->capacity - e->capacity / 4u;
 
     uint32_t prebuffer_ms = config->prebuffer_ms ? config->prebuffer_ms : AE_DEFAULT_PREBUFFER_MS;
+    e->prebuffer_ms = prebuffer_ms;
     uint64_t prebuffer = (uint64_t)rate * prebuffer_ms / 1000u;
     if (prebuffer > e->capacity / 2u) {
         prebuffer = e->capacity / 2u;
@@ -1418,6 +1473,7 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     e->prebuffer = (uint32_t)prebuffer;
 
     e->ring = calloc((size_t)e->capacity * AE_CHANNELS, sizeof(float));
+    e->ring_bytes = (size_t)e->capacity * AE_CHANNELS * sizeof(float);
     if (!e->ring) {
         engine_destroy_partial(e);
         return NULL;
@@ -1502,6 +1558,8 @@ static uint64_t begin_load_locked(ae_engine *e, uint64_t start_us, int play_when
     e->epoch++;
     e->load_generation++;
     e->has_source = 1;
+    e->format_pending = 0;
+    memset(&e->input_pcm, 0, sizeof e->input_pcm);
     e->ready = 0;
     e->failed = 0;
     e->eof = 0;

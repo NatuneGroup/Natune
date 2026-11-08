@@ -16,6 +16,14 @@
 #include <stdint.h>
 
 #include "archivetune_engine.h"
+#include "archivetune_device.h"
+
+/* Called only by a mixer owner, off the audio callback, before loads or when settings change. */
+void ae_engine_direct_request(ae_engine *engine, int requested);
+int ae_engine_pending_output(ae_engine *engine, ae_pcm_format *format);
+int ae_engine_configure_output(ae_engine *engine, int direct);
+void ae_engine_input_format(ae_engine *engine, ae_pcm_format *format);
+uint32_t ae_engine_pull_native(ae_engine *engine, void *out, uint32_t frames, const ae_pcm_format *format);
 
 /*
  * Pulls exactly `frames` interleaved stereo frames from a manual engine for the two-deck mixer. Frames
