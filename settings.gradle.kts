@@ -130,6 +130,7 @@ include(":shazamkit")
 include(":spotifycore")
 include(":deobfuscator")
 include(":jiosaavn")
+include(":modules")
 
 // Android modules apply AGP plugins, which need an Android SDK while their projects configure. Without
 // one (such as this Linux workspace) those projects keep their place in the graph but load no build
@@ -144,7 +145,7 @@ val hasAndroidSdk = androidSdkDir?.let { File(it).isDirectory } == true
 gradle.extra["hasAndroidSdk"] = hasAndroidSdk
 if (!hasAndroidSdk) {
     logger.lifecycle("No Android SDK configured: Android KMP targets and the :app, :jiosaavn and :deobfuscator build scripts are skipped.")
-    listOf(":app", ":jiosaavn", ":deobfuscator").forEach { path ->
+    listOf(":app", ":jiosaavn", ":deobfuscator", ":modules").forEach { path ->
         project(path).buildFileName = "android-sdk-required.gradle.kts"
     }
 }
