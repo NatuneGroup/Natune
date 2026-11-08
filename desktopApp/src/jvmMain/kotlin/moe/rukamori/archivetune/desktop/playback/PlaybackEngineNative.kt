@@ -26,6 +26,7 @@ internal object PlaybackEngineNative {
     ): Long
 
     @JvmStatic external fun destroy(handle: Long)
+    @JvmStatic external fun setPcmProcessor(handle: Long, processor: DesktopPcmProcessor): Int
 
     @JvmStatic external fun load(handle: Long, source: String, startUs: Long, playWhenReady: Boolean): Long
 

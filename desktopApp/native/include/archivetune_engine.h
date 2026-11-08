@@ -89,6 +89,14 @@ typedef struct ae_snapshot {
 AE_EXPORT ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_len);
 AE_EXPORT void ae_engine_destroy(ae_engine *engine);
 
+/* Optional decoded-PCM processor. Installed before loading; runs only on the producer thread. */
+typedef struct ae_pcm_processor {
+    void *opaque;
+    int (*process)(void *, float *, uint32_t, uint32_t, uint64_t, double, double);
+    void (*close)(void *);
+} ae_pcm_processor;
+AE_EXPORT int ae_engine_set_pcm_processor(ae_engine *engine, const ae_pcm_processor *processor);
+
 /*
  * Replaces the current source. Returns the new load generation, or 0 when the request is rejected.
  * Opening happens on the producer thread, so a slow network source does not block the caller;

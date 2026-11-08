@@ -166,6 +166,7 @@ struct ae_engine {
     int play_intent;
     double speed;
     double pitch_semitones;
+    ae_pcm_processor processor;
     int skip_silence;
     uint32_t quiet_frames;
     int has_source;
@@ -751,14 +752,20 @@ static int build_graph(ae_engine *e, ae_source *s, double tempo, double trim_sec
         prev = ctx;
     }
     if (fabs(stretch_tempo - 1.0) > 1e-9) {
-        format_fixed9(number, sizeof number, stretch_tempo);
-        snprintf(args, sizeof args, "tempo=%s", number);
-        r = avfilter_graph_create_filter(&ctx, stretch, "tempo", args, NULL, s->graph);
-        if (r < 0 || avfilter_link(prev, 0, ctx, 0) < 0) {
-            format_error(message, len, "time stretch", r < 0 ? r : AVERROR(EINVAL));
-            return -1;
+        double remaining = stretch_tempo;
+        for (int stage = 0; stage < 16; stage++) {
+            double part = remaining < 0.5 ? 0.5 : (remaining > 2.0 ? 2.0 : remaining);
+            format_fixed9(number, sizeof number, part);
+            snprintf(args, sizeof args, "tempo=%s", number);
+            char name[32]; snprintf(name, sizeof name, "tempo%d", stage);
+            r = avfilter_graph_create_filter(&ctx, stretch, name, args, NULL, s->graph);
+            if (r < 0 || avfilter_link(prev, 0, ctx, 0) < 0) {
+                format_error(message, len, "time stretch", r < 0 ? r : AVERROR(EINVAL)); return -1;
+            }
+            prev = ctx;
+            remaining /= part;
+            if (fabs(remaining - 1.0) < 1e-9) break;
         }
-        prev = ctx;
     }
 
     /*
@@ -816,6 +823,17 @@ static int drain_sink(ae_engine *e, ae_source *s, uint64_t epoch, char *message,
         }
         int status = 0;
         if (s->out->nb_samples > 0) {
+            if (e->processor.process) {
+                AVDictionaryEntry *gain = av_dict_get(s->format->metadata, "replaygain_track_gain", NULL, 0);
+                AVDictionaryEntry *peak = av_dict_get(s->format->metadata, "replaygain_track_peak", NULL, 0);
+                if (!gain) gain = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_gain", NULL, 0);
+                if (!peak) peak = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_peak", NULL, 0);
+                if (av_frame_make_writable(s->out) < 0 || e->processor.process(e->processor.opaque,
+                    (float *)s->out->data[0], (uint32_t)s->out->nb_samples, e->rate, epoch,
+                    gain ? strtod(gain->value, NULL) : NAN, peak ? strtod(peak->value, NULL) : NAN) != 0) {
+                    snprintf(message, len, "shared PCM processing failed"); av_frame_unref(s->out); return -1;
+                }
+            }
             status = append_frames(e, epoch, (const float *)s->out->data[0], (uint32_t)s->out->nb_samples,
                                    s->graph_tempo);
         }
@@ -1451,6 +1469,7 @@ void ae_engine_destroy(ae_engine *e) {
     pthread_cond_broadcast(&e->changed);
     pthread_mutex_unlock(&e->mutex);
     pthread_join(e->producer, NULL);
+    if (e->processor.close) e->processor.close(e->processor.opaque);
 
     /* The producer leaves without taking a queued host source, so the engine closes that source here. */
     ae_stream_io unconsumed;
@@ -1630,6 +1649,15 @@ void ae_engine_set_speed(ae_engine *e, float speed) {
     e->speed = clamped;
     pthread_cond_broadcast(&e->changed);
     pthread_mutex_unlock(&e->mutex);
+}
+
+int ae_engine_set_pcm_processor(ae_engine *e, const ae_pcm_processor *processor) {
+    if (!e || !processor || !processor->process) return -1;
+    pthread_mutex_lock(&e->mutex);
+    int accepted = !e->has_source && !e->pending_load && !e->decoding && !e->processor.process;
+    if (accepted) e->processor = *processor;
+    pthread_mutex_unlock(&e->mutex);
+    return accepted ? 0 : -1;
 }
 
 void ae_engine_set_pitch(ae_engine *e, float semitones) {
