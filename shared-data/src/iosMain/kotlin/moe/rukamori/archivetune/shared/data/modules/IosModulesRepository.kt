@@ -5,7 +5,6 @@ package moe.rukamori.archivetune.shared.data.modules
 import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
-import com.dokar.quickjs.evaluate
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.request.*

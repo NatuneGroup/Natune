@@ -43,7 +43,7 @@ internal fun IosLyricsToolsDialogs(graph: IosSessionGraph) {
                     tools.editOpen = false
                 }
             }, enabled = before != null && text.isNotBlank()) { Text(stringResource(Res.string.ios_lyrics_save)) } },
-            dismissButton = { TextButton(onClick = { tools.editOpen = false }) { Text(stringResource(Res.string.cancel)) } })
+            dismissButton = { TextButton(onClick = { tools.editOpen = false }) { Text(stringResource(Res.string.m6_cancel)) } })
     }
     tools.timingTarget?.let { ref ->
         var offset by remember(ref) { mutableStateOf("") }
