@@ -68,6 +68,10 @@ internal class DesktopSongCache(
     }
 
     suspend fun remove(ref: ContentRef) = gate.withLock { removeUnlocked(ref) }
+    suspend fun clear() = gate.withLock { dao.rows("CACHE").forEach { removeUnlocked(it.storedOccurrence().item.ref) } }
+    suspend fun applyLimit(megabytes: Int) = gate.withLock {
+        trim(if (megabytes < 0) Long.MAX_VALUE else megabytes.toLong() * 1024 * 1024)
+    }
 
     private suspend fun removeUnlocked(ref: ContentRef) {
         val row = dao.find("CACHE", ref.provider, ref.id) ?: return
@@ -76,13 +80,13 @@ internal class DesktopSongCache(
         files.remove(DownloadKey(ref.id, source, "", ref.provider))
     }
 
-    private suspend fun trim() {
+    private suspend fun trim(byteLimit: Long = limit()) {
         var total = 0L
         for (row in dao.rows("CACHE").sortedByDescending { it.storedAtMs }) {
             val ref = row.storedOccurrence().item.ref
             val file = fileOf(ref.provider, ref.id) ?: continue
             total += Files.size(file)
-            if (total > limit()) removeUnlocked(ref)
+            if (total > byteLimit) removeUnlocked(ref)
         }
     }
 }

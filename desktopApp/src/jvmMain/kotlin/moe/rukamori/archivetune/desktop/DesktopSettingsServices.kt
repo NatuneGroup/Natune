@@ -199,6 +199,7 @@ internal class DesktopSettingsServices(
     }
 
     suspend fun clearCache(kind: SettingsCacheKind): Unit = withContext(Dispatchers.IO) {
+        if (kind == SettingsCacheKind.SONG) graph.songCache.clear()
         val dir = instanceDirectory.resolve(requireNotNull(cacheDirectories[kind]))
         if (Files.isDirectory(dir)) {
             Files.list(dir).use { stream ->
@@ -208,7 +209,7 @@ internal class DesktopSettingsServices(
     }
 
     suspend fun applyCacheLimits(preferences: PreferenceSnapshot): Unit = withContext(Dispatchers.IO) {
-        trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.SONG)), preferences[MaxSongCacheSizeKey, -1])
+        graph.songCache.applyLimit(preferences[MaxSongCacheSizeKey, -1])
         trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.IMAGE)), preferences[MaxImageCacheSizeKey, -1])
         trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.CANVAS)), preferences[MaxCanvasCacheSizeKey, -1])
     }

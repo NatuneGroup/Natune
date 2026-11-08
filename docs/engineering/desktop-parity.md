@@ -135,3 +135,13 @@ launcher icons still follow the installer. Android's per-role theme editor and f
 launcher icon pack are not ported. The settings list adds desktop-only editor links
 and the icon path key is additive in the shared preference registry. UI compilation
 and OS icon behavior remain unverified.
+
+## External downloader
+
+The enabled item/player action now hands a public YouTube content URL to the user's
+installed yt-dlp executable after a destination-folder choice. ProcessBuilder receives
+argument values directly; no shell interpolation or streaming credentials are used.
+A missing executable reports failure. Launch means handoff, not a completed download;
+Android package/plugin intents are not a desktop protocol. The remaining episode
+menu restriction is removed, and cache clear/limit actions now reconcile cache rows
+with removed files. Process/UI/runtime validation remains unverified.
