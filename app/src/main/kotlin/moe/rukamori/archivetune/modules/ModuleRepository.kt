@@ -203,6 +203,9 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
         for (module in snapshot().modules.filter { it.manifest.authentication }) {
             if (runtime.completeAuthorization(module.id, module.source, module.origin, callback)) {
                 runtime.unload(module.id)
+                change { registry -> registry.copy(modules = registry.modules.map {
+                    if (it.id == module.id) it.copy(revision = UUID.randomUUID().toString()) else it
+                }) }
                 return module.id
             }
         }

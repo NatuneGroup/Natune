@@ -351,16 +351,13 @@ fun PlayerMenu(
     // the process. The refresh evicts the cache and re-runs the lossless resolution chain
     // in the background; the resulting sources show up via resolvedSourcesRevision (a
     // StateFlow that bumps when recording completes).
-    val sourceRevision by playerConnection.service.resolvedSourcesRevision.collectAsStateWithLifecycle()
     LaunchedEffect(showSourceDialog, mediaMetadata.id) {
         if (showSourceDialog) {
             playerConnection.service.refreshSourcesForSong(mediaMetadata.id)
         }
     }
-    val availableSources =
-        remember(mediaMetadata.id, showSourceDialog, sourceRevision) {
-            playerConnection.service.availableSourcesForSong(mediaMetadata.id)
-        }
+    val availableSources by playerConnection.service.availablePlaybackSources
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     if (showSourceDialog) {
         SongSourceDialog(
@@ -1670,6 +1667,8 @@ private fun SongSourceDialog(
     var searchField by rememberSaveable(stateSaver = sourceSearchFieldSaver) { mutableStateOf(sourceSearchFieldValue("")) }
     var sourceFilter by rememberSaveable { mutableStateOf<AudioSourceType?>(null) }
 
+    LaunchedEffect(sources) { if (sourceFilter !in sources) sourceFilter = null }
+
     // Strings fetched at the Composable scope so they can be referenced safely inside produceState.
     val aacLabel = stringResource(R.string.quality_badge_aac)
     val saavnLabel = stringResource(R.string.quality_badge_saavn)
@@ -1709,7 +1708,7 @@ private fun SongSourceDialog(
         initialValue = emptyList(),
         key1 = searchField.text,
         key2 = sourceFilter,
-        key3 = searchMode,
+        key3 = searchMode to sources,
     ) {
         if (!searchMode || searchField.text.length < 2 || backendMissing) {
             value = emptyList()
@@ -1717,13 +1716,13 @@ private fun SongSourceDialog(
         }
         delay(350L) // debounce
         val out = mutableListOf<SourceSearchResult>()
-        val searchYtm = sourceFilter == null || sourceFilter == AudioSourceType.YOUTUBE
-        val searchTidal = sourceFilter == null || sourceFilter == AudioSourceType.TIDAL
-        val searchQobuz = sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ
-        val searchQobuzBackup = sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ_BACKUP
-        val searchDeezer = sourceFilter == null || sourceFilter == AudioSourceType.DEEZER
-        val searchSaavn = sourceFilter == null || sourceFilter == AudioSourceType.JIOSAAVN
-        val searchAmazon = (sourceFilter == null || sourceFilter == AudioSourceType.AMAZON) && amazonSourceEnabled
+        val searchYtm = AudioSourceType.YOUTUBE in sources && (sourceFilter == null || sourceFilter == AudioSourceType.YOUTUBE)
+        val searchTidal = AudioSourceType.TIDAL in sources && (sourceFilter == null || sourceFilter == AudioSourceType.TIDAL)
+        val searchQobuz = AudioSourceType.QOBUZ in sources && (sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ)
+        val searchQobuzBackup = AudioSourceType.QOBUZ in sources && (sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ)_BACKUP
+        val searchDeezer = AudioSourceType.DEEZER in sources && (sourceFilter == null || sourceFilter == AudioSourceType.DEEZER)
+        val searchSaavn = AudioSourceType.JIOSAAVN in sources && (sourceFilter == null || sourceFilter == AudioSourceType.JIOSAAVN)
+        val searchAmazon = AudioSourceType.AMAZON in sources && (sourceFilter == null || sourceFilter == AudioSourceType.AMAZON) && amazonSourceEnabled
 
         if (searchYtm) {
             withContext(Dispatchers.IO) {
@@ -1971,7 +1970,7 @@ private fun SongSourceDialog(
                             AudioSourceType.SPOTIFY to stringResource(R.string.source_spotify_stream),
                             AudioSourceType.JIOSAAVN to stringResource(R.string.source_jiosaavn),
                             AudioSourceType.YOUTUBE to stringResource(R.string.source_youtube),
-                        ),
+                        ).filter { (source, _) -> source == null || source in sources },
                     currentValue = sourceFilter,
                     onValueUpdate = { sourceFilter = it },
                     icons =
