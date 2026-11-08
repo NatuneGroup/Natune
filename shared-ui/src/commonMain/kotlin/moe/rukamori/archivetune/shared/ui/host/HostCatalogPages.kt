@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -68,8 +69,8 @@ class CatalogPageOwners(
 @Composable
 fun hostSearchPage(owners: CatalogPageOwners, route: ArchiveRoute, recognition: (() -> Unit)?): ArchiveGraphPage {
     val request = if (route.destination == ArchiveDestination.SEARCH_RESULTS) route.contentRequest() else null
-    var query by remember(route.value) { mutableStateOf(route.searchQuery.orEmpty()) }
-    var scope by remember(route.value) {
+    var query by rememberSaveable(route.value) { mutableStateOf(route.searchQuery.orEmpty()) }
+    var scope by rememberSaveable(route.value) {
         mutableStateOf(if (request?.provider == ContentProvider.LOCAL) SearchScope.Local else SearchScope.Online)
     }
     var page = PagedContentState()

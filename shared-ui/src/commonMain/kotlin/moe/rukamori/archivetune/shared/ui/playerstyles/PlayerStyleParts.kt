@@ -59,6 +59,7 @@ import kotlin.math.PI
 import kotlin.math.sin
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerGlyph
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
@@ -401,17 +402,8 @@ internal fun VolumeRow(
 
 @Composable
 private fun VolumeGlyph(up: Boolean, color: Color, size: Dp) {
-    Canvas(Modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val cone = Path().apply {
-            moveTo(w * .10f, h * .40f); lineTo(w * .38f, h * .40f); lineTo(w * .68f, h * .14f)
-            lineTo(w * .68f, h * .86f); lineTo(w * .38f, h * .60f); lineTo(w * .10f, h * .60f); close()
-        }
-        drawPath(cone, color)
-        drawArc(color, -70f, 140f, true, Offset(w * .52f, h * .32f), androidx.compose.ui.geometry.Size(w * .3f, h * .36f), style = Stroke(w * .08f, cap = StrokeCap.Round))
-        if (up) drawArc(color, -70f, 140f, true, Offset(w * .6f, h * .2f), androidx.compose.ui.geometry.Size(w * .38f, h * .6f), style = Stroke(w * .08f, cap = StrokeCap.Round))
-    }
+    PlayerGlyph(if (up) PlayerSymbol.VOLUME_UP else PlayerSymbol.VOLUME_LOW,
+        color, true, null, Modifier.size(size))
 }
 
 /** Sleep countdown chip (V10 header): remaining time while armed, bedtime glyph otherwise. */
@@ -438,15 +430,7 @@ internal fun SleepHeaderButton(c: PlayerRenderContext, color: Color, modifier: M
 
 @Composable
 private fun SleepGlyph(color: Color) {
-    Canvas(Modifier.size(14.dp)) {
-        val w = size.width
-        val crescent = Path().apply {
-            addOval(androidx.compose.ui.geometry.Rect(Offset(w * .08f, w * .08f), androidx.compose.ui.geometry.Size(w * .66f, w * .66f)))
-            addOval(androidx.compose.ui.geometry.Rect(Offset(w * .34f, w * .02f), androidx.compose.ui.geometry.Size(w * .6f, w * .6f)))
-            fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
-        }
-        drawPath(crescent, color)
-    }
+    PlayerGlyph(PlayerSymbol.BEDTIME, color, true, null, Modifier.size(14.dp))
 }
 
 /** Generic circular/square icon button with the shared glyph vocabulary. An unsupported action draws nothing. */

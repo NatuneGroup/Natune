@@ -60,9 +60,10 @@ artwork keeps this attribution and the share-alike terms.
 Glyph drawables copied from the Solar icon set by 480 Design (CC BY 4.0,
 [solar-icons.vercel.app](https://solar-icons.vercel.app)) ship in the app's
 `res/drawable` directory and in the shared UI's `composeResources/drawable`
-directory (the `m4hv_icon_*` home-variant glyphs and the `m9_media_info_solar_*`
-media-info glyphs). Each copied file keeps the header comment
-`Solar Icons by 480 Design (CC BY 4.0)`, which records the author, licence and source.
+directory (including home, navigation, settings, media-info and shared player
+`solar_*` glyphs). Existing attribution comments are preserved. Shared adaptations
+replace Android colour references with literals and make transparent fills explicit;
+this credit also covers Android source assets without an inline attribution comment.
 
 ## Ported or adapted work
 

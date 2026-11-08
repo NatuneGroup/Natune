@@ -16,6 +16,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -76,8 +81,28 @@ fun SearchScreen(
      */
     focusRequested: Boolean = false,
     onFocusConsumed: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
     val fieldFocus = remember { FocusRequester() }
+    // The editor survives moving the field between top/bottom chrome. Preserve selection and
+    // marked text through playback/result recompositions; only publish text to the catalogue.
+    var editor by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(query, TextRange(query.length)))
+    }
+    val fieldValue = if (editor.text == query) editor else TextFieldValue(query, TextRange(query.length))
+    val edit: (TextFieldValue) -> Unit = { value ->
+        editor = value
+        if (value.text != query) onQuery(value.text)
+    }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    val submit: () -> Unit = {
+        if (query.isNotBlank()) {
+            keyboard?.hide()
+            focus.clearFocus()
+            onSubmit()
+        }
+    }
     LaunchedEffect(focusRequested) {
         if (!focusRequested) return@LaunchedEffect
         // The request arrives with the navigation that composes this screen. A request on a node that is not placed yet
@@ -132,10 +157,11 @@ fun SearchScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             // The desktop top bar owns the search field; this page keeps the scope filters and results only.
-            if (!searchBarAtBottom && !LocalDesktopLayout.current) {
-                Text(stringResource(Res.string.m4_search), style = desktopPageTitle(false),
+            if (!LocalDesktopLayout.current) {
+                if (onBack != null) ManagementHeader(stringResource(Res.string.m4_search), onBack)
+                else Text(stringResource(Res.string.m4_search), style = desktopPageTitle(false),
                     modifier = Modifier.padding(16.dp))
-                SearchField(query, onQuery, onSubmit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                if (!searchBarAtBottom) SearchField(fieldValue, edit, submit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     focusRequester = fieldFocus)
             }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,7 +169,7 @@ fun SearchScreen(
                     label = { Text(stringResource(Res.string.m4_online)) })
                 FilterChip(scope == SearchScope.Local, { onScope(SearchScope.Local) },
                     label = { Text(stringResource(Res.string.m4_local)) })
-                TextButton(onSubmit, enabled = query.isNotBlank(), modifier = Modifier.testTag("search-submit")) {
+                TextButton(submit, enabled = query.isNotBlank(), modifier = Modifier.testTag("search-submit")) {
                     Text(stringResource(Res.string.m4_search))
                 }
             }
@@ -204,9 +230,9 @@ fun SearchScreen(
                     shadowElevation = pill.shadowElevation,
                 ) {
                     SearchField(
-                        query = query,
-                        onQuery = onQuery,
-                        onSubmit = onSubmit,
+                        value = fieldValue,
+                        onValue = edit,
+                        onSubmit = submit,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = SearchHorizontalPadding / 2, vertical = 4.dp)
                             .testTag("search-query-bottom"),
                         focusRequester = fieldFocus,
@@ -219,16 +245,16 @@ fun SearchScreen(
 
 @Composable
 private fun SearchField(
-    query: String,
-    onQuery: (String) -> Unit,
+    value: TextFieldValue,
+    onValue: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester,
 ) {
     // Typing here must never reach the transport keys, so the field reports its focus to the root's counter.
-    OutlinedTextField(query, onQuery,
+    OutlinedTextField(value, onValue,
         modifier = modifier.shortcutTextInput().testTag("search-query").focusRequester(focusRequester), singleLine = true,
         label = { Text(stringResource(Res.string.m4_search_query)) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { if (query.isNotBlank()) onSubmit() }))
+        keyboardActions = KeyboardActions(onSearch = { if (value.text.isNotBlank()) onSubmit() }))
 }
