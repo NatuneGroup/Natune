@@ -19,6 +19,7 @@ class PlaybackProgressWatchdog(
     private var lastPositionUs = Long.MIN_VALUE
     private var progressedAtNanos = 0L
     private var reported = false
+    private var expectingProgress = false
 
     /**
      * One engine read. [expectProgress] is the host's "the listener should hear this now": a source
@@ -27,6 +28,8 @@ class PlaybackProgressWatchdog(
      * position moves again, on a new load, on a seek, or on [reset].
      */
     fun observe(state: EnginePlaybackState, expectProgress: Boolean, nowNanos: Long): Boolean {
+        val wasExpectingProgress = expectingProgress
+        expectingProgress = expectProgress
         if (state.loadGeneration != loadGeneration || state.seekGeneration != seekGeneration) {
             // A load or a seek legitimately restarts the clock: opening and rebuffering take time.
             loadGeneration = state.loadGeneration
@@ -36,10 +39,11 @@ class PlaybackProgressWatchdog(
             reported = false
             return false
         }
-        if (!expectProgress || nearEnd(state)) {
+        if (!expectProgress || !wasExpectingProgress || nearEnd(state)) {
             // A paused, ended or tail-reaching read can hold its position forever without a stall.
             lastPositionUs = state.positionUs
             progressedAtNanos = nowNanos
+            reported = false
             return false
         }
         if (state.positionUs != lastPositionUs) {
@@ -55,7 +59,7 @@ class PlaybackProgressWatchdog(
 
     /** The position counts as progress inside [endToleranceMs] of the reported end. */
     private fun nearEnd(state: EnginePlaybackState): Boolean =
-        state.durationUs >= 0L && state.positionUs >= state.durationUs - endToleranceMs * MICROS_PER_MILLI
+        state.durationUs > 0L && state.positionUs >= state.durationUs - endToleranceMs * MICROS_PER_MILLI
 
     /** Forgets the tracked read entirely, for a deck whose session is retired or reloaded. */
     fun reset() {
@@ -64,6 +68,7 @@ class PlaybackProgressWatchdog(
         lastPositionUs = Long.MIN_VALUE
         progressedAtNanos = 0L
         reported = false
+        expectingProgress = false
     }
 
     companion object {
