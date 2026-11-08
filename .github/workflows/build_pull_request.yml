@@ -118,8 +118,6 @@ jobs:
 
       - name: Build and Lint Mobile Universal Debug APK
         shell: bash
-        env:
-          ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
         run: |
           set -euo pipefail
           # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
@@ -134,6 +132,7 @@ jobs:
                   sys.stdout.write(line)
           '
         env:
+          ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           # Pull request builds run code that has not been reviewed yet, so no provider secret reaches
