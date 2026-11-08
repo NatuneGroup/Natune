@@ -6,7 +6,8 @@ import ArchiveTuneShared
 final class ArchiveTuneSession {
     static let shared = ArchiveTuneSession()
 
-    private let host = IosHost()
+    let systemHost = IosHost()
+    private var host: IosHost { systemHost }
     private var observers: [NSObjectProtocol] = []
     private var presenter: AnyObject?
     private var closed = false

@@ -968,7 +968,7 @@ internal class IosSessionGraph private constructor(
                 database = database,
                 listenDriver = listenDriver,
                 progressDriver = progressDriver,
-                drivers = drivers + handoffHold,
+                drivers = drivers + handoffHold + iosStartSystemSnapshots(scope, queue.state, player),
                 reportLine = report,
             )
             host.telegram.value?.let { graph.attachTelegram(it) }

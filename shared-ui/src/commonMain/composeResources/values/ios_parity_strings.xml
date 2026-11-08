@@ -34,7 +34,7 @@
     <string name="ios_widgets_title">Home-screen playback controls</string>
     <string name="ios_widgets_description">Add Natune controls from the iOS home-screen widget gallery. Play, pause and skip open Natune and use your current queue. Live song artwork, listening insights and lock-screen lyrics widgets are not available yet.</string>
     <string name="ios_carplay_title">CarPlay unavailable</string>
-    <string name="ios_carplay_description">This build has no CarPlay browsing scene or Apple-approved audio-app entitlement. CarPlay cannot be enabled with an in-app switch. AirPlay and iOS Now Playing controls remain available.</string>
+    <string name="ios_carplay_description">CarPlay library and queue browsing require a build provisioned with Apple’s approved audio-app entitlement. Device operation is unverified. AirPlay and iOS Now Playing controls remain available.</string>
     <string name="ios_aod_unavailable">Android’s custom always-on display is unavailable on iOS. Lock-screen playback uses iOS Now Playing; custom lyrics displays require a separate ActivityKit integration.</string>
     <string name="ios_dsp_supported">iOS audio processing</string>
     <string name="ios_dsp_limits">AVAudioEngine supports independent pitch, EQ and preamp, the clarity filter contour and a high-pass approximation of DC removal. Full clarity stereo/exciter processing, the shared limiter/dither chain and silence skipping are unavailable. Track loudness measurement is not wired; unmeasured tracks keep their original level. Optional Audio Units may be bypassed if the output route rejects them.</string>

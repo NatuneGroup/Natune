@@ -7,6 +7,7 @@ package moe.rukamori.archivetune.shared.domain.platform
 object IosCapabilities {
     const val verification: String = "unverified-on-linux-host"
     val adapters: Map<String, String> = mapOf(
+        "carplay" to "cpTemplate-scene-shared-queue-requires-approved-entitlement-and-device-verification",
         "audio" to "portable-core-avAudioSourceNode-requires-cinterop-and-native-link",
         "audio-session" to "playback-background-interruption-route-change",
         "now-playing" to "snapshot-driven-remote-command-dispatch-requires-queue-composition",

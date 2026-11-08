@@ -83,3 +83,5 @@ NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"
 
 ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid
+
+CODE_SIGN_ENTITLEMENTS = ArchiveTune/Natune.entitlements
