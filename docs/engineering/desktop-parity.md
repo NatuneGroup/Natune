@@ -115,3 +115,13 @@ bounded and reported. Desktop HTTP and core YouTube now consume the selected DoH
 provider through Android's existing factory, including its custom HTTPS endpoint.
 Proxy settings retain their existing routing. Neither integration has live-network
 validation for this branch.
+
+## QQ home
+
+The desktop home source switcher now offers QQ for an accepted personal account.
+The existing shared QQ repository gained an additive GetAll/GetDetail chart method
+using Android's endpoints and bounded concurrent requests; the desktop mounts the
+existing QqHomeScreen and queues canonical QQ chart songs through the one queue.
+The feed is refreshed on account changes and respects admission cancellation.
+Chart network responses and playback are unverified. Failed chart details currently
+omit that section rather than retaining Android's preview fallback.
