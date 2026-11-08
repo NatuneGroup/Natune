@@ -34,9 +34,7 @@ private val CatalogAcceptedId = StringPreferenceKey("account.spotify.SPOTIFY_CAT
 /** This is an account gate, not a promise that the selected desktop DRM method is available. */
 internal fun desktopSpotifyStreamingReady(preferences: PreferenceSnapshot?): Boolean {
     val prefs = preferences ?: return false
-    // While the effective engine is Librespot the unofficial pipelines get no credentials at all:
-    // the source reports unavailable and playback falls through until the native bindings land.
-    if (prefs.spotifyStreamEngineEffective() != SpotifyStreamEngine.UNOFFICIAL) return false
+    if (prefs.spotifyStreamEngineEffective() == SpotifyStreamEngine.LIBRESPOT) return DesktopSpotifyLibrespotAudio.ready(prefs)
     val cookie = prefs[SpotifyStreamSpDcKey].orEmpty()
     val user = prefs[SpotifyStreamUserIdKey].orEmpty()
     if (cookie.isBlank() || user.isBlank()) return false
@@ -50,6 +48,7 @@ internal class DesktopSpotifySource(
     private val preferences: () -> PreferenceSnapshot?,
     private val admissions: DesktopSourceAdmissions,
     private val transport: DesktopSpotifyStreamingTransport?,
+    private val librespot: DesktopSpotifyLibrespotAudio? = null,
     private val catalogProfile: suspend (String) -> String? = { desktopSpotifyProfileId(http, it) },
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) : AudioProviderRepository {
@@ -71,6 +70,10 @@ internal class DesktopSpotifySource(
             prefs[SpotifyStreamEnabledKey] != true) {
             throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
         }
+        if (prefs.spotifyStreamEngineEffective() == SpotifyStreamEngine.LIBRESPOT) {
+            return@withLock librespot?.resolve(request)
+                ?: throw AudioProviderUnavailable(AudioProviderUnavailableReason.PLATFORM_DECRYPTION_REQUIRED)
+        }
         // Preserve the saved method and default. Falling through is not permission to silently switch it to Echo.
         if (prefs.spotifyStreamResolveMethod() != SpotifyStreamResolveMethod.ECHO) {
             throw AudioProviderUnavailable(AudioProviderUnavailableReason.PLATFORM_DECRYPTION_REQUIRED)
@@ -80,7 +83,7 @@ internal class DesktopSpotifySource(
         val captured = StreamingCredential(prefs[SpotifyStreamSpDcKey].orEmpty(), prefs[SpotifyStreamUserIdKey].orEmpty(),
             prefs[SpotifySpDcKey].orEmpty())
         fun current(): Boolean = preferences()?.let { now ->
-            desktopSpotifyStreamingReady(now) && now[SpotifyStreamEnabledKey] == true &&
+            now.spotifyStreamEngineEffective() == SpotifyStreamEngine.UNOFFICIAL && desktopSpotifyStreamingReady(now) && now[SpotifyStreamEnabledKey] == true &&
                 now.spotifyStreamResolveMethod() == SpotifyStreamResolveMethod.ECHO &&
                 now[SpotifyStreamSpDcKey] == captured.cookie && now[SpotifyStreamUserIdKey] == captured.userId &&
                 now[SpotifySpDcKey].orEmpty() == captured.catalogCookie
@@ -112,5 +115,6 @@ internal class DesktopSpotifySource(
         comparedSession = null
         comparedUser = null
         transport?.close()
+        librespot?.close()
     }
 }

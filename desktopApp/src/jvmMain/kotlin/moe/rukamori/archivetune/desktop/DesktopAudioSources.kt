@@ -34,10 +34,13 @@ internal class DesktopAudioSources(
     val admissions: DesktopSourceAdmissions,
     tidalSessionRefresh: TidalSessionRefresh? = null,
     pool: DesktopPlaybackPool? = null,
+    cacheDirectory: java.nio.file.Path = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "natune-librespot"),
 ) {
+    private val librespot = DesktopSpotifyLibrespotAudio(http, preferences, admissions, cacheDirectory)
+    fun bindLibrespotAccessToken(provider: suspend () -> String?) { librespot.accessToken = provider }
     private val qobuz = DesktopQobuzSource(http, preferences, admissions, pool)
     private val spotify = DesktopSpotifySource(http, preferences, admissions,
-        DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) })
+        DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) }, librespot)
     private val retained = desktopAudioProviders(http, accounts, preferences, tidalSessionRefresh, pool)
     val providers: List<AudioProviderRepository> = retained +
         listOf(qobuz, DesktopAppleMusicSource(http, preferences), DesktopAmazonSource(http, preferences), spotify)
@@ -90,4 +93,5 @@ internal fun desktopAudioSources(
     admissions: DesktopSourceAdmissions,
     tidalSessionRefresh: TidalSessionRefresh? = null,
     pool: DesktopPlaybackPool? = null,
-): DesktopAudioSources = DesktopAudioSources(http, accounts, preferences, admissions, tidalSessionRefresh, pool)
+    cacheDirectory: java.nio.file.Path = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "natune-librespot"),
+): DesktopAudioSources = DesktopAudioSources(http, accounts, preferences, admissions, tidalSessionRefresh, pool, cacheDirectory)

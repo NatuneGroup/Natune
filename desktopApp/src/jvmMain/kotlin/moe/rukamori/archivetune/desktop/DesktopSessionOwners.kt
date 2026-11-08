@@ -220,6 +220,7 @@ internal suspend fun assembleDesktopSessionOwners(
         admissions = sourceAdmissions,
         tidalSessionRefresh = tidalSessionRefresh,
         pool = playbackPool,
+        cacheDirectory = directory.resolve("cache/librespot"),
     )
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
     // as Android's BotGuardTokenGenerator object feeds every resolver there. On a build with empty
