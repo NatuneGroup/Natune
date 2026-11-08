@@ -73,6 +73,7 @@ val LiquidGlassAdaptiveLuminanceKey = BooleanPreferenceKey("liquidGlassAdaptiveL
 val DynamicThemeKey = BooleanPreferenceKey("dynamicTheme")
 val CustomThemeColorKey = StringPreferenceKey("customThemeColor")
 val DesktopAppIconPathKey = StringPreferenceKey("desktop_app_icon_path")
+val DesktopOutputDeviceIdKey = StringPreferenceKey("desktop_output_device_id")
 val RandomThemeOnStartupKey = BooleanPreferenceKey("randomThemeOnStartup")
 val DarkModeKey = StringPreferenceKey("darkMode")
 val PureBlackKey = BooleanPreferenceKey("pureBlack")
