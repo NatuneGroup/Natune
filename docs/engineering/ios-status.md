@@ -522,3 +522,10 @@ is saved through the existing versioned custom-canvas repository and its validat
 Local imported audio now shares its real app-container file through the system activity sheet.
 Provider source/network preferences still gate canvas requests. No live canvas/share-sheet or
 new-source Apple compilation evidence is claimed.
+
+Direct Spotify color-lyrics is now an optional provider of the shared lyric runtime, using only the
+catalog account and conservative track matching. Its HTTP/metadata decoder reuses the portable
+Spotify clients, and missing lyrics/authentication remains a failed provider result. The common
+host accepts additive provider factories/names without changing other hosts. Remaining direct
+Musixmatch/QQ/Netease and module lyric providers are still incomplete; live Spotify access and
+new-source compilation are unverified.

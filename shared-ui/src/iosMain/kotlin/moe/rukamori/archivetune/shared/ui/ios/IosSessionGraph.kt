@@ -832,6 +832,10 @@ internal class IosSessionGraph private constructor(
                 lyprioBuildBaseUrl = IosProviderCredentials.lyprioBaseUrl,
                 lyprioBuildHmacKey = IosProviderCredentials.lyprioHmacKey,
                 storage = lyricsStorage,
+                additionalProviderNames = listOf("Spotify"),
+                additionalProviders = { listOf(moe.rukamori.archivetune.shared.data.lyrics.SpotifyAccountLyricsProvider(http) {
+                    iosCatalogLyricsToken(vault, http)
+                }) },
             )
             val lyricsSurface = LyricsSurfaceRuntime(scope, vault, KtorAiTextService(http), lyrics.current,
                 host.japaneseLanguagePack.flatMapLatest { it?.tokenizer ?: flowOf(null) }, null,
