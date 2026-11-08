@@ -187,6 +187,7 @@ internal fun iosAudioProviders(
     preferences: () -> PreferenceSnapshot?,
     tidalSessionRefresh: TidalSessionRefresh?,
     pool: IosPlaybackPool?,
+    modules: AudioProviderRepository? = null,
 ): List<AudioProviderRepository> = listOfNotNull(
     IosTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
@@ -197,6 +198,7 @@ internal fun iosAudioProviders(
     iosJioSaavnSource(http),
     IosQqMusicSource(http, accounts),
     IosSpotifySource(http, accounts, preferences),
+    modules,
 )
 
 /**

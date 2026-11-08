@@ -458,3 +458,13 @@ translator/button editor is mounted over the existing presence settings. Updates
 explicit release-page handoff while retaining channel/changelog preferences; iOS cannot install
 an arbitrary package in process. Asset-catalog alternate-icon merging, Apple compilation and all
 new controls remain unverified.
+
+Readable `.arch` API-v1 audio packages now have an iOS manager and bounded QuickJS execution,
+using the retained Android `module-host.js` API (fetch, URL, timers, base64 and typed settings).
+The installer verifies format/API/version, script checksum, bounds and safe paths; package updates
+rename atomically. Configuration stays in Keychain and modules remain opt-in in the ordinary
+playback/download source order. Progressive and ordinary HLS URL answers are consumed by the
+existing host. Inline DASH, signed/native extension APIs, raw legacy text modules, module lyric
+provider mounting and catalog update browsing remain incomplete. Native extension packages are
+refused, not treated as ordinary modules. Package/runtime/device/Apple compilation is unverified.
+The source settings now advertise the Echo transport while preserving engine/account readiness.
