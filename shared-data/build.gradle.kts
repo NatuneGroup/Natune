@@ -165,29 +165,3 @@ val backupFontFixture = tasks.register<Copy>("prepareBackupFontTestResource") {
 }
 kotlin.sourceSets.named("jvmTest") { resources.srcDir(backupFontFixture) }
 
-// Compile the retained pure-Kotlin PlayPlay transform on every host. The generated copy changes
-// only its package and JVM rotate intrinsics; the attributed Android sources remain authoritative.
-val portablePlayPlaySources = layout.buildDirectory.dir("generated/portable-playplay")
-val preparePortablePlayPlay = tasks.register("preparePortablePlayPlaySources") {
-    val retained = listOf("SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt").map {
-        rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo/$it")
-    }
-    inputs.files(retained)
-    outputs.dir(portablePlayPlaySources)
-    doLast {
-        val destination = portablePlayPlaySources.get().asFile.apply { mkdirs() }
-        retained.forEach { source ->
-            val body = source.readText().substringAfter("package moe.rukamori.archivetune.spotify.echo")
-                .replace("java.lang.Long.rotateLeft(", "playPlayRotateLeft(")
-                .replace("java.lang.Long.rotateRight(", "playPlayRotateRight(")
-                .replace("java.lang.Integer.rotateRight(", "playPlayIntRotateRight(")
-            destination.resolve(source.name).writeText(
-                "package moe.rukamori.archivetune.shared.data.provider.spotify\n" + body,
-            )
-        }
-    }
-}
-kotlin.sourceSets.named("commonMain") { kotlin.srcDir(portablePlayPlaySources) }
-tasks.matching { it.name.startsWith("compile") || it.name.startsWith("ksp") }.configureEach {
-    dependsOn(preparePortablePlayPlay)
-}

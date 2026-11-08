@@ -61,7 +61,7 @@ class SpotifyPlayPlayPipeline {
         call("wrapper_run",wrappers[(selector and 63L).toInt()],x,y)
     }
     internal fun ror32(word:Long,shift:Long) {
-        g["ROR_RESULT"] = java.lang.Integer.rotateRight(word.toInt(),shift.toInt() and 31).toLong() and 0xffffffffL
+        g["ROR_RESULT"] = playPlayIntRotateRight(word.toInt(),shift.toInt() and 31).toLong() and 0xffffffffL
     }
     internal fun table32(offset:Long,index:Long) {
         val i=(offset / 4L + (index and 255L)).toInt()
@@ -108,17 +108,17 @@ class SpotifyPlayPlayPipeline {
         var b=input xor 0x0f859104ff7029e3L
         var a=(input xor 0x13245352688a24a6L)+b
         var c=a+key
-        var d=java.lang.Long.rotateLeft(b,3) xor a
-        b=d+bias;a=c xor java.lang.Long.rotateLeft(key,16)
+        var d=playPlayRotateLeft(b,3) xor a
+        b=d+bias;a=c xor playPlayRotateLeft(key,16)
         var sum=a+b
-        d=java.lang.Long.rotateLeft(d,30) xor b
-        b=java.lang.Long.rotateLeft(a,1) xor sum
-        a=d+java.lang.Long.rotateLeft(c,1)
-        c=a+b;d=java.lang.Long.rotateLeft(d,3) xor a
-        b=java.lang.Long.rotateLeft(b,16) xor c
-        a=d+java.lang.Long.rotateLeft(sum,33)
-        b=a xor b;sum=java.lang.Long.rotateLeft(d,30) xor a
-        return b xor java.lang.Long.rotateLeft(c,1) xor sum
+        d=playPlayRotateLeft(d,30) xor b
+        b=playPlayRotateLeft(a,1) xor sum
+        a=d+playPlayRotateLeft(c,1)
+        c=a+b;d=playPlayRotateLeft(d,3) xor a
+        b=playPlayRotateLeft(b,16) xor c
+        a=d+playPlayRotateLeft(sum,33)
+        b=a xor b;sum=playPlayRotateLeft(d,30) xor a
+        return b xor playPlayRotateLeft(c,1) xor sum
     }
     internal fun computeKey():ByteArray {
         call("record_input",g("MIX_FINISHED_X1"),g("MIX_FINISHED_X2"))
@@ -127,10 +127,10 @@ class SpotifyPlayPlayPipeline {
         var x=g("RECORD_INPUT_X")
         var y=g("RECORD_INPUT_Y")
         for(i in 0 until 32){
-            x=(java.lang.Long.rotateRight(x,8)+y) xor k
-            y=java.lang.Long.rotateLeft(y,3) xor x
-            l=(java.lang.Long.rotateRight(l,8)+k) xor i.toLong()
-            k=java.lang.Long.rotateLeft(k,3) xor l
+            x=(playPlayRotateRight(x,8)+y) xor k
+            y=playPlayRotateLeft(y,3) xor x
+            l=(playPlayRotateRight(l,8)+k) xor i.toLong()
+            k=playPlayRotateLeft(k,3) xor l
         }
         var left=y
         var right=x
