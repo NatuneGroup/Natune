@@ -150,7 +150,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
     val youTube = DesktopYouTubeAccountOwner(graph, controller)
     val qqMusic = DesktopQqMusicLoginOwner(graph.scope, graph.accountLifecycle, graph::report)
-    val spotify = DesktopSpotifyAccounts(graph, controller)
+    val spotify = DesktopSpotifyAccounts(graph, controller).also {
+        graph.audioSources.bindLibrespotAccessToken(it::librespotAccessToken)
+    }
     val deezerWeb = DesktopDeezerWebSignIn(graph)
     val tidalWeb = DesktopTidalWebSignIn(graph)
     val appleMusicWeb = DesktopAppleMusicWebSignIn(graph)

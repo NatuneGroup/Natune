@@ -1,0 +1,90 @@
+name: Prepare optional desktop Librespot JNI
+description: Build the pinned Rust JNI or explicitly omit the optional playback engine
+inputs:
+  host:
+    description: linux-x64, linux-arm64 or windows-x64, built on a matching runner
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Clear recipe-owned outputs
+      shell: bash
+      run: rm -rf desktopApp/build/generated/librespot
+    - name: Restore exact desktop JNI
+      id: binary
+      continue-on-error: true
+      uses: actions/cache/restore@v5
+      with:
+        path: desktopApp/build/generated/librespot
+        key: desktop-librespot-v1-${{ inputs.host }}-rust1.97.1-${{ hashFiles('native/librespot/**', '!native/librespot/target/**', '!native/librespot/upstream/**', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+    - name: Verify restored JNI
+      id: verified
+      if: steps.binary.outputs.cache-hit == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        LIBRESPOT_HOST: ${{ inputs.host }}
+      run: python native/librespot/desktop-artifact.py validate "$LIBRESPOT_HOST"
+    - name: Set up pinned Rust
+      id: rust
+      if: steps.verified.outcome != 'success'
+      continue-on-error: true
+      uses: dtolnay/rust-toolchain@1.97.1
+    - name: Restore Cargo inputs
+      id: cargo
+      if: steps.verified.outcome != 'success' && steps.rust.outcome == 'success'
+      continue-on-error: true
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: desktop-librespot-cargo-v1-${{ inputs.host }}-rust1.97.1-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/embedding.patch') }}
+    - name: Build optional desktop JNI
+      id: build
+      if: steps.verified.outcome != 'success' && steps.rust.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        LIBRESPOT_HOST: ${{ inputs.host }}
+      run: |
+        rm -rf desktopApp/build/generated/librespot
+        bash native/librespot/build-desktop.sh "$LIBRESPOT_HOST"
+    - name: Report optional engine availability
+      shell: bash
+      env:
+        LIBRESPOT_HOST: ${{ inputs.host }}
+        PREPARED: ${{ steps.verified.outcome == 'success' || steps.build.outcome == 'success' }}
+      run: |
+        if [[ "$PREPARED" == true ]]; then
+          python native/librespot/desktop-artifact.py validate "$LIBRESPOT_HOST"
+          echo "Desktop Librespot JNI ready: $LIBRESPOT_HOST" >> "$GITHUB_STEP_SUMMARY"
+        else
+          rm -rf desktopApp/build/generated/librespot
+          echo '::warning::Desktop Librespot JNI unavailable; the optional engine is omitted and playback uses the configured source fallback.'
+          echo "Desktop Librespot JNI UNAVAILABLE: $LIBRESPOT_HOST" >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - name: Save exact desktop JNI (trusted producer only)
+      if: >-
+        steps.build.outcome == 'success' && steps.binary.outputs.cache-hit != 'true' &&
+        github.event_name != 'pull_request' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+      continue-on-error: true
+      uses: actions/cache/save@v5
+      with:
+        path: desktopApp/build/generated/librespot
+        key: ${{ steps.binary.outputs.cache-primary-key }}
+    - name: Save Cargo inputs (trusted producer only)
+      if: >-
+        steps.build.outcome == 'success' && steps.cargo.outputs.cache-hit != 'true' &&
+        github.event_name != 'pull_request' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+      continue-on-error: true
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          native/librespot/target
+        key: ${{ steps.cargo.outputs.cache-primary-key }}

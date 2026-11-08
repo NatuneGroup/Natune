@@ -80,6 +80,11 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
             "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
     }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot")) {
+        include("SpotifyLibrespotNative.kt")
+        filter { line: String -> line.replace("System.loadLibrary(\"natune_librespot\")",
+            "moe.rukamori.archivetune.desktop.DesktopLibrespotLibrary.load()") }
+    }
     into(desktopPlayPlaySources)
 }
 kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
@@ -592,6 +597,15 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
         // without them installs, starts and plays nothing, so the build refuses it here instead of shipping it.
         requireStagedPlaybackEngine(hostNativeDirectory.get().asFile)
         copy { from("packaging/notices"); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
+        val librespot = layout.buildDirectory.file("generated/librespot/$hostNativeName/native/${System.mapLibraryName("natune_librespot")}").get().asFile
+        hostNativeDirectory.get().asFile.resolve(System.mapLibraryName("natune_librespot")).delete()
+        if (librespot.isFile) {
+            providers.exec { commandLine("python", rootProject.file("native/librespot/desktop-artifact.py"), "validate", hostNativeName) }.result.get().assertNormalExitValue()
+            copy { from(librespot); into(hostNativeDirectory) }
+            copy { from(rootProject.file("native/librespot/LICENSE.librespot")); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
+        } else {
+            logger.warn("Librespot JNI unavailable; desktop playback uses the configured source fallback.")
+        }
         // TDLight is desktop-only. Its native library comes from the pinned source through the host's recipe, and its notice
         // must carry the verbatim Boost license from that tree. A package missing either is refused, not shipped with a
         // placeholder, because the Telegram path would fail at run time with no packaging-time signal.
