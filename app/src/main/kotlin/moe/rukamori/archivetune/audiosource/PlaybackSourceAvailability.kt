@@ -12,11 +12,12 @@ import moe.rukamori.archivetune.utils.get
 
 /** Built-in sources do not need modules; account-only routes do need an available account. */
 internal fun availableBuiltinSource(source: AudioSourceType, dataStore: DataStore<Preferences>, preferences: Preferences? = null): Boolean {
-    fun text(key: Preferences.Key<String>) = (preferences?.get(key) ?: dataStore.get(key, "")).trim()
+    fun text(key: Preferences.Key<String>) =
+        (if (preferences != null) preferences[key].orEmpty() else dataStore.get(key, "")).trim()
     return when (source) {
         AudioSourceType.TIDAL -> text(TidalAccessTokenKey).isNotEmpty() ||
             text(TidalInstancesKey).isNotEmpty() || TidalAudioProvider.activeInstanceUrls.isNotEmpty() || PoolAccountManager.tidalAccounts().isNotEmpty()
-        AudioSourceType.QOBUZ -> text(QobuzTokensKey).isNotEmpty() || text(QobuzInstancesKey).isNotEmpty() || QobuzAudioProvider.hasBackends()
+        AudioSourceType.QOBUZ -> runCatching { org.json.JSONArray(text(QobuzTokensKey)).length() > 0 }.getOrDefault(false) || text(QobuzInstancesKey).isNotEmpty() || QobuzAudioProvider.hasBackends()
         AudioSourceType.DEEZER -> text(DeezerArlKey).isNotEmpty() || text(DeezerInstancesKey).isNotEmpty() || DeezerAudioProvider.hasBackends()
         AudioSourceType.APPLE -> AppleMusicAudioProvider.isAvailable() || PoolAccountManager.appleMusicAccounts().isNotEmpty()
         AudioSourceType.QQ -> text(moe.rukamori.archivetune.constants.QqMusicUinKey).isNotEmpty() &&
