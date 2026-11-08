@@ -44,3 +44,14 @@ Spotify and episodes are excluded from automatic caching. Explicit cache removal
 deletes both the index row and its file. A separate cache fill can duplicate network
 traffic while the player reads; it does not yet tee decoder reads. Runtime eviction
 and offline playback remain unverified.
+
+## Tagged exports
+
+Both item-menu and bulk export now reuse Android's AudioTagger and its pinned
+pure-Java jaudiotagger library on a request-owned file with a detected extension,
+before atomic publication. Title/artist/album/ISRC and available artwork are tagged;
+the current song's loaded lyric document is embedded when available. Artwork is
+bounded and best-effort; unsupported container tags are reported in diagnostics.
+Offline artwork and lyrics for songs absent from the current library/document are
+not invented. Source downloads are never modified. Container/device validation is
+unverified. No commonMain change was needed for the tag writer.
