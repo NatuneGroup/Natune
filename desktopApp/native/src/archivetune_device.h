@@ -18,6 +18,24 @@
 
 typedef struct ae_device ae_device;
 
+enum ae_pcm_type { AE_PCM_UNKNOWN = 0, AE_PCM_U8 = 1, AE_PCM_S16 = 2, AE_PCM_S24 = 3, AE_PCM_S32 = 4, AE_PCM_F32 = 5 };
+typedef struct ae_pcm_format { uint32_t rate, channels, format, bits; } ae_pcm_format;
+typedef struct ae_device_request {
+    ae_pcm_format pcm;
+    int exclusive;
+    int null_backend;
+    const char *device_id; /* backend-prefixed identifier returned by ae_device_list; NULL selects the default. */
+} ae_device_request;
+typedef struct ae_device_description { char id[512], name[256]; } ae_device_description;
+typedef struct ae_device_state { ae_pcm_format pcm; int exclusive; char name[256], backend[32]; } ae_device_state;
+typedef void (*ae_device_raw_pull)(void *user, void *out, uint32_t frames);
+
+/* Exact PCM open. Exclusive requests never silently fall back or retain a converted device. */
+ae_device *ae_device_open_pcm(const ae_device_request *request, ae_device_raw_pull pull, void *user,
+                             char *error, size_t error_len);
+void ae_device_state_read(ae_device *device, ae_device_state *state);
+uint32_t ae_device_list(ae_device_description *out, uint32_t capacity, char *error, size_t error_len);
+
 /* Called on the audio thread. It must fill exactly frames interleaved stereo float frames. */
 typedef void (*ae_device_pull)(void *user, float *out, uint32_t frames);
 
