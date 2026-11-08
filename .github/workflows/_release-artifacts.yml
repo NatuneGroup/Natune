@@ -869,11 +869,17 @@ jobs:
 
           TOOL="$RUNNER_TEMP/appimagetool-${APPIMAGE_ARCH}.AppImage"
           # AppImageKit's release assets are gone; appimagetool moved to its own repository.
-          curl --fail --location --retry 3 \
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 \
             "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" \
             --output "$TOOL"
           chmod +x "$TOOL"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$APP_DIR" \
+          # appimagetool fetches the runtime itself without retries, and GitHub's release CDN
+          # sometimes answers 504; fetch it here with retries and hand it over.
+          RUNTIME="$RUNNER_TEMP/runtime-${APPIMAGE_ARCH}"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 \
+            "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${APPIMAGE_ARCH}" \
+            --output "$RUNTIME"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --runtime-file "$RUNTIME" "$APP_DIR" \
             "release-assets/natune-desktop-linux-${ARCH}-${DISPLAY_VERSION}.AppImage"
 
       - name: Stage macOS DMG
@@ -1360,11 +1366,17 @@ jobs:
 
           TOOL="$RUNNER_TEMP/appimagetool-${APPIMAGE_ARCH}.AppImage"
           # AppImageKit's release assets are gone; appimagetool moved to its own repository.
-          curl --fail --location --retry 3 \
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 \
             "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" \
             --output "$TOOL"
           chmod +x "$TOOL"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$APP_DIR" \
+          # appimagetool fetches the runtime itself without retries, and GitHub's release CDN
+          # sometimes answers 504; fetch it here with retries and hand it over.
+          RUNTIME="$RUNNER_TEMP/runtime-${APPIMAGE_ARCH}"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 \
+            "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${APPIMAGE_ARCH}" \
+            --output "$RUNTIME"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --runtime-file "$RUNTIME" "$APP_DIR" \
             "release-assets/natune-desktop-linux-${ARCH}-${DISPLAY_VERSION}.AppImage"
 
       - name: Stage macOS DMG
