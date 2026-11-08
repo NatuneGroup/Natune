@@ -62,6 +62,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_acoustic_quality_title
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_equalizer
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiLyricsOperation
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -338,6 +339,24 @@ internal fun IosSongMenu(
         })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
+        add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
+        val lyricDocument = graph.lyrics.current.value
+        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
+        if (playing?.item?.ref == ref && lyricDocument?.hasLines == true) {
+            add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
+            add(OverflowAction("translate_lyrics", Res.string.ios_lyrics_translate) {
+                check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.TRANSLATE)); menu.dismiss()
+            })
+            add(OverflowAction("romanize_lyrics", Res.string.ios_lyrics_romanize) {
+                check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.ROMANIZE)); menu.dismiss()
+            })
+            add(OverflowAction("undo_lyrics", Res.string.ios_lyrics_undo) {
+                val id = lyricDocument.occurrenceId
+                if (graph.lyricsTools.edits.undo { graph.lyrics.current.value?.occurrenceId == id })
+                    graph.lyricsSurface.sessions.translationUndone(id)
+                menu.dismiss()
+            })
+        }
     }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
     SongOverflowMenu(
         identity = "ios-song:${occurrence.occurrenceId}",
@@ -384,7 +403,7 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
 /** The rows this host connects end to end, per the opened occurrence. */
 internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        addAll(listOf("lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
         if (!facts.isLocal) add("share")

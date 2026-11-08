@@ -44,7 +44,7 @@ internal fun iosPodcastsPage(graph: IosSessionGraph): ArchiveGraphPage {
     var next by remember(graph) { mutableStateOf<String?>(null) }
     val prefs by graph.settings.snapshots.collectAsState()
     val followed = remember(prefs) { follows(prefs?.get(PodcastFollows)) }
-    val notice = stringResource(Res.string.content_podcast_subscriptions_local)
+    val notice = stringResource(Res.string.ios_podcast_local_follows)
     LaunchedEffect(graph, query, epoch) {
         val token = next
         page = if (token == null) PagedContentState(loading = true) else page.copy(loading = true, failed = false)
@@ -92,7 +92,7 @@ internal fun iosPodcastPage(graph: IosSessionGraph, browseId: String): ArchiveGr
     var description by remember(graph, browseId) { mutableStateOf<String?>(null) }
     val prefs by graph.settings.snapshots.collectAsState()
     val subscribed = follows(prefs?.get(PodcastFollows)).any { it.ref == collection.parent }
-    val notice = stringResource(Res.string.content_podcast_subscriptions_local)
+    val notice = stringResource(Res.string.ios_podcast_local_follows)
     LaunchedEffect(graph, browseId) {
         try {
             graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
