@@ -6188,6 +6188,7 @@ class MusicService :
         remotePlaybackTrackingUrlCache.clear()
         contentLengthCache.clear()
         directStreamCache.clear()
+        activeModuleAudio.clear()
         externalStreamRecoveryEpoch++
         externalStreamRecovery.clear()
         audioNormalizationFactorCache.clear()
@@ -6207,6 +6208,7 @@ class MusicService :
         if (
             playbackUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
             directStreamCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            activeModuleAudio.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
             contentLengthCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
             remotePlaybackTrackingUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
             audioNormalizationFactorCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
@@ -6230,6 +6232,7 @@ class MusicService :
         val isKept: (String) -> Boolean = { key -> keep.any { id -> key == id || key.endsWith(":$id") } }
         playbackUrlCache.keys.retainAll(isKept)
         directStreamCache.retainKeys(isKept)
+        activeModuleAudio.keys.retainAll(isKept)
         externalStreamRecovery.retainSongs(isKept)
         contentLengthCache.keys.retainAll(isKept)
         remotePlaybackTrackingUrlCache.keys.retainAll(isKept)
