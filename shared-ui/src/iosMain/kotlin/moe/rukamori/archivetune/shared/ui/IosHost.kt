@@ -444,8 +444,8 @@ class IosHost {
         }
         japanesePack.value = pack
         settingsOpen.value = IosSettingsOpenState.Ready(opened)
-        if (foregroundRequested) pack?.onForeground()
         openSessionGraph(opened, accounts)
+        if (foregroundRequested && !closed) scope.launch { pack?.onForeground() }
     }
 
     private suspend fun openSessionGraph(opened: IosVaultSettings, accounts: VaultProviderAccountStore) {
@@ -472,6 +472,7 @@ class IosHost {
             commandAvailability = opening.transportAvailability,
         )
         sessionState.value = IosSessionState.Ready(opening)
+        opening.startAfterMount()
     }
 
     private companion object {

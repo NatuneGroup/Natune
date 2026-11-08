@@ -81,6 +81,15 @@ class TypedDelegatingQueueController(
         }
     }
 
+    /** Background launch restore must never replace a queue the listener already changed. */
+    suspend fun resumeIfPristine(): Boolean = owner.withQueueAccess {
+        val current = owner.state.value
+        if (current.revision != 0L || current.entries.isNotEmpty()) return@withQueueAccess false
+        val saved = checkpoints.readForRestore() ?: return@withQueueAccess false
+        owner.restore(saved)
+        true
+    }
+
     override suspend fun resume(): Boolean = owner.withQueueAccess {
         val saved = checkpoints.readForRestore() ?: return@withQueueAccess false
         owner.restore(saved)

@@ -186,3 +186,21 @@ check is not simulator compilation or device evidence.
 - This reuses the shared player and shell, as the Android reference requires. Remaining
   on-device visual acceptance includes short/landscape screens, large text, all style
   selections and liquid-glass/compact navigation; no screenshot parity claim is made.
+
+## Implementation: launch readiness
+
+- Traced `IosSessionGraph.assemble → queue.resume → PortableQueueOwner.restore →
+  requestFor → IosQueueLocatorResolver` to network source resolution of the saved song.
+  This was awaited before `Ready`, making first paint wait on provider latency.
+- `IosHost` publishes the valid graph before `startAfterMount` restores playback and
+  reconciles local/download files. `TypedDelegatingQueueController.resumeIfPristine`
+  checks the live queue under the same mutation lock, so a queue selected first wins.
+  Shutdown cancels/joins startup before closing owners. Local imports are indexed before
+  restoring a local song (the original order attempted resolution before their paths loaded).
+- Database/settings/backup recovery remain before readiness; recovery mode blocks deferred
+  startup. Queue checkpoints remain protected against an untouched empty session. Once
+  restore holds the queue lock, later queue mutations still serialize behind its bounded
+  source resolution; browsing/search can render while that occurs.
+- The opening boundary is now shared Compose branding plus `Opening your library…` and
+  a small progress indicator. Optional language-pack foreground consideration starts after
+  graph readiness. Cold/warm/offline launch and restored local/remote queues need device QA.
