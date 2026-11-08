@@ -8,4 +8,6 @@
     <string name="ios_lyrics_save">Save</string>
     <string name="ios_lyrics_reset">Reset</string>
     <string name="ios_podcast_local_follows">Subscriptions are saved on this device.</string>
+    <string name="ios_ai_mix_hint">Generate mixes from your listening history using your configured AI service.</string>
+    <string name="ios_ai_mix_generate">Generate mixes</string>
 </resources>
