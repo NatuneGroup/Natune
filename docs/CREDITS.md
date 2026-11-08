@@ -202,6 +202,15 @@ their approaches were followed.
 
 ## Fork-only work
 
+- [librespot-org/librespot](https://github.com/librespot-org/librespot) (MIT),
+  pinned to `15e02e86c72d96dd39d548e3749f00abe39ffdde`: AP/OAuth authentication,
+  login5, track audio metadata, audio keys and CDN resolution for the Android
+  Librespot engine. Natune's JNI adapter and embedding patches are in
+  [native/librespot](../native/librespot/README.md); the upstream
+  [MIT notice](../native/librespot/LICENSE.librespot) ships with the app.
+  [Outify](https://github.com/iTomKo/Outify) was read to verify Rust/JNI Android
+  integration and OAuth credential profiles; no Outify code is copied.
+
 Multi-source audio routing (Tidal, Qobuz, Deezer, Apple Music, Amazon, QQ Music,
 JioSaavn, Discord, Telegram), the ArchivePool credential service, listener presence,
 the single pill-style system shared by the navigation bar, mini player and search pill,

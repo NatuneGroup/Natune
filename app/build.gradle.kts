@@ -167,6 +167,8 @@ tasks.configureEach {
 // plain crossfade path, which they already treat as a missing model. CI builds the full
 // variant as a separate artifact with -Pautomix=true.
 val automix = (project.findProperty("automix") as String?)?.toBoolean() ?: false
+apply(from = "librespot.gradle.kts")
+
 android {
     namespace = "moe.rukamori.archivetune"
     compileSdk = 37
@@ -647,7 +649,9 @@ android {
             }
             keepDebugSymbols += listOf(
                 "**/libandroidx.graphics.path.so",
-                "**/libdatastore_shared_counter.so"
+                "**/libdatastore_shared_counter.so",
+                // Cargo already strips this library; preserve the bytes checked by the CI manifest.
+                "**/libnatune_librespot.so"
             )
         }
         resources {

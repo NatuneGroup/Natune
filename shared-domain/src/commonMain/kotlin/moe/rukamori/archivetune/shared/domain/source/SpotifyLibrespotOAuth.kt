@@ -20,7 +20,7 @@ const val SPOTIFY_OAUTH_ME_ENDPOINT = "https://api.spotify.com/v1/me"
 
 /**
  * The scopes the Librespot session token carries and nothing more: `streaming` is what a librespot
- * access-token session needs to register as a Connect device and play, `user-read-private` is what
+ * access-token session needs for protocol audio playback, `user-read-private` is what
  * the `/v1/me` `product` read needs for the Premium check. Scopes stay minimal on purpose.
  */
 const val SPOTIFY_LIBRESPOT_OAUTH_SCOPES = "streaming user-read-private"

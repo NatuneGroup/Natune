@@ -102,14 +102,18 @@ object SpotifyStreamingAccount {
      * resolves as signed-in-but-unavailable: `accessToken` refuses the dedicated token and playback
      * falls through to the next source. Synchronous like every dataStore.get at the call site.
      */
-    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean {
+    fun effectiveEngine(dataStore: DataStore<Preferences>): SpotifyStreamEngine {
         val stored = SpotifyStreamEngine.fromPreference(dataStore[SpotifyStreamEngineKey])
         val boundProduct =
             when (stored.streamAccountBinding()) {
                 SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(dataStore[SpotifyStreamProductKey])
                 SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(dataStore[SpotifyProductKey])
             }
-        return when (SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)) {
+        return SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)
+    }
+
+    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean {
+        return when (effectiveEngine(dataStore)) {
             SpotifyStreamEngine.UNOFFICIAL -> dataStore.get(SpotifyAlternateExtensionEnabledKey, !dataStore[SpotifyStreamSpDcKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
                 !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
             SpotifyStreamEngine.LIBRESPOT -> dataStore.get(SpotifyOfficialExtensionEnabledKey, !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
