@@ -94,20 +94,17 @@ administrator, session-signing, database, or at-rest encryption secrets.
 
 ## Discord authentication and now playing
 
-Presence follows Metrolist's design (`MetrolistGroup/Metrolist`, `music/discord/`):
-PKCE OAuth with scopes `openid identify sdk.social_layer_presence`, then
-`GatewayClient` identifies with `Bearer <access token>` in a minimal frame
-(`intents = 0`, no capabilities, gateway v10, no compression) and sends op 3
-presence updates. An earlier verification pass recorded authentication failures
-from the previous, heavier IDENTIFY (user-client intents and capabilities). The
-minimal frame is the shape Metrolist ships, but it has not been exercised against
-Discord from this repository's CI or tooling: confirm on a device with a real
-account and watch the `GatewayClient` log for close code 4004 (token rejected) or
-4013/4014 (intents rejected).
+Presence uses the official Discord Social SDK with OAuth PKCE (scope
+`sdk.social_layer_presence`) when an SDK-enabled build is made; default builds
+keep a no-op presence backend. The SDK owns transport, token refresh and
+authorization through `com.discord.socialsdk.AuthenticationActivity`; there is no
+raw Gateway IDENTIFY, no user-token WebView login and no confidential client
+secret. See `docs/discord-social-sdk.md` for the opt-in build and its verification
+status.
 
 Expired or unverifiable saved authorization is not treated as connected, and a
-failed refresh cannot fall back to an expired token. Playback does not start auth
-or Gateway retry loops. Settings-only backups exclude Discord refresh tokens,
+failed refresh cannot fall back to an expired token. Playback does not start
+presence retry loops. Settings-only backups exclude Discord refresh tokens,
 expiry, and profile fields as account data. Pool credential caches are likewise
 excluded; the user's Pool opt-out choice remains a setting.
 

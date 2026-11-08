@@ -18,6 +18,9 @@ concurrency:
   group: emulator-qa-${{ github.sha }}
   cancel-in-progress: true
 
+env:
+  DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+
 jobs:
   emulator-qa:
     # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's

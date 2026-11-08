@@ -10,9 +10,9 @@ object DesktopLaunchIntake {
     // invite the Android manifest declares — desktop intake accepts both like the original.
     // The Discord OAuth callback arrives as discord-<id>:/authorize/callback, which has no host.
     val links = DesktopDeepLinks(
-        setOf("archivetune", "discord-1165706613961789445"),
+        setOf("archivetune", "discord-1569030685010821170"),
         setOf("open", "listen"),
-        authorityless = setOf("discord-1165706613961789445"),
+        authorityless = setOf("discord-1569030685010821170"),
     )
     @Volatile private var window: Window? = null
     fun receive(uri: String?) {
