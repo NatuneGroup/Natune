@@ -552,7 +552,7 @@ object QobuzAudioProvider {
         return out
     }
 
-    /** Builds the ordered backend list: direct API tokens first (highest fidelity), then proxies. */
+    fun hasBackends(): Boolean = orderedBackends().isNotEmpty()
     private fun orderedBackends(): List<Backend> {
         val tokenBackends =
             tokens.filter { PoolAccountManager.isPoolEnabled() || !it.isPoolAccount() }.map { token ->

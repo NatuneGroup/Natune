@@ -78,3 +78,77 @@ test('Qobuz 429 does not retry a lower format or login',async()=>{
   await assert.rejects(c.module.exports.getTrackStreamUrl('123',27,context),e=>e.code==='RATE_LIMITED');
   await assert.rejects(c.module.exports.searchTracks('Song artist',10,context),e=>e.code==='RATE_LIMITED');assert.equal(calls,1);
 });
+test('unified TIDAL instance mode needs no account and keeps the selected endpoint', async()=>{
+  const requests=[];
+  const c=load('extension/tidal/provider.js',async(url,options)=>{
+    requests.push([new URL(url),options]);
+    return response(200,new URL(url).pathname.endsWith('/search/')
+      ? {tracks:{items:[{id:123,title:'Song',artists:[{name:'Artist'}]}]}}
+      : {url:'https://audio.example/full.flac',mimeType:'audio/flac'});
+  });
+  const context=settings({mode:'instance',instanceUrl:'https://instance.example/custom',accessToken:'synthetic-unused'});
+  const tracks=await c.module.exports.searchTracks('Song',10,context);
+  assert.equal(tracks[0].id,'123');
+  const stream=await c.module.exports.getTrackStreamUrl('123','LOSSLESS',context);
+  assert.equal(stream.url,'https://audio.example/full.flac');
+  assert.equal(requests[0][0].pathname,'/custom/search/');
+  assert.equal(requests[1][0].pathname,'/custom/track/');
+  assert.ok(requests.every(([,options])=>!options?.headers?.Authorization));
+});
+test('unified Qobuz instance mode needs no account and forwards the chosen quality',async()=>{
+  const requests=[];
+  const c=load('extension/qobuz/provider.js',async(url)=>{
+    requests.push(new URL(url));
+    return response(200,new URL(url).pathname.endsWith('/api/get-music')
+      ? {tracks:[{id:123,title:'Song',performer:{name:'Artist'}}]}
+      : {url:'https://audio.example/full.flac'});
+  });
+  const context=settings({mode:'instance',instanceUrl:'https://instance.example'});
+  assert.equal((await c.module.exports.searchTracks('Song',10,context))[0].id,'123');
+  await c.module.exports.getTrackStreamUrl('123',27,context);
+  assert.equal(requests[1].searchParams.get('quality'),'27');
+});
+test('unified providers never fall back to the other mode or send account secrets to instances',async()=>{
+  for(const name of ['tidal','qobuz']) {
+    let calls=0;
+    const c=load(`extension/${name}/provider.js`,async()=>{calls++;return response(200,{});});
+    await assert.rejects(c.module.exports.searchTracks('Song',10,settings({mode:'account',instanceUrl:'https://instance.example'})),e=>e.code==='VERIFY_REQUIRED');
+    await assert.rejects(c.module.exports.searchTracks('Song',10,settings({mode:'instance',instanceUrl:'http://instance.example'})),e=>e.code==='VERIFY_REQUIRED');
+    await assert.rejects(c.module.exports.searchTracks('Song',10,settings({mode:'unknown'})),e=>e.code==='VERIFY_REQUIRED');
+    assert.equal(calls,0);
+  }
+});
+test('catalog has one package for each consolidated service and bundled migrations match it',()=>{
+  const catalog=JSON.parse(fs.readFileSync(path.join(root,'registry.json'),'utf8'));
+  for(const name of ['tidal','qobuz']) {
+    const entries=catalog.extensions.filter(v=>v.id.startsWith(`app.natune.provider.${name}`));
+    assert.equal(entries.length,1);assert.equal(entries[0].id,`app.natune.provider.${name}`);
+    assert.ok(!fs.existsSync(path.join(root,'dist',`${name}-instance.arch`)));
+    const artifact=fs.readFileSync(path.join(root,'dist',`${name}.arch`));
+    const bundled=fs.readFileSync(path.join(root,'../../app/src/main/assets/module-migrations',`${name}.arch`));
+    assert.deepEqual(bundled,artifact);
+    assert.equal(crypto.createHash('sha256').update(artifact).digest('hex'),entries[0].sha256);
+  }
+});
+test('ArchivePool source routes are restricted to the requested service and preserve exact quality',async()=>{
+  const requests=[];
+  const c=load('extension/archivepool/provider.js',async(url)=>{
+    const request=new URL(url);requests.push(request);
+    if(request.pathname==='/api/accounts')return response(200,{tidal:[{id:'1',token:'synthetic',countryCode:'US'}],qobuz:[{id:'2',token:'synthetic',appId:'12345',appSecret:'synthetic'}]});
+    if(request.pathname.endsWith('/search/tracks'))return response(200,{items:[{id:123,title:'Song',artists:[{name:'Artist'}],duration:123}]});
+    if(request.pathname.includes('/playbackinfopostpaywall'))return response(200,{audioQuality:'LOW',manifestMimeType:'application/vnd.tidal.bts',manifest:Buffer.from(JSON.stringify({encryptionType:'NONE',urls:['https://audio.example/full.m4a'],mimeType:'audio/mp4',codecs:'mp4a.40.2'})).toString('base64')});
+    throw new Error('Unexpected fixture request '+request.pathname);
+  });
+  const context=settings({poolUrl:'https://pool.example',readKey:'synthetic',service:'tidal'});
+  const tracks=await c.module.exports.searchTracks('Song',10,context);
+  assert.equal(tracks.length,1);
+  await c.module.exports.getTrackStreamUrl(tracks[0].id,'LOW',context);
+  assert.equal(requests.at(-1).searchParams.get('audioquality'),'LOW');
+  assert.ok(requests.every(url=>url.hostname==='pool.example'||url.hostname==='api.tidal.com'));
+});
+test('standalone ArchivePool refuses stream identifiers from services excluded by source switches',async()=>{
+  const c=load('extension/archivepool/provider.js',async()=>response(200,{tidal:[{id:'1',token:'synthetic',countryCode:'US'}]}));
+  const context=settings({poolUrl:'https://pool.example',readKey:'synthetic',services:['qobuz']});
+  const trackId=encodeURIComponent(JSON.stringify({service:'tidal',account:'1',track:'123'}));
+  await assert.rejects(c.module.exports.getTrackStreamUrl(trackId,'LOSSLESS',context),e=>e.code==='INVALID_TRACK');
+});

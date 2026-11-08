@@ -131,7 +131,6 @@ import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
-import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.player.PlayerCoverImage
@@ -766,7 +765,6 @@ internal fun SimpMusicFullscreenLyricsSheet(
                 state = menuState,
                 background = Color(0xF01C1C1E),
             )
-            BottomSheetPage(state = bottomSheetPageState)
             }
 
             if (showAnchoredLyricsMenu) {

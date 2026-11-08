@@ -11,25 +11,37 @@
     "version": "1.0.0",
     "author": "morieattonkatsu",
     "description": "Plays songs from the JioSaavn catalog using the public JioSaavn web player API. Streams are AAC in MP4, at up to 320 kbps when JioSaavn offers that encoding for the track, otherwise 96 kbps. No account is required. Catalog coverage is strongest for Indian music.",
-    "homepage": "https://miuka.moe",
+    "homepage": "https://github.com/NatuneGroup/Natune/tree/main/addons/modules/extension/jiosaavn",
     "repository": "https://github.com/rukamori/ArchiveTuneModules",
     "license": "GPL-3.0",
-    "type": ["audio_provider"],
-    "requiredRuntimeFeatures": ["fetch@1", "settings@1", "streamResolution@1", "qualityOptions@1"],
-    "labels": ["AAC"],
-    "capabilities": ["searchTracks", "getTrackStreamUrl"],
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1",
+      "qualityOptions@1"
+    ],
+    "labels": [
+      "AAC"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
     "qualityLabel": "Audio quality",
     "defaultQuality": "320",
     "qualityOptions": [
       {
         "id": "320",
-        "label": "High · 320 kbps AAC",
+        "label": "High \u00b7 320 kbps AAC",
         "description": "Requests the 320 kbps AAC file. Tracks without a 320 kbps encoding play at 96 kbps.",
         "kind": "lossy"
       },
       {
         "id": "96",
-        "label": "Data saver · 96 kbps AAC",
+        "label": "Data saver \u00b7 96 kbps AAC",
         "description": "Requests the 96 kbps AAC file to reduce data usage.",
         "kind": "lossy"
       }
