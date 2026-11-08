@@ -476,6 +476,8 @@ class IosSourceContractsTest(unittest.TestCase):
         widget = (IOS / "Widgets/NatuneControls.swift").read_text()
         self.assertIn('.supportedFamilies([.systemSmall, .systemMedium])', widget)
         self.assertIn('natune://widget/', widget)
+        self.assertIn('family == .systemSmall ? "natune://widget/toggle"', widget)
+        self.assertIn('control("toggle"', widget)
         self.assertNotIn('ArchiveTuneShared', widget)
         session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
         self.assertIn('host.widgetCommand(action:', session)

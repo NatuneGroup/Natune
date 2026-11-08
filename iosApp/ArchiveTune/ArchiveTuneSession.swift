@@ -66,7 +66,7 @@ final class ArchiveTuneSession {
     func accept(_ url: URL) {
         if url.scheme == "natune", url.host == "widget",
            url.query == nil, url.fragment == nil, url.user == nil, url.password == nil,
-           url.port == nil, ["/open", "/play", "/pause", "/next", "/previous"].contains(url.path) {
+           url.port == nil, ["/open", "/play", "/pause", "/next", "/previous", "/toggle"].contains(url.path) {
             if url.path != "/open" { host.widgetCommand(action: String(url.path.dropFirst())) }
             return
         }
