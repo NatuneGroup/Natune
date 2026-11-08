@@ -243,8 +243,8 @@ private fun NumberedTopActions(c: PlayerRenderContext, buttonBg: Color, buttonIc
         }
         PlayerDesignStyle.V4 -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.slots.outputButton != null) {
-                TopActionBox(PlayerAction.OUTPUT, c, 44.dp, 22.dp, textColor.copy(alpha = .12f), textColor,
-                    RoundedCornerShape(14.dp))
+                StyleIconButton(c, PlayerSymbol.OUTPUT, PlayerAction.OUTPUT, size = 44.dp, iconSize = 22.dp,
+                    container = textColor.copy(alpha = .12f), iconColor = textColor, shape = RoundedCornerShape(14.dp))
             }
             TopActionBox(PlayerAction.SHARE, c, 44.dp, 22.dp, textColor.copy(alpha = .12f), textColor, RoundedCornerShape(14.dp))
             TopActionBox(PlayerAction.LIKE, c, 44.dp, 22.dp,
