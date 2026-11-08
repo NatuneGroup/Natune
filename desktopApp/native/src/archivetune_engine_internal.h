@@ -20,6 +20,7 @@
 
 /* Called only by a mixer owner, off the audio callback, before loads or when settings change. */
 void ae_engine_direct_request(ae_engine *engine, int requested);
+void ae_engine_output_changed(ae_engine *engine);
 int ae_engine_pending_output(ae_engine *engine, ae_pcm_format *format);
 int ae_engine_configure_output(ae_engine *engine, int direct);
 void ae_engine_input_format(ae_engine *engine, ae_pcm_format *format);
