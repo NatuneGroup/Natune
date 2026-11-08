@@ -423,6 +423,7 @@ object Spotify {
                 ?: trackData.str("_uri")
                 ?: ""
         val trackId = uri.substringAfterLast(":")
+        val isLocal = uri.startsWith("spotify:local:")
 
         val artists =
             trackData.obj("artists")?.arr("items")?.mapNotNull { elem ->
@@ -451,6 +452,7 @@ object Spotify {
             explicit = spotifyReportedExplicit(trackData),
             externalIds = spotifyReportedExternalIds(trackData),
             uri = uri.ifEmpty { null },
+            isLocal = isLocal,
         )
     }
 
