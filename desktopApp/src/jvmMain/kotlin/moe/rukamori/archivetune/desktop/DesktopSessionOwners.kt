@@ -454,6 +454,10 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     lyricsSurface.start()
+    scope.launch {
+        vault.snapshots.map { it?.get(moe.rukamori.archivetune.shared.domain.settings.SkipSilenceKey, false) ?: false }
+            .distinctUntilChanged().collect { playback.setSkipSilence(it) }
+    }
     val lyricsEdits = moe.rukamori.archivetune.shared.ui.menu.LyricsMenuEdits { before, after, current ->
         val item = queue.state.value.entries.firstOrNull { it.occurrenceId == before.mediaId }?.item
         item?.let { lyricsStore.compareAndSet(it, before, after, current) }?.also { lyrics.retry() }

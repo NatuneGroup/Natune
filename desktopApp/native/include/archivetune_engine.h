@@ -99,6 +99,8 @@ AE_EXPORT void ae_engine_play(ae_engine *engine);
 AE_EXPORT void ae_engine_pause(ae_engine *engine);
 AE_EXPORT void ae_engine_seek(ae_engine *engine, uint64_t position_us);
 AE_EXPORT void ae_engine_set_speed(ae_engine *engine, float speed);
+AE_EXPORT void ae_engine_set_pitch(ae_engine *engine, float semitones);
+AE_EXPORT void ae_engine_set_skip_silence(ae_engine *engine, int enabled);
 AE_EXPORT void ae_engine_stop(ae_engine *engine);
 AE_EXPORT void ae_engine_snapshot(ae_engine *engine, ae_snapshot *out);
 

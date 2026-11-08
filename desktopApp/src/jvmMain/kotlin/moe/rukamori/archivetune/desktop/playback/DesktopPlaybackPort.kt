@@ -293,13 +293,7 @@ class DesktopPlaybackPort(
         }
     }
 
-    /**
-     * Applies the one stored [DspSettings] to the playing occurrence and every later one: its equalizer switch and
-     * bands, its normalization switch and its preamp. The mixer receives coefficients designed by the shared
-     * [moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadDesign] only; tempo stays with the transport, and the route
-     * facts stay as [configureSoftwareStages] left them. A live drag calls this once per move: the band count stays
-     * fixed, so the mixer keeps its filter history and a drag through 0 dB does not click.
-     */
+    /** Applies the stored DSP settings to both current and later decks. */
     fun applyDspSettings(settings: DspSettings) {
         require(settings.equalizerBands.size <= NativeTwoDeckMixer.MAX_BANDS) {
             "the equalizer has ${settings.equalizerBands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
@@ -315,6 +309,11 @@ class DesktopPlaybackPort(
             )
             applyStages()
         }
+    }
+
+    fun setSkipSilence(enabled: Boolean) = submitTask {
+        stages = stages.copy(request = stages.request.copy(silenceSkippingEnabled = enabled))
+        applyStages()
     }
 
     /**
@@ -431,9 +430,7 @@ class DesktopPlaybackPort(
                 applyStages()
             }
             is PlaybackCommand.SetPitch -> {
-                // The engine graph has no pitch stage, so the request stays neutral: the host hides the pitch control,
-                // and a stored or remote value must not claim a sample change this host cannot make.
-                stages = stages.copy(request = stages.request.copy(pitchSemitones = 0.0))
+                stages = stages.copy(request = stages.request.copy(pitchSemitones = 12.0 * kotlin.math.log2(command.pitch.toDouble())))
                 applyStages()
             }
             PlaybackCommand.Stop -> {
@@ -654,6 +651,8 @@ class DesktopPlaybackPort(
         val session = sessions[index] ?: return
         mix.setDeckGain(index, gainFor(plan, session.trackGainDb, session.trackPeak))
         mix.deck(index).setSpeed(desktopEffectiveSpeed(plan, stages.request))
+        mix.deck(index).setPitch(if (plan.tempoPitch) stages.request.pitchSemitones.toFloat() else 0f)
+        mix.deck(index).setSkipSilence(plan.silenceSkipping)
     }
 
     /** The stages that run now: what this host can honour, narrowed by the shared bit-perfect gate. */
@@ -996,4 +995,3 @@ class DesktopPlaybackPort(
         const val SPECTRAL_CACHE_CAPACITY = 32
     }
 }
-

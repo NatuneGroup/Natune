@@ -68,3 +68,12 @@ the same revision-checked store, refreshing the displayed document. Saved lyrics
 also available to offline export. Account Apple/TIDAL/Deezer, experimental Musixmatch
 and module lyrics still need their host providers. Ordinary non-AI translation is not
 mounted. Persistence, generated adapters and AI rendering remain CI/runtime unverified.
+
+## Pitch and silence
+
+Desktop now honors independent pitch using FFmpeg asetrate plus compensating
+atempo, preserving the requested transport speed and source clock. The player
+pitch control is enabled. Silence skipping consumes sustained PCM below -50 dB
+after 150 ms, advancing the source clock for skipped frames and preserving the
+existing ring/segment bookkeeping. The shared stage plan gates both features.
+These native changes require CI and audible playback/seek/crossfade validation.
