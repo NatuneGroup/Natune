@@ -455,6 +455,16 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_player_actions_follow_the_playing_occurrence_and_have_hosts(self):
+        controls = (UI_IOS / "IosPlayerControls.kt").read_text()
+        self.assertIn('playerOccurrence(queue, playback)', controls)
+        for action in ['TITLE', 'ARTIST', 'OUTPUT']:
+            self.assertIn('PlayerAction.' + action + ' ->', controls)
+        self.assertIn('shareLocalAudio(item.ref.id, null)', controls)
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertIn('IosPlayerNavigationDialogs(controls)', bindings)
+        self.assertIn('itemMenu, openOwnRoute)', bindings)
+
     def test_existing_ios_editors_are_reachable_from_the_route_registry(self):
         lane = (UI_IOS / "IosLaneSettings.kt").read_text()
         routes = lane.split('internal val IOS_LANE_SETTINGS_ROUTES = setOf(', 1)[1].split('\n)', 1)[0]

@@ -596,3 +596,16 @@ profiles with `--app-profile`, `--widget-profile`, `--app-group` and optional `-
 It does not authenticate a profile, grant approval or sign an app. The existing CI
 release remains explicitly unsigned; approved provisioning, signing and CarPlay/
 widget device execution are still separate owner-run gates.
+
+
+### Follow-up: player occurrence and navigation actions
+
+The shared player now binds iOS like/palette observations to the engine's occurrence,
+including while the queue cursor has advanced during handoff. Likes carry their content
+reference through asynchronous reads, so an old result cannot mark the new track liked.
+Title taps open the known album or the song menu; artist taps open the artist or a shared
+Compose selection dialog. Output actions have a Compose dialog over the native route
+picker, and local-song Share uses the imported file rather than requiring a public URL.
+These actions use the existing graph, routes and menus; they create no second player or
+native app renderer. #88's lyrics-header/module/chrome changes remain deferred until its
+Android reference is merged into dev.

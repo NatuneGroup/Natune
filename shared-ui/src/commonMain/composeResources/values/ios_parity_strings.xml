@@ -50,4 +50,6 @@
     <string name="ios_usb_rate_inactive">Start playback to check the accepted USB rate.</string>
     <string name="ios_usb_rate_observed">Decoder PCM: %1$d Hz. iOS output route: %2$d Hz.</string>
     <string name="ios_usb_rate_description">Higher rates are requested only for USB audio. iOS and your DAC choose the accepted rate; a request does not prove source quality or physical DAC output. Changes apply on the next track or playback reload. High-rate tracks use ordinary handoff instead of crossfade. EQ, pitch and system mixing remain available; this is not USB-exclusive or bit-perfect output.</string>
+    <string name="ios_choose_artist">Choose artist</string>
+    <string name="ios_output_routes">Audio output</string>
 </resources>
