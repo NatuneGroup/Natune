@@ -30,6 +30,8 @@ import kotlin.math.min
 
 internal class EchoDecryptingDataSource(
     private val upstreamFactory: DataSource.Factory,
+    private val streamRefProvider: (Uri) -> SpotifyEchoResolver.EchoStreamRef? = SpotifyEchoResolver::parseStreamUri,
+    bufferSize: Int = BLOCK_SIZE,
 ) : BaseDataSource(true) {
     private var upstream: DataSource? = null
     private var currentUri: Uri? = null
@@ -37,7 +39,7 @@ internal class EchoDecryptingDataSource(
     private var cipher: Cipher? = null
 
     private var blockOffset = 0
-    private val block = ByteArray(BLOCK_SIZE)
+    private val block = ByteArray(bufferSize.also { require(it >= BLOCK_SIZE && it % BLOCK_SIZE == 0) })
 
     private var blockLength = 0
 
@@ -49,7 +51,7 @@ internal class EchoDecryptingDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         val ref =
-            SpotifyEchoResolver.parseStreamUri(dataSpec.uri)
+            streamRefProvider(dataSpec.uri)
                 ?: throw IOException("Not an Echo stream URI: ${dataSpec.uri}")
         currentUri = dataSpec.uri
 
@@ -129,8 +131,8 @@ internal class EchoDecryptingDataSource(
     private fun fillBlock(): Boolean {
         val source = upstream ?: return false
         var filled = 0
-        while (filled < BLOCK_SIZE) {
-            val read = source.read(block, filled, BLOCK_SIZE - filled)
+        while (filled < block.size) {
+            val read = source.read(block, filled, block.size - filled)
             if (read == C.RESULT_END_OF_INPUT) break
             filled += read
         }
@@ -141,7 +143,7 @@ internal class EchoDecryptingDataSource(
         val counter = AUDIO_IV.add(BigInteger.valueOf(streamPos / BLOCK_SIZE))
         try {
             activeCipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), IvParameterSpec(counter.to16ByteArray()))
-            val encrypted = if (filled == BLOCK_SIZE) block else block.copyOf(filled)
+            val encrypted = if (filled == block.size) block else block.copyOf(filled)
             val decrypted = activeCipher.doFinal(encrypted)
             decrypted.copyInto(block, 0, 0, decrypted.size)
         } catch (e: Exception) {
@@ -191,8 +193,10 @@ internal class EchoDecryptingDataSource(
 
     class Factory(
         private val upstreamFactory: DataSource.Factory,
+        private val streamRefProvider: (Uri) -> SpotifyEchoResolver.EchoStreamRef? = SpotifyEchoResolver::parseStreamUri,
+        private val bufferSize: Int = BLOCK_SIZE,
     ) : DataSource.Factory {
-        override fun createDataSource(): DataSource = EchoDecryptingDataSource(upstreamFactory)
+        override fun createDataSource(): DataSource = EchoDecryptingDataSource(upstreamFactory, streamRefProvider, bufferSize)
     }
 
     private fun BigInteger.to16ByteArray(): ByteArray {

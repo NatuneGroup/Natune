@@ -1,0 +1,228 @@
+# Librespot audio implementation plan
+
+Research completed 2026-11-08, within the 25-minute research budget. Base:
+`integration/r3`, `1f93faac`. Scope: the audio engine and its source-chain adapter;
+Spotify catalog/home/library/playlist mapping and Modules settings stay outside this change.
+
+## Decision and current evidence
+
+Use **Rust librespot core + metadata through a small JNI library**, compiled per
+Android ABI on CI. Media3 remains the player, decoder, cache and output owner.
+Do not embed librespot's player, a second output engine, or its discovery stack.
+Desktop and iOS native packaging are follow-ups, documented below.
+
+Evidence read online on 2026-11-08:
+
+- [Rust repository](https://github.com/librespot-org/librespot) is active; the
+  reviewed `dev` head is `15e02e86c72d96dd39d548e3749f00abe39ffdde`, dated November 7.
+  [Latest release v0.8.0](https://github.com/librespot-org/librespot/releases/tag/v0.8.0)
+  dates to 2025-11-10. Pin the reviewed source commit, not the moving branch.
+- [librespot-java README](https://github.com/librespot-org/librespot-java/blob/52a8c24215e5a9b921da8e7219c49937ec87ed88/README.md)
+  explicitly says development moved to go-librespot. Its latest commit is
+  2025-11-07; [Maven metadata](https://repo.maven.apache.org/maven2/xyz/gianlu/librespot/librespot-lib/maven-metadata.xml)
+  still advertises **1.6.5**, released 2024-12-31. Later login5 work is unreleased.
+  A convenient JVM dependency would carry obsolete protocol code; maintaining
+  our own Java fork or port would add more work than the native bridge.
+- [Outify](https://github.com/iTomKo/Outify/tree/cd857ef04ac34627a920fbd3d6f7ca0c6a1f9119)
+  is an active Kotlin Android client (2026-11-06 head). Its
+  [Cargo dependencies](https://github.com/iTomKo/Outify/blob/cd857ef04ac34627a920fbd3d6f7ca0c6a1f9119/rust/librespot-ffi/Cargo.toml),
+  [.gitmodules](https://github.com/iTomKo/Outify/blob/cd857ef04ac34627a920fbd3d6f7ca0c6a1f9119/.gitmodules)
+  and [nightly build](https://github.com/iTomKo/Outify/blob/cd857ef04ac34627a920fbd3d6f7ca0c6a1f9119/.github/workflows/nightly.yml)
+  show Rust JNI and an **iTomKo/librespot fork**, including an Android audio backend;
+  it does not use xyz.gianlu's JVM library. It is evidence of Android integration,
+  not proof Natune's own OAuth app or every Premium account works. The historical
+  [librespot-android](https://github.com/devgianlu/librespot-android) example uses Java.
+  Outify's gitlink names fork commit `2f13c2374beb78323e1d03d31232c5d6df535c8f`;
+  reading that exact fork source returned HTTP 404/422. Its dependencies verify
+  the Rust/JNI choice, but the fork's audio-key implementation was not inspected.
+- [Session::connect](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/core/src/session.rs)
+  accepts `Credentials::with_access_token`, receives reusable AP credentials,
+  reconnects with them and retains their auth data for
+  [login5](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/core/src/login5.rs).
+  login5 obtains the spclient bearer from those stored credentials. Natune supplies
+  only its registered PKCE grant; no catalog cookie/token or embedded OAuth secret.
+  The library's protocol client identity remains its upstream default; it is not
+  a substitute for an app-owned OAuth client or a quota workaround.
+- [AudioItem](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/metadata/src/audio/item.rs),
+  [formats](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/metadata/src/audio/file.rs)
+  and [storage resolution](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/core/src/spclient.rs)
+  still implement extended metadata and encrypted CDN audio. Vorbis 96/160/320,
+  AAC and FLAC appear in the protocol definitions; that does **not** establish
+  which files an individual account/track receives. Start with Vorbis (Media3
+  already decodes it); unsupported/no-file results fail the source. No invented
+  AAC fallback, lossless claim or guessed PCM sample rate.
+- [Upstream warning added November 7](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/README.md)
+  and [issue #1649](https://github.com/librespot-org/librespot/issues/1649) report
+  newer accounts authenticate but Spotify denies legacy AP audio keys with
+  `audio key error 0 1`; no known workaround exists. Premium is necessary but
+  insufficient. Treat key denial as source failure; never feed encrypted noise
+  to the decoder. This implementation cannot promise playback for affected accounts.
+- [AP audio-key API](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/core/src/audio_key.rs)
+  remains implemented. This pin has no PlayPlay replacement. Natune's retained
+  PlayPlay pipeline belongs to the separate Unofficial account flow and is **not**
+  a supported remedy for #1649. Reuse the existing AES-CTR byte/range decoding
+  where valid, with the same IV and decrypted Vorbis header skip (0xA7).
+- Rust [MIT license](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/LICENSE)
+  and Java Apache-2.0 are compatible with Natune GPL-3.0. Keep the Rust notice in
+  the repository and APK assets and record attribution in `docs/CREDITS.md`.
+  No Outify code is vendored. Librespot is an unofficial protocol implementation,
+  not Spotify's official SDK or an endorsement of this integration.
+
+## Implementation contract
+
+1. A pinned core/metadata-only Rust cdylib handles AP authentication, login5,
+   playable track metadata, bounded relinking, Vorbis quality choice, audio key
+   and CDN resolution. Disable protocol logging (upstream trace logs contain
+   tokens); return only sanitized failure categories across JNI. No disk audio or
+   reusable-credential cache. Fresh OAuth grants remain the session's only persistent
+   credentials. Override the upstream CLI `exit(1)` on plan loss for embedding;
+   reject non-Premium sessions in the adapter instead of killing the app process.
+2. Session work is serialized, deadline bounded and generation guarded. Reuse a
+   healthy session; rebuild an invalid one on a later playback request. Refresh
+   through `SpotifyLibrespotAccount.accessToken()`. Logout, catalog replacement,
+   engine change or Premium loss tears down the native session and private stream
+   descriptors. No background reconnect loop. Use one spclient attempt; HTTP
+   401/403/429 do not trigger a second metadata/search route.
+3. Resolve the queued Spotify track id directly. Otherwise try a bounded ISRC
+   lookup, then title/artist matching only when there is no exact recording id,
+   using the Librespot OAuth bearer and the existing shared request cooldown policy.
+   No catalog metadata restructuring. Add pure shared tests for id/URI, quality,
+   engine admission and failure-to-fallback behavior; CI compiles/runs Kotlin tests.
+4. An opaque `librespot-spotify://` reference holds no token, key or signed CDN URL.
+   Memory-only descriptors feed an Android Media3 DataSource, reusing Echo's
+   seekable AES-CTR implementation below the player cache. Tag cache entries with
+   engine/quality/session identity so bytes cannot cross account or encoding changes.
+   Resolve only through `resolveMultiSourceDataSpec` when effective engine is
+   LIBRESPOT. No download/cast source and no switch to Unofficial on native failure.
+5. Quality uses the existing audio quality preference: LOW → 96, HIGH → 160,
+   HIGHEST → 320; AUTO → best available (96 under low-data mode). Prefer the
+   requested ceiling, descending available Vorbis tiers; a higher-only file can
+   fail a capped tier. Surface failures to the existing source fallback/recovery.
+
+## Packaging and cost
+
+CI cross-compiles using the existing pinned Android NDK, Rust, rustls with WebPKI
+roots and JNI. Package a stripped, size-optimized .so per shipped ABI with 16 KiB
+ELF page alignment. No new Maven playback dependency and no duplicate native decoder,
+CPAL/ALSA, OpenSSL or discovery closure. Rust compilation increases CI cost; share
+cached Cargo inputs and exact prepared libraries under existing trust rules and
+select only each build's ABIs.
+Expected native size is several MiB per ABI; **actual APK/library size and build
+minutes must be measured in CI**, not asserted from source. Kotlin-only unit-test
+jobs need no native library. After successful native preparation, APK assembly
+requires the selected ABI libraries and CI audits their packaged bytes. The
+continuation request explicitly permits native-toolchain failure: without an exact
+valid cache, remove partial JNI, warn, and assemble an APK with this optional source
+unavailable. A green APK job alone is not native-build evidence.
+
+Desktop would need JNI library staging for Linux/macOS/Windows and a portable
+OAuth-owned JNI/source adapter. Its existing native AES-CTR/FFmpeg recipe can
+potentially consume the returned key, but the Android Context/DataStore/Media3
+owner cannot be reused as a JVM host adapter. This Rust choice intentionally does not
+pretend the JVM branch now plays; retain source-unavailable fallback and document it.
+iOS needs a C/Swift bridge, per-target static libraries and AVFoundation byte transport;
+JNI is not an iOS solution. Existing OAuth on both hosts stays intact.
+
+## Validation and outstanding evidence
+
+Local execution is limited to `python3 scripts/check_repository.py --worktree` and
+`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`, plus source/diff inspection.
+No local Gradle/JVM, lint, Kotlin/Rust build, emulator, Spotify login or playback probe.
+CI must compile Rust for all shipped ABIs and Android/shared Kotlin tests, then
+assemble release-shaped APKs and measure their closure. Device QA must cover the
+registered OAuth app, an eligible Premium account and an affected #1649 account,
+96/160/320 availability, seeks, cache replay, network loss/reconnect, token rotation,
+logout/account replacement, source fallback, low-data mode and concurrent prefetch.
+A green compiler or fixture result is not device playback evidence.
+
+
+## Implemented source and file map
+
+The plan was committed as `40a35e37`; native core/policy work as `30f9e5fc`;
+Android routing/packaging as `7fd33083`; queued-session/cache admission and native
+request-policy fixes as `b4e53650`, all pushed on `feat/r3-librespot-audio`.
+No PR or per-feature CI was created. This is source implementation evidence,
+not a compiled or device-tested playback result.
+
+| Area | Files / behavior |
+|---|---|
+| Native | [JNI/session](../../native/librespot/src/lib.rs), [Cargo lock](../../native/librespot/Cargo.lock), [embedding patches](../../native/librespot/embedding.patch), [ABI recipe](../../native/librespot/build-android.sh) |
+| Policy/tests | [Audio policy](../../shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/SpotifyLibrespotAudioPolicy.kt), [common tests](../../shared-domain/src/commonTest/kotlin/moe/rukamori/archivetune/shared/domain/source/SpotifyLibrespotAudioPolicyTest.kt) |
+| Android session | [Audio lifecycle/descriptors](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotAudio.kt), [JNI worker](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt), [OAuth search](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotTrackSearch.kt) |
+| Data source | [Guarded Media3 source](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotDataSource.kt), [reused Echo decryptor](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo/EchoDecryptingDataSource.kt) |
+| Source-chain adapter/cache | [SpotifyAudioResolver](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioResolver.kt), [SpotifyAudioCache](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioCache.kt), [MusicService](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/MusicService.kt) |
+| OAuth binding | [Account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyLibrespotAccount.kt) persists a newly verified catalog binding even when returning a cached token; [streaming account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyStreamingAccount.kt) exposes its existing effective-engine calculation |
+| Packaging | [Gradle ABI gate](../../app/librespot.gradle.kts), [R8 JNI keep](../../app/proguard-rules.pro), [MIT asset](../../app/src/main/assets/licenses/librespot-MIT.txt), [CI action](../../.github/actions/build-librespot/action.yml) |
+| CI callers | Android assembly/lint and ARM64 candidate in [Build Pull Request](../../.github/workflows/build_pull_request.yml), shipping matrix in [release artifacts](../../.github/workflows/_release-artifacts.yml), [emulator QA](../../.github/workflows/android_emulator_qa.yml) |
+
+The binding supplies the actual Android API level (sysinfo can be unknown) and
+keeps the upstream OAuth StoredCredential/Keymaster profile. Native cancellation
+uses a watch signal in addition to generation checks, dropping in-flight futures
+on logout/cancellation. Entry checks also reject native work queued before logout.
+Client-token authentication/throttle failures and login5 protocol timeout/throttle
+responses do not dispatch another native request; challenge exchange stays bounded.
+Cache admission is outside both playback caches, with a
+separate guard on resolved private streams. Vorbis decoding reuses the existing
+CTR implementation at a 32 KiB read size; the Unofficial default remains 16 bytes.
+Cache tags are validated under the read guard's captured account/engine/quality;
+read-admission failures re-prepare through the source chain at the current position.
+Shared tests cover cache account/engine/quality separation and malformed renditions.
+No Maven dependency, extra output engine or existing Gradle/NDK version was changed.
+
+Local validation: repository check **0 findings**; iOS Python fixtures **26 passed**.
+Only Cargo lock metadata was generated locally (no Rust compiler invoked); the
+small reference checkout and temporary registry/research data were removed.
+Kotlin/common tests, Rust ABI compilation, lint, APK assembly, native/JNI loading,
+codec/seek/device testing, actual library/APK size and CI duration remain **UNRUN**.
+
+The implementation deliberately does not advertise or control a Connect receiver.
+It opens a protocol audio session for local playback; no Spirc/player/discovery
+backend is linked. Desktop and iOS still return source unavailable while using
+Librespot. SOCKS and authenticated HTTP proxy configurations also fail the Android
+source rather than bypassing the selected proxy. An upstream audio-key-denied
+account remains unsupported even with Premium; it falls through to the next source.
+Modules UI/registry code and catalog metadata/queue mapping are untouched. The
+concurrent built-in-extension branch must keep its existing source-enable gate
+around this adapter when the branches integrate.
+
+## Continuation audit (2026-11-08)
+
+Reviewed the existing plan and `8adb6cd9...b66bcf54` source changes without repeating
+the earlier protocol research. The bridge's used API signatures and Vorbis/audio-key
+types were checked against a bounded, temporary checkout of the same upstream pin;
+this was source inspection, with no Rust compilation. The scratch source was removed.
+
+The missing source pieces at hand-off were native-build failure resilience, an
+exact prepared-library cache, complete TV ABI selection, the public OAuth client
+id in Debug CI, an APK library audit, immediate credential-edit revocation and
+fail-closed cache alignment. Continuation fixes:
+
+- `0dbf07ab`: exact JNI cache/manifest plus Cargo caching, ABI/export/ELF checks,
+  all four TV-universal ABIs, Debug public client-id input, packaged-byte audits
+  and explicit JNI-unavailable APKs after native preparation failure.
+- `0c67fccc`: credential deletion closes JNI synchronously; a Kotlin revocation
+  epoch kills existing live/cache guards before preference observers run. Later
+  requests can rebuild after rapid same-account sign-out/sign-in. Missing JNI
+  fails before OAuth/search, and cache-alignment errors reject the candidate.
+- `d9fbefff` and the documentation follow-up: SDK-path fallback, NDK version
+  verification, and preference for the installed pinned NDK over a runner's
+  unrelated generic `ANDROID_NDK_HOME`.
+
+| End-to-end requirement | Current source state / evidence still missing |
+|---|---|
+| Native library / APK | `build_pull_request.yml` builds universal Debug and ARM64 candidate; `nightly.yml`/`release.yml` delegate to `_release-artifacts.yml`; emulator QA also prepares JNI. Mobile universal uses arm64-v8a/x86_64; TV universal also uses armeabi-v7a/x86. Per-ABI flavors keep their own ABI. Exact JNI/Cargo caches and APK-byte audits are wired; no compiled/library/APK result yet. |
+| JNI names | Five Rust exports match the Kotlin object's externals by source inspection, with an R8 keep rule. CI compares actual dynamic exports on fresh builds; JNI loading/minified invocation remains unrun. |
+| Stored OAuth grant | `SpotifyLibrespotAccount.accessToken()` returns the fresh cached/refresh grant; AP `Credentials::with_access_token` yields in-memory reusable credentials for login5. Catalog cookie/token is used only for binding checks. Registered client/redirect and real Premium login remain unverified. |
+| Audio key / decrypt | AP key request and CDN URLs feed opaque descriptors, then AES-128-CTR with the existing IV and decrypted 0xA7 Vorbis header skip. Key denial returns source failure. Real decrypted/Ogg audio is unverified. |
+| Media3 seeking | Logical positions add the header skip, align the CDN range to 16 bytes and derive the counter from the absolute block position. Reported length removes the skipped prefix. Nonzero/near-end seeks and cached replay need device evidence. |
+| Quality | LOW/low-data 96, HIGH 160 then 96, HIGHEST/AUTO 320 then lower available Vorbis tiers. Pure tests exist; Kotlin tests and account-specific file availability are unrun. |
+| Reconnect | Healthy sessions reused; rotated token/invalid session rebuilt on a later request, with deadline/cancellation/generation guards. Network-loss/token-rotation QA is pending. |
+| Fallback | Missing JNI, metadata/key/format/auth/throttle failure yields no source candidate; the configured chain continues. Read-admission failure rejects Spotify and preserves position during re-prepare. Device fallback remains unverified. |
+| Sign-out | Grant deletion closes JNI at the edit; native watch/generation and Kotlin read epochs revoke queued/in-flight work and descriptors. Account replacement, engine change and service destruction also invalidate. Actual device cleanup is unverified. |
+| Desktop / iOS | Existing OAuth remains. Desktop needs JVM JNI/session/source and per-host packaging; iOS needs C/Swift/static-library/AVFoundation range transport. Both still report Librespot unavailable. |
+
+The remaining acceptance work is CI compilation and physical playback validation,
+not another replacement engine. Allowed local checks still report **0 repository
+findings**, **26 iOS Python fixtures passed**. No PR, feature workflow dispatch,
+local Gradle/JVM/Rust build, lint, emulator or account playback probe was performed.
+Affected upstream #1649 accounts remain unsupported, even with Premium.

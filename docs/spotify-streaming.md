@@ -1,6 +1,7 @@
 # Spotify streaming source (experimental)
 
-`AudioSourceType.SPOTIFY` plays audio from Spotify itself. It is ported from 4nx3b's fork
+`AudioSourceType.SPOTIFY` has opt-in audio implementations for Spotify itself;
+device playback in this fork remains unverified. The Unofficial engine is ported from 4nx3b's fork
 (`4nx3b/dev`, commits `3b138b559` through `4d183f803`), which in turn ported the web-player
 pipeline from Stopify and the desktop pipeline from echo-spotify-extension. It is opt-in, off by
 default, and sits in `AudioSourceConfig.DEFAULT_ORDER` like every other source — just above
@@ -13,7 +14,7 @@ The catalog integration (home, library, search, playlist import, history) signs 
 its session in `SpotifySpDcKey` / `SpotifyAccessTokenKey`, with the global `Spotify.accessToken`.
 Streaming uses a **second** account when the Unofficial engine is selected. The engine choice lives
 in `SpotifyStreamEngineKey` (`SpotifyStreamEngine`): `UNOFFICIAL` (the original path, separate
-account) or `LIBRESPOT` (a librespot-protocol Connect client bound to the catalog account — the one
+account) or `LIBRESPOT` (a librespot-protocol audio client bound to the catalog account — the one
 exception to the two-accounts rule; see the Librespot section).
 
 | | Catalog | Streaming |
@@ -23,7 +24,7 @@ exception to the two-accounts rule; see the Librespot section).
 | Sign-in | `SpotifyLoginSheet` in the default WebView profile | `SpotifyLoginSheet(isolatedProfile = "spotify-streaming")` |
 | Settings | Integration → Spotify | Integration → Spotify streaming (`settings/spotify_streaming`) |
 
-Streaming registers a virtual Connect device ("ArchiveTune Player"), issues play commands and
+The Unofficial STOPIFY method registers a virtual Connect device ("ArchiveTune Player"), issues play commands and
 reports plays (start, 30 s, finish). None of that may land on the listener's real library, which is
 why the account is separate.
 
@@ -52,9 +53,11 @@ streaming session is not left behind for the next sign-in. Credentials only ever
 
 ## The Librespot engine (catalog account, Premium)
 
-`LIBRESPOT` is the second engine: a librespot-protocol client that registers as an ordinary Connect
-device on the **catalog** account — deliberately the same account, which is what makes it the
-lower-risk option. It requires Spotify Premium, which is checked at sign-in and re-checked on token
+`LIBRESPOT` is the second engine: a librespot-protocol audio session on the **catalog**
+account — deliberately the same account. Android now has a Rust/JNI audio implementation;
+compilation and device playback remain unverified. This adapter does not advertise a Connect
+receiver, accept remote Connect controls or use librespot's separate player/output engine.
+It requires Spotify Premium, which is checked at sign-in and re-checked on token
 refresh (`SpotifyPremiumPolicy`, 12 h observation cache).
 
 Sign-in is a registered OAuth authorization-code flow with PKCE (`spotify/SpotifyLibrespotAccount.kt`):
@@ -97,8 +100,140 @@ through Info.plist into `IosProviderCredentials.spotifyOauthClientId`; the grant
 binding guards and the effective-engine gating are the same ones listed above — the iOS host
 carries no unofficial streaming transport at all, so the source stays unavailable regardless.
 
-The audio path itself (the librespot session and its byte stream) lands with the native bindings;
-until then the Librespot engine carries the sign-in and the credentials the session will need.
+### Android audio path
+
+`native/librespot/` pins Rust librespot core/metadata at
+`15e02e86c72d96dd39d548e3749f00abe39ffdde` (MIT); the deprecated Java 1.6.5 artifact
+is not used. The [research and plan](engineering/librespot-audio-plan.md) records
+current upstream evidence and the Android example (Outify uses a Rust fork/JNI,
+not librespot-java). The [native recipe](../native/librespot/README.md) documents
+CI packaging and the embedding patches.
+
+- `playback/SpotifyAudioResolver` branches on the effective engine inside the
+  existing source attempt. Librespot failure returns no candidate, allowing the
+  configured source order to continue; it never sends catalog credentials to the
+  Unofficial methods or retries that engine in the same attempt.
+  An absent JNI library fails before OAuth refresh or Web API search.
+- `spotify/librespot/SpotifyLibrespotAudio` obtains only
+  `SpotifyLibrespotAccount.accessToken()`. JNI authenticates with the OAuth bearer,
+  retains AP reusable credentials in memory and uses login5 for spclient requests.
+  It verifies the AP username and Premium product before resolving audio. The
+  upstream OAuth StoredCredential/Keymaster profile is retained; the device's
+  real `Build.VERSION.SDK_INT` supplies the Android protocol version.
+- A queued Spotify id resolves directly. Otherwise a valid ISRC gets one exact
+  OAuth Web API search (no text substitution for a missing ISRC match); tracks
+  without a recording id use bounded title/artist/duration matching. Audio metadata
+  and up to three relink alternatives come from the protocol session. No catalog
+  home/library/playlist mapping is changed; Spotify-only tracks still have the
+  queue-entry limitation documented in [native playback](spotify-native-playback.md).
+- The existing audio quality preference selects Vorbis: LOW → 96, HIGH → 160,
+  HIGHEST/AUTO → 320 or the best available lower tier. Low-data mode permits this
+  lossy source at 96. A capped tier does not select a higher-only file. AAC/FLAC
+  formats may appear upstream but are not claimed playable by this adapter.
+- JNI obtains the AP audio key and expiring CDN URLs. An opaque
+  `librespot-spotify://audio/<random-reference>` contains none of those values.
+  `SpotifyLibrespotDataSource` reuses Echo's AES-128-CTR range alignment, IV and
+  decrypted Vorbis header skip (0xA7), using a 32 KiB buffer; Media3 decodes the
+  resulting Ogg bytes. The separate PlayPlay/Widevine pipelines are not invoked.
+- Playback-cache tags include engine, account/catalog-binding fingerprint,
+  requested quality, actual format and file id. Admission wraps both caches, so
+  logout or a changed identity fails the next read even for cached plaintext.
+  The selected tag is validated again under the read guard's captured identity;
+  changing engines during lookup cannot remove that guard. Cache-alignment errors
+  reject the new candidate, so incompatible old bytes cannot reach its decoder.
+- Healthy sessions are reused. Token rotation or a disconnected session rebuilds
+  on a later playback request. Logout, catalog/engine/quality/proxy changes and
+  service destruction revoke descriptors and cancel in-flight Rust work. AP plan
+  loss updates the bound Premium observation under a checked account binding and
+  tears down the session; the existing effective-engine policy then applies.
+  Grant deletion closes JNI inside the credential edit; a Kotlin revocation epoch
+  invalidates existing read guards before the asynchronous preference observer
+  catches up. Rapid sign-out/sign-in of the same account can rebuild on a later request.
+- JNI operations share the source deadline and return fixed failure categories.
+  spclient gets one attempt. HTTP 429 returns Retry-After to the existing cooldown
+  policy. Client-token authentication/throttle failures stop the request, as do
+  login5 protocol timeout/throttle responses; its challenge exchange stays bounded.
+  Rust logging/panic text is disabled because upstream trace diagnostics include
+  credentials. Android diagnostics log the failure category only.
+- Queued JNI operations check the native generation before using credentials,
+  so logout also revokes work that has not started. A Librespot read-admission
+  failure rejects this source and re-prepares through the existing source chain
+  with the playback position preserved, subject to its existing retry budget.
+
+CI is wired to compile the native library for each shipped ABI with NDK
+30.0.16248370, Rust 1.97.1, rustls/WebPKI and 16 KiB ELF alignment. This branch has
+not run that compilation or produced a verified APK. The active Android build
+workflow is `build_pull_request.yml` (there is no active `build.yml`);
+`nightly.yml` and `release.yml` call `_release-artifacts.yml` for shipping APKs.
+All call `.github/actions/build-librespot`, as does emulator QA.
+
+- Mobile universal Debug/FOSS/GMS APKs prepare arm64-v8a and x86_64; TV universal
+  prepares those plus armeabi-v7a and x86, matching the combined AGP ABI filters.
+  The other shipping flavors prepare their own ABI (including Stable's x86).
+- An exact prepared-JNI cache restores verified library checksums, recipe/JNI
+  identity and ABI closure before installing Rust. Cargo inputs/targets are also
+  cached; only trusted main/dev runs save caches and PRs only read them.
+- Fresh native builds verify the five exported names against Kotlin externals,
+  ELF architecture and 16 KiB load alignment. R8 keeps the class/method names.
+  Successful preparation sets `requireLibrespotAudio=true`; an APK audit checks
+  that every selected ABI contains the exact prepared `.so` bytes. Cargo strips
+  them once and AGP retains those bytes.
+- If toolchain/native preparation fails without an exact valid cache, CI removes
+  partial JNI output, warns in the job summary, and still builds an APK without
+  Librespot. The APK audit confirms JNI is absent. A green APK build can therefore
+  represent **Librespot unavailable**; check the action's `available` output and
+  summary before claiming native success. Kotlin compilation/unit tests need no JNI.
+- PR Debug and emulator QA now receive the same public
+  `ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID` repository variable as shipping/candidate
+  APKs. Its presence and registered redirect/account access remain unverified;
+  an empty value still disables sign-in.
+
+There is no JVM playback dependency or bundled second decoder/output backend.
+The upstream MIT notice ships in Android assets. Actual APK size, CI build time,
+compilation, minified JNI linkage, seeking and playback need CI/device evidence.
+
+Desktop Librespot remains OAuth-only. The core/metadata cdylib is a plausible JVM
+host build, but it has not been compiled for Linux/macOS/Windows. Android's Kotlin
+JNI owner depends on Android Context/DataStore/Media3 and is not a desktop adapter.
+Desktop already has a native AES-CTR/FFmpeg byte recipe for Echo that could be
+reused with a librespot-provided key; it still needs a portable JNI owner, the
+catalog-bound OAuth session lifecycle, an `AudioProviderRepository` adapter and
+per-OS/architecture library staging in the installers. That is a separate host
+integration, so `DesktopSpotifySource` continues to report Librespot unavailable
+and use the configured source fallback.
+
+iOS remains OAuth-only, with no implementation change here. It needs a C/Swift
+bridge, device/simulator static-library packaging and an AVFoundation byte/range
+transport; JNI does not supply that. Neither host gains audio from this Android
+binding. The Android adapter also falls through for SOCKS or
+credentialed HTTP proxies, whose settings the native AP transport cannot honor;
+it never silently bypasses them.
+
+### Evidence still needed
+
+Source inspection confirms the five JNI symbol names and the pinned upstream
+AP OAuth, metadata, audio-key and CDN APIs used by the bridge. The continuation's
+local checks report **0 repository findings** and **26 passing iOS Python fixtures**.
+These checks do not compile or exercise the audio bridge. No local Gradle/JVM,
+Rust build, lint, emulator or Spotify playback test was run, and no workflow was
+dispatched for this feature branch.
+
+Still required: Rust builds for all shipped ABIs; Android/shared Kotlin compilation
+and tests; native availability and library contents in Debug and minified Nightly
+APKs; registered OAuth app/Premium login; actual 96/160/320 availability; Ogg
+decoding and nonzero/near-end seeks; cached replay; reconnect after network loss
+and token rotation; immediate sign-out/account replacement cleanup; source fallback;
+low-data mode and concurrent prefetch. Successful source wiring does not establish
+audible playback on an eligible account. There is no verified device playback
+result on this branch yet.
+
+**Current upstream restriction:** the
+[November 7 warning](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/README.md)
+and [issue #1649](https://github.com/librespot-org/librespot/issues/1649) report
+newer Premium accounts can authenticate but cannot obtain legacy audio keys
+(`audio key error 0 1`). No workaround is known. Key denial is a source failure,
+not permission to feed encrypted bytes to Media3 or use PlayPlay on the catalog
+account. This is an unofficial protocol client, not Spotify's official SDK.
 
 ## Resolve methods
 
@@ -130,24 +265,25 @@ account, scored on title, artist and duration (minimum score 5).
   a streaming account is signed in (`isSpotifyStreamingConfigured`). Its default position is just
   above YouTube; the user reorders it in "Preferred sources", and switching the toggle on or off
   never changes the order.
-- Data sources: `echo-spotify://` is routed by both `SchemeRoutingDataSource` and
+- Data sources: `librespot-spotify://` routes to the guarded Librespot DataSource;
+  `echo-spotify://` is routed by both `SchemeRoutingDataSource` and
   `ResolvedSchemeRoutingDataSource` to `EchoDecryptingDataSource`, decrypted below the player cache,
   and bypasses the YouTube resolver. STOPIFY URLs are plain HTTPS on `*.spotifycdn.com`; the
   `mediaOkHttpClient` interceptor adds the open.spotify.com UA/Origin/Referer.
 - DRM: the item's source is only known once its data source resolves, after the media source
-  factory has asked for a DRM manager. So while streaming is configured, every media source gets a
+  factory has asked for a DRM manager. So while Unofficial streaming is configured, every media source gets a
   Spotify Widevine manager (Apple items keep theirs). Clear streams never request a key. One manager
   per media source factory, because the crossfade player builds its own and a manager binds to one
   playback looper.
-- Cache: both methods share the `spotify:<mediaId>` cache key but write different bytes (encrypted
-  MP4 vs plain Ogg/FLAC). `alignSpotifyCacheWithMethod` tags the cache entry with its method in the
-  cache's content metadata and drops it when the method changes.
+- Cache: all engines share the `spotify:<mediaId>` cache key but write different bytes
+  (encrypted MP4 vs plain Ogg/FLAC). `SpotifyAudioCache.align` tags the cache entry
+  with the method or Librespot namespace in content metadata and drops incompatible bytes.
 - Reporting: `updateSpotifyPlaybackReporting` runs per media-item transition, only for items whose
   selected source is SPOTIFY and that resolved through STOPIFY.
 
 ## Known limits
 
-- Neither method has been verified on a device in this fork. Both depend on undocumented Spotify
+- Neither Unofficial method nor the new Android Librespot path has been verified on a device in this fork. They depend on undocumented Spotify
   endpoints, hard-coded client versions and (for ECHO) PlayPlay key derivation that Spotify can
   change at any time.
 - First resolution can be slow (Dealer connect + manifest wait, or the desktop authorization flow)
