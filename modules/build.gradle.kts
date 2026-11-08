@@ -15,7 +15,7 @@ android {
 kotlin { jvmToolchain(21) }
 
 dependencies {
-    implementation(libs.coroutines.core)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.okhttp)
     implementation(libs.quickjs.kt)
     implementation(libs.jsoup)
