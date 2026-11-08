@@ -99,6 +99,7 @@ internal class DesktopQueueLocatorResolver(
         // A "play from" pin forces the attempt chain for this one song, as the Android service's per-song
         // source override does; a refused pinned source falls through to the ordinary chain.
         val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
+            ?: AudioSourceType.MODULES.takeIf { occurrence.item.ref.provider == "modules" && occurrence.item.ref.id.startsWith("module:") }
         var refused = recovery.rejectedSources
         while (true) {
             val resolution = audio.resolve(request, recovery.settings(desktopSourceSnapshot(preferences())),

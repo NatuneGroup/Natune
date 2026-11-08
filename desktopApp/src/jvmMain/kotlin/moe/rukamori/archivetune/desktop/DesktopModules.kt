@@ -131,6 +131,28 @@ internal class DesktopModules(private val root: Path, private val preferences: (
     private fun requireCurrent(entry: Entry) {
         check(entries.value.any { it.id == entry.id && it.source == entry.source }) { "Module installation changed" }
     }
+    suspend fun searchMetadata(entry: Entry, query: String): List<DesktopModuleMetadataItem> {
+        val revision = generation.get()
+        requireReadable(entry, "searchTracks")
+        val tracks = runtime.search(entry.id, entry.source, entry.origin, query, settings(entry))
+        requireReadable(entry, "searchTracks")
+        check(generation.get() == revision) { "Module configuration changed" }
+        return tracks.map { DesktopModuleMetadataItem(ContentKind.SONG, it.id, it.title,
+            it.artists, it.album, it.durationSeconds?.times(1000L), it.identifier) }
+    }
+    suspend fun metadata(entry: Entry, function: String, entityId: String?): List<DesktopModuleMetadataItem> {
+        val revision = generation.get()
+        requireReadable(entry, function)
+        val value = runtime.metadata(entry.id, entry.source, entry.origin, function, entityId, settings(entry))
+        requireReadable(entry, function)
+        check(generation.get() == revision) { "Module configuration changed" }
+        return DesktopModuleMetadataReader.read(value)
+    }
+    private fun requireReadable(entry: Entry, function: String) {
+        requireCurrent(entry)
+        check(entries.value.any { it.id == entry.id && it.enabled }) { "Module is disabled" }
+        require(function in entry.manifest.capabilities) { "Module capability is unavailable" }
+    }
     private suspend fun persist(entry: Entry) = withContext(Dispatchers.IO) {
         Files.createDirectories(root)
         val temporary = Files.createTempFile(root, ".module-", ".part")
@@ -142,15 +164,21 @@ internal class DesktopModules(private val root: Path, private val preferences: (
     }
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (preferences()?.get(ModulesEnabledKey, false) != true) return null
-        for (entry in entries.value.filter { it.enabled && it.manifest.providesAudio }) {
+        val direct = request.mediaId.takeIf { it.startsWith("module:") }?.split(':', limit = 3)
+            ?.takeIf { it.size == 3 && it[1].isNotBlank() && it[2].isNotBlank() }
+        for (entry in entries.value.filter { it.enabled && it.manifest.providesAudio && (direct == null || it.id == direct[1]) }) {
             val captured = generation.get()
             val settings = settings(entry)
-            val matches = runtime.search(entry.id, entry.source, entry.origin,
-                (listOf(request.target.title) + request.target.artists.take(1)).joinToString(" "), settings)
-            val best = TrackMatching.best(request.target, matches.map {
-                TrackMatching.Candidate(it.id, it.title, it.artists, it.album, it.durationSeconds?.times(1000L))
-            }) ?: continue
-            val track = matches.first { it.id == best.id }
+            val track = if (direct != null) ModuleTrack(direct[2], request.target.title, request.target.artists,
+                request.target.album, request.target.durationMs?.div(1000L)?.toInt(), null, request.isrc)
+            else {
+                val matches = runtime.search(entry.id, entry.source, entry.origin,
+                    (listOf(request.target.title) + request.target.artists.take(1)).joinToString(" "), settings)
+                val best = TrackMatching.best(request.target, matches.map {
+                    TrackMatching.Candidate(it.id, it.title, it.artists, it.album, it.durationSeconds?.times(1000L))
+                }) ?: continue
+                matches.first { it.id == best.id }
+            }
             val stream = runtime.stream(entry.id, entry.source, entry.origin, track.id, settings, track)
             if (entries.value.none { it.id == entry.id && it.enabled && it.source == entry.source }) return null
             // Header-bearing progressive streams are already supported by the ordinary host route.
