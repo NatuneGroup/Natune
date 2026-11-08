@@ -516,3 +516,9 @@ transform plus an iOS-inapplicable QuickJS import. The transform is now generate
 from the original Android pure-Kotlin pipeline/leaves, changing only the package and JVM rotate
 intrinsics. No duplicate generated algorithm is committed. The QuickJS import was removed; new
 code remains unverified until a subsequent CI compile succeeds.
+
+The song menu now mounts the shared provider-canvas source picker. A selected bounded download
+is saved through the existing versioned custom-canvas repository and its validation/commit path.
+Local imported audio now shares its real app-container file through the system activity sheet.
+Provider source/network preferences still gate canvas requests. No live canvas/share-sheet or
+new-source Apple compilation evidence is claimed.

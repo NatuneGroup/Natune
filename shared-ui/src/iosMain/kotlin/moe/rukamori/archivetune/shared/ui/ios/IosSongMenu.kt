@@ -1,4 +1,8 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
+
+import platform.UIKit.popoverPresentationController
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -226,7 +230,7 @@ internal fun IosSongMenu(
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
 ) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val songHost = remember { IosSongMenuHost(menu, graph, host, openRoute, sleepSheet) }
     val editablePlaylists by remember {
         graph.libraryContent.playlistRows().map { rows -> rows.filter { it.editable }.map { it.item } }
@@ -340,6 +344,9 @@ internal fun IosSongMenu(
         })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
+        if (ref.kind == ContentKind.SONG) add(OverflowAction("save_canvas", Res.string.m6_save_canvas) {
+            menu.canvasSaveTarget = occurrence.item; menu.dismiss()
+        })
         add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
         val lyricDocument = graph.lyrics.current.value
         val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
@@ -375,7 +382,7 @@ internal fun IosSongMenu(
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
 internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val ref = occurrence.item.ref
     val actions = buildList<OverflowAction> {
         when (ref.kind) {
@@ -407,7 +414,8 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         addAll(listOf("lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
-        if (!facts.isLocal) add("share")
+        add("share")
+        if (ref.kind == ContentKind.SONG) add("save_canvas")
         // Library add and remove both commit through the repository now.
         if (!facts.isLocal) add("library")
         // A speed-dial pin holds a YouTube song id; other providers keep the row's unavailable answer.
@@ -448,10 +456,15 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         add("remove_playlist")
     }
 
-internal fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
+internal fun iosMenuSharing(state: IosItemMenuState, host: IosHost, graph: IosSessionGraph? = null): MenuSharing = object : MenuSharing {
     override suspend fun shareLink(url: String) = withContext(Dispatchers.Main) { iosShareText(host, url) }
     override suspend fun copyLink(url: String) = withContext(Dispatchers.Main) { copyToIosClipboard(url) }
-    override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = state.unavailable()
+    override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = withContext(Dispatchers.Main) {
+        val path = graph?.localMedia?.pathOf(mediaId) ?: state.unavailable()
+        val sheet = platform.UIKit.UIActivityViewController(listOf(platform.Foundation.NSURL.fileURLWithPath(path)), null)
+        sheet.popoverPresentationController?.sourceView = host.viewController.view
+        host.viewController.presentViewController(sheet, true, null)
+    }
 
     /**
      * The t.me link of the channel message a Telegram track id names, resolved by the signed-in client the
