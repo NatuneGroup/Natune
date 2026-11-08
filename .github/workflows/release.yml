@@ -13,6 +13,9 @@ concurrency:
   group: natune-stable-${{ github.sha }}
   cancel-in-progress: false
 
+env:
+  DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+
 jobs:
   prepare:
     name: Select stable release version
