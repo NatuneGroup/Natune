@@ -65,8 +65,10 @@ YouTube Music/subtitle implementations through generated sources. The desktop ly
 pane mounts editing plus shared AI translate/romanize/cancel/undo actions, and shared
 LyricsTranslationPersistence commits successful automatic/manual translations through
 the same revision-checked store, refreshing the displayed document. Saved lyrics are
-also available to offline export. Account Apple/TIDAL/Deezer, experimental Musixmatch
-and module lyrics still need their host providers. Ordinary non-AI translation is not
+also available to offline export. Account Apple/TIDAL/Deezer now use small additive lyric methods on the existing
+shared repositories, preserving their catalog matches and authorization. TIDAL/Deezer
+can use the existing pooled leases; experimental Musixmatch reuses its pure-JVM
+module and remains opt-in. Compatible module lyrics are also wired. Ordinary non-AI translation is not
 mounted. Persistence, generated adapters and AI rendering remain CI/runtime unverified.
 
 ## Pitch and silence
