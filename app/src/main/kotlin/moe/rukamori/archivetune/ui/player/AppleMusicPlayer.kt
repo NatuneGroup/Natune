@@ -151,6 +151,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
+import moe.rukamori.archivetune.ui.component.LyricsAlternate
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.constants.LyricsMode
@@ -1960,7 +1961,7 @@ private fun AppleMusicInlineLyrics(
                 modifier = modifier,
             )
         LyricsMode.SPOTIFY ->
-            LyricsEnhanced(
+            LyricsAlternate(
                 sliderPositionProvider = sliderPositionProvider,
                 lyricsSyncOffset = lyricsSyncOffset,
                 modifier = modifier,
