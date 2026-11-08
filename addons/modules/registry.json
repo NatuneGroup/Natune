@@ -10,7 +10,7 @@
       "author": "Natune contributors",
       "description": "Uses Deezer public recording metadata to query the same recording on your authorized Amazon instance, via v2 then v1.5. Requires actual response recording metadata and plaintext audio. Challenge solving, encrypted CENC audio and queued jobs require native playback.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/amazon.arch",
-      "sha256": "0d061133e79062bb31f15a167d2ada7b2efc1b88a2ebe670b6deb28f61df1b8f",
+      "sha256": "8e35953c47420159f6566a3a9b4159a67015d7eedae0aae97cda149734ec92b0",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -26,7 +26,7 @@
       "author": "Natune contributors",
       "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/archivepool.arch",
-      "sha256": "fa3419c140a461e92e158d6881522516d18396849737d0248b00f6f3ed1724f9",
+      "sha256": "8118b06c6785dcdae8a0ffd46b4fcf1e4abd6e7835e00df2fb7c927009e05fa4",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -42,7 +42,7 @@
       "author": "Natune contributors",
       "description": "Deezer public catalog matched against a user-configured plaintext instance. Probes FLAC/MP3 bytes; never returns public previews. Direct ARL encrypted streams require Natune native playback and are not part of API v1.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/deezer.arch",
-      "sha256": "d14d04e581d8180be746c0d289f6aa14eece9618165aab258e957367982392b8",
+      "sha256": "b3972e9dc938213712949f4ddeecad8c4935547517e7de355d6262858fc4dc34",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -58,7 +58,7 @@
       "author": "morieattonkatsu",
       "description": "Plays songs from the JioSaavn catalog using the public JioSaavn web player API. Streams are AAC in MP4, at up to 320 kbps when JioSaavn offers that encoding for the track, otherwise 96 kbps. No account is required. Catalog coverage is strongest for Indian music.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/jiosaavn.arch",
-      "sha256": "745f122d761b8dcf117d885f246a28f8ee4274a70edbdf64651de9b59161f55a",
+      "sha256": "5ac78645cc8a101af6d627ba4ca4df06945bc1cf007f5712faaa4b3e3e786144",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -76,7 +76,7 @@
       "author": "morieattonkatsu; Natune contributors",
       "description": "Qobuz audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/qobuz.arch",
-      "sha256": "f1c15abbf8efe994bc262a4bf64decc389f82ee0e1c432bbe429ea5233138437",
+      "sha256": "26cd9151c1f90fbd4c5d5c208109f66c7de19b158c77457ee7fe990d237080be",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -97,7 +97,7 @@
       "author": "Natune contributors",
       "description": "Uses QQ desktop search and your personal entitled Vkey account. Accepts plaintext FLAC, MP3 and unencrypted HLS. Encrypted QMC/eKey resources are refused; native Natune supports them separately.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/qq.arch",
-      "sha256": "f700ea51c1aa738287257953be5894b3a894fe39af414557ee9fdef12696eee6",
+      "sha256": "79f18b5132d2d1df4ffe1d54a3fadab8ec18b9304a0e69a04b2f7b7933704284",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
@@ -113,7 +113,7 @@
       "author": "morieattonkatsu; Natune contributors",
       "description": "TIDAL audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
       "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/tidal.arch",
-      "sha256": "8d709b607fc61ffe32b17bd08b1bda0034e398f3e3f0f51d988ae6ad890689e5",
+      "sha256": "fdc2185e31a82a4dd8592351f13452686d9a626ef8e1f6ada71c2d13c48e553e",
       "capabilities": [
         "searchTracks",
         "getTrackStreamUrl"
