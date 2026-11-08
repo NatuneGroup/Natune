@@ -94,6 +94,9 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -274,6 +277,9 @@ jobs:
           cache-read-only: true
           cache-cleanup: on-success
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Run Kotlin formatting and structural analysis
         env:
           BASE_SHA: ${{ steps.quality-base.outputs.base }}
@@ -321,6 +327,9 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
+
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -886,6 +895,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-cleanup: on-success
+
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
