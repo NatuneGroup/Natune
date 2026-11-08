@@ -7,6 +7,8 @@ import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
+import moe.rukamori.archivetune.shared.data.platform.ios.applyIosProxyRoute
+import moe.rukamori.archivetune.shared.domain.settings.proxyRoute
 import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.*
@@ -43,7 +45,13 @@ class IosModulesRepository(
     private val preferences: () -> PreferenceSnapshot?,
 ) : AudioProviderRepository {
     override val source = AudioSourceType.MODULES
-    private val http = HttpClient(Darwin) { followRedirects = false; expectSuccess = false }
+    private val http = HttpClient(Darwin) {
+        followRedirects = false; expectSuccess = false
+        engine {
+            configureSession { HTTPCookieStorage = null; HTTPShouldSetCookies = false; URLCredentialStorage = null }
+            applyIosProxyRoute(preferences()?.proxyRoute())
+        }
+    }
     private val lock = Mutex()
     private val manager = NSFileManager.defaultManager
     private val issues = MutableStateFlow<Map<String, IosModuleIssue>>(emptyMap())
