@@ -380,7 +380,7 @@ class DesktopPlaybackPort(
         if (!closed.compareAndSet(false, true)) return
         nextPoll?.cancel(false)
         val teardown = executor.submit(Runnable {
-            mixer?.close()
+            output.close(mixer)
             mixer = null
             sessions.fill(null)
         })
@@ -851,7 +851,7 @@ class DesktopPlaybackPort(
         failureMappers[index].stopped(nowNanos)
         stallWatchdogs[index].reset()
         lastTimelineFrames = NO_TIMELINE
-        mix.close()
+        output.close(mix)
         mixer = null
         outputSuspendedFlow.value = true
     }
@@ -929,7 +929,7 @@ class DesktopPlaybackPort(
         val positionUs = state.positionUs.coerceAtLeast(0L)
         val playWhenReady = state.playWhenReady
         cancelArmed(mix)
-        mix.close()
+        output.close(mix)
         mixer = null
         lastTimelineFrames = NO_TIMELINE
         // The decks died with their mixer; only the bookkeeping remains, so no deck is stopped here.
