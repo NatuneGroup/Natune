@@ -167,6 +167,63 @@ static int clear_exception(JNIEnv *env) {
     return 0;
 }
 
+typedef struct jni_pcm_processor {
+    JavaVM *vm;
+    jobject host;
+    jmethodID process;
+    jfloatArray buffer;
+    uint32_t capacity;
+} jni_pcm_processor;
+
+static int pcm_process(void *opaque, float *samples, uint32_t frames, uint32_t rate,
+                       uint64_t epoch, double gain, double peak) {
+    jni_pcm_processor *p = opaque;
+    JNIEnv *env = lease_env(p->vm);
+    if (!env || frames > INT32_MAX / AE_RENDER_CHANNELS) return -1;
+    uint32_t count = frames * AE_RENDER_CHANNELS;
+    if (count > p->capacity) {
+        jfloatArray local = (*env)->NewFloatArray(env, (jsize)count);
+        if (!local || clear_exception(env)) return -1;
+        if (p->buffer) (*env)->DeleteGlobalRef(env, p->buffer);
+        p->buffer = (*env)->NewGlobalRef(env, local);
+        (*env)->DeleteLocalRef(env, local);
+        if (!p->buffer || clear_exception(env)) return -1;
+        p->capacity = count;
+    }
+    (*env)->SetFloatArrayRegion(env, p->buffer, 0, (jsize)count, samples);
+    if (clear_exception(env)) return -1;
+    (*env)->CallVoidMethod(env, p->host, p->process, p->buffer, (jint)frames, (jint)rate,
+                           (jlong)epoch, (jdouble)gain, (jdouble)peak);
+    if (clear_exception(env)) return -1;
+    (*env)->GetFloatArrayRegion(env, p->buffer, 0, (jsize)count, samples);
+    return clear_exception(env) ? -1 : 0;
+}
+static void pcm_close(void *opaque) {
+    jni_pcm_processor *p = opaque;
+    JNIEnv *env = lease_env(p->vm);
+    if (env) {
+        if (p->buffer) (*env)->DeleteGlobalRef(env, p->buffer);
+        (*env)->DeleteGlobalRef(env, p->host);
+    }
+    free(p);
+}
+JNIEXPORT jint JNICALL BINDING(setPcmProcessor)(JNIEnv *env, jclass type, jlong handle, jobject host) {
+    (void)type;
+    if (!host) return -1;
+    jni_pcm_processor *p = calloc(1, sizeof *p);
+    if (!p) return -1;
+    (*env)->GetJavaVM(env, &p->vm);
+    p->host = (*env)->NewGlobalRef(env, host);
+    jclass cls = (*env)->GetObjectClass(env, host);
+    p->process = (*env)->GetMethodID(env, cls, "process", "([FIIJDD)V");
+    (*env)->DeleteLocalRef(env, cls);
+    if (clear_exception(env) || !p->host || !p->process) { pcm_close(p); return -1; }
+    ae_pcm_processor processor = {p, pcm_process, pcm_close};
+    int result = ae_engine_set_pcm_processor(engine_of(handle), &processor);
+    if (result != 0) pcm_close(p);
+    return result;
+}
+
 static int32_t lease_open(void *opaque, int64_t *size, int32_t *seekable) {
     jni_lease *lease = opaque;
     JNIEnv *env = lease_env(lease->vm);

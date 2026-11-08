@@ -123,8 +123,8 @@ class DesktopPlaybackPort(
     /** Confined to [executor]. The listener's output volume, applied on top of each deck's normalization gain. */
     private var outputVolume = 1f
 
-    /** Confined to [executor]. The user preamp of the stored DSP document, as the shared [DspSettings.preampGain]. */
-    private var preampGain = 1f
+    /** Confined to [executor]. The complete shared DSP document. */
+    private var dspSettings = DspSettings()
 
     /** Confined to [executor]. The host output mute: silence applied as gain zero on every live deck. */
     private var outputEnabled = true
@@ -299,7 +299,7 @@ class DesktopPlaybackPort(
             "the equalizer has ${settings.equalizerBands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
         }
         submitTask {
-            preampGain = settings.preampGain
+            dspSettings = settings
             stages = stages.copy(
                 request = stages.request.copy(
                     normalizationEnabled = settings.normalizationEnabled,
@@ -430,7 +430,7 @@ class DesktopPlaybackPort(
                 applyStages()
             }
             is PlaybackCommand.SetPitch -> {
-                stages = stages.copy(request = stages.request.copy(pitchSemitones = 12.0 * kotlin.math.log2(command.pitch.toDouble())))
+                stages = stages.copy(request = stages.request.copy(pitchSemitones = (12.0 * kotlin.math.log2(command.pitch.toDouble())).coerceIn(-24.0, 24.0)))
                 applyStages()
             }
             PlaybackCommand.Stop -> {
@@ -641,7 +641,7 @@ class DesktopPlaybackPort(
         // the port would keep a handoff armed that can never commit, and refuse every later one.
         if (plan.bypass) cancelArmed(mix)
         mix.setBypass(plan.bypass)
-        mix.setEqualizer(equalizerCoefficients(mix.sampleRateHz, if (plan.equalizer) stages.bands else emptyList()))
+        mix.setEqualizer(doubleArrayOf())
         for (index in 0 until DECK_COUNT) {
             if (sessions[index] != null) applySession(mix, index, plan)
         }
@@ -649,6 +649,8 @@ class DesktopPlaybackPort(
 
     private fun applySession(mix: NativeTwoDeckMixer, index: Int, plan: SoftwareStagePlan) {
         val session = sessions[index] ?: return
+        mix.deck(index).configurePcm(dspSettings.copy(equalizerBands = stages.bands,
+            linearGain = NormalizationGain.linearGain(session.trackGainDb, session.trackPeak)), plan)
         mix.setDeckGain(index, gainFor(plan, session.trackGainDb, session.trackPeak))
         mix.deck(index).setSpeed(desktopEffectiveSpeed(plan, stages.request))
         mix.deck(index).setPitch(if (plan.tempoPitch) stages.request.pitchSemitones.toFloat() else 0f)
@@ -659,8 +661,7 @@ class DesktopPlaybackPort(
     private fun currentPlan(): SoftwareStagePlan = desktopStagePlan(stages)
 
     private fun gainFor(plan: SoftwareStagePlan, trackGainDb: Double?, trackPeak: Double?): Float =
-        outputVolume * (if (outputEnabled) 1f else 0f) * preampGain *
-            if (plan.normalization) NormalizationGain.linearGain(trackGainDb, trackPeak) else 1f
+        outputVolume * (if (outputEnabled) 1f else 0f)
 
     private fun activeIndex(): Int = scheduler.activeDeck.ordinal
 

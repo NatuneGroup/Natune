@@ -77,3 +77,13 @@ pitch control is enabled. Silence skipping consumes sustained PCM below -50 dB
 after 150 ms, advancing the source clock for skipped frames and preserving the
 existing ring/segment bookkeeping. The shared stage plan gates both features.
 These native changes require CI and audible playback/seek/crossfade validation.
+
+The desktop decoder now feeds stereo float PCM into the existing shared DspGraph
+on its producer thread, before the native ring/mixer. The shared EQ/preamp, clarity,
+DC blocker, limiter and dither run once; FFmpeg retains tempo/pitch and the native
+mixer retains output volume/transitions. JNI holds reusable block buffers and frees
+them after joining the decoder. Load/seek generations reset shared DSP history.
+Normalization consumes reported ReplayGain/peak tags, with a bounded five-second
+PCM-head RMS/peak fallback (-18 dB RMS, gain capped to -12/+6 dB). Silent/inconclusive
+heads stay at unity; this is not whole-track loudness analysis. All DSP/pitch/native
+changes remain uncompiled and audibly unverified pending CI/runtime testing.
