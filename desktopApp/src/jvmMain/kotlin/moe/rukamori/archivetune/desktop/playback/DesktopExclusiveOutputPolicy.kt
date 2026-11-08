@@ -41,9 +41,11 @@ internal object DesktopExclusiveOutputPolicy {
     fun decision(state: DesktopOutputState): BitPerfectDecision {
         val known = state.inputRateHz > 0 && state.inputBits > 0 && state.inputChannels > 0 &&
             state.inputFormat != DesktopPcmFormat.UNKNOWN
+        val exactFormat = state.outputFormat == state.inputFormat ||
+            (state.inputFormat in setOf(DesktopPcmFormat.S16, DesktopPcmFormat.S24) && state.outputFormat == DesktopPcmFormat.S32)
         val exact = known && state.directPcm && state.exclusiveActive &&
             state.outputRateHz == state.inputRateHz && state.outputChannels == state.inputChannels &&
-            state.outputFormat == state.inputFormat && state.outputBits >= state.inputBits
+            exactFormat && state.outputBits >= state.inputBits
         return BitPerfectGate.evaluate(BitPerfectRouteFacts(
             bitPerfectRequested = state.requested,
             // The native direct lane cannot invoke DSP or software gain. Stored edits resume in shared mode.

@@ -10,7 +10,7 @@ static uint32_t pcm_bytes(uint32_t format) {
 static ae_pcm_format decoded_format(int format, int rate, int channels, int bits) {
     int packed = av_get_packed_sample_fmt(format);
     uint32_t type = packed == AV_SAMPLE_FMT_U8 ? AE_PCM_U8 : packed == AV_SAMPLE_FMT_S16 ? AE_PCM_S16 :
-        packed == AV_SAMPLE_FMT_S32 ? AE_PCM_S32 : packed == AV_SAMPLE_FMT_FLT ? AE_PCM_F32 : AE_PCM_UNKNOWN;
+        packed == AV_SAMPLE_FMT_S32 ? (bits == 24 ? AE_PCM_S24 : AE_PCM_S32) : packed == AV_SAMPLE_FMT_FLT ? AE_PCM_F32 : AE_PCM_UNKNOWN;
     uint32_t width = pcm_bytes(type) * 8u;
     return (ae_pcm_format){rate > 0 ? (uint32_t)rate : 0, channels > 0 ? (uint32_t)channels : 0, type,
         bits > 0 && (uint32_t)bits <= width ? (uint32_t)bits : width};
@@ -46,10 +46,16 @@ int ae_engine_pending_output(ae_engine *e, ae_pcm_format *format) {
     return pending;
 }
 
-int ae_engine_configure_output(ae_engine *e, int direct) {
+int ae_engine_configure_output(ae_engine *e, int direct, const ae_pcm_format *transport) {
     pthread_mutex_lock(&e->mutex);
     if (!e->format_pending) { pthread_mutex_unlock(&e->mutex); return 0; }
     ae_pcm_format pcm = direct ? e->input_pcm : (ae_pcm_format){e->shared_rate, 2, AE_PCM_F32, 32};
+    if (direct && transport) {
+        int widening = (e->input_pcm.format == AE_PCM_S16 || e->input_pcm.format == AE_PCM_S24) && transport->format == AE_PCM_S32;
+        if (transport->rate != pcm.rate || transport->channels != pcm.channels ||
+            (transport->format != pcm.format && !widening)) { pthread_mutex_unlock(&e->mutex); return 0; }
+        pcm = *transport;
+    }
     uint32_t stride = pcm_bytes(pcm.format) * pcm.channels;
     if (!stride || pcm.rate < 8000 || pcm.rate > 384000 || pcm.channels > 8) {
         pthread_mutex_unlock(&e->mutex); return 0;
@@ -104,6 +110,9 @@ static int prepare_direct_output(ae_engine *e, ae_source *s, const ae_pcm_format
     s->graph_pitch = 0.0;
     int stale = e->shutdown || epoch != e->epoch;
     pthread_mutex_unlock(&e->mutex);
+    if (s->direct_pcm && s->graph) {
+        avfilter_graph_free(&s->graph); s->buffer_src = NULL; s->buffer_sink = NULL;
+    }
     return stale ? -1 : 0;
 }
 
@@ -122,7 +131,8 @@ static int drain_before_output_change(ae_engine *e, uint64_t epoch) {
 
 static int append_direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, uint32_t first_sample) {
     uint32_t frames = (uint32_t)s->frame->nb_samples;
-    uint32_t bytes = pcm_bytes(s->pcm.format), channels = s->pcm.channels;
+    uint32_t bytes = pcm_bytes(e->output_pcm.format), channels = s->pcm.channels;
+    uint32_t source_bytes = (uint32_t)av_get_bytes_per_sample(s->frame->format);
     int planar = av_sample_fmt_is_planar(s->frame->format);
     uint32_t done = first_sample;
     pthread_mutex_lock(&e->mutex);
@@ -140,9 +150,17 @@ static int append_direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, uint3
             uint32_t offset = (e->ring_head + e->ring_count + frame) % e->capacity;
             uint8_t *target = (uint8_t *)e->ring + (size_t)offset * channels * bytes;
             for (uint32_t channel = 0; channel < channels; channel++) {
-                const uint8_t *source = planar ? s->frame->extended_data[channel] + (size_t)(done + frame) * bytes :
-                    s->frame->extended_data[0] + ((size_t)(done + frame) * channels + channel) * bytes;
-                memcpy(target + (size_t)channel * bytes, source, bytes);
+                const uint8_t *source = planar ? s->frame->extended_data[channel] + (size_t)(done + frame) * source_bytes :
+                    s->frame->extended_data[0] + ((size_t)(done + frame) * channels + channel) * source_bytes;
+                uint8_t *sample = target + (size_t)channel * bytes;
+                if (e->output_pcm.format == AE_PCM_S24) {
+                    uint32_t value; memcpy(&value, source, 4); value >>= 8;
+                    sample[0] = (uint8_t)value; sample[1] = (uint8_t)(value >> 8); sample[2] = (uint8_t)(value >> 16);
+                } else if (s->pcm.format == AE_PCM_S16 && e->output_pcm.format == AE_PCM_S32) {
+                    int16_t value; memcpy(&value, source, 2);
+                    uint32_t widened = (uint32_t)(int32_t)value << 16;
+                    memcpy(sample, &widened, 4);
+                } else memcpy(sample, source, bytes);
             }
         }
         e->ring_count += count; done += count;
@@ -152,21 +170,44 @@ static int append_direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, uint3
     return 0;
 }
 
-static int direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, char *message, size_t len) {
+static int synchronize_frame_output(ae_engine *e, ae_source *s, uint64_t epoch, char *message, size_t len) {
     ae_pcm_format format = decoded_format(s->frame->format, s->frame->sample_rate > 0 ? s->frame->sample_rate : s->decoder->sample_rate,
         s->frame->ch_layout.nb_channels > 0 ? s->frame->ch_layout.nb_channels : s->decoder->ch_layout.nb_channels,
         s->decoder->bits_per_raw_sample);
-    if (format.rate != s->pcm.rate || format.channels != s->pcm.channels || format.format != s->pcm.format) {
+    if (format.format == AE_PCM_S24) {
+        int planar = av_sample_fmt_is_planar(s->frame->format);
+        for (int frame = 0; !s->precision_unreliable && frame < s->frame->nb_samples; frame++) {
+            for (uint32_t channel = 0; channel < format.channels; channel++) {
+                const uint8_t *sample = planar ? s->frame->extended_data[channel] + (size_t)frame * 4u :
+                    s->frame->extended_data[0] + ((size_t)frame * format.channels + channel) * 4u;
+                uint32_t value; memcpy(&value, sample, 4);
+                if (value & 0xffu) { s->precision_unreliable = 1; break; }
+            }
+        }
+        if (s->precision_unreliable) { format.format = AE_PCM_S32; format.bits = 32; }
+    }
+    if (format.rate != s->pcm.rate || format.channels != s->pcm.channels || format.format != s->pcm.format || format.bits != s->pcm.bits) {
+        pthread_mutex_lock(&e->mutex);
+        int requested = e->direct_requested;
+        if (epoch != e->epoch || e->shutdown) { pthread_mutex_unlock(&e->mutex); return 1; }
+        if (!requested) { e->input_pcm = format; s->pcm = format; }
+        pthread_mutex_unlock(&e->mutex);
+        if (!requested) return 0;
+        if (s->buffer_src && !s->direct_pcm) {
+            int status = av_buffersrc_add_frame(s->buffer_src, NULL);
+            if (status < 0 || drain_sink(e, s, epoch, message, len) < 0) return -1;
+        }
         int status = drain_before_output_change(e, epoch);
         if (status != 0) return status;
         if (prepare_direct_output(e, s, &format, epoch, message, len) < 0) return -1;
         pthread_mutex_lock(&e->mutex); e->ready = 1; e->filling = 1; pthread_mutex_unlock(&e->mutex);
-        if (!s->direct_pcm) {
-            if (build_graph(e, s, 1.0, s->trim_seconds, e->rate, message, len) < 0) return -1;
-            int result = av_buffersrc_add_frame_flags(s->buffer_src, s->frame, 0);
-            return result < 0 ? -1 : drain_sink(e, s, epoch, message, len);
-        }
+        if (!s->direct_pcm && build_graph(e, s, 1.0, s->trim_seconds, e->rate, message, len) < 0) return -1;
     }
+    return 0;
+}
+
+static int direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, char *message, size_t len) {
+    (void)message; (void)len;
     uint32_t first = 0;
     if (s->trim_seconds >= 0 && s->frame->pts != AV_NOPTS_VALUE) {
         int64_t start = av_rescale_q(s->frame->pts, s->time_base, (AVRational){1, (int)s->pcm.rate});

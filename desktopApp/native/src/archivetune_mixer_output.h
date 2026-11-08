@@ -96,9 +96,11 @@ void ae_mixer_output_tick(ae_mixer *m) {
         if (m->device) ae_device_state_read(m->device, &m->output_state.sink);
         return;
     }
+    int compatible = m->raw_pcm.format == format.format ||
+        ((format.format == AE_PCM_S16 || format.format == AE_PCM_S24) && m->raw_pcm.format == AE_PCM_S32);
     int same = m->raw_output && m->exclusive_requested && m->raw_pcm.rate == format.rate &&
-        m->raw_pcm.channels == format.channels && m->raw_pcm.format == format.format;
-    if (same && ae_engine_configure_output(engine, 1)) return;
+        m->raw_pcm.channels == format.channels && compatible && m->raw_pcm.bits >= format.bits;
+    if (same && ae_engine_configure_output(engine, 1, &m->raw_pcm)) return;
     close_output(m);
     m->output_state.input = format;
     char refusal[256] = {0};
@@ -106,7 +108,12 @@ void ae_mixer_output_tick(ae_mixer *m) {
         m->raw_pcm = format;
         ae_device_request request = {format, 1, m->backend == AE_BACKEND_NULL, m->device_id[0] ? m->device_id : NULL};
         m->device = ae_device_open_pcm(&request, raw_output_pull, m, refusal, sizeof refusal);
-        if (m->device && ae_engine_configure_output(engine, 1)) {
+        if (!m->device && (format.format == AE_PCM_S16 || format.format == AE_PCM_S24)) {
+            m->raw_pcm.format = AE_PCM_S32;
+            request.pcm = m->raw_pcm;
+            m->device = ae_device_open_pcm(&request, raw_output_pull, m, refusal, sizeof refusal);
+        }
+        if (m->device && ae_engine_configure_output(engine, 1, &m->raw_pcm)) {
             m->raw_output = 1;
             m->rate = format.rate;
             m->output_state.direct_pcm = 1;
@@ -119,7 +126,7 @@ void ae_mixer_output_tick(ae_mixer *m) {
     char error[256] = {0};
     m->device = open_shared_output(m, error, sizeof error);
     m->rate = m->shared_rate;
-    if (!ae_engine_configure_output(engine, 0)) snprintf(error, sizeof error, "Shared PCM buffers could not be configured");
+    if (!ae_engine_configure_output(engine, 0, NULL)) snprintf(error, sizeof error, "Shared PCM buffers could not be configured");
     if (m->device) ae_device_state_read(m->device, &m->output_state.sink);
     if (m->exclusive_requested) {
 #if defined(__linux__)
