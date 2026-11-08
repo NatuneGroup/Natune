@@ -40,11 +40,17 @@ enum class DesktopDestination(
         railLabel = Res.string.desktop_shell_rail_together,
     );
 
-    /** Reselecting the destination the rail already shows returns to its root, as clicking a selected tab does. */
+    /**
+     * A rail click is a top-level navigation, so it pops the destination's back stack to its root instead of restoring
+     * a detail page the user left. A `toRoot = false` call only reselects and bumps `reselection`, which leaves a
+     * playlist or search-result detail on screen (and made Library unresponsive after History/Statistics/Together had
+     * stacked routes). Re-clicking the current item therefore pops to its root too, like the desktop NavigationRail
+     * semantics.
+     */
     fun open(navigation: ShellNavigation) {
         when (this) {
-            Home -> navigation.select(ShellTab.Home, toRoot = false)
-            Library -> navigation.select(ShellTab.Library, toRoot = false)
+            Home -> navigation.select(ShellTab.Home, toRoot = true)
+            Library -> navigation.select(ShellTab.Library, toRoot = true)
             History -> openInLibraryStack(navigation, HISTORY_ROUTE)
             Statistics -> openInLibraryStack(navigation, STATISTICS_ROUTE)
             Together -> openInLibraryStack(navigation, TOGETHER_ROUTE)
@@ -52,8 +58,9 @@ enum class DesktopDestination(
     }
 
     private fun openInLibraryStack(navigation: ShellNavigation, route: String) {
-        // A library page the user opened stays one Back away, so the rail does not reset the whole stack.
-        navigation.select(ShellTab.Library, toRoot = false)
+        // Pop to the library root before opening the destination, so one Back returns to it and stacking successive
+        // rail destinations cannot bury the library behind several detail entries.
+        navigation.select(ShellTab.Library, toRoot = true)
         navigation.open(route)
     }
 }
