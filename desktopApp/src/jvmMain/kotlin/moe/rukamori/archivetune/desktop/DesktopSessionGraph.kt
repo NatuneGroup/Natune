@@ -183,6 +183,7 @@ class DesktopSessionGraph internal constructor(
     internal val storedSongIndex: moe.rukamori.archivetune.shared.data.persistence.StoredSongIndex,
     /** The on-disk download repository behind [downloads]: hashed files plus the stored-song index. */
     internal val downloadStore: moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository,
+    internal val songCache: DesktopSongCache,
     /** The `downloads` owner: transfers over the same ordered resolver and the same store. */
     internal val downloads: DesktopDownloadsOwner,
     /** The `local_songs` owner: the folder scan and its persisted filter/sort settings. */

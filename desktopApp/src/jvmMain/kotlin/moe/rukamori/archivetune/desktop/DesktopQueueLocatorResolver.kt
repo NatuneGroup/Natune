@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PreparedPlaintextHandle
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
 import moe.rukamori.archivetune.shared.domain.repository.QueueSourceRecovery
@@ -59,6 +60,7 @@ internal class DesktopQueueLocatorResolver(
      * downloaded song keeps playing offline, the way Android's DownloadUtil serves a stored file first.
      */
     private val storedFile: suspend (provider: String, mediaId: String) -> java.nio.file.Path? = { _, _ -> null },
+    private val cacheAudio: (ContentItem, PreparedAudio) -> Unit = { _, _ -> },
 ) : QueueLocatorResolver {
     /** Guards [issued] and [closed] together, so a view prepared during shutdown is released instead of leaked. */
     private val lock = Any()
@@ -104,13 +106,20 @@ internal class DesktopQueueLocatorResolver(
             // Anonymous progressive audio keeps its ordinary locator. A personal stream reads its cookies only
             // through the admitted route, so the engine never receives it as a bare remote URL.
             if (prepared is PreparedAudio.Progressive && !prepared.requiresAdmittedRoute()) {
+                cacheAudio(occurrence.item, prepared)
                 return prepared.stream.toPlaybackLocator()
             }
             when (prepared) {
-                is PreparedAudio.DeezerEncrypted -> return prepared.toPlaybackLocator()
+                is PreparedAudio.DeezerEncrypted -> {
+                    cacheAudio(occurrence.item, prepared)
+                    return prepared.toPlaybackLocator()
+                }
                 is PreparedAudio.Progressive, is PreparedAudio.Native, is PreparedAudio.TidalManifest ->
                     when (val outcome = port.prepareNative(prepared)) {
-                        is NativeRouteOutcome.Ready -> return remember(outcome.handle, prepared.source)
+                        is NativeRouteOutcome.Ready -> {
+                            cacheAudio(occurrence.item, prepared)
+                            return remember(outcome.handle, prepared.source)
+                        }
                         is NativeRouteOutcome.Refused -> refused = refused + prepared.source
                     }
             }
