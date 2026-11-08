@@ -22,7 +22,7 @@
 void ae_engine_direct_request(ae_engine *engine, int requested);
 void ae_engine_output_changed(ae_engine *engine);
 int ae_engine_pending_output(ae_engine *engine, ae_pcm_format *format);
-int ae_engine_configure_output(ae_engine *engine, int direct, const ae_pcm_format *transport);
+int ae_engine_configure_output(ae_engine *engine, int direct, const ae_pcm_format *transport, uint32_t drain_frames);
 void ae_engine_input_format(ae_engine *engine, ae_pcm_format *format);
 uint32_t ae_engine_pull_native(ae_engine *engine, void *out, uint32_t frames, const ae_pcm_format *format);
 

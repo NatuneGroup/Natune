@@ -46,7 +46,7 @@ int ae_engine_pending_output(ae_engine *e, ae_pcm_format *format) {
     return pending;
 }
 
-int ae_engine_configure_output(ae_engine *e, int direct, const ae_pcm_format *transport) {
+int ae_engine_configure_output(ae_engine *e, int direct, const ae_pcm_format *transport, uint32_t drain_frames) {
     pthread_mutex_lock(&e->mutex);
     if (!e->format_pending) { pthread_mutex_unlock(&e->mutex); return 0; }
     ae_pcm_format pcm = direct ? e->input_pcm : (ae_pcm_format){e->shared_rate, 2, AE_PCM_F32, 32};
@@ -77,6 +77,7 @@ int ae_engine_configure_output(ae_engine *e, int direct, const ae_pcm_format *tr
     e->rate = pcm.rate;
     e->output_pcm = pcm;
     e->direct_enabled = !!direct;
+    e->output_drain_frames = direct ? drain_frames : 0;
     e->format_pending = 0;
     pthread_cond_broadcast(&e->changed);
     pthread_mutex_unlock(&e->mutex);
@@ -119,7 +120,7 @@ static int prepare_direct_output(ae_engine *e, ae_source *s, const ae_pcm_format
 /* Drain the previous rate/format before reopening the device. A paused live stream waits until resume. */
 static int drain_before_output_change(ae_engine *e, uint64_t epoch) {
     pthread_mutex_lock(&e->mutex);
-    while (!e->shutdown && epoch == e->epoch && !e->pending_seek && e->ring_count > 0) {
+    while (!e->shutdown && epoch == e->epoch && !e->pending_seek && (e->ring_count > 0 || e->output_tail_frames > 0)) {
         struct timespec deadline; deadline_after(&deadline, INT64_C(20000000));
         wait_changed_locked(e, &deadline);
     }
@@ -223,6 +224,9 @@ uint32_t ae_engine_pull_native(ae_engine *e, void *out, uint32_t frames, const a
     memset(out, format->format == AE_PCM_U8 ? 128 : 0, (size_t)frames * stride);
     if (!e || pthread_mutex_trylock(&e->mutex) != 0) return 0;
     e->advancing = 0;
+    /* Each following callback lets previously submitted PCM leave the hardware queue. This also
+       runs during prebuffer starvation/pauses, when the device keeps consuming silence. */
+    e->output_tail_frames = e->output_tail_frames > frames ? e->output_tail_frames - frames : 0;
     if (!e->direct_enabled || e->output_pcm.format != format->format || e->output_pcm.channels != format->channels ||
         e->output_pcm.rate != format->rate || !e->has_source || e->failed || !e->play_intent || !e->ready || e->ended ||
         (e->filling && e->ring_count < e->prebuffer && !e->eof)) {
@@ -245,7 +249,8 @@ uint32_t ae_engine_pull_native(ae_engine *e, void *out, uint32_t frames, const a
     }
     if (taken < frames && !e->eof) { e->filling = 1; e->buffering = 1; }
     e->advancing = taken > 0;
-    if (e->eof && !e->ring_count) e->ended = 1;
+    if (taken && e->output_drain_frames) e->output_tail_frames = (uint64_t)e->output_drain_frames + frames;
+    if (e->eof && !e->ring_count && !e->output_tail_frames) e->ended = 1;
     pthread_mutex_unlock(&e->mutex);
     return taken;
 }

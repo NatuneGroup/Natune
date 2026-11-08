@@ -292,6 +292,18 @@ void ae_device_close(ae_device *d) {
     free(d);
 }
 
+uint32_t ae_device_buffer_frames(ae_device *d) {
+    if (!d) return 0;
+    uint64_t frames = (uint64_t)d->device.playback.internalPeriodSizeInFrames * d->device.playback.internalPeriods;
+#if defined(_WIN32)
+    if (d->device.pContext->backend == ma_backend_wasapi && d->device.wasapi.actualBufferSizeInFramesPlayback > frames)
+        frames = d->device.wasapi.actualBufferSizeInFramesPlayback;
+#endif
+    /* Missing backend period metadata gets a conservative 200 ms tail, rather than immediate uninit. */
+    if (!frames) frames = d->device.playback.internalSampleRate / 5u;
+    return frames > UINT32_MAX ? UINT32_MAX : (uint32_t)frames;
+}
+
 /* A probe renders silence; it only asks the platform whether a device can be opened and started at all. */
 static void silence_pull(void *user, float *out, uint32_t frames) {
     (void)user;
