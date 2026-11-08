@@ -632,3 +632,19 @@ lyrics header/footer. The shared shell omits its bar/compact/rail controls and f
 recording gate while the expanded player covers it, rather than retaining invisible
 bottom controls. This builds on merged dev `2e31eb2c`; the Android reference files
 remain unchanged. The shared changes also apply to portable hosts using that sheet.
+
+
+### Merged Android #88: shared module preferences
+
+The iOS module manager now uses a commonMain grouped detail screen with provider
+activation, connection/account fields, a separate quality group, earlier/later
+priority controls and collapsible package information. Text and quality choices
+open individual dialogs, and secret summaries never show their values. Configuration
+and per-provider activation use separate Keychain entries. A bounded atomic manager
+order file drives the real resolver order within the Modules source and survives
+restarts; removal clears the provider's manager credential as well as its settings.
+The API-v1 quality parser now understands scalar option `id` values used by the
+merged TIDAL/Qobuz packages, and normalized metadata can be validated again when
+listed. Automatic account authorization and module-specific Playback Pool/account
+lanes remain explicitly unavailable; declared package connection modes and personal
+credentials still work. Android and desktop source sets were not edited.
