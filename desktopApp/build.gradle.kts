@@ -91,6 +91,16 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         filter { line: String -> line.replace("import timber.log.Timber",
             "import moe.rukamori.archivetune.desktop.DesktopTagLog as Timber") }
     }
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/lyrics")) {
+        include("YouTubeLyricsProvider.kt", "YouTubeSubtitleLyricsProvider.kt")
+        filter { line: String ->
+            when {
+                line == "import android.content.Context" || line.contains("override fun isEnabled(context:") -> ""
+                line.startsWith("package ") -> line + "\n\nimport moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider"
+                else -> line.replace("duration: Int,", "durationSec: Int, isrc: String?,").replace("album, duration)", "album, durationSec)")
+            }
+        }
+    }
     into(desktopPlayPlaySources)
 }
 kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
