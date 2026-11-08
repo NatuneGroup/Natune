@@ -681,8 +681,7 @@ internal fun DesktopPlayerMenuDialog(
         radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = true,
         equalizerSupported = true,
-        // The engine graph has no pitch stage, so the dialog hides the control instead of publishing a no-op value.
-        pitchSupported = false,
+        pitchSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
         tempoPitchPresets = parseTempoPitchPresets(snapshot?.get(TempoPitchPresetsJsonKey)),
         tempoPitchRemembered = snapshot?.get(TempoPitchRememberedKey) ?: false,

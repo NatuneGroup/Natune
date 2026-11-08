@@ -48,6 +48,8 @@ internal class NativePlaybackEngine private constructor(
     fun seek(positionUs: Long) = PlaybackEngineNative.seek(handle, positionUs)
 
     fun setSpeed(speed: Float) = PlaybackEngineNative.setSpeed(handle, speed)
+    fun setPitch(semitones: Float) = PlaybackEngineNative.setPitch(handle, semitones)
+    fun setSkipSilence(enabled: Boolean) = PlaybackEngineNative.setSkipSilence(handle, enabled)
 
     fun stop() = PlaybackEngineNative.stop(handle)
 

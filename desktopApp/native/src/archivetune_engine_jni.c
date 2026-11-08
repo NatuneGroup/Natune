@@ -340,6 +340,15 @@ JNIEXPORT void JNICALL BINDING(setSpeed)(JNIEnv *env, jclass type, jlong handle,
     ae_engine_set_speed(engine_of(handle), (float)speed);
 }
 
+JNIEXPORT void JNICALL BINDING(setPitch)(JNIEnv *env, jclass type, jlong handle, jfloat semitones) {
+    (void)env; (void)type;
+    ae_engine_set_pitch(engine_of(handle), semitones);
+}
+JNIEXPORT void JNICALL BINDING(setSkipSilence)(JNIEnv *env, jclass type, jlong handle, jboolean enabled) {
+    (void)env; (void)type;
+    ae_engine_set_skip_silence(engine_of(handle), enabled ? 1 : 0);
+}
+
 JNIEXPORT void JNICALL BINDING(stop)(JNIEnv *env, jclass type, jlong handle) {
     (void)env;
     (void)type;

@@ -42,6 +42,8 @@ internal object PlaybackEngineNative {
     @JvmStatic external fun seek(handle: Long, positionUs: Long)
 
     @JvmStatic external fun setSpeed(handle: Long, speed: Float)
+    @JvmStatic external fun setPitch(handle: Long, semitones: Float)
+    @JvmStatic external fun setSkipSilence(handle: Long, enabled: Boolean)
 
     @JvmStatic external fun stop(handle: Long)
 
