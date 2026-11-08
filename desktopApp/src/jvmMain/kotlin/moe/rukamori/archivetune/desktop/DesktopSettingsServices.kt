@@ -320,8 +320,7 @@ internal class DesktopSettingsServices(
     suspend fun refreshPool(): SourcePoolRefreshOutcome = withContext(Dispatchers.IO) {
         runCatching {
             if (!graph.playbackPool.configured) return@withContext SourcePoolRefreshOutcome.FAILED
-            val accounts = graph.playbackPool.tidalAccounts()
-            if (accounts.isEmpty()) SourcePoolRefreshOutcome.FAILED else SourcePoolRefreshOutcome.REFRESHED
+            if (graph.playbackPool.refresh(force = true)) SourcePoolRefreshOutcome.REFRESHED else SourcePoolRefreshOutcome.FAILED
         }.getOrDefault(SourcePoolRefreshOutcome.FAILED)
     }
 

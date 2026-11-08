@@ -190,3 +190,14 @@ Changed or disabled installations invalidate in-flight responses. Arbitrary JSON
 and session fields are not rendered. Pagination and provider-specific catalog
 schemas beyond the supported containers remain partial; live providers are
 unverified. This addition changes desktop JVM sources only.
+
+## Broader Playback Pool
+
+Desktop retains encrypted Apple media-user-token and usable Amazon instance entries
+in the existing isolated vault feed cache, with the existing toggle, throttle,
+backoff and replacement handling. Apple lyrics can use a pooled token; Amazon
+tries personal instances first, then pooled hosts with host-bound operator/JWT
+material and revocable admissions. The shared Amazon JWT safety policy is reused.
+Account-only Amazon entries still cannot stream on this host; Spotify pool
+credentials are not mounted into its separately admitted streaming account.
+Provider playback and refreshed pool entries remain unverified.

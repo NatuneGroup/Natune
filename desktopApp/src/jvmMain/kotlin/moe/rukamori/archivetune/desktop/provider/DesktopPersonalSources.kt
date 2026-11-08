@@ -65,19 +65,19 @@ internal class DesktopAmazonSource(
     private val http: HttpClient,
     private val preferences: () -> PreferenceSnapshot?,
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val pool: DesktopPlaybackPool? = null,
+    private val admissions: DesktopSourceAdmissions? = null,
 ) : AudioProviderRepository {
     override val source = AudioSourceType.AMAZON
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val bases = preferences()?.amazonInstanceList().orEmpty()
-        val authorization = desktopAmazonAuthorization(preferences(), nowMs())
-        if (bases.isEmpty() || authorization == null) {
-            throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
-        }
+        val personalAuthorization = desktopAmazonAuthorization(preferences(), nowMs())
         // Sent as the Origin the sitekey is locked to; a build that names none sends no Origin header, as Android does.
         val turnstileOrigin = DesktopCredentials.amazonTurnstileOrigin
         var failure: Exception? = null
-        for ((index, base) in bases.withIndex()) {
+        for ((index, base) in (if (personalAuthorization == null) emptyList() else bases).withIndex()) {
+            val authorization = requireNotNull(personalAuthorization)
             // A JWT is issued by the first instance's authorization flow and never sent to another host.
             val jwt = authorization.jwt.takeIf { index == 0 }
             if (authorization.operator == null && jwt == null) continue
@@ -103,6 +103,23 @@ internal class DesktopAmazonSource(
             } catch (error: Exception) {
                 failure = error
             }
+        }
+        val pooled = pool?.amazonAccounts().orEmpty()
+        for (account in pooled) {
+            val owner = requireNotNull(pool)
+            val jwt = account.jwt?.takeIf { moe.rukamori.archivetune.shared.data.provider.AmazonInstances.isJwtUsable(account.expiry, nowMs()) }
+            if (account.operator == null && jwt == null) continue
+            val lease = admissions?.accept(moe.rukamori.archivetune.shared.domain.platform.ProviderIdentity("amazon",
+                CredentialScope.PLAYBACK_POOL, "pool:${account.id ?: account.baseUrl.hashCode()}"), account) { owner.amazonActive(account) }
+                ?: continue
+            val access = AmazonInstanceAccess(lease.scope, account.operator, jwt, account.expiry, isActive = { owner.amazonActive(account) })
+            try {
+                KtorAmazonRepository(http, account.baseUrl, access, nowMs, turnstileOrigin = turnstileOrigin).resolve(request)?.let {
+                    owner.noteSuccess(DesktopPlaybackPool.AMAZON, account.id)
+                    return it
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { owner.noteFailure(DesktopPlaybackPool.AMAZON, account.id); failure = error }
         }
         failure?.let { throw it }
         return null
