@@ -142,6 +142,7 @@ class DesktopSessionGraph internal constructor(
     private val progressDriver: PodcastProgressDriver,
     /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
     internal val lastFm: DesktopLastFm,
+    internal val listenBrainz: DesktopListenBrainz,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
     internal val lyrics: HostLyrics,
     /** The optional offline Japanese dictionary owner; null only when it could not be constructed. */
@@ -454,6 +455,7 @@ class DesktopSessionGraph internal constructor(
         listenDriver.close()
         progressDriver.close()
         lastFm.close()
+        listenBrainz.close()
         lyricsSurface.close()
         japaneseLanguagePack?.close()
         lyrics.close()
