@@ -467,6 +467,10 @@ class IosSourceContractsTest(unittest.TestCase):
         bindings = (UI_IOS / "IosHostBindings.kt").read_text()
         self.assertIn('IosPlayerNavigationDialogs(controls)', bindings)
         self.assertIn('itemMenu, openOwnRoute)', bindings)
+        info = (UI_IOS / "IosFeaturePages.kt").read_text()
+        self.assertIn('graph.library.findSong(mediaId, provider)', info)
+        self.assertIn('playerOccurrence(queueState, playback)', info)
+        self.assertIn('provider == null || it.item.ref.provider == provider', info)
 
     def test_existing_ios_editors_are_reachable_from_the_route_registry(self):
         lane = (UI_IOS / "IosLaneSettings.kt").read_text()
