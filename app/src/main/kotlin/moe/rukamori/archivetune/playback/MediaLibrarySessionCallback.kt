@@ -66,6 +66,7 @@ import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.filterExplicit
 import moe.rukamori.archivetune.innertube.models.filterVideo
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
+import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
 import moe.rukamori.archivetune.utils.dataStore
@@ -1089,18 +1090,7 @@ class MediaLibrarySessionCallback
         /** The "Liked Songs" folder for the Auto browse tree. */
         private suspend fun spotifyLikedFolder(
             showSpotifyPlaylists: Boolean = context.dataStore.get(ShowSpotifyPlaylistsKey, false),
-        ): List<MediaItem> {
-            if (!showSpotifyPlaylists) return emptyList()
-            return listOf(
-                browsableMediaItem(
-                    MusicService.SPOTIFY_LIKED,
-                    context.getString(R.string.spotify_liked_songs),
-                    null,
-                    drawableUri(R.drawable.favorite),
-                    MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                ),
-            )
-        }
+        ): List<MediaItem> = spotifyAutoLikedFolder(context, showSpotifyPlaylists, drawableUri(R.drawable.favorite), ::browsableMediaItem)
 
         /**
          * The liked songs as playable items, resolved to real streams and cached for the session.
@@ -1111,8 +1101,9 @@ class MediaLibrarySessionCallback
          * browse callback that times out.
          */
         private suspend fun spotifyLikedMediaItems(): List<MediaItem> {
+            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyPlaylistItemCache.get(SPOTIFY_LIKED_CACHE_KEY)?.let { return it }
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) return emptyList()
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) return emptyList()
             val resolved =
                 runCatching {
                     spotifyLibraryRepository
@@ -1139,7 +1130,7 @@ class MediaLibrarySessionCallback
         private suspend fun spotifyPlaylistFolder(
             showSpotifyPlaylists: Boolean = context.dataStore.get(ShowSpotifyPlaylistsKey, false),
         ): List<MediaItem> {
-            if (!showSpotifyPlaylists) return emptyList()
+            if (!showSpotifyPlaylists || !context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyLibraryRepository.restoreCachedPlaylists()
             val cached = spotifyLibraryRepository.playlists.value.orEmpty()
             return listOf(
@@ -1157,7 +1148,7 @@ class MediaLibrarySessionCallback
 
         /** The playlists themselves — fetched when the folder is opened, not when it is listed. */
         private suspend fun spotifyPlaylistsForAuto() =
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) {
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) {
                 emptyList()
             } else {
                 spotifyLibraryRepository.restoreCachedPlaylists()
@@ -1208,6 +1199,7 @@ class MediaLibrarySessionCallback
         }
 
         private suspend fun spotifyPlaylistMediaItems(playlistId: String): List<MediaItem> {
+            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
             spotifyPlaylistItemCache.get(playlistId)?.let { return it }
             val resolved =
                 runCatching {

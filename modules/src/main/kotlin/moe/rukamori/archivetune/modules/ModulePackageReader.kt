@@ -28,7 +28,6 @@ import java.util.zip.ZipInputStream
 object ModulePackageReader {
     private const val MANIFEST_LIMIT = 128 * 1024
     private const val SCRIPT_LIMIT = 3 * 1024 * 1024
-    private val capabilities = listOf("searchTracks", "getTrackStreamUrl", "getAlbum", "getArtist", "getPlaylist")
 
     fun isPackage(bytes: ByteArray): Boolean = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte() &&
         ((bytes[2] == 3.toByte() && bytes[3] == 4.toByte()) || (bytes[2] == 5.toByte() && bytes[3] == 6.toByte()))
@@ -97,6 +96,7 @@ object ModulePackageReader {
                 for (index in 0 until labels.length()) if (labels.get(index) !is String) invalid("LABELS")
             }
             val manifest = ModuleManifest.parse(metadata)
+            val capabilities = manifest.kind.capabilities
             manifest.requireCompatible(appVersion)
             if (!Regex("[a-z0-9][a-z0-9._-]{0,127}").matches(manifest.id) || manifest.version.isBlank()) invalid("IDENTITY")
             val declared = metadata.getJSONArray("capabilities")
