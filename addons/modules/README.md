@@ -20,3 +20,12 @@ The official Android librespot playback binding is absent in the supplied base; 
 the implementation report linked from the module documentation.
 Original LGPL/GPL notices are retained in `NOTICE.md`, `LICENSE.md`, `COPYING.md`,
 upstream manifests and the packager; Natune additions retain their stated GPL terms.
+
+TIDAL and Qobuz each ship as one module. In module settings, choose **Signed-in
+account** or **Public instance (no account)** and enter an HTTPS instance endpoint
+for the latter. Account credentials are used only in account mode. Existing
+`tidal-instance` and `qobuz-instance` installations upgrade offline to the unified
+provider, preserving their installation ID, enablement, endpoint and audio quality.
+Existing account installations retain their credentials and account mode. The small
+APK migration assets upgrade existing installs only; they do not install or enable
+modules on a fresh app. Catalog URLs follow `dev`.

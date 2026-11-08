@@ -6,12 +6,12 @@
   "module": {
     "id": "app.natune.provider.qobuz",
     "name": "Qobuz",
-    "displayName": "Qobuz (Natune)",
+    "displayName": "Qobuz",
     "icon": "icon.png",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "author": "morieattonkatsu; Natune contributors",
-    "description": "Natune fork: own-account Qobuz FLAC/MP3, signed requests using your app ID/secret, login and one session retry, bounded 429/503 cooldown and fallback only for an explicit unavailable format. Full tracks only; region follows the authenticated account.",
-    "homepage": "https://github.com/NatuneGroup/Natune/tree/feat/r3-modules/addons/modules",
+    "description": "Qobuz audio from your signed-in account or your HTTPS public/community instance. Choose the connection mode in settings. No account or instance credentials are bundled.",
+    "homepage": "https://github.com/NatuneGroup/Natune/tree/dev/addons/modules",
     "repository": "https://github.com/NatuneGroup/Natune",
     "license": "GPL-3.0",
     "type": [
@@ -34,19 +34,39 @@
       "getTrackStreamUrl"
     ],
     "settings": {
+      "mode": {
+        "type": "select",
+        "label": "Connection mode",
+        "description": "Choose your own account or a public/community instance without an account.",
+        "defaultValue": "account",
+        "options": [
+          {
+            "label": "Signed-in account",
+            "value": "account"
+          },
+          {
+            "label": "Public instance (no account)",
+            "value": "instance"
+          }
+        ]
+      },
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "description": "HTTPS endpoint used only in public instance mode.",
+        "defaultValue": null
+      },
       "appId": {
         "type": "text",
         "label": "App ID",
         "description": "Numeric Qobuz application ID used for API requests.",
-        "defaultValue": null,
-        "required": true
+        "defaultValue": null
       },
       "appSecret": {
         "type": "password",
         "label": "App secret",
         "description": "Secret paired with the app ID. Used to sign stream requests.",
         "defaultValue": null,
-        "required": true,
         "secret": true
       },
       "userAuthToken": {
