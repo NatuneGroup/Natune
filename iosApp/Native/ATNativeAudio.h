@@ -28,6 +28,12 @@ int at_audio_play(at_audio_output *output);
 void at_audio_pause(at_audio_output *output);
 void at_audio_seek(at_audio_output *output, uint64_t position_us);
 void at_audio_speed(at_audio_output *output, float speed);
+/* Main-thread USB preference. Existing tracks keep their decoder; a later load recreates it if needed. */
+void at_audio_usb_sample_rate(uint32_t requested);
+int at_audio_rate_reload_required(at_audio_output *output);
+uint32_t at_audio_pcm_sample_rate(at_audio_output *output);
+double at_audio_device_sample_rate(at_audio_output *output);
+int at_audio_usb_route_active(void);
 /* Pitch shift in cents on the rendered output, clamped to the unit's +-2400 range; 0 is unshifted. Tempo stays in
  * the engine, so the unit's rate never changes. A call before the first load still applies to every later load.
  * The manual pull carries decoder PCM before this stage, so a blend applies its own pitch unit. */

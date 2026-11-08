@@ -405,14 +405,15 @@ class IosSourceContractsTest(unittest.TestCase):
     def test_audio_graph_canonical_source_and_hardware_boundary(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()
         self.assertNotIn("interleaved:YES", audio)
-        self.assertIn("initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2", audio)
+        self.assertIn("initStandardFormatWithSampleRate:p->pcm_rate channels:2", audio)
         self.assertIn("at_audio_canonical_format(hardware.sampleRate, hardware.channelCount", audio)
         self.assertIn("buffers->mNumberBuffers != 2", audio)
         self.assertIn("at_audio_deinterleave(p->scratch", audio)
         self.assertIn("connect:p->source to:p->converter format:pcm", audio)
         self.assertIn("connect:p->converter to:p->time_pitch format:canonical", audio)
         create = audio.split("static at_audio_output *create_output(", 1)[1].split("at_audio_output *at_audio_create(", 1)[0]
-        self.assertIn("configure_playback_locked() && build_graph(p, plain)", create)
+        self.assertLess(create.index("configure_playback_locked()"), create.index("accepted_pcm_rate()"))
+        self.assertLess(create.index("accepted_pcm_rate()"), create.index("ae_engine_create("))
         self.assertIn("at_audio_destroy(p)", create)
 
     def test_apple_exception_boundary_and_fallback_are_shared_by_both_consumers(self):
@@ -453,6 +454,50 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("queued.addAll(replacements)", reschedule)
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
+
+    def test_merged_android_lyrics_header_and_chrome_have_shared_counterparts(self):
+        header = (UI_COMMON / "player/FullscreenLyricsChrome.kt").read_text()
+        self.assertIn('val edge = text.height.coerceIn(0, available)', header)
+        self.assertIn('Constraints.fixed(edge, edge)', header)
+        self.assertNotIn('PlayerAction.LIKE', header)
+        self.assertIn('PlayerSymbol.MORE', header)
+        self.assertIn('PlayerSymbol.DOWN', header)
+        player = (UI_COMMON / "player/BottomSheetPlayer.kt").read_text()
+        self.assertIn('FullscreenLyricsChrome(c)', player)
+        root = (UI_COMMON / "ArchiveTuneRoot.kt").read_text()
+        self.assertIn('chromeVisible = !expanded', root)
+        shell = (UI_COMMON / "navigation/ArchiveTuneShell.kt").read_text()
+        self.assertIn('if (chromeVisible) Box', shell)
+        self.assertIn('chromeVisible && frostedNavigationOnScreen', shell)
+
+    def test_song_source_chooser_uses_persisted_pins_and_the_normal_resolver(self):
+        source = (UI_IOS / "IosSongSourceDialog.kt").read_text()
+        self.assertIn('PlayerQueueSongSourceDialog(track, state, actions', source)
+        self.assertIn('SongSourceOverride.withOverride', source)
+        self.assertIn('graph.retryAfterFailure(target.occurrenceId)', source)
+        self.assertIn('searchableSources = setOf(AudioSourceType.YOUTUBE)', source)
+        menu = (UI_IOS / "IosItemMenu.kt").read_text()
+        self.assertIn('menu.sourceTarget?.let { IosSongSourceDialog', menu)
+        resolver = (UI_IOS / "IosQueueLocatorResolver.kt").read_text()
+        self.assertIn('if (explicitSource == null)', resolver)
+        self.assertIn('recovery.pinned(pinned)', resolver)
+
+    def test_player_actions_follow_the_playing_occurrence_and_have_hosts(self):
+        controls = (UI_IOS / "IosPlayerControls.kt").read_text()
+        self.assertIn('playerOccurrence(queue, playback)', controls)
+        for action in ['TITLE', 'ARTIST', 'OUTPUT']:
+            self.assertIn('PlayerAction.' + action + ' ->', controls)
+        self.assertIn('shareLocalAudio(item.ref.id, null)', controls)
+        menus = (UI_IOS / "IosSongMenu.kt").read_text()
+        self.assertIn('if (ref.iosYouTubeSong()) add("speed_dial")', menus)
+        self.assertIn('if (ref.iosYouTubeSong()) add("refetch")', menus)
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertIn('IosPlayerNavigationDialogs(controls)', bindings)
+        self.assertIn('itemMenu, openOwnRoute)', bindings)
+        info = (UI_IOS / "IosFeaturePages.kt").read_text()
+        self.assertIn('graph.library.findSong(mediaId, provider)', info)
+        self.assertIn('playerOccurrence(queueState, playback)', info)
+        self.assertIn('provider == null || it.item.ref.provider == provider', info)
 
     def test_existing_ios_editors_are_reachable_from_the_route_registry(self):
         lane = (UI_IOS / "IosLaneSettings.kt").read_text()
@@ -549,6 +594,17 @@ class IosSourceContractsTest(unittest.TestCase):
         menu = (UI_IOS / "IosSongMenu.kt").read_text()
         self.assertIn("import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable", menu)
         self.assertIn("Res.string.ios_share_link_unavailable", menu)
+
+    def test_apple_music_search_shares_the_playback_account_admission(self):
+        discovery = (UI_IOS / "IosProviderDiscovery.kt").read_text()
+        self.assertIn('"APPLE_MUSIC" -> ContentProvider.APPLE', discovery)
+        self.assertIn("iosAppleMusicSearchRepository(graph.http, graph.accounts", discovery)
+        self.assertIn("owners.lists.recordShelf(request, \"provider-search\", page.items)", discovery)
+        resolver = (UI_IOS / "IosQueueLocatorResolver.kt").read_text()
+        self.assertIn("internal suspend fun iosAppleMusicSearchRepository(", resolver)
+        self.assertIn("accounts.admitPoolEntry(", resolver)
+        self.assertIn("CredentialScope.PLAYBACK_POOL", resolver)
+        self.assertIn("IosAppleDevToken(http, preferences).bearer()", resolver)
 
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()

@@ -67,7 +67,7 @@ internal fun iosCatalogGraphPage(
         iosProviderSearchPage(graph, owners, route) { openRoute(ArchiveRoutes.musicRecognition()) }
     ArchiveDestination.ALBUM ->
         if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
-            iosSpotifyAlbumPage(graph, owners, route, menu, back)
+            iosSpotifyAlbumPage(graph, host, owners.lists, route, menu, openRoute, back)
         } else {
             hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
         }
@@ -96,7 +96,10 @@ internal fun iosCatalogGraphPage(
         }
     ArchiveDestination.ARTIST_SONGS -> iosArtistSongsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.ARTIST_ALBUMS -> iosArtistAlbumsPage(graph, host, owners.lists, route, menu, openRoute, back)
-    ArchiveDestination.ARTIST_ITEMS -> iosArtistItemsPage(graph, host, owners.lists, route, menu, openRoute, back)
+    ArchiveDestination.ARTIST_ITEMS ->
+        if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+            iosSpotifyArtistItemsPage(graph, host, owners.lists, route, menu, openRoute, back)
+        } else iosArtistItemsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.BROWSE, ArchiveDestination.YOUTUBE_BROWSE -> iosBrowsePage(graph, owners.lists, route)
     ArchiveDestination.ACCOUNT -> iosAccountPage(graph, menu)
     ArchiveDestination.PLAYLISTS -> iosPlaylistsPage(graph, host, creation, tags, menu)
@@ -105,8 +108,8 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
     ArchiveDestination.PODCASTS -> iosPodcastsPage(graph)
     ArchiveDestination.PODCAST -> iosPodcastPage(graph, route.arguments.getValue("browseId"))
-    ArchiveDestination.TRACK_INFO -> iosTrackInfoPage(graph, route.arguments.getValue("trackId"))
-    ArchiveDestination.MEDIA_INFO -> iosMediaInfoPage(graph, host, route.arguments.getValue("mediaId"))
+    ArchiveDestination.TRACK_INFO -> iosTrackInfoPage(graph, route.arguments.getValue("trackId"), route.arguments["provider"])
+    ArchiveDestination.MEDIA_INFO -> iosMediaInfoPage(graph, host, route.arguments.getValue("mediaId"), route.arguments["provider"])
     else -> null
 }
 

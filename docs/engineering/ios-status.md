@@ -562,3 +562,115 @@ fallback when no snapshot exists. App and widget entitlements declare the same c
 Provisioning, full extension/app linkage, timeline delivery and home-screen behavior are unverified.
 Listening-insight and ActivityKit/lock-screen lyric widgets remain incomplete. This supersedes
 the earlier controls-only/no-App-Group source description.
+
+
+### Follow-up: negotiated USB PCM rate
+
+The USB-rate preference requests 88.2/96/176.4/192 kHz through AVAudioSession only
+on a USB route. After activation, the rate iOS actually accepted configures the
+retained native decoder and the source node; it is no longer forced through 48 kHz
+PCM before conversion. The current track retains its decoder, position and lease.
+A later load recreates the output when the preference, USB route or accepted rate
+changes. Native getters show decoder configuration and the graph-reported device
+rate separately. A refused request uses the accepted lower rate, and non-USB routes
+retain the standard 48 kHz decoder configuration. Recording windows retain their
+existing session policy. High-rate PCM uses ordinary handoff because the blend pump
+is still 48 kHz; guards prevent a high-rate buffer from entering that timebase.
+This is shared-system USB output: exclusive access, bit-perfectness, original-source
+provenance and physical DAC output remain unverified or unsupported. No desktop or
+Android source was changed. Native fixture tests run in the Apple CI gate.
+
+
+### Follow-up: CarPlay and widget signing configuration
+
+App and widget targets now share `Configuration/SharedSigning.xcconfig` for their
+public development-team/App Group metadata and optional ignored `Signing.xcconfig`
+overrides. The widget does not inherit provider credentials from the app's native
+configuration. Xcode target capabilities declare CarPlay audio on the app and App
+Groups on both targets; each target keeps its own entitlement file and bundle id.
+For a signed build, copy `Signing.xcconfig.example` and supply the registered team
+and group. Both explicit provisioning profiles must grant that same group, and the
+app profile must grant Apple's CarPlay audio entitlement. The local helper
+`iosApp/scripts/check_signing_capabilities.py` checks these fields in decoded
+profiles with `--app-profile`, `--widget-profile`, `--app-group` and optional `--team`.
+It does not authenticate a profile, grant approval or sign an app. The existing CI
+release remains explicitly unsigned; approved provisioning, signing and CarPlay/
+widget device execution are still separate owner-run gates.
+
+
+### Follow-up: player occurrence and navigation actions
+
+The shared player now binds iOS like/palette observations to the engine's occurrence,
+including while the queue cursor has advanced during handoff. Likes carry their content
+reference through asynchronous reads, so an old result cannot mark the new track liked.
+Title taps open the known album or the song menu; artist taps open the artist or a shared
+Compose selection dialog. Output actions have a Compose dialog over the native route
+picker, and local-song Share uses the imported file rather than requiring a public URL.
+These actions use the existing graph, routes and menus; they create no second player or
+native app renderer. #88's lyrics-header/module/chrome changes remain deferred until its
+Android reference is merged into dev.
+
+
+### Follow-up: per-song source chooser
+
+The song menu now opens the existing shared source dialog through a source-only host
+contract. It refreshes enabled choices from the live source settings, persists the
+existing `songId=SOURCE` pin format, and reloads a playing occurrence at its current
+position through the queue's normal ordered resolver. Explicit pins reach that resolver
+instead of silently playing a downloaded/cache file from another source; Automatic
+restores stored-file-first behavior. The dialog wires bounded YouTube search/radio and
+marks other provider search filters unavailable. Global source order, credentials and
+native stream admission remain with their existing owners. No Android file was edited.
+
+
+### Merged Android #88: shared lyrics header and bottom chrome
+
+The full-screen shared lyrics sheet now shows the current artwork next to its title
+and artist. Artwork height follows the measured text block, including font scaling;
+only menu and return-to-player controls occupy the footer. No heart is added to the
+lyrics header/footer. The shared shell omits its bar/compact/rail controls and frosted
+recording gate while the expanded player covers it, rather than retaining invisible
+bottom controls. This builds on merged dev `2e31eb2c`; the Android reference files
+remain unchanged. The shared changes also apply to portable hosts using that sheet.
+
+
+### Merged Android #88: shared module preferences
+
+The iOS module manager now uses a commonMain grouped detail screen with provider
+activation, connection/account fields, a separate quality group, earlier/later
+priority controls and collapsible package information. Text and quality choices
+open individual dialogs, and secret summaries never show their values. Configuration
+and per-provider activation use separate Keychain entries. A bounded atomic manager
+order file drives the real resolver order within the Modules source and survives
+restarts; removal clears the provider's manager credential as well as its settings.
+The API-v1 quality parser now understands scalar option `id` values used by the
+merged TIDAL/Qobuz packages, and normalized metadata can be validated again when
+listed. Automatic account authorization and module-specific Playback Pool/account
+lanes remain explicitly unavailable; declared package connection modes and personal
+credentials still work. Android and desktop source sets were not edited.
+
+
+### Shared library/search/discovery: Spotify catalog details
+
+Spotify album and artist routes now retain the actual catalog identity and artwork
+instead of switching to a YouTube page before rendering. Albums use the shared album
+screen with artist navigation, local bookmarks and the complete track list; completion
+requires the declared total, unique continuation traversal and the existing time/request
+bounds. Artists use the shared artist screen with real popular songs and paged album/
+single shelves; the shared artist-section screen handles further releases. Album ids,
+artist credits, explicit flags and ISRC now survive Spotify track parsing in library,
+search and discovery rows. The existing catalog-to-audio matching path still starts
+playback, and catalog tokens remain isolated from streaming credentials. Matching
+cancellation propagates, and row-list cache retention is capped at 32 collections.
+YouTube, QQ discovery/search, podcasts and local-library screens were already shared
+and remain wired. QQ artist/album details, Spotify radio continuations and direct
+catalog-song downloads are not supplied by these adapters. Compilation and real
+provider/device execution of this follow-up remain pending CI/QA.
+
+The saved default search source now also selects Apple Music, using the same
+personal media-user-token or Playback Pool admission the Apple playback source
+uses; the developer bearer is still fetched from the existing token owner. A host
+without a usable Apple account shows the search's failed state instead of silently
+searching YouTube. QQ search and the QQ home charts still use the anonymous RPC,
+and Apple search returns songs only. Live Apple/QQ catalog access and new-source
+compilation are unverified.

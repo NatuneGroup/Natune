@@ -1,0 +1,5 @@
+// Public signing metadata shared by the app and widget. No account/provider credentials belong here.
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+ARCHIVETUNE_APP_GROUP = group.moe.rukamori.archivetune
+#include? "Signing.xcconfig"

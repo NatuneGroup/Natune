@@ -8,6 +8,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import moe.rukamori.archivetune.shared.domain.settings.IosUsbOutputSampleRateKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +41,12 @@ internal class IosEqualizer(
         onApplied = playback::applyDspSettings,
     )
     private val sheet = MutableStateFlow(false)
+    init {
+        scope.launch {
+            settings.snapshots.map { it?.get(IosUsbOutputSampleRateKey) ?: 0 }.distinctUntilChanged()
+                .collect(playback::setUsbOutputSampleRate)
+        }
+    }
 
     /** The current settings, read by the panel. */
     val state: StateFlow<DspSettingsOwner.State> = dsp.state

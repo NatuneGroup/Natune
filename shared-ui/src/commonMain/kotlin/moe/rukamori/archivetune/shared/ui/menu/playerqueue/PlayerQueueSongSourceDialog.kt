@@ -70,10 +70,10 @@ private const val SOURCE_SEARCH_MIN_QUERY_LENGTH = 2
  * source chooser did.
  */
 @Composable
-internal fun PlayerQueueSongSourceDialog(
+fun PlayerQueueSongSourceDialog(
     track: PlayerQueueTrack,
-    state: PlayerQueueMenuState,
-    actions: PlayerQueueMenuActions,
+    state: PlayerSongSourceState,
+    actions: PlayerSongSourceActions,
     icon: PlayerQueueMenuIconSlot,
     artwork: PlayerQueueArtworkSlot,
     onDismiss: () -> Unit,
