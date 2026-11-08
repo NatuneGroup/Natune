@@ -89,8 +89,8 @@ format in this port.
 
 `module.type` declares the kind (`audio_provider`, `metadata_provider`,
 `lyrics_provider` or `playback_provider`), as a string or array. One Natune kind
-per package is supported. Legacy manifests without a kind, or with other upstream
-type labels, retain audio-source behavior and their original type labels. Audio
+per package is supported when `natuneExtensions@1` is required. All manifests without
+that marker retain audio-source behavior and their original type labels. Audio
 parsing still requires `searchTracks` and `getTrackStreamUrl`; new kinds do not
 relax that audio contract or change its recognized capabilities.
 
@@ -104,7 +104,8 @@ relax that audio contract or change its recognized capabilities.
 
 Natune packages keep `format: "archivetune.module"`, `formatVersion: 1`,
 `apiVersion: 1` and the same checksum/entry/size protections. Authors of Natune-only
-packages should declare `requiredRuntimeFeatures: ["natuneExtensions@1"]`, plus
+packages must declare `requiredRuntimeFeatures: ["natuneExtensions@1"]` to opt into
+Natune kind interpretation; otherwise all type strings remain upstream audio labels. Add
 `lyrics@1` or `metadata@1` as applicable. Upstream rejects these host features;
 the API version is not bumped and audio package validation is unchanged. The
 Natune packager adds kind-specific validation, preserving the upstream path for
