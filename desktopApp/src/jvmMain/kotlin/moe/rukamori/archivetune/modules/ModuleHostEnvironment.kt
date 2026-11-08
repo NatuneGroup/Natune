@@ -64,6 +64,8 @@ internal class ModuleUri private constructor(private val value: String) {
     val encodedUserInfo get() = uri.rawUserInfo
     val path get() = uri.path
     val fragment get() = uri.fragment
+    val queryParameterNames get() = uri.rawQuery.orEmpty().split('&').filter(String::isNotEmpty)
+        .map { URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) }.toSet()
     fun getQueryParameters(name: String): List<String> = uri.rawQuery.orEmpty().split('&').mapNotNull {
         if (URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) == name)
             URLDecoder.decode(it.substringAfter('=', ""), Charsets.UTF_8) else null
@@ -73,6 +75,7 @@ internal class ModuleUri private constructor(private val value: String) {
     override fun toString() = value
     class Builder(value: String) {
         private val url = URLBuilder(value)
+        fun clearQuery() = apply { url.parameters.clear() }
         fun appendQueryParameter(name: String, value: String) = apply { url.parameters.append(name, value) }
         fun build() = ModuleUri(url.buildString())
     }
