@@ -7,8 +7,9 @@
 
 package moe.rukamori.archivetune.modules
 
-import android.util.JsonReader
-import android.util.JsonToken
+import com.google.gson.Strictness
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -197,7 +198,7 @@ object ModulePackageReader {
         val text = utf8(bytes).removePrefix("\uFEFF")
         try {
             JsonReader(StringReader(text)).use { reader ->
-                reader.isLenient = false
+                reader.strictness = Strictness.STRICT
                 if (reader.peek() != JsonToken.BEGIN_OBJECT) invalid("MANIFEST")
                 var depth = 0
                 while (reader.peek() != JsonToken.END_DOCUMENT) {

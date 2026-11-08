@@ -39,6 +39,14 @@ class ModuleParsingTest {
         assertEquals("module.exports = {};", ModuleSourceDecoder.decode("/* license */\nmodule.exports = {};"))
     }
 
+    @Test fun manifestValidationRetainsStrictSyntaxAndDepthLimits() {
+        for (source in listOf("{'id':'test'}", "{\"id\":\"test\"} {}", "{\"value\":" + "[".repeat(33) + "0" + "]".repeat(33) + "}")) {
+            val failure = assertThrows(ModuleException::class.java) { ModulePackageReader.manifest(source.toByteArray()) }
+            assertEquals(ModuleFailure.INVALID_DOCUMENT, failure.failure)
+        }
+        assertEquals("test", ModulePackageReader.manifest("{\"id\":\"test\"}".toByteArray()).getString("id"))
+    }
+
     @Test fun compatiblePackageRetainsTypedSetting() = runBlocking {
         val data = metadata().put("settings", JSONObject().put("country", JSONObject().put("type", "text").put("defaultValue", "US")))
         val normalized = ModulePackageReader.read(archive("module.exports = {searchTracks() {}, getTrackStreamUrl() {}};", data), ARCHIVETUNE_MODULE_COMPATIBILITY_VERSION)
