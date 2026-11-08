@@ -50,7 +50,8 @@ data class ModuleMetadataEditorUi(val name: String, val author: String, val desc
 @Immutable
 data class ModuleRowUi(val id: String, val name: String, val subtitle: String, val enabled: Boolean,
     val position: Int, @param:StringRes val status: Int, val canUpdate: Boolean, val playbackStatus: Boolean,
-    val qualityTags: ImmutableList<Int>, val capabilities: ImmutableList<Int>, val icon: ByteString? = null)
+    val qualityTags: ImmutableList<Int>, val capabilities: ImmutableList<Int>, val icon: ByteString? = null,
+    val kind: ModuleKind = ModuleKind.AUDIO_SOURCE)
 
 @Immutable
 data class ModuleCatalogRowUi(val id: String, val name: String, val origin: String, val refreshed: String, val count: Int)
@@ -408,7 +409,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 listOf(module.metadata?.author ?: module.manifest.author, module.manifest.version).filter(String::isNotBlank).joinToString(" \u00b7 "),
                 module.enabled, index + 1, if (busy == module.id) R.string.modules_checking else statusResource((result.playback ?: result.check)?.status),
                 module.updateUrl.isNotBlank(), busy != module.id && result.playback != null,
-                qualityTags(module.manifest.labels, module.manifest.settings), capabilities(module.manifest.capabilities), module.manifest.icon)
+                qualityTags(module.manifest.labels, module.manifest.settings), capabilities(module.manifest.capabilities), module.manifest.icon, module.manifest.kind)
         }
         val catalogs = registry.catalogs.map { ModuleCatalogRowUi(it.id, it.name, safeOrigin(it.url), date(it.refreshedAtMs), it.entries.size) }
         val selected = modules.firstOrNull { it.id == selectedId }
@@ -544,6 +545,9 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 "getAlbum" -> R.string.modules_capability_album
                 "getArtist" -> R.string.modules_capability_artist
                 "getPlaylist" -> R.string.modules_capability_playlist
+                "getLyrics" -> R.string.extensions_capability_lyrics
+                "getHome" -> R.string.extensions_capability_home
+                "getLibrary" -> R.string.extensions_capability_library
                 else -> null
             }
         })

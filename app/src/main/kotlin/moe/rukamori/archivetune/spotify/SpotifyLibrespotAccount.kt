@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
 import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_ME_ENDPOINT
 import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_TOKEN_ENDPOINT
 import moe.rukamori.archivetune.shared.domain.source.SpotifyOAuthAccountFacts
@@ -253,6 +255,7 @@ object SpotifyLibrespotAccount {
         withContext(Dispatchers.IO) {
             tokenMutex.withLock {
                 val prefs = context.dataStore.data.first()
+                if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_OFFICIAL, prefs)) return@withLock null
                 val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
                 // The stored fingerprint is the catalog sp_dc the grant was minted under. The grant
                 // dies with that cookie — a replaced catalog session invalidates it here, before

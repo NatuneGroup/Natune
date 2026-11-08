@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.spotify.rememberAvailableSearchProvider
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
 import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
@@ -162,10 +163,7 @@ fun SearchScreen(
     historyViewModel: SearchHistoryViewModel = hiltViewModel(),
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var searchProvider by rememberEnumPreference(DefaultSearchSourceKey, SearchProvider.YOUTUBE)
-    val onSearchSourceSelection: (SearchSource, SearchProvider) -> Unit = { _, provider ->
-        searchProvider = provider
-    }
+    val (searchProvider, onSearchSourceSelection) = rememberAvailableSearchProvider()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val recentSearches by historyViewModel.recentSearches.collectAsStateWithLifecycle()

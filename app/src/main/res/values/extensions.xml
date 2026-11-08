@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="extensions_all">All extensions</string>
+    <string name="extensions_disabled">This extension is disabled in Modules.</string>
     <string name="extensions_kind_audio">Audio sources</string>
     <string name="extensions_kind_metadata">Metadata</string>
     <string name="extensions_kind_lyrics">Lyrics</string>

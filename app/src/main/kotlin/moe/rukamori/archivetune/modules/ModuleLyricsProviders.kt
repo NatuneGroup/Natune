@@ -3,7 +3,7 @@ package moe.rukamori.archivetune.modules
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.lyrics.LyricsProvider
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,7 +34,7 @@ class ModuleLyricsProviders @Inject constructor(private val repository: ModuleRe
         override suspend fun getLyrics(id: String, title: String, artist: String, album: String?, duration: Int, isrc: String?): Result<String> = try {
             if (!isEnabledForRequest()) Result.failure(NoSuchElementException("Lyrics extension disabled")) else {
                 ModuleRepository.validateConfiguration(module.manifest, module.configuration)
-                val value = withTimeout(15_000) {
+                val value = withTimeoutOrNull(15_000) {
                     repository.runtime.lyrics(module.id, module.source, module.origin,
                         ModuleTrack(id, title, listOf(artist), album, duration.takeIf { it > 0 }, null, isrc), module.configuration)
                 }
