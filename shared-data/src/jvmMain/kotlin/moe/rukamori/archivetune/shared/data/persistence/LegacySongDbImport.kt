@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.nio.file.Files
 import java.nio.file.Path
@@ -89,7 +90,7 @@ object LegacySongDbImport {
             inspectPortableStateFile(staging)
             val connection = BundledSQLiteDriver().open(staging.toString())
             try {
-                connection.execSql("VACUUM INTO \"${target.toAbsolutePath().toString().replace("\"", "\"\"")}\"")
+                connection.execSQL("VACUUM INTO \"${target.toAbsolutePath().toString().replace("\"", "\"\"")}\"")
             } finally {
                 connection.close()
             }
