@@ -63,6 +63,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         LiquidGlassAdaptiveLuminanceKey,
         DynamicThemeKey,
         CustomThemeColorKey,
+        DesktopAppIconPathKey,
         RandomThemeOnStartupKey,
         DarkModeKey,
         PureBlackKey,

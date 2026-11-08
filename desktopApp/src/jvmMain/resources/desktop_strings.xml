@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="desktop_theme_title">Theme creator and palette</string>
+    <string name="desktop_theme_color">Palette color (#RRGGBB)</string>
+    <string name="desktop_theme_apply">Apply theme</string>
+    <string name="desktop_theme_export">Export theme</string>
+    <string name="desktop_theme_import">Import theme</string>
+    <string name="desktop_theme_failed">The theme or icon could not be applied.</string>
+    <string name="desktop_icon_title">Application icon</string>
+    <string name="desktop_icon_description">Choose an image for this window and its task switcher icon. Installed launcher icons follow the package.</string>
+    <string name="desktop_icon_pick">Choose icon image</string>
+    <string name="desktop_icon_reset">Restore default icon</string>
     <string name="desktop_modules_title">Modules and extensions</string>
     <string name="desktop_modules_scope">Install API-v1 .arch packages and compatible script extensions. Review the provider and its settings before enabling it. Binary Android extensions require a desktop build.</string>
     <string name="desktop_modules_enable">Enable module audio sources</string>

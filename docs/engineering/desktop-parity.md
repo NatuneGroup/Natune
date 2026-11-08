@@ -125,3 +125,13 @@ existing QqHomeScreen and queues canonical QQ chart songs through the one queue.
 The feed is refreshed on account changes and respects admission cancellation.
 Chart network responses and playback are unverified. Failed chart details currently
 omit that section rather than retaining Android's preview fallback.
+
+## Appearance editors
+
+Desktop mounts palette and seed-based theme creation with shared MaterialKolor
+schemes, preview swatches, persisted color/style and bounded theme JSON import/export.
+Custom application images update the live window/task-switcher icon; package/pinned
+launcher icons still follow the installer. Android's per-role theme editor and full
+launcher icon pack are not ported. The settings list adds desktop-only editor links
+and the icon path key is additive in the shared preference registry. UI compilation
+and OS icon behavior remain unverified.
