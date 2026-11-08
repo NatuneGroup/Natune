@@ -146,4 +146,7 @@
     <string name="modules_suggested_catalogs">Suggested catalogs</string>
     <string name="modules_natune_catalog">Natune modules</string>
     <string name="modules_upstream_catalog">ArchiveTune modules</string>
+    <string name="modules_session_connected">Module connection verified</string>
+    <string name="modules_session_failed">Module verification failed or expired. Open module settings to try again.</string>
+    <string name="modules_session_verify">Verify connection</string>
 </resources>
