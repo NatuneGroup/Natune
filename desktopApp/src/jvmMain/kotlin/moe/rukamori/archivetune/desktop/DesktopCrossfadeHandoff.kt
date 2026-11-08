@@ -114,11 +114,12 @@ internal class DesktopCrossfadeHandoff(
         if (hold.value) return null
         val stored = settings.value.desktopHandoffSettings()
         val fallback = desktopHandoffOverlapMs(stored, current.item, next.item, durationMs) ?: return null
-        if (!stored.automix || fallback == 0L || analysis == null) return fallback
-        analysis.consider(current.item)
-        analysis.consider(next.item)
-        val outgoing = runCatching { analysis.features(current, requireSelected = true) }.getOrNull() ?: return fallback
-        val incoming = runCatching { analysis.features(next, requireSelected = false) }.getOrNull() ?: return fallback
+        if (!stored.automix || fallback == 0L) return fallback
+        val analyzer = analysis ?: return fallback
+        analyzer.consider(current.item)
+        analyzer.consider(next.item)
+        val outgoing = runCatching { analyzer.features(current, requireSelected = true) }.getOrNull() ?: return fallback
+        val incoming = runCatching { analyzer.features(next, requireSelected = false) }.getOrNull() ?: return fallback
         // This mixer can execute adaptive equal-power fading/cues. Keep stretch/bass/sweep tiers conservative.
         val plan = moe.rukamori.archivetune.playback.smart.planTransition(
             analysis = outgoing.copy(bpm = 0.0, beatConfidence = 0.0), nextAnalysis = incoming.copy(bpm = 0.0, beatConfidence = 0.0),
