@@ -109,6 +109,7 @@ fun AudioSourceType.accountProviderId(): String? =
         AudioSourceType.DEEZER -> ContentProvider.DEEZER.id
         AudioSourceType.APPLE -> ContentProvider.APPLE.id
         AudioSourceType.AMAZON -> ContentProvider.AMAZON.id
+        AudioSourceType.MODULES -> "modules"
         AudioSourceType.QQ -> ContentProvider.QQ.id
         // The streaming account shares the catalog provider id; its SPOTIFY_STREAMING scope tells them apart.
         AudioSourceType.SPOTIFY -> ContentProvider.SPOTIFY_CATALOG.id

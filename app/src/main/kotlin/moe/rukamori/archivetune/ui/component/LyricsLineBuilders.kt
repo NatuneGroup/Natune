@@ -8,9 +8,9 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 
-internal const val MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
+internal const val ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
 
-internal fun buildLineSyncedLrcLine(
+internal fun buildAlternateLineSyncedLrcLine(
     entry: LyricsEntry,
     romanizedText: String?,
     start: Int,
@@ -33,7 +33,7 @@ internal fun buildLineSyncedLrcLine(
         KaraokeSyllable(
             content = unit,
             start = start,
-            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
+            end = start + ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS,
             phonetic = null,
         )
     }

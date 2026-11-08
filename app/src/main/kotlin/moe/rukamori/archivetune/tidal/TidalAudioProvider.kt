@@ -5,7 +5,6 @@
 
 package moe.rukamori.archivetune.tidal
 
-import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 
@@ -14,9 +13,8 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
-import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.PoolAccountManager
-import moe.rukamori.archivetune.utils.PoolEndpoints
+import moe.rukamori.archivetune.utils.PoolDiscovery
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.constants.TidalAccessTokenKey
 import kotlinx.coroutines.CancellationException
@@ -81,7 +79,6 @@ object TidalAudioProvider {
     // How long a failing instance is skipped before it is retried again.
     private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L // transient errors (HTTP 5xx, timeouts)
     private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L // unreachable host / DNS failure
-    private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L // pool discovery re-ask interval, misses included
     private const val STRONG_MATCH_SCORE = 150
     private const val REJECT_SCORE = -1_000_000
 
@@ -123,18 +120,9 @@ object TidalAudioProvider {
     // from monochrome". Instances come only from the user's own Tidal settings entries and the
     // Source Pool discovery feed (<configured-or-fallback deployment>/api/discovery/tidal).
 
-    // Live uptime feed used by the official monochrome.tf frontend to discover currently-healthy
-    // instances. Best-effort only: it rotates and may be unreachable, so discovery is allowed to
-    // fail and callers keep the manual/default list. The payload is a JSON object of the form
-    // { "api": [{ "url", "version" }, ...], "streaming": [...], "qobuz": [...] }.
-    // (tidal-uptime.geeked.wtf now NXDOMAINs; left empty until a live feed URL is confirmed.)
-    //
     // The community Source Pool website (build-configured via ARCHIVEPOOL_BASE_URL or the legacy
-    // SOURCE_PROVIDER_URL, public default as the ordered fallback) exposes a health-checked feed in
-    // this exact { streaming, api } shape at /api/discovery/tidal; the configured deployment becomes
-    // the discovery source so the app auto-pulls verified community instances.
-    private val INSTANCE_DISCOVERY_SOURCES: List<String>
-        get() = PoolEndpoints.bases().map { "$it/api/discovery/tidal" }
+    // SOURCE_PROVIDER_URL) exposes a health-checked { streaming, api } feed at /api/discovery/tidal;
+    // PoolDiscovery owns that read, its cadence and its refusal backoff.
 
     /**
      * User-configured instance list (base URLs), applied via [setInstances]. When empty there are
@@ -146,9 +134,6 @@ object TidalAudioProvider {
 
     @Volatile
     private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
-
-    @Volatile
-    private var discoveryFetchedAtMs = 0L
 
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
@@ -184,7 +169,7 @@ object TidalAudioProvider {
             customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
             poolDiscoveredInstanceUrls = emptySet()
         }
-        discoveryFetchedAtMs = 0L
+        PoolDiscovery.forget("tidal")
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null if it is not valid. */
@@ -393,122 +378,28 @@ object TidalAudioProvider {
     }
 
     /**
-     * Best-effort auto-discovery of additional public instances from community sources. Returns
-     * the list of newly discovered, valid base URLs (may be empty). Never throws; on failure it
-     * simply returns an empty list so the caller can keep the manual list. Runs blocking network
-     * calls, so invoke it off the main thread.
+     * Best-effort auto-discovery of additional public instances from the pool's discovery feed.
+     * Answers the newly discovered, valid base URLs (may be empty): the shared [PoolDiscovery]
+     * helper owns the six-hour jittered window, the persisted list, the ETag revalidation, the
+     * single-flight guard and the refusal backoff. Never throws; runs blocking I/O, so call it off
+     * the main thread.
      */
     fun discoverInstances(): List<String> {
         if (!PoolAccountManager.isPoolEnabled()) {
             clearPoolDiscovery()
             return emptyList()
         }
-        if (discoveryFetchedAtMs != 0L && System.currentTimeMillis() - discoveryFetchedAtMs < DISCOVERY_TTL_MS) return emptyList()
-        discoveryFetchedAtMs = System.currentTimeMillis()
-        val discovered = AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) { discoverInstancesWithinAttempt() }
+        val all =
+            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+                PoolDiscovery.instances("tidal", "/api/discovery/tidal", DOWNLOAD_USER_AGENT, healthClient, dropSquidWtf = true)
+            }
         if (!PoolAccountManager.isPoolEnabled()) {
             clearPoolDiscovery()
             return emptyList()
         }
+        val discovered = all.mapNotNull(::normalizeInstanceUrl).distinct().filterNot { it in poolDiscoveredInstanceUrls }
         if (discovered.isNotEmpty()) poolDiscoveredInstanceUrls = poolDiscoveredInstanceUrls + discovered
         return discovered
-    }
-
-    private fun discoverInstancesWithinAttempt(): List<String> {
-        val discovered = LinkedHashSet<String>()
-        for (source in INSTANCE_DISCOVERY_SOURCES) {
-            if (!PoolAccountManager.isPoolEnabled()) break
-            val answered = runCatching {
-                val builder = Request.Builder().url(source).header("User-Agent", DOWNLOAD_USER_AGENT)
-                // Present the per-app read key when the pool has gating enabled.
-                if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                    builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                }
-                healthClient.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
-                    ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
-                    if (!response.isSuccessful) {
-                        // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
-                        // and an empty body, which otherwise looks identical to a healthy pool
-                        // with no instances contributed.
-                        if (response.code == 401) {
-                            Timber
-                                .tag("TidalHealth")
-                                .w(
-                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                    source,
-                                )
-                        }
-                        return@use true
-                    }
-                    val body = response.body?.string().orEmpty()
-                    parseDiscoveredInstances(body).forEach { url ->
-                        normalizeInstanceUrl(url)?.let(discovered::add)
-                    }
-                    true
-                }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrDefault(false)
-            if (answered) break
-        }
-        return discovered.toList()
-    }
-
-    /**
-     * Parses a discovery payload. Supports:
-     *  - a JSON object whose values are arrays of URLs, e.g. Monochrome's
-     *    `{ "api": [...], "streaming": [...] }` (streaming instances are preferred);
-     *  - a JSON array of URL strings or objects with a "url"/"host" field;
-     *  - plain newline / whitespace separated URLs.
-     */
-    private fun parseDiscoveredInstances(body: String): List<String> {
-        val trimmed = body.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        // JSON object with array-valued fields (Monochrome/tidal-uptime format). "streaming"
-        // instances serve audio and are listed first, then "api". We deliberately ignore "qobuz"
-        // (a different backend) and, like the official frontend, drop dead ".squid.wtf" hosts.
-        runCatching {
-            val obj = JSONObject(trimmed)
-            val result = LinkedHashSet<String>()
-            // Only Tidal-serving categories; qobuz is a separate backend and must not be mixed in.
-            val keys = listOf("streaming", "instances", "api")
-            for (key in keys) {
-                val arr = obj.optJSONArray(key) ?: continue
-                collectStringsFromArray(arr, result)
-            }
-            val filtered = result.filterNot { it.contains(".squid.wtf", ignoreCase = true) }
-            if (filtered.isNotEmpty()) return filtered
-        }
-
-        // JSON array of strings or objects with a "url"/"host" field.
-        runCatching {
-            val result = LinkedHashSet<String>()
-            collectStringsFromArray(JSONArray(trimmed), result)
-            if (result.isNotEmpty()) return result.toList()
-        }
-
-        // Plain newline / whitespace separated URLs.
-        return trimmed
-            .split('\n', '\r', ' ', ',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-    }
-
-    private fun collectStringsFromArray(
-        arr: JSONArray,
-        into: MutableCollection<String>,
-    ) {
-        for (i in 0 until arr.length()) {
-            when (val item = arr.opt(i)) {
-                is String -> item.takeIf { it.isNotBlank() }?.let(into::add)
-                is JSONObject -> {
-                    (item.optString("url").takeIf { it.isNotBlank() }
-                        ?: item.optString("host").takeIf { it.isNotBlank() })
-                        ?.let(into::add)
-                }
-            }
-        }
     }
 
     data class Query(
@@ -1929,9 +1820,9 @@ object TidalAudioProvider {
                 source = AudioSourceType.TIDAL,
             )
         }.onFailure {
+            it.rethrowIfAudioSourceCancelled()
             Timber.tag("TidalAudioProvider").w(it, "account manifest resolve failed")
         }.getOrNull()
-
     private fun parseManifest(
         manifestB64: String,
         declaredMimeType: String?,

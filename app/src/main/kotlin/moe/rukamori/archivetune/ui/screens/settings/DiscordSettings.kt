@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +61,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.discord.DiscordAuthCoordinator
+import moe.rukamori.archivetune.discord.DiscordAuthorizationSession
 import moe.rukamori.archivetune.discord.DiscordOAuthHttpException
 import moe.rukamori.archivetune.discord.DiscordOAuthRepository
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
@@ -85,6 +87,18 @@ enum class ActivitySource { ARTIST, ALBUM, SONG, APP }
 private enum class DiscordAuthorizationUiMode { Idle, Waiting, Success, Failure }
 
 private enum class DiscordSavedAuthorizationStatus { Missing, Checking, Linked, Expired, Rejected, Unverified }
+
+private val DiscordAuthorizationSessionSaver =
+    listSaver<DiscordAuthorizationSession, String>(
+        save = { listOf(it.state, it.codeVerifier, it.authorizationUri.toString()) },
+        restore = { (state, codeVerifier, authorizationUri) ->
+            DiscordAuthorizationSession(
+                state = state,
+                codeVerifier = codeVerifier,
+                authorizationUri = Uri.parse(authorizationUri),
+            )
+        },
+    )
 
 private val DiscordImageOptions = listOf("thumbnail", "artist", "appicon", "custom")
 private val DiscordSmallImageOptions = listOf("thumbnail", "artist", "appicon", "custom", "dontshow")
@@ -116,7 +130,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         mutableStateOf(DiscordSavedAuthorizationStatus.Missing)
     }
     var showLogoutConfirm by rememberSaveable { mutableStateOf(false) }
-    var authorizationSession by remember {
+    var authorizationSession by rememberSaveable(stateSaver = DiscordAuthorizationSessionSaver) {
         mutableStateOf(DiscordOAuthRepository.createAuthorizationSession())
     }
     var authorizationUiModeName by rememberSaveable {

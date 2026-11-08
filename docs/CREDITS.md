@@ -46,6 +46,7 @@ Portions of the port come from:
 | [rukamori/core](https://github.com/rukamori/core) → [vossgraves/core](https://github.com/vossgraves/core) | Rukamori, forked by vossgraves | The InnerTube client (`core` submodule), a NewPipeExtractor-based fork without `NetworkGatekeeper`. |
 | [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | The icon pack for the icon switcher, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark, and the media obfuscator (the `deobfuscator` submodule; upstream `rukamori/morideobfuscator`). |
 | [4nx3b/lyrics](https://github.com/4nx3b/lyrics) | 4nx3b | The `lyrics` submodule: enhanced and word-synced LRC parsing and the lyrics providers. |
+| [JmDNS](https://github.com/jmdns/jmdns) | JmDNS contributors | Desktop Device Connect discovery (`org.jmdns:jmdns:3.6.4`, Apache-2.0). Not modified; linked only in `shared-data`'s JVM source set. |
 
 ## Icon artwork licence (CC-BY-SA-4.0)
 
@@ -59,15 +60,17 @@ artwork keeps this attribution and the share-alike terms.
 Glyph drawables copied from the Solar icon set by 480 Design (CC BY 4.0,
 [solar-icons.vercel.app](https://solar-icons.vercel.app)) ship in the app's
 `res/drawable` directory and in the shared UI's `composeResources/drawable`
-directory (the `m4hv_icon_*` home-variant glyphs and the `m9_media_info_solar_*`
-media-info glyphs). Each copied file keeps the header comment
-`Solar Icons by 480 Design (CC BY 4.0)`, which records the author, licence and source.
+directory (including home, navigation, settings, media-info and shared player
+`solar_*` glyphs). Existing attribution comments are preserved. Shared adaptations
+replace Android colour references with literals and make transparent fills explicit;
+this credit also covers Android source assets without an inline attribution comment.
 
 ## Ported or adapted work
 
 | Project | Author | What this repository takes from it |
 | --- | --- | --- |
-| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`), the settings glass cards (`ui/theme/YumaModifiers.kt`) and the shared Spotify home layout. |
+| [rukamori/ArchiveTune](https://github.com/rukamori/ArchiveTune) | Rukamori | Android Enhanced lyrics renderer, prepared-lyrics models/adapters, searching indicator and playback clock from `dev` at `8f25a9e21` (including frame-paced sync `f71c0c086`), GPL-3.0. Natune adapts the existing provider/romanization flow and sheet activity reporting. |
+| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | GPL-3.0. The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`), the settings glass cards (`ui/theme/YumaModifiers.kt`), the shared Spotify home layout, and the Spotify home page itself: `ui/screens/spotifyhome/*` transcribed file for file from commit `6eb6438` — the two quick-pick grids, the four typed shelves (two rows of track tiles, then artist, album and playlist rails), their dimensions, colours and press feedback, into `app/.../ui/screens/spotifyhome/`. |
 | [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | Navigation-bar and pill appearance work, the BitChord navigation bar (`ui/component/BitChordNavBar.kt`), player-style refinements, the playlist UI, several performance fixes (frosted-backdrop gating, activity-level refresh rate, menu z-order), the media info screen, and the SukiSU liquid glass port: the Liquid Glass customisation page and tuning keys, the throttled glass backdrop. |
 | [BitChord](https://github.com/kushagrasinghx/BitChord) | kushagrasinghx | The floating bottom bar whose glyph set, glass edge, stretch-squash selection pill and drag gesture the navigation bar reproduces; the BitChord home presentation and the lyrics HTTP and payload layer, re-implemented in the shared modules. | The automix analysis pipeline in `shared-domain/.../automix/` (compact feature analysis, cache policy, transition models) derives from the same port, which itself derives from Orchard (AGPL-3.0-or-later, combined into this GPL-3.0-or-later work per AGPLv3 section 13). |
 | [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | SukiSU-Ultra authors | GPL-3.0. The SukiSU liquid glass components in `ui/component/sukisu/`, reached through 4nx3b/ArchiveTune's port. The About page no longer uses SukiSU surfaces. |
@@ -114,6 +117,22 @@ Packaged desktop distributions carry their notice texts from
 app bundles the same QuickJS notice and the Apache-2.0 licence text it names as app resources
 from `iosApp/ArchiveTune/Notices/`.
 Each notice travels with the binary it covers.
+
+## Local PO token helper
+
+The desktop host can download and run the standalone
+[bgutil-ytdlp-pot-provider-rs](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs) server
+(`v0.8.1`, [release](https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/tag/v0.8.1))
+to mint YouTube PO tokens when a build carries no BotGuard credentials. The project is
+GPL-3.0 (Copyright © jim60105 and contributors); the corresponding source is the tagged upstream
+repository.
+
+The binary is **not bundled or shipped**: `desktopApp` downloads the asset matching the host
+OS/architecture on first use from that official GitHub release, verifies it against a compiled-in
+SHA-256, and runs it only on `127.0.0.1`. The pinned digests are the release's own asset digests
+(also recomputed from the downloaded Linux x64 asset) and are recorded in
+`desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/potoken/BgutilSidecarRelease.kt`.
+Nothing in the helper path sends telemetry.
 
 ## Japanese romanization data
 
@@ -183,6 +202,15 @@ their approaches were followed.
 
 ## Fork-only work
 
+- [librespot-org/librespot](https://github.com/librespot-org/librespot) (MIT),
+  pinned to `15e02e86c72d96dd39d548e3749f00abe39ffdde`: AP/OAuth authentication,
+  login5, track audio metadata, audio keys and CDN resolution for the Android
+  Librespot engine. Natune's JNI adapter and embedding patches are in
+  [native/librespot](../native/librespot/README.md); the upstream
+  [MIT notice](../native/librespot/LICENSE.librespot) ships with the app.
+  [Outify](https://github.com/iTomKo/Outify) was read to verify Rust/JNI Android
+  integration and OAuth credential profiles; no Outify code is copied.
+
 Multi-source audio routing (Tidal, Qobuz, Deezer, Apple Music, Amazon, QQ Music,
 JioSaavn, Discord, Telegram), the ArchivePool credential service, listener presence,
 the single pill-style system shared by the navigation bar, mini player and search pill,
@@ -193,3 +221,17 @@ diagnostics exporter, the Listen Together server list, and the Kotlin Multiplatf
 
 A contribution derived from another project names that project in the pull request and
 adds it to this file.
+
+## Source modules
+
+The Android `modules/` host, app module repositories/settings/Media3 adapters and
+host assets are ported from rukamori/ArchiveTune dev `8f25a9e21`, GPL-3.0, with
+original notices preserved. Natune source-chain/schema adaptations remove the
+network gatekeeper and hardcoded-key encrypted module envelope.
+
+`addons/modules/upstream/extension/` preserves ArchiveTuneModules source/icons;
+TIDAL and Qobuz forks retain their authorship, JioSaavn is unchanged. Upstream's
+LGPL-3.0-only NOTICE/LICENSE, GPL COPYING, manifest license declarations and GPL
+packager notice are retained together under `addons/modules/`. Natune's provider
+adapters, catalog builder and pure JS ArchivePool crypto state GPL-3.0-or-later
+terms. See [module compatibility and comparison](modules.md).

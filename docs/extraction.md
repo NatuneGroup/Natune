@@ -88,6 +88,18 @@ The desktop host walks the same tier order through the shared `OrderedAudioResol
 each writing one host diagnostic line with its outcome. Echo runs on Android and iOS only, so
 the desktop Echo tier answers null.
 
+- The desktop primary walk states the player's `signatureTimestamp` for the clients that ask for it, deciphers
+  `signatureCipher`/`cipher` formats and rewrites the throttling `n` parameter through the same NewPipe JavaScript
+  player the NewPipe tier uses. Ciphered formats are therefore no longer dropped. Without a minted PoToken the walk
+  leads with the token-free clients `VISIONOS`, `ANDROID_VR`, `IOS` (in that order) and moves `WEB_REMIX` behind
+  them; a manual client choice still leads. VISIONOS leads because its googlevideo URLs accept the arbitrary bounded
+  ranges the host lease needs, while the ANDROID_VR 1.65.10 URLs measured here reject later ranges with HTTP 403.
+  The walk is bounded to 15 s and six player requests, and the BotGuard mint is bounded
+  inside it, so a bot-checked network fails over to the extractor tiers instead of spending the caller's whole budget.
+  PO tokens still need BotGuard credentials injected at build time or supplied through `ARCHIVETUNE_POTOKEN_*`
+  environment/system properties; an explicitly configured deployment mints by default, a blank build leaves the stored
+  preference in charge and mints nothing. A page-bound attested provider (or the Metrolist-style bgutil sidecar)
+  remains the follow-up for networks that reject untokened or unattested tokens.
 - The desktop InnerTubeX tier uses `innertubexDesktopVersion`, today the same `v0.11.2`
   release as the Android pin — the version key stays separate only so a host can diverge again
   if a regression ever forces a split, not because the pins differ. Its cipher is the pure-Kotlin
@@ -96,9 +108,16 @@ the desktop Echo tier answers null.
   prohibited-result guards.
 - The desktop NewPipe tier runs NewPipe's stream extractor first and then asks ANDROID_MUSIC, iOS
   and WEB_REMIX as a visitor, deciphering `signatureCipher`/`cipher` formats and the n parameter
-  through NewPipe's JavaScript player. The primary desktop walk skips ciphered formats, so this
-  tier is also the desktop's only cipher path. Its one BotGuard mint is optional and bounded well
-  inside the tier budget, so a stalled minting endpoint leaves untokened extraction its time.
+  through NewPipe's JavaScript player. Its one BotGuard mint is optional and bounded well inside the
+  tier budget, so a stalled minting endpoint leaves untokened extraction its time.
+- Every remote locator, including a header-free one, is fetched through the host lease: bounded 64 KiB probe and
+  4 MiB ranged chunks, a browser `User-Agent` when the resolver names none, and socket timeouts. Two paths keep
+  FFmpeg's own reader: a local file, and a header-free HLS/DASH manifest URL, because only FFmpeg's demuxer can follow
+  a playlist's child segments (the C fallback also sets `rw_timeout` and a browser agent). A manifest that carries
+  headers is still leased, so credentials never ride a bare URL; it cannot follow children through the lease, which is
+  the pre-existing limitation for authenticated manifests.
+- A YouTube locator now carries the URL's `expire` parameter as its authorization window, so the queue's bounded
+  recovery re-resolves it on `401/403/404/410/416` or an expired lease instead of treating a dead URL as terminal.
 
 ## iOS host tiers
 

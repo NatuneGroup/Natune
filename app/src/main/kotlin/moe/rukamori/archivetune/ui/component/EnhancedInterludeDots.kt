@@ -74,11 +74,18 @@ internal class EnhancedInterludeGate(private val lyrics: () -> SyncedLyrics) {
 
 /**
  * Whether the row carries real per-word timing. A line-synced row built as a [KaraokeLine] only to hang
- * a romanisation on has every "syllable" pegged at [MIN_KARAOKE_SYLLABLE_DURATION_MS]; a word-synced row
- * has at least one genuinely timed word.
+ * a romanisation on has every "syllable" pegged at [ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS] and every one of
+ * them starting at the line's own time; a word-synced row has at least one genuinely timed word and
+ * more than one start. Both conditions are required: a single word spanning the line is a line-synced
+ * line too, and sweeping it would light the row in one go.
  */
-internal fun ISyncedLine.hasWordTiming(): Boolean =
-    this is KaraokeLine && syllables.any { it.end - it.start > MIN_KARAOKE_SYLLABLE_DURATION_MS }
+internal fun ISyncedLine.hasWordTiming(): Boolean {
+    if (this !is KaraokeLine) return false
+    val timed = syllables
+    if (timed.size < 2) return false
+    if (timed.all { it.start == timed.first().start }) return false
+    return timed.any { it.end - it.start > ALTERNATE_MIN_KARAOKE_SYLLABLE_DURATION_MS }
+}
 
 /**
  * When each line activates, [LyricsActivation.leadMs] ahead of its timed start, measured against the
@@ -123,25 +130,49 @@ internal object EnhancedInterludeMotion {
 
     private const val ENTER_MS = 400L
     private const val EXIT_MS = 400L
-    private const val BREATH_CYCLE_MS = 2_400L
-    private const val BREATH_MIN = 0.92f
+
+    /** One full turn of the travelling pulse: the dots peak a third of a cycle apart. */
+    const val PULSE_CYCLE_MS = 1_400L
+
+    /** The slow size breath, two pulse turns long, so the two rhythms meet again every cycle. */
+    const val BREATH_CYCLE_MS = 2_800L
+    private const val BREATH_MIN = 0.94f
     private const val BREATH_MAX = 1.08f
-    private const val IDLE_LIGHT = 0.25f
+    private const val IDLE_LIGHT = 0.28f
 
     /** Over the last [END_SWELL_MS] of the break the dots swell toward the arriving line. */
     const val END_SWELL_MS = 1_500L
-    const val END_SWELL_FROM = 1.1f
-    const val END_SWELL_TO = 1.4f
+    const val END_SWELL_TO = 1.3f
 
     /**
-     * The anticipation swell, from [END_SWELL_FROM] to [END_SWELL_TO] over the last [END_SWELL_MS] of
-     * the break, and 0 before it, so the dots grow just as the next line is about to start.
+     * The anticipation swell as a *share of the breath*: exactly 1 everywhere outside the last
+     * [END_SWELL_MS] of the break, easing to [END_SWELL_TO] as the next line arrives.
+     *
+     * It is a factor rather than a second scale the draw picks with `maxOf`, which is what made the
+     * indicator jump: a `maxOf` against a function that started at 1.05 snapped the dots 5% larger on
+     * the frame the window opened, and snapped them back when it closed. A factor of 1 is neutral in
+     * a product, so the curve leaves and re-enters the breath with nothing to see.
      */
     fun endSwell(interlude: EnhancedInterlude, positionMs: Long): Float {
         val remaining = interlude.endMs - positionMs
-        if (remaining <= 0L || remaining > END_SWELL_MS) return 0f
+        if (remaining <= 0L || remaining > END_SWELL_MS) return 1f
         val through = 1f - remaining.toFloat() / END_SWELL_MS
-        return END_SWELL_FROM + (END_SWELL_TO - END_SWELL_FROM) * through
+        // Smoothstep, so the swell starts and stops without a corner.
+        val eased = through * through * (3f - 2f * through)
+        return 1f + (END_SWELL_TO - 1f) * eased
+    }
+
+    /**
+     * The dots' scale at [positionMs]: the slow breath, multiplied by the end swell. A product of two
+     * continuous, seamless cycles, so the indicator never restarts and never jumps — at a break's end
+     * the factor returns to 1 and the breath carries on where it was.
+     *
+     * Both factors are motion, so reduced motion returns the neutral 1: holding only the breath still
+     * left the end swell scaling the dots to [END_SWELL_TO] under a setting that asks for no motion.
+     */
+    fun scale(interlude: EnhancedInterlude, positionMs: Long, reduceMotion: Boolean): Float {
+        if (reduceMotion) return 1f
+        return breath(positionMs) * endSwell(interlude, positionMs)
     }
 
     /** How visible the whole indicator is at [positionMs]. It fades in as the break starts and out before it ends. */
@@ -152,30 +183,41 @@ internal object EnhancedInterludeMotion {
         return minOf(enter, exit, 1f)
     }
 
-    /** The share of the break that has passed, from 0 to 1. The dots fill across the whole silence. */
-    fun progress(interlude: EnhancedInterlude, positionMs: Long): Float =
-        ((positionMs - interlude.startMs).toFloat() / interlude.durationMs.coerceAtLeast(1L)).coerceIn(0f, 1f)
-
     /**
-     * How lit dot [index] is, from [IDLE_LIGHT] to 1. The dots take their turn across the break, a third each. Reduced
-     * motion lights them in steps rather than easing them.
+     * How lit dot [index] is at [positionMs], from [IDLE_LIGHT] to 1: a travelling pulse whose per-dot
+     * brightness is one half of a cosine, each dot a third of a cycle behind the one before it.
+     *
+     * The loop is seamless by construction. A cosine of the phase returns the same value and the same
+     * slope at the wrap, so the pulse never restarts; and because the phase comes from the lyrics
+     * timeline rather than from the break's own progress, a long break and a short one pulse at the same
+     * rhythm instead of a fill that begins again at every break. Reduced motion lights one dot at a time
+     * without easing, so nothing moves but the order does.
      */
-    fun dotLight(progress: Float, index: Int, reduceMotion: Boolean): Float {
-        val turn = progress * DOT_COUNT - index
-        val share = if (reduceMotion) {
-            if (turn > 0f) 1f else 0f
-        } else {
-            turn.coerceIn(0f, 1f)
+    fun dotLight(
+        positionMs: Long,
+        index: Int,
+        reduceMotion: Boolean,
+    ): Float {
+        if (reduceMotion) {
+            val slot = (phaseOf(positionMs) * DOT_COUNT).toInt().coerceIn(0, DOT_COUNT - 1)
+            return if (slot == index) 1f else IDLE_LIGHT
         }
-        return IDLE_LIGHT + (1f - IDLE_LIGHT) * share
+        val offset = phaseOf(positionMs - index * (PULSE_CYCLE_MS / DOT_COUNT))
+        val lobe = ((cos(2.0 * PI * offset) + 1.0) / 2.0).toFloat()
+        return IDLE_LIGHT + (1f - IDLE_LIGHT) * lobe
     }
 
     /** The breath, from [BREATH_MIN] to [BREATH_MAX], on a cycle of [BREATH_CYCLE_MS] of the lyrics timeline. */
     fun breath(positionMs: Long): Float {
-        val phase = (positionMs % BREATH_CYCLE_MS).toDouble() / BREATH_CYCLE_MS
-        val swell = 0.5 - 0.5 * cos(2.0 * PI * phase)
+        val swell = 0.5 - 0.5 * cos(2.0 * PI * phaseOf(positionMs, BREATH_CYCLE_MS))
         return BREATH_MIN + (BREATH_MAX - BREATH_MIN) * swell.toFloat()
     }
+
+    /** [positionMs] as a share of [cycleMs], wrapped into `0..1` for any position, negative included. */
+    private fun phaseOf(
+        positionMs: Long,
+        cycleMs: Long = PULSE_CYCLE_MS,
+    ): Double = (((positionMs % cycleMs) + cycleMs) % cycleMs).toDouble() / cycleMs
 }
 
 /**
@@ -199,11 +241,14 @@ internal fun EnhancedInterludeDots(
     )
 }
 
-// Three 10dp dots 6dp apart; the band is tall enough for the 1.4x end swell.
-private const val DOTS_WIDTH_DP = 42
-private const val DOTS_HEIGHT_DP = 14
-private const val DOT_DIAMETER_DP = 10
-private const val DOT_GAP_DP = 6
+// The size ArchiveTune's breathing dots draw at, which is what they were asked to match:
+// KaraokeBreathingDotsDefaults is `size = 16.dp`, `margin = 12.dp`, three of them — 3 * 16 + 2 * 12 =
+// 72 dp wide. The previous 14 dp dots 8 dp apart read as three specks under a 26 sp lyric line. The
+// band is 22 dp tall: 16 dp for the dot and the room the 1.3x end swell needs.
+internal const val DOTS_WIDTH_DP = 72
+internal const val DOTS_HEIGHT_DP = 22
+internal const val DOT_DIAMETER_DP = 16
+internal const val DOT_GAP_DP = 12
 
 private fun DrawScope.drawEnhancedInterludeDots(
     interlude: EnhancedInterlude,
@@ -213,15 +258,7 @@ private fun DrawScope.drawEnhancedInterludeDots(
 ) {
     val visibility = EnhancedInterludeMotion.visibility(interlude, positionMs)
     if (visibility <= 0f) return
-    val progress = EnhancedInterludeMotion.progress(interlude, positionMs)
-    val breath = if (reduceMotion) {
-        1f
-    } else {
-        maxOf(
-            EnhancedInterludeMotion.breath(positionMs),
-            EnhancedInterludeMotion.endSwell(interlude, positionMs),
-        )
-    }
+    val breath = EnhancedInterludeMotion.scale(interlude, positionMs, reduceMotion)
     val diameter = DOT_DIAMETER_DP.dp.toPx()
     val gap = DOT_GAP_DP.dp.toPx()
     val radius = diameter / 2f * breath
@@ -230,8 +267,8 @@ private fun DrawScope.drawEnhancedInterludeDots(
         drawCircle(
             color = color,
             radius = radius,
-            center = Offset(diameter / 2f + index * (diameter + gap), centerY),
-            alpha = visibility * EnhancedInterludeMotion.dotLight(progress, index, reduceMotion),
+            center = Offset(size.width / 2f - (diameter + gap) + index * (diameter + gap), centerY),
+            alpha = visibility * EnhancedInterludeMotion.dotLight(positionMs, index, reduceMotion),
         )
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +14,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -26,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -53,7 +58,7 @@ internal fun ArchiveMiniPlayer(
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val playing = playback?.playWhenReady == true
+    val playing = playback?.playWhenReady == true && playback.isEnded != true
     val matching = nativeState.matches(playback)
     val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, motion)
     val seekInteraction = remember { PlayerInteractionState() }
@@ -82,19 +87,23 @@ internal fun ArchiveMiniPlayer(
         // take Space from every focused control inside the strip. The claim is per surface and leaves text fields alone.
         BoxWithConstraints(modifier.fillMaxWidth()) {
             val barWidth = maxWidth
+            val compact = barWidth < 300.dp
+            // The desktop host draws its own player bar in the shell, so this bar is only ever composed by a phone
+            // host's bottom chrome; a narrow window keeps its compact single row.
             if (!isWideTransportBar(barWidth)) {
+                Column(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = 56.dp)
                         .spaceTogglesPlayback(onPlayPause)
                         .clickable(onClick = onExpand)
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .padding(horizontal = if (compact) 6.dp else 12.dp, vertical = 4.dp)
                         .testTag("compact-mini-player"),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
                 ) {
-                    artwork(current.item, Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)))
+                    artwork(current.item, Modifier.size(if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(8.dp)))
                     Column(Modifier.weight(1f)) {
                         MarqueeText(current.item.title, style = MaterialTheme.typography.bodyMedium)
                         if (current.item.subtitle.isNotBlank()) {
@@ -105,20 +114,33 @@ internal fun ArchiveMiniPlayer(
                             )
                         }
                     }
-                    TextButton(onClick = onPlayPause) {
-                        Text(
-                            stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
-                            playMotion.modifier,
+                    Box(contentAlignment = Alignment.Center) {
+                        PlayerIcon(
+                            symbol = if (playback?.isEnded == true) PlayerSymbol.REPLAY
+                                else if (playing) PlayerSymbol.PAUSE else PlayerSymbol.PLAY,
+                            label = stringResource(if (playback?.isEnded == true) Res.string.m5_replay
+                                else if (playing) Res.string.m5_pause else Res.string.m5_play),
+                            onClick = onPlayPause,
+                            size = 48.dp, iconSize = 24.dp,
+                            container = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            shape = CircleShape,
+                            modifier = Modifier.testTag("mini-player-play-pause"),
                         )
+                        if (playback?.isBuffering == true) {
+                            CircularProgressIndicator(Modifier.size(34.dp), strokeWidth = 2.dp)
+                        }
                     }
-                    PlayerIcon(
+                    if (!compact) PlayerIcon(
                         symbol = PlayerSymbol.NEXT,
                         label = stringResource(Res.string.m5_next),
                         onClick = { onAction(PlayerAction.NEXT) },
                         enabled = matching && nativeState.canNext,
-                        size = 36.dp,
-                        iconSize = 20.dp,
+                        size = 48.dp,
+                        iconSize = 24.dp,
                     )
+                }
+                MiniPlayerProgressLine(playback, Modifier.fillMaxWidth())
                 }
             } else {
                 Row(
@@ -288,4 +310,26 @@ internal fun ArchiveMiniPlayer(
             }
         }
     }
+}
+
+/**
+ * The position line under the compact bar. A phone bar has no room for a seek slider, so the row above it is paired
+ * with a two-point line, as the reference phone bar does. It is drawn only for a seekable track with a known duration:
+ * a live stream, a preview or an unread native snapshot shows no position this UI did not observe.
+ */
+@Composable
+private fun MiniPlayerProgressLine(playback: PlaybackSnapshot?, modifier: Modifier = Modifier) {
+    val snapshot = playback ?: return
+    val duration = snapshot.durationMs ?: return
+    if (duration <= 0L || !snapshot.isSeekable) return
+    val fraction = (snapshot.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    LinearProgressIndicator(
+        progress = { fraction },
+        modifier = modifier.height(2.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        strokeCap = StrokeCap.Butt,
+        gapSize = 0.dp,
+        drawStopIndicator = {},
+    )
 }

@@ -139,4 +139,24 @@ class ShellComposeTest {
         ShellTab.entries.forEach { onNodeWithTag("shell-tab-${it.name}").assertIsDisplayed() }
         onAllNodes(hasTestTag("shell-mini-player")).assertCountEquals(1)
     }
+
+    @Test fun thisShellStaysThePhoneShellOnADesktopHost() = runComposeUiTest {
+        // The desktop host draws its own scaffold (DesktopShellTest); this shell must not grow a second sidebar, so a
+        // desktop host's flag only widens the pages. The rail here is still the phone/M3 one, search tab included.
+        val navigation = ShellNavigation()
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalDesktopLayout provides true) {
+                    Box(Modifier.size(1440.dp, 900.dp)) {
+                        ArchiveTuneShell(navigation, PreferenceSnapshot.EMPTY, {},
+                            miniPlayer = { Text("Fixture player") }, content = { Text("Route $it") })
+                    }
+                }
+            }
+        }
+        onNodeWithTag("shell-rail").assertIsDisplayed()
+        ShellTab.entries.forEach { onNodeWithTag("shell-tab-${it.name}").assertIsDisplayed() }
+        onNodeWithTag("shell-tab-Library").performClick()
+        onNodeWithText("Route library").assertIsDisplayed()
+    }
 }

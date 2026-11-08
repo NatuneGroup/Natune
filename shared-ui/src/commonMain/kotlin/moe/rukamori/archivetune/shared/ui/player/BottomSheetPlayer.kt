@@ -6,16 +6,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.LocalHostSafeArea
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.glass.OpticalPolicy
 import moe.rukamori.archivetune.shared.ui.glass.opticalPolicy
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.playerstyles.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.safeAreaPadding
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
 
@@ -71,12 +75,18 @@ fun BottomSheetPlayer(
     DisposableEffect(interaction) { onDispose { interaction.cancelPreview() } }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val landscape=isSplitPlayerViewport(maxWidth,maxHeight)
+        // The desktop presents one bounded portrait column; the style dispatch sees a portrait surface even when the
+        // window is wider than it is tall, so no style falls back to its two-pane tablet split.
+        val desktop=LocalDesktopLayout.current
+        // Captured here: the BoxWithConstraints receiver is not implicit inside the Row lambda used for the side panel.
+        val windowWidth=maxWidth
+        val styleLandscape=landscape && !desktop
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
         val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
         val handoff=rememberPlayerHandoff(state,optical.motion && !state.reducedMotion)
         val content=slots(preferences,surfaces).withHandoff(handoff)
-        val c=PlayerRenderContext(state,actions,presentation,interaction,content,landscape,artworkPager,optical)
+        val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)
         DisposableEffect(showingLyrics) {
@@ -90,15 +100,45 @@ fun BottomSheetPlayer(
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat),
             ) {
+                // The expansion surface paints edge to edge: its background fills the whole window, including the
+                // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.
+                // A host with no measured safe area (Android, desktop) gets an inset of zero and this is unchanged.
                 Box(Modifier.fillMaxSize().testTag("player-${presentation.style.name}-${if(landscape) "landscape" else "portrait"}")) {
                     PlayerBackground(c)
+                    Box(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current)) {
                     if(interaction.fullscreenLyrics) {
                         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ interaction.fullscreenLyrics=false })
                             content.lyrics(Modifier.weight(1f).fillMaxWidth())
                         }
+                    } else if(desktop) {
+                        Box(Modifier.fillMaxSize()) {
+                            // The desktop keeps one visible close control; the style columns start under it.
+                            PlayerIcon(
+                                PlayerSymbol.BACK, stringResource(Res.string.m5_back),
+                                { actions.onAction(PlayerAction.COLLAPSE) },
+                                modifier = Modifier.align(Alignment.TopStart).padding(12.dp).testTag("player-close"),
+                                size = 40.dp, iconSize = 22.dp,
+                            )
+                            Row(
+                                Modifier.fillMaxSize().padding(start = 56.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            ) {
+                                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.widthIn(max = 648.dp).fillMaxHeight()) { PlayerStyleDispatch(c) }
+                                }
+                                val sidePanel = presentation.style != PlayerDesignStyle.FLAMINGO &&
+                                    (interaction.panel != PlayerPanel.ARTWORK || presentation.style == PlayerDesignStyle.METROLIST_KMP)
+                                if (sidePanel) {
+                                    val panelWidth = if (windowWidth >= 1200.dp) 420.dp else windowWidth * 0.42f
+                                    Box(Modifier.width(panelWidth).fillMaxHeight()) {
+                                        SelectedPlayerPanel(c, Modifier.fillMaxSize())
+                                    }
+                                }
+                            }
+                        }
                     } else if(landscape) {
-                        Row(Modifier.fillMaxSize().padding(16.dp),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
+                        Row(Modifier.fillMaxSize().padding(top=48.dp).padding(16.dp),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
                             Box(Modifier.weight(1f).fillMaxHeight()) { PlayerStyleDispatch(c) }
                             if(presentation.style!=PlayerDesignStyle.FLAMINGO &&
                                 (interaction.panel!=PlayerPanel.ARTWORK || presentation.style==PlayerDesignStyle.METROLIST_KMP)) {
@@ -106,10 +146,22 @@ fun BottomSheetPlayer(
                             }
                         }
                     } else {
-                        Box(Modifier.fillMaxSize().padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
                         if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
-                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp))
+                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
                         }
+                    }
+                    // Every phone/tablet style shares this hit target above artwork and panels.
+                    // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
+                    if (!desktop && !interaction.fullscreenLyrics) {
+                        PlayerIcon(
+                            PlayerSymbol.BACK, stringResource(Res.string.m5_back),
+                            { actions.onAction(PlayerAction.COLLAPSE) },
+                            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
+                                .testTag("player-close"),
+                            size = 48.dp, iconSize = 24.dp,
+                        )
+                    }
                     }
                 }
             }

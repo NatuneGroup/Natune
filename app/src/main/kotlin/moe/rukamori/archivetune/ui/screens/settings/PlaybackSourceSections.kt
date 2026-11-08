@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -63,7 +64,7 @@ import moe.rukamori.archivetune.constants.DeezerEnabledKey
 import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
-import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
+import moe.rukamori.archivetune.spotify.rememberSpotifyPlaybackExtensionAvailable
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
 import moe.rukamori.archivetune.constants.SaavnAudioQuality
@@ -73,13 +74,10 @@ import moe.rukamori.archivetune.constants.QobuzAudioQualityKey
 import moe.rukamori.archivetune.constants.QobuzEnabledKey
 import moe.rukamori.archivetune.constants.QobuzBackupEnabledKey
 import moe.rukamori.archivetune.constants.TidalAccountFirstKey
-import moe.rukamori.archivetune.constants.TidalAnimatedCoversEnabledKey
 import moe.rukamori.archivetune.constants.TidalAudioQuality
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
-import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AutoChoosePlaybackClientKey
-import moe.rukamori.archivetune.constants.AudioQualityKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
@@ -110,6 +108,7 @@ private fun AudioSourceType.displayName(context: android.content.Context): Strin
         AudioSourceType.DEEZER -> context.getString(R.string.source_deezer)
         AudioSourceType.APPLE -> context.getString(R.string.source_apple_music)
         AudioSourceType.AMAZON -> context.getString(R.string.source_amazon)
+        AudioSourceType.MODULES -> context.getString(R.string.modules_title)
         AudioSourceType.QQ -> context.getString(R.string.source_qq_music)
         AudioSourceType.SPOTIFY -> context.getString(R.string.source_spotify_stream)
         AudioSourceType.JIOSAAVN -> context.getString(R.string.source_jiosaavn)
@@ -127,6 +126,7 @@ private fun AudioSourceType.iconRes(): Int =
         // stand-in APPLE uses above for the same reason.
         AudioSourceType.AMAZON -> R.drawable.ic_music
         // Same stand-in for QQ Music.
+        AudioSourceType.MODULES -> R.drawable.extension
         AudioSourceType.QQ -> R.drawable.ic_music
         AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn
@@ -150,8 +150,7 @@ internal fun PlaybackSourceSections(
     val (amazonEnabled, onAmazonEnabledChangeRaw) = rememberPreference(AmazonEnabledKey, false)
     val (qqMusicEnabled, onQqMusicEnabledChangeRaw) = rememberPreference(QqMusicEnabledKey, false)
     val (spotifyStreamEnabledRaw, onSpotifyStreamEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
-    val (spotifyStreamSpDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
-    val spotifyStreamSignedIn = spotifyStreamSpDc.isNotBlank()
+    val spotifyStreamSignedIn = rememberSpotifyPlaybackExtensionAvailable()
     // Matches MusicService.isSpotifyStreamingConfigured: the switch alone does nothing without an
     // account, so the order picker must not show the source as active.
     val spotifyStreamEnabled = spotifyStreamEnabledRaw && spotifyStreamSignedIn
@@ -219,8 +218,6 @@ internal fun PlaybackSourceSections(
         rememberEnumPreference(TidalAudioQualityKey, TidalAudioQuality.FLAC)
 
     // YouTube-specific playback state
-    val (ytAudioQuality, onYtAudioQualityChange) =
-        rememberEnumPreference(AudioQualityKey, defaultValue = AudioQuality.AUTO)
     val (playerStreamClient, onPlayerStreamClientChange) =
         rememberEnumPreference(PlayerStreamClientKey, defaultValue = PlayerStreamClient.WEB_REMIX)
     val (autoChoosePlaybackClient, onAutoChoosePlaybackClientChange) =
@@ -236,10 +233,14 @@ internal fun PlaybackSourceSections(
     val (qobuzBackupEnabled, onQobuzBackupEnabledChange) = rememberPreference(QobuzBackupEnabledKey, false)
     val (appleMusicQuality, onAppleMusicQualityChange) =
         rememberEnumPreference(AppleMusicQualityKey, AppleMusicQuality.LOSSLESS)
-    // The Tidal artwork-fetching toggle lives in Player Settings → Artwork (same key).
-    val (animatedCovers, onAnimatedCoversChange) =
-        rememberPreference(TidalAnimatedCoversEnabledKey, false)
-
+    val moduleViewModel: moe.rukamori.archivetune.viewmodels.ModuleSettingsViewModel =
+        androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+    val moduleModel by moduleViewModel.state.collectAsState()
+    val modulesEnabled = when (val current = moduleModel) {
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Success -> current.model.enabled
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Empty -> current.model.enabled
+        else -> false
+    }
     val sourceOrder =
         remember(sourceOrderRaw) {
             AudioSourceConfig.parseOrder(sourceOrderRaw.ifBlank { null })
@@ -253,6 +254,7 @@ internal fun PlaybackSourceSections(
             AudioSourceType.DEEZER -> deezerEnabled
             AudioSourceType.APPLE -> appleMusicEnabled
             AudioSourceType.AMAZON -> amazonEnabled
+            AudioSourceType.MODULES -> modulesEnabled
             AudioSourceType.QQ -> qqMusicEnabled
             AudioSourceType.SPOTIFY -> spotifyStreamEnabled
             AudioSourceType.JIOSAAVN -> jioSaavnEnabled
@@ -278,6 +280,7 @@ internal fun PlaybackSourceSections(
                     AudioSourceType.DEEZER -> onDeezerEnabledChange(true)
                     AudioSourceType.APPLE -> onAppleMusicEnabledChange(true)
                     AudioSourceType.AMAZON -> onAmazonEnabledChange(true)
+                    AudioSourceType.MODULES -> Unit // Modules are explicitly enabled in their own settings
                     AudioSourceType.QQ -> onQqMusicEnabledChange(true)
                     AudioSourceType.SPOTIFY -> Unit // gated on streaming sign-in; never auto-enabled here
                     AudioSourceType.JIOSAAVN -> onJioSaavnEnabledChange(true)
@@ -372,23 +375,6 @@ internal fun PlaybackSourceSections(
                 icon = { Icon(painterResource(R.drawable.play), null) },
                 checked = youTubeEnabled,
                 onCheckedChange = onYouTubeEnabledChange,
-            )
-        }
-        item {
-            EnumListPreference(
-                title = { Text(stringResource(R.string.audio_quality)) },
-                description = stringResource(R.string.audio_quality_description),
-                icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                selectedValue = ytAudioQuality,
-                onValueSelected = onYtAudioQualityChange,
-                valueText = {
-                    when (it) {
-                        AudioQuality.HIGHEST -> stringResource(R.string.audio_quality_max)
-                        AudioQuality.HIGH -> stringResource(R.string.audio_quality_high)
-                        AudioQuality.AUTO -> stringResource(R.string.audio_quality_auto)
-                        AudioQuality.LOW -> stringResource(R.string.audio_quality_low)
-                    }
-                },
             )
         }
         item {
@@ -498,17 +484,6 @@ internal fun PlaybackSourceSections(
                         TidalAudioQuality.HI_RES_LOSSLESS -> stringResource(R.string.tidal_quality_hires)
                     }
                 },
-            )
-        }
-
-        item {
-            SwitchPreference(
-                modifier = positions.modifierFor("tidal_animated_covers"),
-                title = { Text(stringResource(R.string.tidal_animated_covers)) },
-                description = stringResource(R.string.tidal_animated_covers_description),
-                checked = animatedCovers,
-                onCheckedChange = onAnimatedCoversChange,
-                isEnabled = tidalEnabled,
             )
         }
 

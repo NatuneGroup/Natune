@@ -119,7 +119,8 @@ fun ArchiveNavigationHost(
                     binding.voice, binding.recognition, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
                     preferences = preferences,
-                    focusRequested = searchFocusRequested, onFocusConsumed = onSearchFocusConsumed)
+                    focusRequested = searchFocusRequested, onFocusConsumed = onSearchFocusConsumed,
+                    onBack = back.takeIf { navigation.canGoBack })
             }
             is ArchiveGraphPage.Library -> {
                 require(route.destination == ArchiveDestination.LIBRARY)

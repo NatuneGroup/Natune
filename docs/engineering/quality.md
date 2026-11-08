@@ -178,13 +178,25 @@ direct-stream metadata, source order/overrides, fallback chains and cached-sourc
 gating. This is a critical-policy threshold, not a claim of 80% whole-app coverage.
 Missing policy bytecode or execution data fails the check.
 
-The same workflow's second step is the KMP verdict and runs every shared and desktop suite:
+The same workflow's other job is the KMP verdict and runs every shared and desktop suite:
 
 ```sh
 ./gradlew --console=plain --stacktrace --continue \
   :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest :desktopApp:jvmTest \
   -PdesktopEngineTests=false
 ```
+
+It is a separate job on the same commit, with its own job and step timeout, because the app leg and the
+shared leg used to share one 45-minute job: run 42267860785 spent 32 minutes in `:shared-data:jvmTest`
+without emitting a line while every other module was green, and the cancellation left no failing suite to
+point at. The suite that stopped reporting was `DeviceConnectKtorTest`: `DeviceConnectServer.start()` wrapped
+the Ktor CIO engine in `withContext`, the engine attached its accept loop to that coroutine, and every
+`start()` — in the test and on the desktop settings toggle — waited for the engine's own lifetime. The engine
+now starts on a scope nobody awaits and only the bound port comes back.
+Every `Test` task now also carries a task-level timeout (`sharedTestTimeoutMinutes`, 20 minutes
+for the `:shared-*` suites; `testTimeoutMinutes`, 60 minutes otherwise), so a worker that never exits fails
+its own task instead of the whole job. The `:shared-*` test workers are explicitly display-less
+(`java.awt.headless=true`), because they render through Skia and must never wait for a toolkit.
 
 `-PdesktopEngineTests=false` excludes only the three `:desktopApp` suites that decode the committed fixtures
 through the native engine (`DesktopPlaybackEngineTest`, `DesktopPlaybackPortTest`,

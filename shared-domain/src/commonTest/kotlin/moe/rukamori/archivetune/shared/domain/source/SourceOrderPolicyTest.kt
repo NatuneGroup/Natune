@@ -6,6 +6,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.DEEZER
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.JIOSAAVN
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QOBUZ
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QOBUZ_BACKUP
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.MODULES
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.QQ
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.SPOTIFY
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType.TIDAL
@@ -22,7 +23,7 @@ class SourceOrderPolicyTest {
     @Test
     fun defaultOrderIsTheShippedPriorityWithYouTubeLast() {
         assertEquals(
-            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, SPOTIFY, YOUTUBE),
+            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, MODULES, SPOTIFY, YOUTUBE),
             AudioSourceConfig.DEFAULT_ORDER,
         )
         assertEquals(YOUTUBE, AudioSourceConfig.DEFAULT_ORDER.last())
@@ -52,7 +53,7 @@ class SourceOrderPolicyTest {
     fun aStoredOrderKeepsTheUsersArrangementAndInsertsNewSourcesAboveYouTube() {
         // DEEZER was moved above TIDAL. Every source the stored order lacks goes directly above YouTube.
         assertEquals(
-            listOf(DEEZER, TIDAL, QOBUZ, QOBUZ_BACKUP, APPLE, JIOSAAVN, AMAZON, QQ, SPOTIFY, YOUTUBE),
+            listOf(DEEZER, TIDAL, QOBUZ, QOBUZ_BACKUP, APPLE, JIOSAAVN, AMAZON, QQ, MODULES, SPOTIFY, YOUTUBE),
             AudioSourceConfig.parseOrder("DEEZER,TIDAL,YOUTUBE"),
         )
     }
@@ -60,7 +61,7 @@ class SourceOrderPolicyTest {
     @Test
     fun unknownAndRepeatedNamesAreDroppedFromAStoredOrder() {
         assertEquals(
-            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, SPOTIFY, YOUTUBE),
+            listOf(TIDAL, QOBUZ, QOBUZ_BACKUP, DEEZER, APPLE, JIOSAAVN, AMAZON, QQ, MODULES, SPOTIFY, YOUTUBE),
             AudioSourceConfig.parseOrder("bogus, tidal ,TIDAL,YOUTUBE,youtube"),
         )
     }
@@ -78,7 +79,7 @@ class SourceOrderPolicyTest {
     fun migrationWritesTheResolverOrderBackAndChangesNothingOnASecondRun() {
         val migrated = AudioSourceConfig.migrateStoredOrder("TIDAL,QOBUZ")
 
-        assertEquals("TIDAL,QOBUZ,QOBUZ_BACKUP,DEEZER,APPLE,JIOSAAVN,AMAZON,QQ,SPOTIFY,YOUTUBE", migrated)
+        assertEquals("TIDAL,QOBUZ,QOBUZ_BACKUP,DEEZER,APPLE,JIOSAAVN,AMAZON,QQ,MODULES,SPOTIFY,YOUTUBE", migrated)
         assertEquals(migrated, AudioSourceConfig.migrateStoredOrder(migrated))
     }
 

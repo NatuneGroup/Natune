@@ -45,6 +45,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -98,7 +99,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -139,6 +139,7 @@ import moe.rukamori.archivetune.ui.utils.highRes
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.PlayerWindowLayout
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 
@@ -371,7 +372,8 @@ fun SpatialFlowPlayerContent(
             with(density) { (top - playerRootTopY).coerceAtLeast(0f).toDp() }
         }
 
-    Box(
+    // BoxWithConstraints: the artwork slot and its top offset below are sized against this box.
+    BoxWithConstraints(
         modifier =
             modifier
                 .fillMaxSize()
@@ -472,20 +474,18 @@ fun SpatialFlowPlayerContent(
         }
 
         MaterialTheme(typography = rememberSpatialFlowTypography()) {
-                val configuration = LocalConfiguration.current
-                val screenWidth = configuration.screenWidthDp.dp
-                val screenHeight = configuration.screenHeightDp.dp
-                val albumArtSize = screenWidth * 0.9f
+                // The square that fits this box (see PlayerWindowLayout), not 90% of the screen.
+                val artSize = PlayerWindowLayout.stackedArtwork(maxWidth, maxHeight)
 
                 // SpatialFlow's exact top offset: the artwork slot is centered
-                // by formula, not by flexible spacers — `((screenHeight -
-                // albumArtSize) / 2f - 220.dp).coerceAtLeast(statusBar + 68.dp)`
+                // by formula, not by flexible spacers — `((playerHeight -
+                // artSize) / 2f - 220.dp).coerceAtLeast(statusBar + 68.dp)`
                 // (FullPlayer.kt). Spacer weights stretch with the leftover
                 // space and open a gap between the metadata block and the seek
                 // bar.
                 val statusBarTopDp = LocalStableSystemBarsTopPadding.current
                 val minTopOffset = statusBarTopDp + 68.dp
-                val topOffset = ((screenHeight - albumArtSize) / 2f - 220.dp).coerceAtLeast(minTopOffset)
+                val topOffset = ((maxHeight - artSize) / 2f - 220.dp).coerceAtLeast(minTopOffset)
 
                 var lyricsButtonCenterInRoot by remember { mutableStateOf<Offset?>(null) }
                 val lyricsRevealProgress by animateFloatAsState(
@@ -576,7 +576,7 @@ fun SpatialFlowPlayerContent(
                             playerConnection.player.seekToDefaultPosition(window.firstPeriodIndex)
                             playerConnection.player.playWhenReady = true
                         },
-                        modifier = Modifier.size(albumArtSize),
+                        modifier = Modifier.size(artSize),
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -613,21 +613,25 @@ fun SpatialFlowPlayerContent(
                             modifier = Modifier.basicMarqueeWithFadedEdges(),
                         )
                         Spacer(modifier = Modifier.height(if (canvasAvailable) 6.dp else 4.dp))
-                        Text(
-                            text = mediaMetadata.artists.joinToString { it.name },
-                            style = if (canvasAvailable) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-                            color = contentSecondary,
-                            maxLines = 1,
+                        Box(
                             modifier =
                                 Modifier
-                                    .basicMarqueeWithFadedEdges()
+                                    .fillMaxWidth()
                                     .clickable {
                                         mediaMetadata.artists.firstOrNull()?.id?.let { artistId ->
                                             state.collapseSoft()
                                             navController.navigate("artist/$artistId")
                                         }
                                     },
-                        )
+                        ) {
+                            Text(
+                                text = mediaMetadata.artists.joinToString { it.name },
+                                style = if (canvasAvailable) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+                                color = contentSecondary,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarqueeWithFadedEdges(),
+                            )
+                        }
                     }
                 }
 

@@ -2,7 +2,6 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 import java.nio.file.Files
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.semantics.SemanticsActions
@@ -28,21 +27,27 @@ class AppearanceSettingsTest {
         assertTrue(playerRows.single { it.anchor == "compact_mini_player" }.enabled)
     }
 
-    @Test fun aodControlsKeepAllWireShapesAndHideOnlyTheTimeLabelChild() {
+    @Test fun aodVisibilityAndTimingStayWhileRemovedLayoutRowsKeepStoredValues() {
         val defaults = aodSettingsRows(PreferenceSnapshot.EMPTY)
-        assertEquals(25, defaults.size)
-        val shapes = defaults.single { it.anchor == "aod_thumbnail" } as SettingsRow.Choice
-        assertEquals(listOf("ROUNDED", "SQUARE", "CIRCLE", "PILL", "ARCH", "SLANTED", "DIAMOND",
-            "PENTAGON", "TRIANGLE", "HEART", "FLOWER", "CLOVER_4", "COOKIE_6", "COOKIE_9", "SUNNY",
-            "SOFT_BURST", "GHOSTISH", "PIXEL_CIRCLE"), shapes.options.map { it.value })
-        val preferences = PreferenceSnapshot.of(AodShowProgressKey to false, AodShowTimeLabelsKey to true,
-            AodShowControlsKey to false, AodControlSizeKey to 80f)
+        assertEquals(11, defaults.size)
+        val removed = setOf(
+            "aod_thumbnail", "aod_customize_background_style", "aod_customize_accent_style",
+            "aod_customize_content_position", "aod_customize_text_alignment", "aod_customize_title_max_lines",
+            "aod_customize_slider_style", "aod_customize_shape_rotation", "aod_customize_horizontal_padding",
+            "aod_customize_vertical_spacing", "aod_customize_ambient_intensity", "aod_customize_artwork_glow",
+            "aod_customize_control_style", "aod_customize_control_size",
+        )
+        assertTrue(defaults.none { it.anchor in removed })
+        val preferences = PreferenceSnapshot.of(
+            AodShowProgressKey to false, AodShowTimeLabelsKey to true, AodBackgroundStyleKey to "AMBIENT_GLOW",
+        )
         val hidden = aodSettingsRows(preferences)
         assertFalse(hidden.any { it.anchor == "aod_customize_show_time_labels" })
-        assertFalse(hidden.single { it.anchor == "aod_customize_slider_style" }.enabled)
-        assertFalse(hidden.single { it.anchor == "aod_customize_control_size" }.enabled)
-        assertEquals(80f, preferences[AodControlSizeKey])
+        // The removed rows left their stored meanings alone; the AOD screen still renders from them.
+        assertEquals("AMBIENT_GLOW", preferences[AodBackgroundStyleKey])
         assertEquals(true, preferences[AodShowTimeLabelsKey])
+        assertTrue(hidden.any { it.anchor == "aod_customize_thumbnail_size" })
+        assertTrue(hidden.any { it.anchor == "aod_customize_auto_timer" })
     }
 
     @Test fun themeCapabilitiesGateBlurWithoutResettingStoredValues() {
@@ -58,32 +63,6 @@ class AppearanceSettingsTest {
         assertEquals(55f, preferences[BlurRadiusKey])
         assertEquals(13, appearanceInterfaceSettingsRows({}, {}, {}).size)
         assertEquals(7, appearanceExtrasSettingsRows().size)
-    }
-
-    @Test fun aodPickerWritesActualDiskWireValueNotCaption() = runBlocking {
-        val directory = Files.createTempDirectory("m6-aod-ui-")
-        val file = directory.resolve("settings.bin")
-        val store = DesktopSettingsStore.open(file)
-        try {
-            val controller = SettingsController(store, store.snapshot(), false)
-            runComposeUiTest {
-                setContent {
-                    val preferences = requireNotNull(store.snapshots.collectAsState().value)
-                    MaterialTheme {
-                        SettingsPage(aodSettingsRows(preferences), preferences, controller,
-                            scrollTo = "aod_customize_background_style", onFailure = { error("Disk edit failed") })
-                    }
-                }
-                onNodeWithTag("setting:aod_customize_background_style").performClick()
-                onNodeWithText("Ambient glow").performClick()
-                waitUntil { store.snapshots.value?.get(AodBackgroundStyleKey) == "AMBIENT_GLOW" }
-            }
-        } finally { store.close() }
-        try {
-            val reopened = DesktopSettingsStore.open(file)
-            try { assertEquals("AMBIENT_GLOW", reopened.snapshot()[AodBackgroundStyleKey]) }
-            finally { reopened.close() }
-        } finally { directory.toFile().deleteRecursively() }
     }
 
     @Test fun interfacePickerIsConnectedToAtomicAppleEditOnDisk() = runBlocking {

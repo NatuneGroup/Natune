@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,12 @@ val HomeFeedGutter = 10.dp
 
 /** Width of a card in the compact carousels (BitChord SHELF_CARD_WIDTH). */
 val HomeShelfCardWidth = 150.dp
+
+/**
+ * The card width of the carousel that is currently composed. The desktop feed raises it from the phone 150 dp to a
+ * density that fills the window without turning the shelf into a grid; every other host keeps [HomeShelfCardWidth].
+ */
+val LocalHomeShelfCardWidth = compositionLocalOf { HomeShelfCardWidth }
 
 /** Corner radius of a compact shelf card. */
 val HomeShelfCardCorner = 12.dp

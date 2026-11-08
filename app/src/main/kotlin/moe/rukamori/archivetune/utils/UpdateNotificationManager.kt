@@ -136,9 +136,16 @@ object UpdateNotificationManager {
                     it[LastUpdateCheckKey] = now
                     it[LastUpdateCheckChannelKey] = updateChannel.name
                 }
+                // A notification survives an app update. If this check finds no newer offer (the
+                // reader is already on the offered build — the normal case right after installing a
+                // nightly), clear any stale "Update available" notification so its action/button is
+                // not left offering a build that is already installed.
                 Updater.getLatestRelease(updateChannel).onSuccess { release ->
-                    Updater.eligibleOffer(release, updateChannel)?.let { offer ->
+                    val offer = Updater.eligibleOffer(release, updateChannel)
+                    if (offer != null) {
                         notifyIfNewVersion(context, offer, revision)
+                    } else {
+                        cancelUpdateNotification(context)
                     }
                 }
             } catch (e: CancellationException) {

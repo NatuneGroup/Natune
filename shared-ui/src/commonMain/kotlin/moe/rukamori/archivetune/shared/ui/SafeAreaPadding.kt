@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -42,6 +43,14 @@ internal const val MAX_SAFE_AREA_POINTS = 320.0
  * that supplies none must stay untouched: the padding and the consumption below are skipped together.
  */
 internal fun SafeAreaPadding.needsRootPadding(): Boolean = hasInsets
+
+/**
+ * The safe area the host measured, provided once by [ArchiveTuneRoot]. A surface that must paint edge to edge (the
+ * expanded player) draws its background outside this inset and reserves the inset around its own controls, so it
+ * cannot use the root's padding itself; every other screen keeps consuming it through
+ * [LocalShellContentPadding] and the root. [SafeAreaPadding.None] on a host with no host-measured safe area.
+ */
+val LocalHostSafeArea = staticCompositionLocalOf { SafeAreaPadding.None }
 
 /**
  * Reserves a host-measured safe area once, for the whole app. [absolutePadding] keeps the physical edges (never

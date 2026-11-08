@@ -19,19 +19,31 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.playback.SegmentFetchPolicy
 
 /**
- * The HTTP(S) bytes of one lease, read through ranged requests. The engine reaches it only through
- * [NativeStreamLease], so FFmpeg's own opener never makes a request for a header-bearing source.
+ * The HTTP(S) bytes of one lease, read through bounded ranged requests. The engine reaches it only through
+ * [NativeStreamLease], so FFmpeg's own opener never makes a request for a source.
+ *
+ * A request asks for one chunk ([STARTUP_PROBE_CHUNK_BYTES] for the probe, [DEFAULT_CHUNK_BYTES] afterwards) instead of
+ * the whole remainder: googlevideo throttles long open-ended responses, and a bounded range lets a dropped socket resume
+ * at the last delivered byte instead of replaying an unbounded body. Reads stay sequential on the producer thread, which
+ * is what the engine consumes.
  *
  * Credentials travel only to the primary origin and to same-origin redirects, because
  * [LeaseCookiePolicy.redirect] strips them on every other hop. A redirect the lease does not permit fails.
  * The socket timeouts bound each call, so a call that misses an interrupt still returns soon, and the
- * engine asks again. [interrupt] closes the socket, which wakes a blocked call at once.
+ * engine asks again. [interrupt] closes the socket, which wakes a blocked call at once. Every refusal records a
+ * sanitized failure detail, because an engine error code cannot carry an HTTP status or an expiry across JNI.
+ *
+ * A read that fails below HTTP is a transport failure, not the end of the stream: it earns the same two attempts
+ * [SegmentFetchPolicy] gives a fetch and then fails the lease with a message naming the exception class, so the
+ * queue's classifier can re-resolve an expired URL instead of the engine waiting out its 30 s starvation limit on a
+ * connection that will never answer.
  */
 internal class HttpRangeSource(
     override val lease: ByteSourceLease,
     private val url: String,
     private val headers: PlaybackHeaders,
     private val cookies: Collection<ScopedCookie>,
+    private val onFailure: (String, Int?) -> Unit = { _, _ -> },
 ) : RandomAccessByteSource {
     private val cancellation = LeaseCancellation()
 
@@ -54,6 +66,14 @@ internal class HttpRangeSource(
 
     /** Consecutive responses that ended before their declared length without any byte progress. */
     private var consecutiveTruncations = 0
+
+    /**
+     * Consecutive transport failures at [failedPosition]. A socket that dies mid-body is the status-0 class, so the
+     * first one asks the engine for the same read again and the second fails the lease with a named cause. Confined to
+     * the producer thread like the stream state.
+     */
+    private var consecutiveReadFailures = 0
+    private var failedPosition = -1L
 
     /** The total length (-1 when the server did not report one) and whether ranged reads are honoured. */
     class Probe(val sizeBytes: Long, val seekable: Boolean)
@@ -110,7 +130,14 @@ internal class HttpRangeSource(
             if (read < 0) {
                 val delivered = streamDeliveredBytes
                 val expected = streamExpectedBytes
+                val moreBytes = sizeBytes < 0L || position < sizeBytes
                 dropConnection()
+                // A bounded chunk that delivered exactly what its range promised ended at the range boundary, not at
+                // the end of the resource: the next read opens the following chunk. The engine reads 0 as "ask again".
+                if (expected >= 0L && delivered >= expected && moreBytes && position > 0L) {
+                    consecutiveTruncations = 0
+                    return 0
+                }
                 // A SUCCESS body that stops before its declared length is silent corruption:
                 // retry it like a transport drop while attempts remain (the response the byte
                 // count came from may simply repeat), then fail the lease.
@@ -126,6 +153,7 @@ internal class HttpRangeSource(
                     ) {
                         return 0
                     }
+                    onFailure("the source ended before its declared length", null)
                     throw ByteSourceException("the source ended before its declared length")
                 }
                 return RandomAccessByteSource.END_OF_STREAM
@@ -133,13 +161,25 @@ internal class HttpRangeSource(
             streamPosition += read
             streamDeliveredBytes += read
             consecutiveTruncations = 0
+            consecutiveReadFailures = 0
+            failedPosition = -1L
             return read
         } catch (io: IOException) {
             // Closing a socket is how an interrupt wakes a read, so a stale generation reports a cancellation.
-            // Any other socket error or timeout is retried: the engine gives up after its starvation limit.
             if (!ticket.isCurrent) throw failureOf(io, ticket)
             dropConnection()
-            return 0
+            // Everything else is the status-0 transport class: no HTTP answer reached this read. It earns the same
+            // second attempt a failed segment fetch gets, and then fails the lease by name — the engine's own retry
+            // loop only watches its 30 s starvation budget, so a dead connection used to stall a chunk for that long
+            // and then report a generic decode failure the queue could not classify.
+            consecutiveReadFailures = if (failedPosition == position) consecutiveReadFailures + 1 else 1
+            failedPosition = position
+            if (SegmentFetchPolicy.allowsAnotherAttempt(SegmentFetchPolicy.FailureClass.NO_RESPONSE, consecutiveReadFailures)) {
+                return 0
+            }
+            val reason = "the source's connection failed: ${io.javaClass.simpleName}"
+            onFailure(reason, null)
+            throw ByteSourceException(reason, io)
         } catch (failure: Throwable) {
             throw failureOf(failure, ticket)
         }
@@ -196,8 +236,9 @@ internal class HttpRangeSource(
     }
 
     /**
-     * Requests [position] onward and follows permitted redirects. Returns null when the position lies past the end
-     * (HTTP 416). Each hop is checked against the lease before its request leaves.
+     * Requests one bounded byte range at [position] and follows permitted redirects. Returns null when the position
+     * lies past the end (HTTP 416 for a resource whose declared length the position already exhausted). Each hop is
+     * checked against the lease before its request leaves.
      */
     private fun openAt(position: Long, ticket: LeaseTicket, probing: Boolean): Opened? {
         var current = resolvedUrl
@@ -224,7 +265,7 @@ internal class HttpRangeSource(
             }
             // Set last so a caller's header cannot override the range the engine depends on.
             http.setRequestProperty("Accept-Encoding", "identity")
-            http.setRequestProperty("Range", "bytes=$position-")
+            http.setRequestProperty("Range", "bytes=$position-${chunkEnd(position, probing)}")
 
             val code = http.responseCode
             if (code in REDIRECT_CODES) {
@@ -243,62 +284,93 @@ internal class HttpRangeSource(
                 continue
             }
             if (code == HTTP_RANGE_NOT_SATISFIABLE) {
+                // 416 at a position the probe declared inside the resource means the resource shrank or the URL
+                // changed identity, which is a stale stream that recovery must re-resolve. Past the declared end it
+                // is the ordinary end of the file.
+                val stale = sizeBytes >= 0L && position < sizeBytes
                 dropConnection()
+                if (stale) {
+                    // The status travels with the detail, so recovery classifies a 416 as an expired URL instead of
+                    // parsing the message text.
+                    onFailure("the source answered HTTP 416", HTTP_RANGE_NOT_SATISFIABLE)
+                    throw ByteSourceException("the source answered HTTP 416")
+                }
                 return null
             }
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                 dropConnection()
+                onFailure("the source answered HTTP $code", code)
                 throw ByteSourceException("the source answered HTTP $code")
             }
             resolvedUrl = current
             if (code == HttpURLConnection.HTTP_PARTIAL) {
-                val total = parseContentRangeTotal(http.getHeaderField("Content-Range"), position)
+                val range = parseContentRange(http.getHeaderField("Content-Range"), position)
                 return Opened(
                     http.inputStream,
-                    total,
+                    range.total,
                     partial = true,
-                    expectedBytes =
-                        SegmentFetchPolicy.expectedSegmentBytes(
-                            http.contentLengthLong,
-                            total,
-                            position,
-                        ),
+                    expectedBytes = http.contentLengthLong.takeIf { it > 0L } ?: (range.last - range.first + 1L),
                 )
             }
             // A full answer to a request for later bytes means the server ignored the range, so the source
             // cannot be read from there. Reporting it as a failure is better than silently decoding from byte zero.
-            if (position != 0L) throw ByteSourceException("the source ignored the requested byte range")
+            if (position != 0L) {
+                dropConnection()
+                onFailure("the source ignored the requested byte range", null)
+                throw ByteSourceException("the source ignored the requested byte range")
+            }
             return Opened(
                 http.inputStream,
                 http.contentLengthLong,
                 partial = false,
-                expectedBytes =
-                    SegmentFetchPolicy.expectedSegmentBytes(
-                        http.contentLengthLong,
-                        SegmentFetchPolicy.UNKNOWN_LENGTH,
-                        0L,
-                    ),
+                expectedBytes = SegmentFetchPolicy.expectedSegmentBytes(
+                    http.contentLengthLong,
+                    SegmentFetchPolicy.UNKNOWN_LENGTH,
+                    0L,
+                ),
             )
         }
     }
 
-    /** The total length from `Content-Range: bytes first-last/total`, or -1 when the total is unknown. */
-    private fun parseContentRangeTotal(value: String?, position: Long): Long {
+    /** The last byte of the bounded range that starts at [position]; the probe reads a small startup chunk. */
+    private fun chunkEnd(position: Long, probing: Boolean): Long {
+        val chunk = if (probing) STARTUP_PROBE_CHUNK_BYTES else DEFAULT_CHUNK_BYTES
+        val requested = position + chunk - 1L
+        return if (sizeBytes >= 0L) minOf(requested, sizeBytes - 1L) else requested
+    }
+
+    private class ContentRange(val first: Long, val last: Long, val total: Long)
+
+    /** Parses `Content-Range: bytes first-last/total`; the total is -1 when the server says `*`. */
+    private fun parseContentRange(value: String?, position: Long): ContentRange {
         val spec = value?.trim()?.takeIf { it.startsWith(BYTES_PREFIX) }?.removePrefix(BYTES_PREFIX)?.trim()
             ?: throw ByteSourceException("the partial response has no byte range")
         val slash = spec.indexOf('/')
         if (slash < 0) throw ByteSourceException("the partial response has a malformed byte range")
-        val first = spec.substring(0, slash).substringBefore('-').toLongOrNull()
+        val span = spec.substring(0, slash).split('-', limit = 2)
+        val first = span.getOrNull(0)?.toLongOrNull()
             ?: throw ByteSourceException("the partial response has a malformed byte range")
-        if (first != position) throw ByteSourceException("the partial response starts at the wrong byte")
+        val last = span.getOrNull(1)?.toLongOrNull()
+            ?: throw ByteSourceException("the partial response has a malformed byte range")
+        if (first != position || last < first) {
+            throw ByteSourceException("the partial response starts at the wrong byte")
+        }
         val total = spec.substring(slash + 1)
-        if (total == "*") return UNKNOWN_LENGTH
-        return total.toLongOrNull() ?: throw ByteSourceException("the partial response has a malformed length")
+        return ContentRange(
+            first = first,
+            last = last,
+            total = if (total == "*") UNKNOWN_LENGTH else {
+                total.toLongOrNull() ?: throw ByteSourceException("the partial response has a malformed length")
+            },
+        )
     }
 
     private fun checkNotExpired() {
         val expiresAt = lease.expiresAtEpochMs ?: return
-        if (System.currentTimeMillis() >= expiresAt) throw ByteSourceException("the stream lease has expired")
+        if (System.currentTimeMillis() >= expiresAt) {
+            onFailure("the stream lease has expired", null)
+            throw ByteSourceException("the stream lease has expired")
+        }
     }
 
     private fun dropStaleStream() {
@@ -329,10 +401,19 @@ internal class HttpRangeSource(
         const val CONNECT_TIMEOUT_MS = 10_000
 
         /** The probe is the one call the engine cannot retry, so it waits longer than a body read. */
-        const val PROBE_READ_TIMEOUT_MS = 10_000
+        const val PROBE_READ_TIMEOUT_MS = 15_000
 
-        /** Short enough that a seek or stop is not held for long when an interrupt lands just before a read. */
-        const val BODY_READ_TIMEOUT_MS = 3_000
+        /**
+         * Long enough for a slow but live chunk, short enough that a pause or stop that lands between socket reads is
+         * not held long. [interrupt] disconnects the socket, so a stop wakes a read before this expires.
+         */
+        const val BODY_READ_TIMEOUT_MS = 20_000
+
+        /** The startup probe reads only enough for the container header and the content length. */
+        const val STARTUP_PROBE_CHUNK_BYTES = 64L * 1024L
+
+        /** The steady-state chunk, the size Metrolist's range reader settles on for googlevideo. */
+        const val DEFAULT_CHUNK_BYTES = 4L * 1024L * 1024L
         const val MAX_REDIRECTS = 5
         const val HTTP_RANGE_NOT_SATISFIABLE = 416
         const val UNKNOWN_LENGTH = -1L

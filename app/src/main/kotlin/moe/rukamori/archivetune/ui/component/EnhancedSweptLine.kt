@@ -253,7 +253,7 @@ private fun DrawScope.drawLiftedWord(
         withTransform({ translate(top = dropPx) }) {
             drawText(layout, color = palette.dim)
             drawIntoCanvas { canvas ->
-                canvas.saveLayer(window.translate(0f, -dropPx), Paint())
+                canvas.saveLayer(window.translate(0f, -dropPx), sweepLayerPaint)
                 drawText(layout, color = palette.bright)
                 val mask =
                     Brush.horizontalGradient(
@@ -297,7 +297,7 @@ private fun DrawScope.drawFeatheredSweep(
     val rects = LyricsSweepGeometry.clipRects(shaped.boxes, shaped.bands, positionMs, shaped.rtl, reduceMotion = false)
     if (rects.isEmpty()) return
     val layout = shaped.layout
-    val earlier = rects.dropLast(1)
+    val earlier = if (rects.size > 1) rects.subList(0, rects.size - 1) else emptyList()
     if (earlier.isNotEmpty()) {
         clipPath(rectPath(earlier)) { drawText(layout, color = palette.bright) }
     }
@@ -309,7 +309,7 @@ private fun DrawScope.drawFeatheredSweep(
     val feather = sweepFeather(box)
     val mask = Brush.horizontalGradient(fadeColors(shaped.rtl), startX = edge - feather, endX = edge + feather)
     drawIntoCanvas { canvas ->
-        canvas.saveLayer(Rect(0f, top, width, top + height), Paint())
+        canvas.saveLayer(Rect(0f, top, width, top + height), sweepLayerPaint)
         clipOutside(holes) { drawText(layout, color = palette.bright) }
         drawRect(brush = mask, topLeft = Offset(0f, top), size = Size(width, height), blendMode = BlendMode.DstIn)
         canvas.restore()
@@ -345,7 +345,7 @@ private fun DrawScope.drawEmphasizedWord(
     if (letterRun == null || letterRun.size != count) {
         clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.dim) }
         drawIntoCanvas { canvas ->
-            canvas.saveLayer(hole, Paint())
+            canvas.saveLayer(hole, sweepLayerPaint)
             clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.bright) }
             val mask = Brush.horizontalGradient(
                 fadeColors(shaped.rtl),
@@ -402,7 +402,7 @@ private fun DrawScope.drawEmphasizedWord(
                     endX = edgeLocal + feather / scale,
                 )
                 drawIntoCanvas { canvas ->
-                    canvas.saveLayer(window, Paint())
+                    canvas.saveLayer(window, sweepLayerPaint)
                     drawText(letter, color = palette.bright, topLeft = Offset(left, seat.top))
                     drawRect(
                         brush = mask,
@@ -473,15 +473,15 @@ private fun rectPath(rects: List<LyricsClipRect>): Path {
     return path
 }
 
+/**
+ * The paint every sweep layer is saved with. It is never mutated, and the sweep draws on the UI thread only, so one
+ * instance serves every frame instead of a fresh [Paint] per saveLayer per frame.
+ */
+private val sweepLayerPaint = Paint()
+
 /** The feather runs toward the sweep's leading edge, so right-to-left text fades in from the other side. */
 private fun fadeColors(rtl: Boolean): List<Color> =
     if (rtl) listOf(Color.Transparent, Color.Black) else listOf(Color.Black, Color.Transparent)
-
-/** A row's text with the character range each syllable occupies in it, or null for a syllable with no text. */
-private class EnhancedSyllableText(
-    val text: String,
-    val ranges: List<IntRange?>,
-)
 
 /**
  * One row laid out once, with the timed boxes that the draw phase clips against. [letterRuns] mirrors
@@ -501,24 +501,11 @@ private class EnhancedShapedLine(
 )
 
 /**
- * The text [joinSyllableContents] builds, with the range each syllable occupies in it. The two must stay identical, so the
- * sung line and the plain line lay out the same way.
+ * The text [joinSyllableContents] builds with the range each syllable occupies in it. Both come from one
+ * shared join so the sung line and the plain line lay out identically, and syllable tokens of one word
+ * stay adjacent — which is what keeps the karaoke sweep continuous across them.
  */
-private fun List<KaraokeSyllable>.joinWithRanges(): EnhancedSyllableText {
-    val builder = StringBuilder()
-    val ranges = ArrayList<IntRange?>(size)
-    forEachIndexed { index, syllable ->
-        val first = builder.length
-        builder.append(syllable.content)
-        val range = if (builder.length > first) first until builder.length else null
-        ranges += range
-        val next = getOrNull(index + 1)
-        if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-            builder.append(' ')
-        }
-    }
-    return EnhancedSyllableText(builder.toString(), ranges)
-}
+private fun List<KaraokeSyllable>.joinWithRanges(): JoinedSyllables = joinSyllables()
 
 private fun shapeEnhancedSyllables(
     measurer: TextMeasurer,

@@ -14,4 +14,15 @@
     <string name="m6_po_token_generated">Tokens generated successfully</string>
     <string name="m6_po_token_failed">Token generation failed</string>
     <string name="m6_po_token_empty_value">—</string>
+    <string name="m6_po_token_helper">Local token helper</string>
+    <string name="m6_po_token_helper_desc">Downloads and runs the pinned bgutil provider on this device when built-in BotGuard credentials are absent. It talks only to YouTube and loopback; Natune sends no telemetry.</string>
+    <string name="m6_po_token_helper_status">Helper status</string>
+    <string name="m6_po_token_helper_checking">Checking</string>
+    <string name="m6_po_token_helper_refresh">Refresh</string>
+    <string name="m6_po_token_helper_disabled">Disabled</string>
+    <string name="m6_po_token_helper_idle">Not started</string>
+    <string name="m6_po_token_helper_starting">Starting</string>
+    <string name="m6_po_token_helper_ready">Ready</string>
+    <string name="m6_po_token_helper_failed">Unavailable</string>
+    <string name="m6_po_token_helper_unsupported">Not supported on this platform</string>
 </resources>

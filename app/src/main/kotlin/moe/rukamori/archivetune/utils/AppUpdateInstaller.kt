@@ -104,15 +104,20 @@ object AppUpdateInstaller {
      * An APK already staged for this exact release is installed as-is: re-fetching it would throw
      * away a finished download, which is what "tap Update, dismiss the system installer, tap Update
      * again" used to do, and what reopening the app after a download used to do.
+     *
+     * Returns true only when a fresh attempt was started. A stale offer (not strictly newer than
+     * the installed build, which is the normal state on the newest nightly) or an attempt already
+     * in flight returns false so the caller can explain that there is nothing to download instead
+     * of the tap appearing to do nothing.
      */
     @Synchronized
     fun startDownload(
         context: Context,
         offer: UpdateOffer,
-    ) {
-        if (updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER) return
+    ): Boolean {
+        if (updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER) return false
         val appContext = context.applicationContext
-        attempts.start(DownloadState.Downloading(null, offer)) {
+        return attempts.start(DownloadState.Downloading(null, offer)) {
             download(appContext, offer).fold(
                 onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
                 onFailure = { DownloadState.Failed(it.message, offer) },

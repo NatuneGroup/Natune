@@ -66,11 +66,31 @@ class UpdateFeedContractTest {
         assertEquals(42L, release.versionCode)
         assertEquals("https://example/a.apk", release.downloadUrl)
         assertEquals("nightly", release.body)
+        assertNull(release.sha256)
         // A blank releaseUrl falls back to the canonical tag URL.
         val noUrl = manifestJson().replace(",\n          \"releaseUrl\": \"https://github.com/NatuneGroup/Natune/releases/tag/N20261027\"", "")
         val fallback = parseUpdateFeedManifest(noUrl, UpdateChannel.NIGHTLY)!!
             .toReleaseInfo("https://example/a.apk", UpdateRepository.RELEASES_BASE_URL)
         assertEquals("${UpdateRepository.RELEASES_BASE_URL}/tag/N20261027", fallback.htmlUrl)
+    }
+
+    @Test
+    fun selectedAssetDigestReachesReleaseInfoAndSurvivesTheCache() {
+        val manifest = parseUpdateFeedManifest(manifestJson(), UpdateChannel.NIGHTLY)!!
+        val asset = selectUpdateFeedAsset(manifest.assets, "app-gms-mobile-arm64-nightly.apk")
+        assertEquals("https://example/a.apk", asset?.url)
+        assertEquals("aa", asset?.sha256)
+        val release = manifest.toReleaseInfo(asset?.url, UpdateRepository.RELEASES_BASE_URL, asset?.sha256)
+        assertEquals("aa", release.sha256)
+        // An asset the feed published without a digest makes no claim; nothing is invented.
+        val undigested = selectUpdateFeedAsset(manifest.assets, "other.apk") { it.endsWith(".deb") }
+        assertNull(undigested?.sha256)
+        val undigestedRelease = manifest.toReleaseInfo(
+            undigested?.url, UpdateRepository.RELEASES_BASE_URL, undigested?.sha256,
+        )
+        assertNull(undigestedRelease.sha256)
+        // The cache round-trip keeps the digest so a restart does not lose verifiability.
+        assertEquals("aa", parseReleasesJson(encodeReleasesJson(listOf(release)), "a.apk").single().sha256)
     }
 
     @Test

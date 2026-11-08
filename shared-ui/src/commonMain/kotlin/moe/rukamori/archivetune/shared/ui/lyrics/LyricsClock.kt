@@ -107,12 +107,16 @@ internal fun rememberLyricsClock(
     LaunchedEffect(frameLoop, deadlines) {
         if (!frameLoop) return@LaunchedEffect
         while (true) {
+            // One publish per frame. The loop-top advance anchors the frame the compositor is about
+            // to present; the body only waits (park) or waits for the next vsync (live). Writing
+            // feedMs again inside withFrameNanos made two state writes per frame, doubling the
+            // snapshot invalidations a continuous word sweep has to serve.
             clock.advance(SystemMonotonicClock.nowNanos())
             if (deadlines != null && !deadlines.isLive(clock.feedMs.longValue)) {
                 val next = deadlines.nextChangeAfter(clock.feedMs.longValue)
                 delay(lyricsIdleParkMs(next, clock.feedMs.longValue, clock.playbackSpeed, 1L, IDLE_POLL_MS))
             } else {
-                withFrameNanos { clock.advance(SystemMonotonicClock.nowNanos()) }
+                withFrameNanos { }
             }
         }
     }

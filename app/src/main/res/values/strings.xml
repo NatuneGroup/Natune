@@ -1177,8 +1177,8 @@
     <string name="pool_refresh_title">Refresh from pool</string>
     <string name="pool_refreshing">Refreshing from pool…</string>
     <string name="pool_refresh_done">Pool refreshed: %1$d Tidal, %2$d Qobuz, %3$d Deezer account(s)</string>
-    <string name="pool_refresh_up_to_date">Already up to date — the pool is only fetched every few hours, so nothing was requested just now.</string>
-    <string name="pool_refresh_failed">Couldn\'t reach the source pool. Check your connection and try again.</string>
+    <string name="pool_refresh_up_to_date">Pool refresh was skipped.</string>
+    <string name="pool_refresh_failed">Couldn\'t refresh the source pool. Check the status and try again.</string>
     <string name="use_pool_accounts">Use pool accounts</string>
     <string name="nerd_stats">Nerd Stats</string>
     <string name="track_label">Track</string>
@@ -1537,7 +1537,7 @@
     <string name="navigation_bar_tint_frosted_blur">Tint frosted navigation bar</string>
     <string name="navigation_bar_tint_frosted_blur_desc">Frosted blur tinted with the accent color (turns off the neutral frosted option)</string>
     <string name="navigation_bar_settings_title">Navigation bar</string>
-    <string name="navigation_bar_settings_subtitle">Style, frosted blur, labels, dimensions</string>
+    <string name="navigation_bar_settings_subtitle">Labels and scroll behaviour</string>
     <string name="navigation_bar_dimensions">Dimensions</string>
     <string name="navigation_bar_width">Width</string>
     <string name="navigation_bar_width_desc">Fraction of screen width used by the floating bar</string>
@@ -1636,6 +1636,8 @@
 
     <!-- Listen Together (ported from vivi-music beta) -->
     <string name="listen_together">Listen Together</string>
+    <string name="device_connect">Device Connect</string>
+    <string name="device_connect_desc">Pair your own devices on the same network and move playback between them</string>
     <string name="setting_listen_together_desc">Listen with friends</string>
     <string name="listen_together_server_url">Server URL</string>
     <string name="listen_together_choose_server">Choose server</string>

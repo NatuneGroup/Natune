@@ -14,6 +14,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Device Connect discovery on LAN; API 37 gates local-network sockets behind this permission. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -76,6 +81,16 @@
             android:name="org.apache.http.legacy"
             android:required="false" />
 
+        <activity android:name=".modules.ModuleAuthorizationActivity" android:exported="true"
+            android:excludeFromRecents="true" android:theme="@style/Theme.ArchiveTune.Transparent">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="archivetune" android:host="module-session" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".startup.StartupRecoveryActivity"
             android:exported="true"
@@ -95,6 +110,7 @@
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:theme="@style/Theme.ArchiveTune"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

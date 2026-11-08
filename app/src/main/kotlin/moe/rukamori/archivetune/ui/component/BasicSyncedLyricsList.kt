@@ -222,6 +222,7 @@ internal fun BasicSyncedLyricsList(
             val distance = EnhancedLyricsMotion.distance(index, activeIndex)
             BasicSyncedLyricLine(
                 line = line,
+                index = index,
                 isActive = index == activeIndex,
                 depth = EnhancedLyricsMotion.depthOf(distance, reduceMotion = animationsDisabled),
                 settle = settle,
@@ -261,6 +262,7 @@ internal fun BasicSyncedLyricsList(
 @Composable
 private fun BasicSyncedLyricLine(
     line: ISyncedLine,
+    index: Int,
     isActive: Boolean,
     depth: EnhancedDepth,
     settle: EnhancedLineSettle,
@@ -282,20 +284,22 @@ private fun BasicSyncedLyricLine(
         if (animationsDisabled) {
             snap<Float>()
         } else {
-            spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+            spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
         }
     val lineAlpha by animateFloatAsState(
         targetValue = if (isActive) 1f else EnhancedLyricsMotion.INACTIVE_ALPHA,
-        animationSpec = tween(durationMillis = if (animationsDisabled) 0 else 240),
+        animationSpec = tween(durationMillis = if (animationsDisabled) 0 else ACTIVE_FADE_MS),
         label = "enhanced-line-alpha",
     )
     val depthAlpha by animateFloatAsState(depth.alpha, depthSpec, label = "enhanced-depth-alpha")
     val depthScale by animateFloatAsState(depth.scale, depthSpec, label = "enhanced-depth-scale")
-    val depthBlur by animateFloatAsState(
-        if (blurAllowed) depth.blurDp else 0f,
-        depthSpec,
-        label = "enhanced-depth-blur",
-    )
+    // The distance veil is a whole-row soften, not a motion: it is read straight from the row's
+    // depth instead of being animated. `Modifier.blur` builds a RenderEffect for the radius it is
+    // given, so an animated radius rebuilt one effect per row per frame for the whole length of a
+    // line change — the construct that made ArchiveTune's sweep read as 30 fps on a 60 Hz panel.
+    // The veil still arrives with the line change (depth is part of the row's state) and still
+    // lifts while the user scrolls or reads the sung line.
+    val depthBlur = if (blurAllowed) depth.blurDp else 0f
     // The quick pop the sung line takes on activation; reduced motion keeps the line's size.
     val activePop by animateFloatAsState(
         targetValue = if (isActive && !animationsDisabled) ACTIVE_POP_SCALE else 1f,
@@ -306,6 +310,17 @@ private fun BasicSyncedLyricLine(
     val endAligned = karaoke?.alignment == KaraokeAlignment.End
     val horizontal = if (endAligned) Alignment.End else Alignment.Start
     val textAlign = if (endAligned) TextAlign.End else TextAlign.Start
+    // A line that answers the lead voice — a line of background vocals, or the document's second
+    // voice — draws as the smaller secondary line with its own timing, not as another lead line.
+    val secondary = line is KaraokeLine.AccompanimentKaraokeLine
+    val lineStyle = if (secondary) accompanimentLineTextStyle else normalLineTextStyle
+    // A word sweep needs real per-word spans. A line-synced row carries a KaraokeLine only to hang its
+    // reading on, and every syllable in it is a peg at the line's own start (see buildAlternateLineSyncedLrcLine):
+    // sweeping those lights the whole row at one instant and drags it through a completion lift it never
+    // earned. Those rows keep the line highlight alone — the row's own fade and pop — which is all their
+    // timing supports.
+    val swept = line.hasWordTiming()
+    val lineColor = if (secondary) textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA) else textColor
     Column(
         horizontalAlignment = horizontal,
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -313,7 +328,7 @@ private fun BasicSyncedLyricLine(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                .padding(horizontal = 24.dp, vertical = 6.dp)
+                .padding(horizontal = LYRIC_ROW_SIDE_PADDING, vertical = LYRIC_ROW_VERTICAL_PADDING)
                 // The scale grows from the aligned edge so a start-aligned line does not drift sideways. Scale, fade and
                 // the glide are read in the draw phase, so a frame of them does not recompose the row.
                 .graphicsLayer {
@@ -321,7 +336,7 @@ private fun BasicSyncedLyricLine(
                     scaleY = depthScale * activePop
                     alpha = lineAlpha * depthAlpha
                     transformOrigin = TransformOrigin(if (endAligned) 1f else 0f, 0.5f)
-                    translationY = settle.offsetPx(settleDelayMs)
+                    translationY = settle.offsetPx(index, settleDelayMs)
                 }
                 .then(
                     if (depthBlur > EnhancedLyricsMotion.BLUR_VISIBLE_DP) {
@@ -351,18 +366,23 @@ private fun BasicSyncedLyricLine(
             }
         }
         when {
-            karaoke != null && isActive ->
+            swept && isActive ->
                 EnhancedSweptLine(
-                    syllables = karaoke.syllables,
-                    style = normalLineTextStyle.copy(textAlign = textAlign),
-                    textColor = textColor,
+                    syllables = karaoke!!.syllables,
+                    style = lineStyle.copy(textAlign = textAlign),
+                    textColor = lineColor,
                     reduceMotion = animationsDisabled,
                     currentPosition = currentPosition,
                 )
             karaoke != null ->
-                Text(text = karaoke.syllables.joinSyllableContents(), style = normalLineTextStyle, color = textColor, textAlign = textAlign)
+                Text(
+                    text = karaoke.syllables.joinSyllableContents(),
+                    style = lineStyle,
+                    color = lineColor,
+                    textAlign = textAlign,
+                )
             line is SyncedLine ->
-                Text(text = line.content, style = normalLineTextStyle, color = textColor, textAlign = textAlign)
+                Text(text = line.content, style = lineStyle, color = lineColor, textAlign = textAlign)
         }
         (karaoke as? KaraokeLine.MainKaraokeLine)?.accompanimentLines?.forEach { accompaniment ->
             val accompanimentLine = accompaniment as? KaraokeLine
@@ -376,7 +396,7 @@ private fun BasicSyncedLyricLine(
                     EnhancedSweptLine(
                         syllables = accompanimentSyllables,
                         style = accompanimentLineTextStyle.copy(textAlign = textAlign),
-                        textColor = textColor.copy(alpha = textColor.alpha * 0.6f),
+                        textColor = textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA),
                         reduceMotion = animationsDisabled,
                         currentPosition = currentPosition,
                     )
@@ -384,7 +404,7 @@ private fun BasicSyncedLyricLine(
                     Text(
                         text = accompanimentText,
                         style = accompanimentLineTextStyle,
-                        color = textColor.copy(alpha = 0.6f),
+                        color = textColor.copy(alpha = textColor.alpha * SECONDARY_LINE_ALPHA),
                         textAlign = textAlign,
                     )
             }
@@ -406,13 +426,27 @@ private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
 private const val AUTO_SCROLL_RESUME_MS = 4_500L
-private const val AUTO_SCROLL_MS = 350
+private const val AUTO_SCROLL_MS = 280
 private const val ACTIVE_POP_MS = 100
 private const val ACTIVE_POP_SCALE = 1.05f
 
+/** How long the lit row takes to reach full strength when the line changes. */
+private const val ACTIVE_FADE_MS = 180
+
+/** How much a secondary line — background vocals or the second voice — gives up to the lead line. */
+private const val SECONDARY_LINE_ALPHA = 0.6f
+
 /** The one animated scroll speed of a line change: a fixed ease-in-out over [AUTO_SCROLL_MS]. */
 private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
-private val LINE_SPACING = 4.dp
+/**
+ * The gap between two lyric lines. It is the spacing *plus* twice the row's vertical padding, because a
+ * row's padding is what actually separates its text from the next line's: 2 + 4 + 4 = 10 dp, against the
+ * 16 dp the maintainer called too airy. The list's own side inset (the pane's) is not repeated here, so
+ * the rows are 12 dp in from a 16 dp pane rather than 24 dp inside a 24 dp pane.
+ */
+private val LINE_SPACING = 2.dp
+private val LYRIC_ROW_VERTICAL_PADDING = 4.dp
+private val LYRIC_ROW_SIDE_PADDING = 12.dp
 
 /** The mark a machine-made translation carries. */
 private const val AUTO_CREATED_MARK = "✦ "
@@ -430,7 +464,7 @@ private fun EnhancedCreditsFooter(
     if (credits.isEmpty) return
     val autoCreated = credits.translationAutoCreated || credits.transliterationAutoCreated
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+        Modifier.fillMaxWidth().padding(horizontal = LYRIC_ROW_SIDE_PADDING, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (credits.songwriters.isNotEmpty()) {

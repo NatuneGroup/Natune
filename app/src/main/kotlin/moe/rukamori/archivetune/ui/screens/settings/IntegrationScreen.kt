@@ -40,6 +40,10 @@ import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
+import moe.rukamori.archivetune.modules.SpotifyMetadataExtensionEnabledKey
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.spotify.SpotifyAccountViewModel
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -66,6 +70,9 @@ fun IntegrationScreen(
     val (usePoolAccounts, onUsePoolAccountsChange) = rememberPreference(UsePoolAccountsKey, true)
 
     val spotifyState by spotifyAccountViewModel.uiState.collectAsStateWithLifecycle()
+    val extensionPrefs = rememberPreferenceSnapshot()
+    val (metadataExtensionEnabled, onMetadataExtensionEnabledChange) = extensionPrefs.state(SpotifyMetadataExtensionEnabledKey,
+        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_METADATA, extensionPrefs.current))
     val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) = rememberPreference(ShowSpotifyPlaylistsKey, false)
     val (syncSpotifyHistory, onSyncSpotifyHistoryChange) = rememberPreference(SpotifyHistorySyncEnabledKey, false)
     var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
@@ -130,6 +137,21 @@ fun IntegrationScreen(
                         description = stringResource(R.string.ai_integration_desc),
                         icon = { Icon(painterResource(R.drawable.ai), null) },
                         onClick = { navController.navigate("settings/ai_integration") },
+                    )
+                }
+            }
+
+            PreferenceGroup(
+                modifier = positions.modifierFor("device_connect"),
+                title = stringResource(R.string.device_connect),
+            ) {
+                item {
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("device_connect_entry"),
+                        title = { Text(stringResource(R.string.device_connect)) },
+                        description = stringResource(R.string.device_connect_desc),
+                        icon = { Icon(painterResource(R.drawable.cast_connected), null) },
+                        onClick = { navController.navigate("settings/integrations/device_connect") },
                     )
                 }
             }
@@ -296,6 +318,13 @@ fun IntegrationScreen(
                         .then(positions.modifierFor("spotify")),
                 title = stringResource(R.string.external_sources),
             ) {
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.extensions_spotify_metadata)) },
+                        checked = metadataExtensionEnabled,
+                        onCheckedChange = onMetadataExtensionEnabledChange,
+                    )
+                }
                 spotifyAccountPreferences(
                     state = spotifyState,
                     showPlaylists = showSpotifyPlaylists,

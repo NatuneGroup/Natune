@@ -13,6 +13,25 @@ class PlaybackConflictsTest {
         assertEquals("ANDROID_VR", editor[PlayerStreamClientKey])
     }
 
+    @Test fun theManualChoiceReadsBackAsItsOwnClientWithoutGuessingAtUnknownValues() {
+        PlaybackClientChoice.entries.forEach { choice ->
+            assertEquals(choice, PlaybackClientChoice.of(choice.preference))
+            // A saved value is matched as stored words, so case and stray blanks from an older build still name a client.
+            assertEquals(choice, PlaybackClientChoice.of(" ${choice.preference.lowercase()} "), choice.name)
+        }
+        assertNull(PlaybackClientChoice.of(null))
+        assertNull(PlaybackClientChoice.of(""))
+        assertNull(PlaybackClientChoice.of("HI_RES_LOSSLESS"))
+
+        val editor = PreferenceSnapshot.of(PlayerStreamClientKey to "WEB_REMIX").toEditor()
+        assertNull(editor.snapshot().manualPlaybackClientChoice())
+        editor[AutoChoosePlaybackClientKey] = false
+        assertEquals(PlaybackClientChoice.WEB_REMIX, editor.snapshot().manualPlaybackClientChoice())
+        editor[PlayerStreamClientKey] = "HI_RES_LOSSLESS"
+        assertNull(editor.snapshot().manualPlaybackClientChoice())
+        assertEquals("HI_RES_LOSSLESS", editor[PlayerStreamClientKey])
+    }
+
     @Test fun everyOutputChoiceClearsItsExclusionsAtomically() {
         playbackOutputPreferenceKeys.forEach { selected ->
             val editor = PreferenceSnapshot.EMPTY.toEditor()

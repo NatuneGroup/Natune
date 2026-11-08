@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.ui.graphics.Color
+import moe.rukamori.archivetune.shared.ui.player.artworkPalette
+import kotlinx.coroutines.flow.flow
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +71,7 @@ internal class IosPlayerControls(
         .distinctUntilChanged()
         .flatMapLatest { ref -> if (ref == null) flowOf(false) else graph.libraryContent.isLiked(ref) }
 
-    override val state: StateFlow<PlayerNativeState> = combine(
+    private val observed: Flow<PlayerNativeState> = combine(
         graph.queue.state,
         graph.player.snapshot,
         graph.settings.snapshots,
@@ -76,6 +79,35 @@ internal class IosPlayerControls(
         graph.handoff,
     ) { queue, playback, preferences, isLiked, handoff ->
         iosNativeState(queue, playback, preferences, isLiked, handoff)
+    }
+
+    private val palette: Flow<Pair<String?, List<Color>>> = combine(
+        graph.queue.state.map { queue ->
+            queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }?.item?.artworkUri
+        }.distinctUntilChanged(),
+        graph.artworkLoader.overrides ?: flowOf(null),
+    ) { uri, overrides -> uri to graph.artworkLoader.displayUri(uri, overrides) }
+        .distinctUntilChanged()
+        .flatMapLatest { (uri, shown) ->
+            flow {
+                emit(shown to emptyList<Color>())
+                val colors = try {
+                    graph.artworkLoader.load(uri)?.let { image ->
+                        withContext(Dispatchers.Default) { artworkPalette(image) }
+                    }.orEmpty()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                emit(shown to colors)
+            }
+        }
+
+    override val state: StateFlow<PlayerNativeState> = combine(observed, palette) { native, (uri, colors) ->
+        val queue = graph.queue.state.value
+        val currentUri = queue.entries.firstOrNull { it.occurrenceId == native.occurrenceId }?.item?.artworkUri
+        native.copy(palette = colors.takeIf { uri == graph.artworkLoader.displayUri(currentUri) }.orEmpty())
     }.stateIn(
         graph.scope,
         SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS),

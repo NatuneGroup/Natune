@@ -123,7 +123,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
                         } else {
                             stringResource(R.string.spotify_account)
                         },
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             },

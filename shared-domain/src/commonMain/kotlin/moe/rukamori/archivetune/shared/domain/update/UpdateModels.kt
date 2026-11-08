@@ -17,7 +17,8 @@ import kotlinx.serialization.json.put
  * One GitHub release or prerelease the updater compares against the installed build. [versionCode] is the
  * build code the publisher attached (manifest `version_code` / body `at-build:` marker); [downloadUrl] is
  * the direct artifact link only when the release carries THIS build's artifact — the same semantics the
- * Android parser applies per expected artifact name.
+ * Android parser applies per expected artifact name. [sha256] is the feed's published digest for that
+ * artifact; null when the release is only known through the releases API, which publishes none.
  */
 data class ReleaseInfo(
     val tagName: String,
@@ -27,6 +28,7 @@ data class ReleaseInfo(
     val htmlUrl: String,
     val downloadUrl: String? = null,
     val versionCode: Long? = null,
+    val sha256: String? = null,
 )
 
 /** One commit line of the update dashboard history. Mirrors the fields the app renders. */
@@ -59,10 +61,11 @@ private fun JsonObject.string(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
 /**
- * Parse a releases JSON array — the GitHub API shape the cache stores verbatim. `version_code` is the
- * extra field the shared encoder writes for manifest-derived entries. [downloadUrl] is set only when an
- * asset matches [expectedArtifactName] exactly, then [artifactMatcher] — no match means the release page
- * is the only install path for this build.
+ * Parse a releases JSON array — the GitHub API shape the cache stores verbatim. `version_code` and
+ * `sha256` are the extra fields the shared encoder writes for manifest-derived entries. [downloadUrl]
+ * is set only when an asset matches [expectedArtifactName] exactly, then [artifactMatcher] — no match
+ * means the release page is the only install path for this build. [ReleaseInfo.sha256] survives the
+ * cache round-trip so a downloaded artifact stays verifiable after a restart.
  */
 fun parseReleasesJson(
     text: String,
@@ -75,12 +78,18 @@ fun parseReleasesJson(
         val tag = obj.string("tag_name") ?: return@mapNotNull null
         val htmlUrl = obj.string("html_url") ?: return@mapNotNull null
         var downloadUrl: String? = null
+        var downloadSha256: String? = null
         (obj["assets"] as? JsonArray)?.forEach { assetEl ->
             val asset = assetEl as? JsonObject ?: return@forEach
             val name = asset.string("name") ?: return@forEach
             val url = asset.string("browser_download_url") ?: return@forEach
-            if (expectedArtifactName != null && name == expectedArtifactName) downloadUrl = url
-            else if (downloadUrl == null && artifactMatcher?.invoke(name) == true) downloadUrl = url
+            if (expectedArtifactName != null && name == expectedArtifactName) {
+                downloadUrl = url
+                downloadSha256 = asset.string("sha256")
+            } else if (downloadUrl == null && artifactMatcher?.invoke(name) == true) {
+                downloadUrl = url
+                downloadSha256 = asset.string("sha256")
+            }
         }
         ReleaseInfo(
             tagName = tag,
@@ -91,6 +100,7 @@ fun parseReleasesJson(
             // A cached re-encode carries the resolved link outright; it survives the re-parse unchanged.
             downloadUrl = downloadUrl ?: obj.string("download_url"),
             versionCode = (obj["version_code"] as? JsonPrimitive)?.longOrNull,
+            sha256 = downloadSha256 ?: obj.string("sha256"),
         )
     }
 }
@@ -110,6 +120,7 @@ fun encodeReleasesJson(releases: List<ReleaseInfo>): String =
                 put("html_url", release.htmlUrl)
                 release.versionCode?.let { put("version_code", it) }
                 release.downloadUrl?.let { put("download_url", it) }
+                release.sha256?.let { put("sha256", it) }
             })
         }
     }.toString()

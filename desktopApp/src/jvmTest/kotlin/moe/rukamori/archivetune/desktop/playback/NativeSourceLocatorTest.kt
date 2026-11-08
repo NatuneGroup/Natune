@@ -4,13 +4,37 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 
 class NativeSourceLocatorTest {
     @Test
-    fun headerFreeUnknownExpiryKeepsTheExistingEngineOpener() {
+    fun everyRemoteLocatorGoesThroughTheHostLease() {
         val locator = PlaybackLocator.Remote("https://audio.invalid/song")
-        assertEquals(locator.url, assertIs<EngineSource.Direct>(engineSourceOpen(locator, null)).source)
+        val source = assertIs<EngineSource.Leased>(engineSourceOpen(locator, null))
+        source.discard()
+    }
+
+    @Test
+    fun aHeaderFreeManifestKeepsTheEngineReaderThatCanFollowItsChildren() {
+        for (url in listOf(
+            "https://audio.invalid/hls/index.m3u8?token=1",
+            "https://audio.invalid/dash/manifest.mpd",
+            "https://manifest.googlevideo.com/api/manifest/hls_playlist/id/abc",
+        )) {
+            val locator = PlaybackLocator.Remote(url)
+            assertEquals(url, assertIs<EngineSource.Direct>(engineSourceOpen(locator, null)).source)
+        }
+    }
+
+    @Test
+    fun aHeaderBearingManifestNeverOpensWithoutItsHeaders() {
+        val locator = PlaybackLocator.Remote(
+            "https://audio.invalid/hls/index.m3u8",
+            headers = PlaybackHeaders.of(mapOf("Authorization" to "fixture")),
+        )
+        val source = assertIs<EngineSource.Leased>(engineSourceOpen(locator, null))
+        source.discard()
     }
 
     @Test

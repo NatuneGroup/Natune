@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.audiosource.AmazonInstance
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.canvas.AppleMusicProvider
@@ -64,6 +65,7 @@ object PoolAccountManager {
             amazonCache = emptyList()
             loadedFromDisk = true
         }
+        PoolFeedStatusStore.publish()
     }
 
     suspend fun applyPoolAccountsEnabled(
@@ -101,6 +103,7 @@ object PoolAccountManager {
                     Timber.tag(TAG).w(error, "Failed to clear cached pool accounts")
                 }
                 AppleMusicProvider.clearStorefrontCache()
+                PoolFeedStatusStore.publish()
             }
         }
     }
@@ -126,6 +129,7 @@ object PoolAccountManager {
     private val CACHE_APPLE_KEY = stringPreferencesKey("poolAppleMusicAccounts")
     private val CACHE_AMAZON_KEY = stringPreferencesKey("poolAmazonAccounts")
     private val CACHE_LAST_REFRESH_KEY = longPreferencesKey("poolAccountsLastRefreshAtMillis")
+    private val CACHE_FEED_ERROR_KEY = stringPreferencesKey("poolAccountsLastFeedError")
     private val CACHE_AUTH_FAIL_KEY = longPreferencesKey("poolAuthFailAtMs")
     private val CACHE_AUTH_BACKOFF_KEY = longPreferencesKey("poolAuthBackoffMs")
     private val CACHE_AUTH_KEY_HASH_KEY = longPreferencesKey("poolAuthKeyHash")
@@ -142,6 +146,8 @@ object PoolAccountManager {
     @Volatile
     var lastFeedError: String? = null
         private set
+
+    val feedStatus: kotlinx.coroutines.flow.StateFlow<PoolFeedStatus> get() = PoolFeedStatusStore.status
 
     /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~30 minutes. */
     private val reportDedupe = ConcurrentHashMap<String, Long>()
@@ -246,12 +252,7 @@ object PoolAccountManager {
     @Volatile
     private var amazonCache: List<AmazonPoolAccount> = emptyList()
 
-    /**
-     * When the pool was last fetched over the network, in epoch millis (0 = never fetched).
-     *
-     * Exposed so the settings refresh row can tell "this tap actually fetched" from "this tap was
-     * throttled" — without it the row reported a refresh that never happened.
-     */
+    /** Last network attempt, including failures, in epoch millis (0 = never attempted). */
     @Volatile
     var lastRefreshAtMillis = 0L
         private set
@@ -279,15 +280,6 @@ object PoolAccountManager {
 
     private val poolBaseUrl: String
         get() = PoolEndpoints.configuredBaseUrl()
-
-    /**
-     * Credentials-only feed of the split pool. The server also serves a combined legacy feed at
-     * /api/sources (accounts + instance URLs together) for older app builds; this client asks
-     * for the narrow account feed so tokens and instance URLs arrive over separate URLs.
-     * Falls back to the legacy URL only when the pool deployment predates the split (404).
-     * Every request walks the deployments [PoolEndpoints] orders for it: the build-configured
-     * primary first, then the public vercel.app fallback.
-     */
 
     /** How long an account that just failed to resolve is tried last for. */
     private const val ACCOUNT_COOLDOWN_MS = 10 * 60 * 1000L
@@ -376,85 +368,77 @@ object PoolAccountManager {
         tidalCache.isNotEmpty() || qobuzCache.isNotEmpty() || deezerCache.isNotEmpty() ||
             appleMusicCache.isNotEmpty() || amazonCache.isNotEmpty()
 
-    /**
-     * True when every pooled service *that something can actually play* has at least one account.
-     *
-     * Amazon stays out even though its provider now plays through pooled instances: a user can add
-     * their own instance, so an empty Amazon cache means "no pooled host collected yet" rather than
-     * "nothing plays". Folding it in would downgrade every deployment that has not collected one —
-     * plausibly most of them, indefinitely — from the 24h [refreshIntervalMs] to the 15-minute
-     * partial-pool one, for a service that already works without the pool.
-     */
+    /** Amazon instances stay optional; only services requiring pooled accounts shorten the refresh interval. */
     private fun hasEveryService(): Boolean =
         tidalCache.isNotEmpty() && qobuzCache.isNotEmpty() && deezerCache.isNotEmpty() && appleMusicCache.isNotEmpty()
 
-    /**
-     * How long a non-forced [refresh] may be skipped for. Full caches are re-read once a day; a
-     * cache that is still missing a service is retried far more eagerly so that service can appear
-     * without the user having to hunt for the manual refresh button.
-     */
+    /** Full caches refresh daily; partial caches use the shorter persisted attempt interval. */
     private fun refreshIntervalMs(): Long =
-        PoolRefreshPolicy.intervalMs(hasEveryService())
+        PoolRefreshPolicy.jitteredIntervalMs(hasEveryService(), lastRefreshAtMillis)
 
-    /**
-     * Loads the persisted account cache into memory (cheap, no network). Safe to call repeatedly;
-     * only reads the DataStore once. Call early on startup so resolvers have data before the first
-     * network [refresh] finishes.
-     */
+    /** Loads the encrypted persisted cache once, before any network refresh. */
     suspend fun loadCached(context: Context) {
         syncPoolAccountsEnabled(context)
         if (loadedFromDisk) return
         appContext = context.applicationContext
         withContext(Dispatchers.IO) {
-            if (!isPoolEnabled()) {
-                loadedFromDisk = true
-                return@withContext
+            refreshMutex.withLock {
+                if (loadedFromDisk) return@withLock
+                if (!isPoolEnabled()) {
+                    loadedFromDisk = true
+                    return@withLock
+                }
+                runCatching {
+                    lastRefreshAtMillis = PoolRefreshPolicy.latestAttemptAtMs(
+                        lastRefreshAtMillis,
+                        context.dataStore.getAsync(CACHE_LAST_REFRESH_KEY) ?: 0L,
+                    )
+                    lastFeedError = context.dataStore.getAsync(CACHE_FEED_ERROR_KEY)
+                    authBackoff.restore(
+                        context.dataStore.getAsync(CACHE_AUTH_FAIL_KEY) ?: 0L,
+                        context.dataStore.getAsync(CACHE_AUTH_BACKOFF_KEY) ?: 0L,
+                        (context.dataStore.getAsync(CACHE_AUTH_KEY_HASH_KEY) ?: 0L).toInt(),
+                    )
+                    // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
+                    // at-rest layer), so the parse-time decryptor is a pure pass-through.
+                    val passthrough: (String) -> String? = { raw -> raw }
+                    cached(context, CACHE_TIDAL_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        tidalCache = parseTidal(JSONArray(it), passthrough)
+                    }
+                    cached(context, CACHE_QOBUZ_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        qobuzCache = parseQobuz(JSONArray(it), passthrough)
+                    }
+                    cached(context, CACHE_DEEZER_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        deezerCache = parseDeezer(JSONArray(it), passthrough)
+                    }
+                    cached(context, CACHE_APPLE_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        appleMusicCache = parseAppleMusic(JSONArray(it), passthrough)
+                    }
+                    cached(context, CACHE_AMAZON_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        amazonCache = parseAmazon(JSONArray(it), passthrough)
+                    }
+                    loadedFromDisk = true
+                    Timber.tag(TAG).d(
+                        "Loaded cached accounts: tidal=%d qobuz=%d deezer=%d apple=%d amazon=%d",
+                        tidalCache.size,
+                        qobuzCache.size,
+                        deezerCache.size,
+                        appleMusicCache.size,
+                        amazonCache.size,
+                    )
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    Timber.tag(TAG).w(it, "Failed to load cached pool accounts")
+                }
+                PoolFeedStatusStore.publish()
             }
-            runCatching {
-                lastRefreshAtMillis = PoolRefreshPolicy.latestAttemptAtMs(
-                    lastRefreshAtMillis,
-                    context.dataStore.getAsync(CACHE_LAST_REFRESH_KEY) ?: 0L,
-                )
-                authBackoff.restore(
-                    context.dataStore.getAsync(CACHE_AUTH_FAIL_KEY) ?: 0L,
-                    context.dataStore.getAsync(CACHE_AUTH_BACKOFF_KEY) ?: 0L,
-                    (context.dataStore.getAsync(CACHE_AUTH_KEY_HASH_KEY) ?: 0L).toInt(),
-                )
-                // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
-                // at-rest layer), so the parse-time decryptor is a pure pass-through.
-                val passthrough: (String) -> String? = { raw -> raw }
-                cached(context, CACHE_TIDAL_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    tidalCache = parseTidal(JSONArray(it), passthrough)
-                }
-                cached(context, CACHE_QOBUZ_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    qobuzCache = parseQobuz(JSONArray(it), passthrough)
-                }
-                cached(context, CACHE_DEEZER_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    deezerCache = parseDeezer(JSONArray(it), passthrough)
-                }
-                cached(context, CACHE_APPLE_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    appleMusicCache = parseAppleMusic(JSONArray(it), passthrough)
-                }
-                cached(context, CACHE_AMAZON_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    amazonCache = parseAmazon(JSONArray(it), passthrough)
-                }
-                loadedFromDisk = true
-                Timber.tag(TAG).d(
-                    "Loaded cached accounts: tidal=%d qobuz=%d deezer=%d apple=%d amazon=%d",
-                    tidalCache.size,
-                    qobuzCache.size,
-                    deezerCache.size,
-                    appleMusicCache.size,
-                    amazonCache.size,
-                )
-            }.onFailure { Timber.tag(TAG).w(it, "Failed to load cached pool accounts") }
         }
     }
 
     /**
      * Fetches `/api/sources`, decrypts credentials, and refreshes the in-memory + persisted caches.
      * Returns true when the cache is populated (either freshly fetched or already warm). Throttled
-     * unless [force] is set. Never throws.
+     * unless [force] is set. Cancellation still propagates.
      */
     suspend fun refresh(
         context: Context,
@@ -476,7 +460,11 @@ object PoolAccountManager {
                 // A refused read key earns a persisted backoff even forced calls respect.
                 val authKeyHash = BuildConfig.SOURCE_PROVIDER_KEY.hashCode()
                 if (authBackoff.clearsFor(authKeyHash)) authBackoff.reset()
-                if (authBackoff.blocked(System.currentTimeMillis())) return@withLock hasAccounts()
+                if (authBackoff.blocked(System.currentTimeMillis())) {
+                    lastFeedError = lastFeedError ?: context.getString(R.string.pool_key_retry_cooldown)
+                    PoolFeedStatusStore.publish()
+                    return@withLock hasAccounts()
+                }
                 // Re-check the throttle inside the lock in case another caller just refreshed.
                 if (!PoolRefreshPolicy.shouldRefresh(
                         System.currentTimeMillis(),
@@ -487,60 +475,74 @@ object PoolAccountManager {
                 ) {
                     return@withLock hasAccounts()
                 }
-                if (!isEnabled) {
-                    // isEnabled already guarantees a URL, so this only guards the impossible.
-                    lastFeedError = null
-                    Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
-                } else {
-                    // The read key is baked in at build time; there is no on-device override.
-                    val readKey = BuildConfig.SOURCE_PROVIDER_KEY
-                    poolApiKey = readKey.ifBlank { null }
-                    val attemptAt = System.currentTimeMillis()
-                    lastRefreshAtMillis = attemptAt
-                    context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
+                PoolFeedStatusStore.publish(refreshing = true)
+                try {
+                    if (!isEnabled) {
+                        // isEnabled already guarantees a URL, so this only guards the impossible.
+                        lastFeedError = null
+                        Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
+                    } else {
+                        // The read key is baked in at build time; there is no on-device override.
+                        val readKey = BuildConfig.SOURCE_PROVIDER_KEY
+                        poolApiKey = readKey.ifBlank { null }
+                        val attemptAt = System.currentTimeMillis()
+                        lastRefreshAtMillis = attemptAt
+                        context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
 
-                    var result = fetchAccounts(context, "/api/accounts", readKey)
-                    // Pool deployment predates the split feed — retry the combined URL.
-                    if (!result.succeeded && result.code == 404) {
-                        Timber.tag(TAG).d("/api/accounts unavailable; falling back to legacy /api/sources")
-                        result = fetchAccounts(context, "/api/sources", readKey)
-                    }
-                    // Record why the fetch failed — or clear it on success — so the settings screen
-                    // can show the reason rather than a generic "failed". refresh()'s own Boolean
-                    // cannot carry this: it reports whether anything is cached, not whether the
-                    // network call actually worked.
-                    lastFeedError =
-                        when {
-                            result.succeeded -> null
-                            // Both the split feed and the legacy combined feed 404'd. That is not
-                            // an "old pool deployment" — nothing at this host serves the pool API
-                            // at all (wrong SOURCE_PROVIDER_URL, or a deployment that no longer
-                            // exists). A missing or invalid read key is a 401, never a 404.
-                            result.code == 404 -> {
-                                Timber.tag(TAG).e(
-                                    "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
-                                        "the configured pool URL points at a host that is not an ArchivePool deployment " +
-                                        "(this is NOT a read-key problem; a bad key answers 401).",
-                                    poolBaseUrl,
-                                )
-                                "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
-                            }
-                            result.code == 401 ->
-                                "Pool rejected the API key (HTTP 401) — SOURCE_PROVIDER_KEY is missing, revoked, " +
-                                    "or issued by a different deployment."
-                            result.code == 0 -> "Could not reach $poolBaseUrl — network error."
-                            else -> "Pool feed returned HTTP ${result.code}."
+                        var result = fetchAccounts(context, "/api/accounts", readKey)
+                        // Pool deployment predates the split feed — retry the combined URL.
+                        if (!result.succeeded && result.code == 404) {
+                            Timber.tag(TAG).d("/api/accounts unavailable; falling back to legacy /api/sources")
+                            result = fetchAccounts(context, "/api/sources", readKey)
                         }
-                    if (result.succeeded) authBackoff.reset()
-                    else if (result.code == 401) authBackoff.onAuthRejected(attemptAt, authKeyHash)
-                    context.dataStore.edit { prefs ->
-                        prefs[CACHE_AUTH_FAIL_KEY] = authBackoff.failedAtMs
-                        prefs[CACHE_AUTH_BACKOFF_KEY] = authBackoff.windowMs
-                        prefs[CACHE_AUTH_KEY_HASH_KEY] = authBackoff.failedKeyHash.toLong()
-                    }
-                } // else (pool URL configured)
+                        // Record why the fetch failed — or clear it on success — so the settings screen
+                        // can show the reason rather than a generic "failed". refresh()'s own Boolean
+                        // cannot carry this: it reports whether anything is cached, not whether the
+                        // network call actually worked.
+                        lastFeedError =
+                            when {
+                                result.succeeded -> null
+                                // Both the split feed and the legacy combined feed 404'd. That is not
+                                // an "old pool deployment" — nothing at this host serves the pool API
+                                // at all (wrong SOURCE_PROVIDER_URL, or a deployment that no longer
+                                // exists). A missing or invalid read key is a 401, never a 404.
+                                result.code == 404 -> {
+                                    Timber.tag(TAG).e(
+                                        "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
+                                            "the configured pool URL points at a host that is not an ArchivePool deployment " +
+                                            "(this is NOT a read-key problem; a bad key answers 401).",
+                                        poolBaseUrl,
+                                    )
+                                    "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
+                                }
+                                result.code == 401 || result.code == 403 ->
+                                    "Pool rejected the API key (HTTP 401) — SOURCE_PROVIDER_KEY is missing, revoked, " +
+                                        "or issued by a different deployment."
+                                result.code == 0 -> "Could not reach $poolBaseUrl — network error."
+                                else -> "Pool feed returned HTTP ${result.code}."
+                            }
+                        if (result.succeeded) authBackoff.reset()
+                        else authBackoff.onRefusal(attemptAt, authKeyHash, result.code, result.retryAfterMs)
+                        context.dataStore.edit { prefs ->
+                            if (lastFeedError == null) prefs.remove(CACHE_FEED_ERROR_KEY)
+                            else prefs[CACHE_FEED_ERROR_KEY] = lastFeedError.orEmpty()
+                            prefs[CACHE_AUTH_FAIL_KEY] = authBackoff.failedAtMs
+                            prefs[CACHE_AUTH_BACKOFF_KEY] = authBackoff.windowMs
+                            prefs[CACHE_AUTH_KEY_HASH_KEY] = authBackoff.failedKeyHash.toLong()
+                        }
+                    } // else (pool URL configured)
 
-                hasAccounts()
+                    hasAccounts()
+                } catch (cancelled: CancellationException) {
+                    lastFeedError = context.getString(R.string.pool_refresh_cancelled)
+                    throw cancelled
+                } catch (error: Exception) {
+                    lastFeedError = context.getString(R.string.pool_refresh_failed)
+                    Timber.tag(TAG).w(error, "Failed to refresh the pool cache")
+                    hasAccounts()
+                } finally {
+                    PoolFeedStatusStore.publish()
+                }
             }
         }
 
@@ -552,16 +554,12 @@ object PoolAccountManager {
     private class FeedFetch(
         val json: JSONObject?,
         val code: Int,
+        val retryAfterMs: Long? = null,
     ) {
-        val succeeded: Boolean get() = code == 200 && json != null
+        val succeeded: Boolean get() = (code == 200 && json != null) || code == 304
     }
 
-    /**
-     * Fetches and parses one credentials feed (/api/accounts, or the accounts half of the legacy
-     * /api/sources). Applies the parsed accounts to the in-memory caches and persists them
-     * encrypted. Returns the HTTP status so the caller can distinguish 401 (key rejected) from
-     * 404 (feed not deployed) from a network failure (0). Never throws.
-     */
+    /** Fetches, decrypts and persists the account feed; exposes HTTP status independently of cached counts. */
     private suspend fun fetchAccounts(
         context: Context,
         path: String,
@@ -570,22 +568,24 @@ object PoolAccountManager {
         val reply = PoolEndpoints.get(client, path, readKey)
         return try {
             reply.let {
-                if (reply == null || reply.first != 200) {
+                // A revalidated feed is a success: the persisted accounts are current.
+                if (reply?.notModified == true) return@let FeedFetch(null, 304)
+                if (reply == null || reply.status != 200) {
                     // HTTP 401 specifically means the pool's read-key enforcement rejected the
                     // presented key (revoked, deleted, or from an older pool database). Surface
                     // that explicitly so the failure mode is obvious in logs instead of looking
                     // like an empty pool.
-                    if (reply?.first == 401) {
+                    if (reply?.status == 401 || reply?.status == 403) {
                         Timber.tag(TAG).w(
                             "Pool account feed rejected the presented key (HTTP 401) — " +
                                 "it is revoked, deleted, or predates the pool's current database.",
                         )
                     } else {
-                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.first ?: 0)
+                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.status ?: 0)
                     }
-                    return@let FeedFetch(null, reply?.first ?: 0)
+                    return@let FeedFetch(null, reply?.status ?: 0, reply?.retryAfterMs)
                 }
-                val root = JSONObject(reply.second)
+                val root = JSONObject(reply.body)
                 val decryptor = decryptorFor(root, readKey)
                 val tidal = parseTidal(accountsArray(root, "tidal"), decryptor)
                 val qobuz = parseQobuz(accountsArray(root, "qobuz"), decryptor)
@@ -757,11 +757,11 @@ object PoolAccountManager {
                         .toString()
                 val readKey = poolApiKey?.takeIf { it.isNotBlank() } ?: BuildConfig.SOURCE_PROVIDER_KEY
                 val reply = PoolEndpoints.postReport(client, "/api/report", readKey, body)
-                if (reply == null || reply.first !in 200..299) {
-                    Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, reply?.first ?: 0)
+                if (reply == null || reply.status !in 200..299) {
+                    Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, reply?.status ?: 0)
                     return@runCatching
                 }
-                val responseBody = reply.second
+                val responseBody = reply.body
                 if (responseBody.isNotBlank()) {
                     val root = JSONObject(responseBody)
                     if (root.optBoolean("ok", false) && kind == "account" && readKey.isNotBlank()) {
@@ -835,6 +835,7 @@ object PoolAccountManager {
                 else -> return@withLock
             }
             persist(ctx, tidalCache, qobuzCache, deezerCache, appleMusicCache, amazonCache)
+            PoolFeedStatusStore.publish()
         }
     }
 

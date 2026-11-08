@@ -32,6 +32,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.constants.ActiveHomeSourcesKey
 import moe.rukamori.archivetune.constants.HomeSource
 import moe.rukamori.archivetune.constants.HomeSourceKey
@@ -53,7 +55,7 @@ import moe.rukamori.archivetune.utils.dataStore
 @Composable
 fun rememberHomeSourceAvailable(): Boolean {
     val spDc by rememberPreference(SpotifySpDcKey, defaultValue = "")
-    return spDc.isNotBlank()
+    return spDc.isNotBlank() && rememberSpotifyMetadataExtensionEnabled()
 }
 
 /**
@@ -70,7 +72,7 @@ fun rememberQqHomeSourceAvailable(): Boolean {
 }
 
 /** [rememberHomeSourceAvailable] read from a page's [PreferenceSnapshot]. */
-fun PreferenceSnapshot.homeSourceAvailable(): Boolean = this[SpotifySpDcKey, ""].isNotBlank()
+fun PreferenceSnapshot.homeSourceAvailable(): Boolean = this[SpotifySpDcKey, ""].isNotBlank() && spotifyMetadataExtensionEnabled()
 
 /** [rememberQqHomeSourceAvailable] read from a page's [PreferenceSnapshot]. */
 fun PreferenceSnapshot.qqHomeSourceAvailable(): Boolean =

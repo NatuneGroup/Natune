@@ -64,6 +64,14 @@ private val crashTime: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-
 internal fun formatDiagnosticTime(epochMillis: Long): String = viewerTime.format(Instant.ofEpochMilli(epochMillis))
 
 /**
+ * Standard-output and standard-error lines keep the tag of the stream that carried them, except Skiko's own renderer
+ * diagnostics: those name the backend and every fallback it took, so they get their own tag and stay findable in the
+ * viewer and the exported report instead of disappearing among shell output.
+ */
+internal fun diagnosticLineTag(text: String, fallback: String): String =
+    if (text.startsWith("[SKIKO]", ignoreCase = true)) DesktopDiagnosticLog.SKIKO_TAG else fallback
+
+/**
  * The persistent log of this desktop process, the counterpart of the Android logcat capture: host diagnostics plus
  * everything written to standard output and standard error, in rotating files under `<instance>/logs`. Lines from
  * before [install] (only the single-instance hand-off runs that early) go to standard error alone.
@@ -124,6 +132,7 @@ internal object DesktopDiagnosticLog : DiagnosticLogStore {
 
     private const val HOST_TAG = "Natune"
     private const val PLAYBACK_DIAGNOSTICS_TAG = "PlaybackDiagnostics"
+    internal const val SKIKO_TAG = "Skiko"
     private const val LINE_LIMIT = 8 * 1024
 
     /** Passes every byte through and logs each completed line. A line longer than the limit is logged in pieces. */
@@ -162,7 +171,7 @@ internal object DesktopDiagnosticLog : DiagnosticLogStore {
         private fun emit() {
             val text = line.toString(Charsets.UTF_8).trimEnd('\r')
             line.reset()
-            if (text.isNotBlank()) log?.append(level, tag, text)
+            if (text.isNotBlank()) log?.append(level, diagnosticLineTag(text, tag), text)
         }
     }
 }
@@ -193,6 +202,8 @@ internal fun desktopCrashDeviceInfo(): List<Pair<String, String>> {
         "Java" to "${property("java.runtime.version")} (${property("java.vendor")})",
         "Processors" to Runtime.getRuntime().availableProcessors().toString(),
         "Locale" to java.util.Locale.getDefault().toLanguageTag(),
+        // The renderer decides text antialiasing, repaint cost and whether the glass blur is truthful.
+        "Renderer" to DesktopRendererDiagnostics.describe(),
     )
 }
 

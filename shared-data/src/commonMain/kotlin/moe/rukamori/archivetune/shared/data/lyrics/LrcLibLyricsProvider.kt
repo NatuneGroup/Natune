@@ -27,9 +27,9 @@ class LrcLibLyricsProvider(
         isrc: String?,
     ): Result<String> =
         suspendRunCatching {
-            val tracks = queryLyrics(title, artist)
-            tracks.bestMatchingFor(durationSec, title, artist)?.preferredLyrics()
-                ?: throw IllegalStateException("Lyrics unavailable")
+            firstSelection(title, artist) { tracks ->
+                tracks.bestMatchingFor(durationSec, title, artist)?.preferredLyrics()
+            } ?: throw IllegalStateException("Lyrics unavailable")
         }
 
     override suspend fun getAllLyrics(
@@ -41,7 +41,10 @@ class LrcLibLyricsProvider(
         isrc: String?,
         callback: (String) -> Unit,
     ) {
-        val tracks = queryLyrics(title, artist)
+        // A decorated title that answers nothing usable is retried once with the cleaned pair, like getLyrics.
+        val tracks = firstSelection(title, artist) { candidates ->
+            candidates.takeIf { page -> page.any { track -> track.matchesDuration(durationSec) } }
+        } ?: return
         var count = 0
         var emittedPlainLyrics = false
 
@@ -79,6 +82,21 @@ class LrcLibLyricsProvider(
                 }
             }
         }
+    }
+
+    /**
+     * The exact query's answer first. Only when it holds nothing the caller can use does the cleaned pair run, so a
+     * title that already resolves never costs a second request and never resolves differently.
+     */
+    private suspend fun <T : Any> firstSelection(
+        title: String,
+        artist: String,
+        select: (List<LrcLibTrack>) -> T?,
+    ): T? {
+        for (query in lrcLibQueries(title, artist)) {
+            select(queryLyrics(query.title, query.artist))?.let { return it }
+        }
+        return null
     }
 
     private suspend fun queryLyrics(

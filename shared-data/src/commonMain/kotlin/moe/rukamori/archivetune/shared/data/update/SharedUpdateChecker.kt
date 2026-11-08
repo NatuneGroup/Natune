@@ -63,7 +63,7 @@ import moe.rukamori.archivetune.shared.domain.update.parseUpdateFeedManifest
 import moe.rukamori.archivetune.shared.domain.update.preReleaseTopFingerprint
 import moe.rukamori.archivetune.shared.domain.update.releaseBuildCode
 import moe.rukamori.archivetune.shared.domain.update.releaseCacheIntervalMs
-import moe.rukamori.archivetune.shared.domain.update.selectUpdateFeedAssetUrl
+import moe.rukamori.archivetune.shared.domain.update.selectUpdateFeedAsset
 import moe.rukamori.archivetune.shared.domain.update.shouldNotifyUpdate
 import moe.rukamori.archivetune.shared.domain.update.toReleaseInfo
 import moe.rukamori.archivetune.shared.domain.update.topReleaseFingerprint
@@ -174,8 +174,12 @@ class SharedUpdateChecker(
             UpdateInstallMode.OPEN_URL -> release.htmlUrl
             UpdateInstallMode.UNAVAILABLE -> null
         }
+        // The digest describes the feed's artifact, so it only travels with a direct artifact link; an
+        // OPEN_URL host sends the user to a page and would have nothing to hash.
+        val sha256 = if (profile.installMode == UpdateInstallMode.DIRECT_INSTALL) release.sha256 else null
         return eligibleUpdateOffer(
-            channel, release.tagName, code, releaseVersionName(release, channel), release.body, url, profile.installedCode,
+            channel, release.tagName, code, releaseVersionName(release, channel), release.body, url,
+            profile.installedCode, sha256,
         )
     }
 
@@ -211,10 +215,10 @@ class SharedUpdateChecker(
     /** Map raw manifest JSON into this build's release model; a missing artifact for THIS build is a miss. */
     private fun mapUpdateFeedBody(body: String, channel: UpdateChannel): ReleaseInfo? {
         val manifest = parseUpdateFeedManifest(body, channel) ?: return null
-        val assetUrl = selectUpdateFeedAssetUrl(
+        val asset = selectUpdateFeedAsset(
             manifest.assets, profile.artifactNameFor(channel), profile.artifactMatcher,
         ) ?: return null
-        return manifest.toReleaseInfo(assetUrl, UpdateRepository.RELEASES_BASE_URL)
+        return manifest.toReleaseInfo(asset.url, UpdateRepository.RELEASES_BASE_URL, asset.sha256)
     }
 
     private fun readCachedUpdateFeed(channel: UpdateChannel): ReleaseInfo? =

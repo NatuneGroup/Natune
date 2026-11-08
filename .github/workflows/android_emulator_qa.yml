@@ -27,6 +27,7 @@ jobs:
     timeout-minutes: 60
     env:
       ANDROID_AVD_HOME: /home/runner/.android/avd
+      ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
 
     steps:
       - uses: actions/checkout@v7
@@ -45,6 +46,19 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
+
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
+      - name: Install pinned NDK for Librespot audio
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;30.0.16248370"
+
+      - name: Build Librespot audio (universal)
+        id: librespot
+        uses: ./.github/actions/build-librespot
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -121,6 +135,13 @@ jobs:
           ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
           SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
+
+      - name: Verify Librespot in the emulator APK
+        if: steps.kvm.outputs.kvm == 'present'
+        shell: bash
+        env:
+          LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
+        run: python3 native/librespot/android-artifact.py apk universal --available "$LIBRESPOT_AVAILABLE"
 
       - name: Install, launch, navigate, capture
         if: steps.kvm.outputs.kvm == 'present'

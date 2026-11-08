@@ -41,7 +41,6 @@ private const val HTTP_PARTIAL = 206L
 private const val HTTP_RANGE_NOT_SATISFIABLE = 416L
 private val REDIRECT_CODES = setOf(301L, 302L, 303L, 307L, 308L)
 private const val UNKNOWN_LENGTH = -1L
-private const val BYTES_PREFIX = "bytes "
 private const val NANOS_PER_MS = 1_000_000L
 
 /** Received but unread bytes above HIGH pause the connection until the reader drains them below LOW. */
@@ -163,7 +162,6 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
             var copied = 0
             var ended = false
             var endedBroken = false
-            var resumeTask: NSURLSessionDataTask? = null
             lock.locked {
                 while (copied < length && chunks.isNotEmpty()) {
                     val first = chunks.first()
@@ -179,13 +177,12 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
                 }
                 if (paused && buffered < LOW_WATER_BYTES) {
                     paused = false
-                    resumeTask = task
+                    // NSURLSession state calls are asynchronous; serialize them with the flag.
+                    task?.resume()
                 }
                 ended = finished && chunks.isEmpty()
                 endedBroken = broken
             }
-            // Resumed outside the lock: a platform call never runs while a delegate callback could be waiting on it.
-            resumeTask?.resume()
             if (copied > 0) return copied
             if (ended) return if (endedBroken) 0 else RandomAccessByteSource.END_OF_STREAM
             if (SystemMonotonicClock.nowNanos() >= deadline) return 0
@@ -209,17 +206,16 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
     override fun URLSession(session: NSURLSession, dataTask: NSURLSessionDataTask, didReceiveData: NSData) {
         val bytes = didReceiveData.toByteArray()
         if (bytes.isEmpty()) return
-        var pause: NSURLSessionDataTask? = null
         lock.locked {
             if (cancelled || finished) return
             chunks.addLast(bytes)
             buffered += bytes.size
             if (!paused && buffered >= HIGH_WATER_BYTES) {
                 paused = true
-                pause = task
+                // Suspend before a reader can clear paused and resume the task.
+                task?.suspend()
             }
         }
-        pause?.suspend()
     }
 
     override fun URLSession(
@@ -305,19 +301,6 @@ private fun resolveLocation(location: String, base: String): String? =
     NSURL.URLWithString(location, NSURL.URLWithString(base))?.absoluteString
 
 /** The total length from `Content-Range: bytes first-last/total`, or [UNKNOWN_LENGTH] when the server gives `*`. */
-private fun parseContentRangeTotal(value: String?, position: Long): Long {
-    val spec = value?.trim()?.takeIf { it.startsWith(BYTES_PREFIX) }?.removePrefix(BYTES_PREFIX)?.trim()
-        ?: throw ByteSourceException("the partial response has no byte range")
-    val slash = spec.indexOf('/')
-    if (slash < 0) throw ByteSourceException("the partial response has a malformed byte range")
-    val first = spec.substring(0, slash).substringBefore('-').toLongOrNull()
-        ?: throw ByteSourceException("the partial response has a malformed byte range")
-    if (first != position) throw ByteSourceException("the partial response starts at the wrong byte")
-    val total = spec.substring(slash + 1)
-    if (total == "*") return UNKNOWN_LENGTH
-    return total.toLongOrNull() ?: throw ByteSourceException("the partial response has a malformed length")
-}
-
 private fun NSData.toByteArray(): ByteArray {
     val count = length.toInt()
     val out = ByteArray(count)
@@ -364,12 +347,13 @@ internal class IosHttpRangeSource(
     private var streamPosition = 0L
     private var sizeBytes = UNKNOWN_LENGTH
     private var seekable = false
+    private var responseRange: IosResponseByteRange? = null
 
     /** The total length (-1 when the server did not report one) and whether ranged reads are honoured. */
     class Probe(val sizeBytes: Long, val seekable: Boolean)
 
     /** The response that feeds reads, with the length it declares. */
-    private class Opened(val transfer: RangeTransfer, val totalBytes: Long, val partial: Boolean)
+    private class Opened(val transfer: RangeTransfer, val totalBytes: Long, val range: IosResponseByteRange? = null)
 
     /** Opens the resource at offset zero and keeps that response for the first read. Producer thread only. */
     override fun probe(): Probe {
@@ -385,7 +369,8 @@ internal class IosHttpRangeSource(
                 dropTransfer()
             } else {
                 sizeBytes = opened.totalBytes
-                seekable = opened.partial
+                seekable = opened.range != null
+                responseRange = opened.range
                 streamPosition = 0L
                 replaceTransfer(opened.transfer)
             }
@@ -435,6 +420,10 @@ internal class IosHttpRangeSource(
                         ?: return RandomAccessByteSource.END_OF_STREAM
                     replaceTransfer(opened.transfer)
                     streamPosition = position
+                    responseRange = opened.range
+                    if (sizeBytes >= 0 && opened.totalBytes >= 0 && sizeBytes != opened.totalBytes) {
+                        throw ByteSourceException("the source length changed during playback")
+                    }
                     if (sizeBytes < 0) sizeBytes = opened.totalBytes
                     opened.transfer
                 }
@@ -444,12 +433,24 @@ internal class IosHttpRangeSource(
             return when {
                 read > 0 -> {
                     streamPosition += read
+                    if (responseRange?.let { streamPosition > it.endExclusive } == true) {
+                        throw ByteSourceException("the source exceeded its declared byte range")
+                    }
                     read
                 }
                 read == RandomAccessByteSource.END_OF_STREAM -> {
                     dropTransfer()
+                    val range = responseRange
+                    if (range != null) {
+                        if (streamPosition != range.endExclusive) {
+                            throw TransientTransferException("the source ended before its declared byte range")
+                        }
+                        // A complete 206 body need not be the complete file. The next read opens at
+                        // streamPosition, with the same lease, origin and credential checks.
+                        if (range.hasMoreBytes) return 0
+                    }
                     if (sizeBytes >= 0 && streamPosition < sizeBytes) {
-                        throw ByteSourceException("the source ended before its declared length")
+                        throw TransientTransferException("the source ended before its declared length")
                     }
                     RandomAccessByteSource.END_OF_STREAM
                 }
@@ -534,17 +535,17 @@ internal class IosHttpRangeSource(
                     code != HTTP_OK && code != HTTP_PARTIAL ->
                         throw ByteSourceException("the source answered HTTP $code")
                     code == HTTP_PARTIAL -> {
-                        val total = parseContentRangeTotal(headerValue(head.fields, "Content-Range"), position)
+                        val range = parseIosResponseByteRange(headerValue(head.fields, "Content-Range"), position)
                         resolvedUrl = current
                         kept = true
-                        return Opened(hop, total, partial = true)
+                        return Opened(hop, range.totalBytes, range)
                     }
                     // A full answer to a later position means the server ignored the range. Failing beats decoding from byte zero.
                     position != 0L -> throw ByteSourceException("the source ignored the requested byte range")
                     else -> {
                         resolvedUrl = current
                         kept = true
-                        return Opened(hop, head.expectedLength, partial = false)
+                        return Opened(hop, head.expectedLength)
                     }
                 }
             } finally {

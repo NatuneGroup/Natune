@@ -45,6 +45,10 @@ class PlayerInteractionState {
 
     fun cancelPreview() { previewMs = null; draftIdentity = null; invalidated = false }
 
+    fun backOrCollapse(collapse: () -> Unit) {
+        if (!back()) collapse()
+    }
+
     /** Style page/fullscreen, then shared panel, then the caller collapses the whole player. */
     fun back(): Boolean = when {
         fullscreenLyrics -> { fullscreenLyrics = false; true }

@@ -87,7 +87,6 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
-import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -114,7 +113,7 @@ fun QobuzSettings(navController: NavController, scrollTo: String? = null) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val (qobuzEnabled, onQobuzEnabledChange) = rememberPreference(QobuzEnabledKey, false)
+    val (qobuzEnabled) = rememberPreference(QobuzEnabledKey, false)
     val (audioQuality, onAudioQualityChange) =
         rememberEnumPreference(QobuzAudioQualityKey, QobuzAudioQuality.FLAC)
     val probeTrack by rememberPreference(QobuzLastProbeTrackKey, "")
@@ -596,17 +595,6 @@ fun QobuzSettings(navController: NavController, scrollTo: String? = null) {
                 modifier = positions.modifierFor("qobuz_account"),
                 title = stringResource(R.string.qobuz_integration),
             ) {
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("qobuz_enable"),
-                        title = { Text(stringResource(R.string.qobuz_enable)) },
-                        description = stringResource(R.string.qobuz_enable_description),
-                        icon = { Icon(painterResource(R.drawable.provider_qobuz), null) },
-                        checked = qobuzEnabled,
-                        onCheckedChange = onQobuzEnabledChange,
-                    )
-                }
-
                 item {
                     EnumListPreference(
                         modifier = positions.modifierFor("qobuz_audio_quality"),
