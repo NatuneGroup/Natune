@@ -406,6 +406,7 @@ private fun DownloadSource.displayName(context: android.content.Context): String
         DownloadSource.QOBUZ_BACKUP -> context.getString(R.string.source_qobuz_backup)
         DownloadSource.TIDAL -> context.getString(R.string.download_source_tidal)
         DownloadSource.DEEZER -> context.getString(R.string.download_source_deezer)
+        DownloadSource.MODULES -> context.getString(R.string.modules_title)
         DownloadSource.JIOSAAVN -> context.getString(R.string.download_source_jiosaavn)
         DownloadSource.YOUTUBE_MUSIC -> context.getString(R.string.download_source_youtube_music)
     }
@@ -417,6 +418,7 @@ private fun DownloadSource.displayName(): String =
         DownloadSource.QOBUZ_BACKUP -> "Qobuz Backup"
         DownloadSource.TIDAL -> "Tidal"
         DownloadSource.DEEZER -> "Deezer"
+        DownloadSource.MODULES -> context.getString(R.string.modules_title)
         DownloadSource.JIOSAAVN -> "JioSaavn"
         DownloadSource.YOUTUBE_MUSIC -> "YouTube Music"
     }
@@ -428,6 +430,7 @@ private fun DownloadSource.iconRes(): Int =
         DownloadSource.QOBUZ_BACKUP -> R.drawable.provider_qobuz
         DownloadSource.TIDAL -> R.drawable.provider_tidal
         DownloadSource.DEEZER -> R.drawable.provider_deezer
+        DownloadSource.MODULES -> R.drawable.extension
         DownloadSource.JIOSAAVN -> R.drawable.provider_jiosaavn
         DownloadSource.YOUTUBE_MUSIC -> R.drawable.play
     }

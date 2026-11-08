@@ -112,6 +112,7 @@ sealed interface ModuleSettingsAction {
     data object File : ModuleSettingsAction
     data class FileSelected(val uri: Uri) : ModuleSettingsAction
     data class Url(val catalog: Boolean, val editId: String? = null) : ModuleSettingsAction
+    data class SuggestedCatalog(val url: String) : ModuleSettingsAction
     data class UrlChanged(val value: String) : ModuleSettingsAction
     data object SubmitUrl : ModuleSettingsAction
     data object Dismiss : ModuleSettingsAction
@@ -210,6 +211,10 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                 targetId = action.editId
                 url = registry.catalogs.firstOrNull { it.id == action.editId }?.url.orEmpty()
                 render()
+            }
+            is ModuleSettingsAction.SuggestedCatalog -> {
+                if (busy != null) return
+                dialog = ModuleSettingsDialog.CATALOG_URL; targetId = null; url = action.url; render()
             }
             is ModuleSettingsAction.UrlChanged -> { url = action.value; render() }
             ModuleSettingsAction.Dismiss -> {
@@ -556,7 +561,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
 
         private fun failureResource(error: Exception): Int = when ((error as? ModuleException)?.failure) {
             ModuleFailure.INVALID_DOCUMENT -> R.string.modules_invalid_document
-            ModuleFailure.UNSUPPORTED -> R.string.modules_unsupported_description
+            ModuleFailure.UNSUPPORTED -> if ((error as? ModuleException)?.diagnosticCode == "ENCRYPTED_8SM1_REJECTED") R.string.modules_encrypted_rejected else R.string.modules_unsupported_description
             ModuleFailure.INTEGRITY -> R.string.modules_integrity_failed
             ModuleFailure.NETWORK -> R.string.modules_network_failed
             ModuleFailure.INVALID_CONFIGURATION -> R.string.modules_configuration_failed

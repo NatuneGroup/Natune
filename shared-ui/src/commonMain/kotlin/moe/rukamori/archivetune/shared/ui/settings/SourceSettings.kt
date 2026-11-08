@@ -222,6 +222,7 @@ internal fun AudioSourceType.settingsLabel(): StringResource = when (this) {
     AudioSourceType.DEEZER -> Res.string.m6_source_deezer
     AudioSourceType.APPLE -> Res.string.m6_apple_music
     AudioSourceType.AMAZON -> Res.string.m6_source_amazon
+    AudioSourceType.MODULES -> Res.string.source_modules
     AudioSourceType.QQ -> Res.string.m6_source_qq
     AudioSourceType.SPOTIFY -> Res.string.m6_source_spotify_stream
     AudioSourceType.JIOSAAVN -> Res.string.m6_source_jio

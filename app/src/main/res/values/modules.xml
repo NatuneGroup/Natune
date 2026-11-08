@@ -141,4 +141,9 @@
     <string name="modules_metadata_min_app">Minimum ArchiveTune version</string>
     <string name="modules_metadata_runtime">Required runtime features</string>
     <string name="modules_link_failed">No application could open this link.</string>
+    <string name="modules_encrypted_rejected">Encrypted 8SM1 modules are unsupported. Install a readable .arch package.</string>
+    <string name="modules_check_in_settings">Open Modules settings to check each installed module.</string>
+    <string name="modules_suggested_catalogs">Suggested catalogs</string>
+    <string name="modules_natune_catalog">Natune modules</string>
+    <string name="modules_upstream_catalog">ArchiveTune modules</string>
 </resources>

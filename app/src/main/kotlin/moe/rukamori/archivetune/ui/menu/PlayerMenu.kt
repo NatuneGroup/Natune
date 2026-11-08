@@ -1646,6 +1646,7 @@ private fun AudioSourceType.sourceLabelRes(): Int =
         AudioSourceType.DEEZER -> R.string.source_deezer
         AudioSourceType.APPLE -> R.string.source_apple_music
         AudioSourceType.AMAZON -> R.string.source_amazon
+        AudioSourceType.MODULES -> R.string.modules_title
         AudioSourceType.QQ -> R.string.source_qq_music
         AudioSourceType.SPOTIFY -> R.string.source_spotify_stream
         AudioSourceType.JIOSAAVN -> R.string.source_jiosaavn
@@ -1662,6 +1663,7 @@ private fun AudioSourceType.sourceIconRes(): Int =
         // No dedicated Amazon Music mark ships in drawable/ yet; ic_music is the same
         // stand-in APPLE uses above for the same reason.
         AudioSourceType.AMAZON -> R.drawable.ic_music
+        AudioSourceType.MODULES -> R.drawable.extension
         AudioSourceType.QQ -> R.drawable.ic_music
         AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn

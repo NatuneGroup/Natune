@@ -100,6 +100,8 @@ class ResolveModuleAudioUseCase @Inject constructor(
     private data class Entry(val moduleId: String, val moduleRevision: String, val metadata: ModuleMatchMetadata, val selection: ModuleAudioSelection?, val expiresAtMs: Long)
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Entry>()
 
+    suspend fun resolveRegistry() { repository.snapshot() }
+
     fun enabled(): Boolean = repository.state.value?.let { it.enabled && it.modules.any { module -> module.enabled } } == true
 
     fun peek(id: String, metadata: ModuleMatchMetadata?): ModuleAudioSelection? {
@@ -226,3 +228,13 @@ class ResolveModuleAudioUseCase @Inject constructor(
         return current.modules.filter { it.enabled }.take(preceding.size).map { it.id to it.revision } == preceding.map { it.id to it.revision }
     }
 }
+
+/** Adapts a matched module stream to Natune's existing source chain without changing song identity. */
+fun ModuleAudioSelection.directStream() = moe.rukamori.archivetune.audiosource.DirectStream(
+    uri = stream.url, mimeType = stream.mimeType, codecs = stream.codecs,
+    contentLength = stream.contentLength.takeIf { it > 0 }, label = module.manifest.name,
+    source = moe.rukamori.archivetune.constants.AudioSourceType.MODULES,
+    matchedTitle = metadata?.title, matchedArtist = metadata?.artists?.joinToString(", "),
+    matchedAlbum = metadata?.album, matchedDurationMs = metadata?.durationSeconds?.toLong()?.times(1000),
+    sampleRate = stream.sampleRate, expiresAtEpochMs = stream.expiresAtMs,
+)

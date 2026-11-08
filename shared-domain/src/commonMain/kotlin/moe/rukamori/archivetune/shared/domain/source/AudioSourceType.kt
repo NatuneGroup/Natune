@@ -15,6 +15,7 @@ enum class AudioSourceType {
     QQ,
     SPOTIFY,
     JIOSAAVN,
+    MODULES,
     YOUTUBE,
 }
 

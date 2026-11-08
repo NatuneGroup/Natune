@@ -50,6 +50,10 @@ import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AudioQualityKey
 import moe.rukamori.archivetune.constants.AudioSourceType
+import moe.rukamori.archivetune.modules.*
+import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
+import androidx.media3.exoplayer.offline.DefaultDownloadIndex
+import androidx.media3.exoplayer.offline.DownloaderFactory
 import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import moe.rukamori.archivetune.constants.DownloadSourceOrderKey
@@ -117,6 +121,9 @@ class DownloadUtil
         val databaseProvider: DatabaseProvider,
         @DownloadCache val downloadCache: Cache,
         @PlayerCache val playerCache: Cache,
+        private val moduleAudio: ResolveModuleAudioUseCase,
+        private val moduleBindings: ModuleDownloadRepository,
+        private val moduleStorage: ModuleMediaStorage,
     ) {
         /** Private hold on the injected [Context]. */
         private val appContext: Context = context
@@ -153,6 +160,7 @@ class DownloadUtil
                     AudioSourceType.QOBUZ_BACKUP.takeIf { qobuzBackupPlaybackEnabled },
                     AudioSourceType.DEEZER.takeIf { deezerPlaybackEnabled },
                     AudioSourceType.JIOSAAVN.takeIf { jioSaavnPlaybackEnabled },
+                    AudioSourceType.MODULES.takeIf { moduleAudio.enabled() },
                     AudioSourceType.YOUTUBE.takeIf { youTubePlaybackEnabled },
                 )
         private val qobuzAudioQuality by enumPreference(context, QobuzAudioQualityKey, QobuzAudioQuality.FLAC)
@@ -406,10 +414,15 @@ class DownloadUtil
         val downloadManager: DownloadManager =
             DownloadManager(
                 context,
-                databaseProvider,
-                downloadCache,
-                dataSourceFactory,
-                downloadExecutor,
+                DefaultDownloadIndex(databaseProvider),
+                DownloaderFactory { request ->
+                    ModuleSelectingDownloader(request,
+                        DefaultDownloaderFactory(CacheDataSource.Factory().setCache(downloadCache)
+                            .setUpstreamDataSourceFactory(dataSourceFactory), downloadExecutor),
+                        moduleAudio, moduleBindings, moduleStorage, downloadScope,
+                        selectAudio = { id -> moduleAudio.resolveRegistry(); resolveDownloadStream(id)?.moduleSelection },
+                    )
+                },
             ).apply {
                 maxParallelDownloads = DEFAULT_MAX_PARALLEL_DOWNLOADS
                 addListener(
@@ -535,6 +548,7 @@ class DownloadUtil
             // DownloadManager would use on cache miss.
             val lowDataModeActive = appContext.isLowDataModeActive()
             val resolved = resolveDownloadStream(mediaId)
+            if (resolved?.moduleSelection != null) return null // module downloader owns inline manifests and headers
             if (resolved != null) {
                 val cacheKey = "${resolved.source.name.lowercase(java.util.Locale.US)}:$mediaId"
                 // Fetch the bytes into playerCache via the shared mediaOkHttpClient. We use a
@@ -728,6 +742,10 @@ class DownloadUtil
                 )
             val pinnedDownloadSource = pinnedSource?.let(DownloadSourceConfig::fromAudioSource)
             for (source in chain) {
+                if (source == DownloadSource.MODULES) {
+                    val selection = runBlocking { moduleAudio.resolve(mediaId) } ?: continue
+                    return ResolvedDownload(source, selection.directStream(), selection)
+                }
                 // Deezer's public catalogue lookup fills in ISRC / album name / thumbnail, which is
                 // worth doing whether or not the stream itself resolved: a fall-through to YouTube
                 // still gets correct tags.
@@ -873,7 +891,7 @@ class DownloadUtil
                     durationMs = durationMs,
                     qualityApiValue = saavnAudioQuality.toApiValue(),
                 )
-            DownloadSource.AUTO, DownloadSource.YOUTUBE_MUSIC -> null
+            DownloadSource.AUTO, DownloadSource.MODULES, DownloadSource.YOUTUBE_MUSIC -> null
         }
 
 
@@ -881,6 +899,7 @@ class DownloadUtil
         private data class ResolvedDownload(
             val source: DownloadSource,
             val stream: DirectStream,
+            val moduleSelection: ModuleAudioSelection? = null,
         )
 
         /**
