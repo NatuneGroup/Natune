@@ -4,6 +4,12 @@
 
 Settings search uses parent routes and `?scrollTo=` anchors. Preserve both when changing groups. There is no manual-login gate: every sign-in row on Integration (Tidal, Qobuz, Deezer, Amazon, Apple Music, QQ Music, Telegram) is always visible. The `Use pool accounts` switch at the top of the Music Sources group (default on; rendered only where a pool URL is baked in) decides whether the community Source Pool's shared accounts are consulted at all — off means no pool fetch, and the "Refresh from pool" row is hidden.
 
+Android's Sources > Refresh from pool explicitly forces the account feed refresh,
+while retaining rejected-key backoff. The row observes the feed owner's status:
+loading, cached counts for all five services, last network attempt and errors.
+Cached accounts do not turn a failed fetch into success. Feed errors survive restart,
+and initial disk loading shares the refresh mutex so it cannot replace a newer feed.
+
 Important Integration anchors include `external_sources`, `spotify`, `music_sources`, `use_pool_accounts`, `lastfm_scrobbling`, `lastfm_account`, `listenbrainz`, and `cross_service_import`.
 
 Player → Queue exposes **Infinite queue** at `infinite_queue`, also searchable by

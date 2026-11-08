@@ -290,7 +290,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
-import moe.rukamori.archivetune.utils.PoolAccountRecovery
+import moe.rukamori.archivetune.utils.TidalPoolPlayback
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
@@ -9612,10 +9612,8 @@ class MusicService :
             return applyDirectStream(dataSpec, mediaId, winningStream, cacheGeneration)
         }
 
-        // A non-YouTube source was requested but none matched the title accurately enough; silently
-        // fall back to YouTube (no user-facing notice — the track just plays from YouTube). Kept as a
-        // debug log only.
-        Timber.tag("MusicService").w("No lossless source cleared the metadata match gate for \"%s\"; falling back to YouTube", query.title)
+        // Empty resolvers and rejected metadata both continue to the existing YouTube fallback.
+        Timber.tag("MusicService").w("No alternate source produced an accepted full stream for \"%s\"; falling back to YouTube", query.title)
         tidalActiveMediaIds.remove(mediaId)
         return null
     }
@@ -10291,19 +10289,20 @@ class MusicService :
                     try {
                         attempt(token, accountCountry)
                     } catch (e: Throwable) {
-                        // A 401 may surface directly, or wrapped as a *suppressed*/cause exception
-                        // inside an InterruptedException when ExoPlayer interrupts the loader thread
-                        // mid-request. Detect it anywhere in the chain so the refresh path still runs.
+                        e.rethrowIfAudioSourceCancelled()
+                        // Only genuine token rejection may refresh; caller cancellation remains terminal.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
-                            // Clear any pending interrupt on this loader thread; otherwise the
-                            // runBlocking calls in refresh + retry would immediately abort.
+                            // Clear an old interrupt before refreshing on this loader thread.
                             Thread.interrupted()
                             val refreshed = refreshTidalToken(rejectedToken = token)
                             if (refreshed != null && refreshed != token) {
                                 token = refreshed
                                 runCatching { attempt(refreshed, accountCountry) }
-                                    .onFailure { Timber.tag("MusicService").w(it, "Tidal account retry failed for %s", query.mediaId) }
+                                    .onFailure {
+                                        it.rethrowIfAudioSourceCancelled()
+                                        Timber.tag("MusicService").w(it, "Tidal account retry failed for %s", query.mediaId)
+                                    }
                                     .getOrNull()
                             } else {
                                 null
@@ -10316,34 +10315,18 @@ class MusicService :
                 if (accountStream != null) return accountStream
             }
 
-            // 2) Shared premium Tidal accounts contributed to the community Source Pool (premium
-            //    first). These are genuine subscriber tokens, so they stream full-quality FLAC via
-            //    the official API without anyone hosting a restream instance. Pooled access tokens
-            //    live ~an hour while the cache lives a day, so re-lease once up front instead of
-            //    paying for a sure 401 that would then report a healthy account dead.
-            if (PoolAccountManager.tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
-                runCatching { runBlocking(Dispatchers.IO) { PoolAccountManager.reLeaseExpired(applicationContext, "tidal") } }
+            // Pooled tokens share the same quality policy, recovery and rate-limit gate as downloads.
+            val pooledStream = runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                TidalPoolPlayback.resolve(
+                    context = applicationContext, title = query.title, artists = query.artists,
+                    durationMs = query.durationMs, audioQuality = apiQuality, cacheDir = cacheDir,
+                    preferLiveDash = true,
+                )
             }
-            for (poolAccount in PoolAccountManager.tidalAccounts()) {
-                val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                val poolStream =
-                    runBlocking(Dispatchers.IO) {
-                        PoolAccountRecovery.resolvePooledTidal(applicationContext, poolAccount, poolCountry) { token, country -> attempt(token, country) }
-                    }
-                if (poolStream != null) {
-                    Timber.tag("MusicService").d("Tidal resolved via pool account (premium=%s)", poolAccount.premium)
-                    PoolAccountManager.noteAccountSuccess("tidal", poolAccount.id)
-                    return poolStream
-                }
-                // Threw, or returned null because this account has no match. Either way it just
-                // cost up to 20s, so sort it last for a while rather than paying that again on
-                // the next track — the server's own dead-account handling is far slower than a
-                // listening session.
-                PoolAccountManager.noteAccountFailure("tidal", poolAccount.id)
-            }
+            if (pooledStream != null) return pooledStream
         }
 
-        // Fallback: public HiFi/QQDL instances (empty list falls back to built-in defaults).
+        // Fallback: configured or discovered public HiFi/QQDL instances.
         // Union the user's configured instances with community instances discovered from the
         // Source Pool website (verified-healthy ones, cached by the startup scan). User entries are
         // kept and ordered first; discovery only adds, never removes.
@@ -10361,6 +10344,10 @@ class MusicService :
             mergedInstances.size,
         )
         TidalAudioProvider.setInstances(mergedInstances)
+        if (TidalAudioProvider.activeInstanceUrls.isEmpty()) {
+            Timber.tag("MusicService").d("TIDAL public-instance fallback skipped: no valid instances configured or discovered")
+            return null
+        }
         val resolved =
             runCatching {
                 TidalAudioProvider.resolve(
