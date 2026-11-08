@@ -79,4 +79,33 @@ class TidalPlaybackPolicyTest {
         assertEquals(1_000L, tidalRateLimitCooldownMs(0L))
         assertEquals(600_000L, tidalRateLimitCooldownMs(Long.MAX_VALUE))
     }
+
+    @Test fun rateLimitSkipsRequestsUntilExpiryEvenIfEveryAccountIsLimited() = runTest {
+        var now = 1_000L
+        val gate = TidalRateLimitGate { now }
+        gate.limit("one", 120_000L)
+        gate.limit("two", null)
+        val calls = mutableListOf<String>()
+        assertNull(resolveTidalPoolAccounts(listOf("one", "two"), true, gate::canAttempt, { _: String -> true }) {
+            calls += it; "full"
+        })
+        assertEquals(emptyList(), calls)
+        now += 60_000L
+        assertEquals(false, gate.canAttempt("one"))
+        assertEquals(true, gate.canAttempt("two"))
+        now += 60_000L
+        assertEquals(true, gate.canAttempt("one"))
+    }
+
+    @Test fun earlyLossyAnswerCannotHideALaterLosslessAccount() = runTest {
+        val calls = mutableListOf<Int>()
+        assertEquals("flac", resolveTidalPoolAccounts(listOf(1, 2, 3), true, { true }, { it: String -> it == "flac" }) {
+            calls += it
+            if (it == 1) "aac" else "flac"
+        })
+        assertEquals(listOf(1, 2), calls)
+        assertEquals("aac", resolveTidalPoolAccounts(listOf(1, 2), true, { true }, { _: String -> false }) {
+            if (it == 1) "aac" else null
+        })
+    }
 }

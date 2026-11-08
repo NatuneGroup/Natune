@@ -13,6 +13,8 @@ import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
 import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
 import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
 import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.TidalFailureKind
+import moe.rukamori.archivetune.shared.data.provider.TidalPlaybackFailure
 import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
 import moe.rukamori.archivetune.tidal.TidalAccountManager
 import timber.log.Timber
@@ -79,10 +81,10 @@ object PoolAccountRecovery {
     /**
      * Maps a Tidal resolve failure onto the shared failure kinds. The typed auth rejection is a
      * [TidalAccountManager.TidalUnauthorizedException]; every other HTTP refusal surfaces as a
-     * status-bearing [ProviderHttpFailure] and is classified by status, so a 403 earns recovery
-     * like a 401 while a 402 reports `not_premium` and a 429 or 5xx stays transient.
+     * typed [TidalPlaybackFailure]. Subscription ceilings keep the token, genuine auth refusals
+     * earn recovery, and rate limits suppress subsequent requests without a dead report.
      */
-    private fun tidalFailureKind(root: Throwable?): PoolFailureKind {
+    private suspend fun tidalFailureKind(root: Throwable?, account: PoolAccountManager.TidalPoolAccount): PoolFailureKind {
         if (TidalAccountManager.isUnauthorized(root)) return PoolFailureKind.AUTH_REJECTED
         val stack = ArrayDeque<Throwable>()
         val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
@@ -90,6 +92,20 @@ object PoolAccountRecovery {
         while (stack.isNotEmpty()) {
             val t = stack.removeLast()
             if (!seen.add(t)) continue
+            if (t is TidalPlaybackFailure) return when (t.kind) {
+                TidalFailureKind.QUALITY_RESTRICTED -> {
+                    Timber.tag(TAG).w("TIDAL pool has no allowed full-stream quality; keeping credential (poolPremiumHint=%s)", account.premium)
+                    PoolFailureKind.CONTENT_UNAVAILABLE
+                }
+                TidalFailureKind.AUTH_REJECTED -> PoolFailureKind.AUTH_REJECTED
+                TidalFailureKind.ENTITLEMENT_LOST -> PoolFailureKind.ENTITLEMENT_LOST
+                TidalFailureKind.RATE_LIMITED -> {
+                    TidalPoolPlayback.noteRateLimit(account, t.retryAfterMs)
+                    PoolFailureKind.RATE_LIMITED
+                }
+                TidalFailureKind.CONTENT_UNAVAILABLE -> PoolFailureKind.CONTENT_UNAVAILABLE
+                TidalFailureKind.TRANSIENT -> PoolFailureKind.TRANSIENT
+            }
             if (t is ProviderHttpFailure) return classifyPoolFailure(t)
             t.cause?.let { stack.addLast(it) }
             t.suppressed.forEach { stack.addLast(it) }
@@ -113,7 +129,7 @@ object PoolAccountRecovery {
         val first = runCatching { attempt(account.token, country) }
         first.exceptionOrNull()?.rethrowIfAudioSourceCancelled()
         if (first.isSuccess) return first.getOrNull()
-        val kind = tidalFailureKind(first.exceptionOrNull())
+        val kind = tidalFailureKind(first.exceptionOrNull(), account)
         if (kind != PoolFailureKind.AUTH_REJECTED && kind != PoolFailureKind.ENTITLEMENT_LOST) {
             Timber.tag(TAG).w(first.exceptionOrNull(), "Tidal pool account %s resolve failed", account.id)
             return null
@@ -131,7 +147,7 @@ object PoolAccountRecovery {
                     retried.isSuccess -> retried.getOrNull()
                         ?.let { PoolRetryOutcome.Success(it) }
                         ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                    else -> PoolRetryOutcome.Failure(tidalFailureKind(retried.exceptionOrNull()))
+                    else -> PoolRetryOutcome.Failure(tidalFailureKind(retried.exceptionOrNull(), account))
                 }
             },
             report = { type -> PoolAccountManager.report("tidal", "account", account.id, type) },

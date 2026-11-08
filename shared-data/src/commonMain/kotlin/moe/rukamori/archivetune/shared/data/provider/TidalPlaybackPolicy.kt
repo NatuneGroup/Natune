@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.data.provider
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 /** TIDAL uses HTTP 401 for subscription ceilings as well as invalid credentials. */
 enum class TidalFailureKind {
     QUALITY_RESTRICTED, AUTH_REJECTED, ENTITLEMENT_LOST, RATE_LIMITED, CONTENT_UNAVAILABLE, TRANSIENT,
@@ -58,3 +61,39 @@ suspend fun <T> resolveTidalQuality(
 /** A rate limit suppresses new requests, including when every pooled account is limited. */
 fun tidalRateLimitCooldownMs(retryAfterMs: Long?): Long =
     (retryAfterMs ?: 60_000L).coerceIn(1_000L, 10 * 60_000L)
+
+class TidalRateLimitGate(private val nowMs: () -> Long) {
+    private val lock = Mutex()
+    private val limitedUntil = mutableMapOf<String, Long>()
+
+    suspend fun limit(account: String, retryAfterMs: Long?) = lock.withLock {
+        val now = nowMs()
+        limitedUntil.entries.removeAll { it.value <= now }
+        limitedUntil[account] = maxOf(limitedUntil[account] ?: 0L, now + tidalRateLimitCooldownMs(retryAfterMs))
+    }
+
+    suspend fun canAttempt(account: String): Boolean = lock.withLock {
+        val until = limitedUntil[account] ?: return@withLock true
+        if (until > nowMs()) return@withLock false
+        limitedUntil.remove(account)
+        true
+    }
+}
+
+/** Keep a full lossy answer while checking the remaining accounts for requested lossless audio. */
+suspend fun <A, T : Any> resolveTidalPoolAccounts(
+    accounts: List<A>,
+    preferLossless: Boolean,
+    canAttempt: suspend (A) -> Boolean,
+    isLossless: (T) -> Boolean,
+    resolve: suspend (A) -> T?,
+): T? {
+    var fallback: T? = null
+    for (account in accounts) {
+        if (!canAttempt(account)) continue
+        val result = resolve(account) ?: continue
+        if (!preferLossless || isLossless(result)) return result
+        if (fallback == null) fallback = result
+    }
+    return fallback
+}
