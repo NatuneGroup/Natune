@@ -57,6 +57,9 @@ jobs:
           cache-cleanup: on-success
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       - name: Grant execute permission for gradlew
         timeout-minutes: 2
         run: chmod +x gradlew
@@ -156,6 +159,9 @@ jobs:
         with:
           cache-cleanup: on-success
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
 
       - name: Grant execute permission for gradlew
         timeout-minutes: 2
