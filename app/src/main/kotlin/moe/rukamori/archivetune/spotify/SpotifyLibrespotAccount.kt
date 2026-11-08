@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.spotify
 
+import moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative
+
 import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.MutablePreferences
@@ -470,4 +472,6 @@ internal fun MutablePreferences.clearLibrespotSession() {
     if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
         this[SpotifyStreamEnabledKey] = false
     }
+    // Revoke AP work and plaintext read guards at the credential edit, before observers catch up.
+    SpotifyLibrespotNative.close()
 }

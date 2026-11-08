@@ -57,6 +57,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
     }
     private var identity: Identity? = null
     private var nativeToken: String? = null
+    private var nativeRevocation = -1L
     private var observer: Job? = null
     @Volatile private var cachedPreferences: Pair<Preferences, Identity>? = null
     @Volatile private var closed = false
@@ -73,9 +74,10 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
     }
 
     internal class Stream(val ref: SpotifyEchoResolver.EchoStreamRef?, val tag: String, val expiresAtMs: Long,
+        private val nativeRevocation: Long,
         private val valid: () -> Boolean) {
-        fun authorized(): Boolean = valid()
-        fun active(): Boolean = valid() && System.currentTimeMillis() < expiresAtMs
+        fun authorized(): Boolean = SpotifyLibrespotNative.revocation == nativeRevocation && valid()
+        fun active(): Boolean = authorized() && System.currentTimeMillis() < expiresAtMs
         override fun toString(): String = "LibrespotStream(redacted)"
     }
 
@@ -112,7 +114,9 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
     }
 
     private fun synchronize(next: Identity): Boolean = synchronized(lifecycle) {
-        if (identity == next) return@synchronized false
+        // A rapid sign-out/sign-in can restore the same preferences before the observer sees
+        // the intermediate state. A fresh resolution still rebuilds its revoked session.
+        if (identity == next && SpotifyLibrespotNative.revocation == nativeRevocation) return@synchronized false
         identity = next
         revoke()
         true
@@ -122,7 +126,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         generation.incrementAndGet()
         nativeToken = null
         streams.clear()
-        SpotifyLibrespotNative.close()
+        nativeRevocation = SpotifyLibrespotNative.close()
     }
 
     fun invalidate() = synchronized(lifecycle) { revoke() }
@@ -141,6 +145,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
 
     fun cachedUri(tag: String, lowData: Boolean): Uri? = synchronized(lifecycle) {
         val captured = cachedIdentity()?.takeIf { !closed && it.admitted } ?: return@synchronized null
+        if (SpotifyLibrespotNative.revocation != nativeRevocation) return@synchronized null
         // Validate the selected entry under the same identity captured by its read guard.
         if (!SpotifyLibrespotAudioPolicy.cacheAdmitted(tag, captured.fingerprint, captured.quality, lowData)) {
             return@synchronized null
@@ -148,7 +153,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         val epoch = generation.get()
         val uri = Uri.Builder().scheme(SpotifyLibrespotAudioPolicy.SCHEME).authority("audio")
             .appendPath(UUID.randomUUID().toString()).build()
-        streams[uri.toString()] = Stream(null, tag, Long.MAX_VALUE) {
+        streams[uri.toString()] = Stream(null, tag, Long.MAX_VALUE, nativeRevocation) {
             !closed && generation.get() == epoch && cachedIdentity() == captured
         }
         uri
@@ -160,10 +165,17 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
     private suspend fun native(expectedGeneration: Long, operation: (Long) -> String): JSONObject {
         if (nativeCooldown.remainingSeconds() > 0) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.RATE_LIMITED)
         val nativeGeneration = synchronized(lifecycle) {
-            if (closed || generation.get() != expectedGeneration || cachedIdentity() != identity) {
+            if (closed || generation.get() != expectedGeneration || cachedIdentity() != identity ||
+                SpotifyLibrespotNative.revocation != nativeRevocation) {
                 throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.ACCOUNT_CHANGED)
             }
-            SpotifyLibrespotNative.nativeGeneration()
+            val captured = SpotifyLibrespotNative.nativeGeneration()
+            // A credential edit can close JNI concurrently with this capture. If it happened
+            // before capture, the new native generation must not authorize an old OAuth token.
+            if (SpotifyLibrespotNative.revocation != nativeRevocation) {
+                throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.ACCOUNT_CHANGED)
+            }
+            captured
         }
         val result = withTimeoutOrNull(remaining()) {
             SpotifyLibrespotNative.request(onCancelled = {
@@ -201,6 +213,8 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         val before = identity(context.dataStore.data.first())
         synchronize(before)
         if (!before.eligible || (before.binding.isNotBlank() && before.binding != before.catalog)) return@withLock null
+        if (!SpotifyLibrespotNative.available) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.NATIVE_UNAVAILABLE)
+        if (nativeCooldown.remainingSeconds() > 0) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.RATE_LIMITED)
         val token = SpotifyLibrespotAccount.accessToken(context) ?: run { invalidate(); return@withLock null }
         val captured = identity(context.dataStore.data.first())
         val justBound = before.binding.isBlank() && captured.binding == before.catalog && captured.userId == before.userId &&
@@ -208,10 +222,11 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         if (!captured.admitted || (captured != before && !justBound)) { synchronize(captured); return@withLock null }
         synchronize(captured)
         val expectedGeneration = generation.get()
-        fun current(): Boolean = !closed && generation.get() == expectedGeneration && cachedIdentity() == captured
+        val expectedRevocation = synchronized(lifecycle) { nativeRevocation }
+        fun current(): Boolean = !closed && generation.get() == expectedGeneration && cachedIdentity() == captured &&
+            SpotifyLibrespotNative.revocation == expectedRevocation
         val trackId = SpotifyLibrespotTrackSearch.find(token, query) ?: return@withLock null
         if (!current()) return@withLock null
-        if (!SpotifyLibrespotNative.available) throw SpotifyLibrespotAudioException(SpotifyLibrespotFailure.NATIVE_UNAVAILABLE)
         val proxy = captured.proxy
         if (proxy != null && (proxy.type != Proxy.Type.HTTP || proxy.hasCredentials)) {
             // Native AP proxy support cannot honor SOCKS/authenticated proxies; do not bypass one.
@@ -244,7 +259,7 @@ internal class SpotifyLibrespotAudio(private val context: Context) {
         val tag = "${SpotifyLibrespotAudioPolicy.cacheNamespace(captured.fingerprint, captured.quality, lowData)}:$format:$fileId"
         val uri = Uri.Builder().scheme(SpotifyLibrespotAudioPolicy.SCHEME).authority("audio")
             .appendPath(UUID.randomUUID().toString()).build()
-        val stream = Stream(SpotifyEchoResolver.EchoStreamRef(urls, key, format, fileId), tag, expiry, ::current)
+        val stream = Stream(SpotifyEchoResolver.EchoStreamRef(urls, key, format, fileId), tag, expiry, expectedRevocation, ::current)
         synchronized(lifecycle) {
             if (!current()) return@withLock null
             streams[uri.toString()] = stream

@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.playback
 
+import java.io.IOException
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.ContentMetadataMutations
 import timber.log.Timber
@@ -17,8 +18,11 @@ internal object SpotifyAudioCache {
                 onDiscard()
             }
             cache.applyContentMetadataMutations(key, ContentMetadataMutations().set(METHOD_METADATA, tag))
-        }.onFailure { error ->
+        }.getOrElse { error ->
             Timber.tag("MusicService").w("Could not align Spotify audio cache category=%s", error.javaClass.simpleName)
+            // Continuing would let the new stream read bytes owned by a different engine,
+            // account or encoding. Reject the candidate through the existing source chain.
+            throw IOException("Spotify audio cache alignment failed")
         }
     }
 }

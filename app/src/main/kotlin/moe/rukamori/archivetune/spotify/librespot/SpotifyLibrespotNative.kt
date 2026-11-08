@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.spotify.librespot
 
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -12,6 +13,9 @@ internal class SpotifyLibrespotAudioException(val failure: SpotifyLibrespotFailu
 
 /** The native worker never holds a coroutine thread hostage; cancellation revokes its session. */
 internal object SpotifyLibrespotNative {
+    private val revocations = AtomicLong()
+    val revocation: Long get() = revocations.get()
+
     val available: Boolean by lazy {
         try {
             System.loadLibrary("natune_librespot")
@@ -43,8 +47,15 @@ internal object SpotifyLibrespotNative {
         }
     }
 
-    fun close() {
-        if (available) nativeClose()
+    fun close(): Long {
+        // Read guards observe this immediately, before DataStore's asynchronous collectors run.
+        val epoch = revocations.incrementAndGet()
+        if (available) {
+            try { nativeClose() } catch (_: LinkageError) {
+                // A missing JNI entry point must never prevent credential deletion.
+            }
+        }
+        return epoch
     }
 
     external fun nativeConnect(
