@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,7 +45,7 @@ internal fun DesktopSeedThemeEditor(graph: DesktopSessionGraph) {
         try { action() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { failed = true }
     } }
     val palette = ThemeSeedPalette(primary, secondary, tertiary, neutral)
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(DesktopStrings["desktop_theme_title"], style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(name, { if (it.length <= 128) name = it }, label = { Text(DesktopStrings["desktop_theme_name"]) })
         SeedColorField("primary", primary) { primary = it }

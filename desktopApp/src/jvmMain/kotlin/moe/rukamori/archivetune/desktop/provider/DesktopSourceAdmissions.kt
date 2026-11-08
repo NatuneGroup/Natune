@@ -23,6 +23,7 @@ internal class DesktopSourceAdmissions(
         val account: AcceptedAccount,
         val credential: Any,
         val current: () -> Boolean,
+        val urlAllowed: (String) -> Boolean = { true },
     )
 
     private val lock = Any()
@@ -30,7 +31,11 @@ internal class DesktopSourceAdmissions(
     private var closed = false
     private var generation = 0L
 
-    fun accept(identity: ProviderIdentity, credential: Any, current: () -> Boolean): Lease? = synchronized(lock) {
+    fun accept(identity: ProviderIdentity, credential: Any, current: () -> Boolean): Lease? =
+        acceptPermitted(identity, credential, { true }, current)
+
+    fun acceptPermitted(identity: ProviderIdentity, credential: Any, urlAllowed: (String) -> Boolean,
+        current: () -> Boolean): Lease? = synchronized(lock) {
         if (closed || !current()) return@synchronized null
         leases.entries.removeIf { !it.value.current() }
         leases.values.firstOrNull {
@@ -39,7 +44,13 @@ internal class DesktopSourceAdmissions(
         // Never evict an active account: an already-playing lease may still need it.
         if (leases.size >= MAX_ACCOUNTS) return@synchronized null
         val scope = PREFIX + UUID.randomUUID()
-        Lease(scope, AcceptedAccount(identity, ++generation), credential, current).also { leases[scope] = it }
+        Lease(scope, AcceptedAccount(identity, ++generation), credential, current, urlAllowed).also { leases[scope] = it }
+    }
+
+    fun permitsUrl(scope: String, url: String): Boolean = synchronized(lock) {
+        if (!scope.startsWith(PREFIX)) return@synchronized true
+        val lease = leases[scope] ?: return@synchronized false
+        active(lease) && runCatching { lease.urlAllowed(url) }.getOrDefault(false)
     }
 
     fun active(lease: Lease): Boolean = synchronized(lock) {

@@ -133,7 +133,7 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
     }
     into(desktopPlayPlaySources)
     doLast {
-        val source = themeSource.readText()
+        val source = themeSource.readText().replace("\r\n", "\n")
         val notice = source.substring(0, source.indexOf("package "))
         val model = source.substring(source.indexOf("data class ThemeSeedPalette("), source.indexOf("@OptIn(ExperimentalMaterial3ExpressiveApi", source.indexOf("data class ThemeSeedPalette(")))
         val scheme = source.substring(source.indexOf("private fun exactPaletteColorScheme("), source.indexOf("private fun Int.toComposeColor()"))
