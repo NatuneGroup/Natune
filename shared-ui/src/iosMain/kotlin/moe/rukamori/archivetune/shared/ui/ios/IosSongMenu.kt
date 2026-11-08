@@ -425,7 +425,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // Library add and remove both commit through the repository now.
         if (!facts.isLocal) add("library")
         // A speed-dial pin holds a YouTube song id; other providers keep the row's unavailable answer.
-        if (!facts.isLocal) add("speed_dial")
+        if (ref.iosYouTubeSong()) add("speed_dial")
         if (facts.fromHistory) add("remove_history")
         if (facts.fromCache) add("remove_cache")
         if (facts.albumId != null) add("view_album")
@@ -451,7 +451,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // The cover and the metadata refresh need a remote artwork or a provider song; local files have neither.
         if (!facts.isLocal) {
             add("download_cover")
-            add("refetch")
+            if (ref.iosYouTubeSong()) add("refetch")
         }
         // Watch-next radio is seeded only by a YouTube song.
         if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {

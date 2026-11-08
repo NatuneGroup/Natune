@@ -461,6 +461,9 @@ class IosSourceContractsTest(unittest.TestCase):
         for action in ['TITLE', 'ARTIST', 'OUTPUT']:
             self.assertIn('PlayerAction.' + action + ' ->', controls)
         self.assertIn('shareLocalAudio(item.ref.id, null)', controls)
+        menus = (UI_IOS / "IosSongMenu.kt").read_text()
+        self.assertIn('if (ref.iosYouTubeSong()) add("speed_dial")', menus)
+        self.assertIn('if (ref.iosYouTubeSong()) add("refetch")', menus)
         bindings = (UI_IOS / "IosHostBindings.kt").read_text()
         self.assertIn('IosPlayerNavigationDialogs(controls)', bindings)
         self.assertIn('itemMenu, openOwnRoute)', bindings)
