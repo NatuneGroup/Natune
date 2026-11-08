@@ -1,6 +1,10 @@
 package moe.rukamori.archivetune.shared.data.provider
 
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.*
@@ -17,6 +21,8 @@ class QqMusicAccess(val scope: String, val uin: String, val musicKey: String, va
     internal fun cookie() = "uin=$uin; qqmusic_uin=$uin; qm_keyst=$musicKey; qqmusic_key=$musicKey"
     override fun toString() = "QqMusicAccess(REDACTED)"
 }
+
+data class QqCatalogChart(val title: String, val label: String, val tracks: List<ProviderTrack>)
 
 /** Actual desktop RPC and entitled plain/EVkey resource minting; no regional or entitlement bypass. */
 class KtorQqMusicRepository(client: HttpClient, private val access: QqMusicAccess?,
@@ -67,6 +73,32 @@ class KtorQqMusicRepository(client: HttpClient, private val access: QqMusicAcces
         val rows = songs.array("list") ?: throw ProviderProtocolFailure()
         return ProviderTrackPage(rows.map { parse(it.jsonObject) },
             songs.long("totalnum") ?: data.obj("meta")?.long("sum"))
+    }
+    /** Android's GetAll → bounded concurrent GetDetail chart feed, using the admitted QQ account. */
+    suspend fun homeCharts(): List<QqCatalogChart> = coroutineScope {
+        requireNotNull(access)
+        val listing = requireNotNull(rpc("music.musicToplist.Toplist", "GetAll", buildJsonObject {}))
+        val charts = listing.array("group").orEmpty().flatMap { group ->
+            val data = group as? JsonObject ?: return@flatMap emptyList()
+            data.array("toplist").orEmpty().mapNotNull { value ->
+                val chart = value as? JsonObject ?: return@mapNotNull null
+                val id = chart.long("topId") ?: return@mapNotNull null
+                val title = chart.text("title") ?: return@mapNotNull null
+                Triple(id, title, data.text("groupName").orEmpty())
+            }
+        }.take(8)
+        charts.map { (id, title, label) -> async {
+            try {
+                val detail = rpc("music.musicToplist.Toplist", "GetDetail", buildJsonObject {
+                    put("topId", id); put("offset", 0); put("num", 20); put("withTags", false)
+                })
+                val tracks = detail?.array("songInfoList").orEmpty().mapNotNull { row ->
+                    (row as? JsonObject)?.let { runCatching { parse(it) }.getOrNull() }
+                }
+                QqCatalogChart(title, label, tracks)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { QqCatalogChart(title, label, emptyList()) }
+        } }.awaitAll().filter { it.tracks.isNotEmpty() }
     }
     override suspend fun track(id: String): ProviderTrack {
         val data = rpc("music.pf_song_detail_svr", "get_song_detail_yqq",
