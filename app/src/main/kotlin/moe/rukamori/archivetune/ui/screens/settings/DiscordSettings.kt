@@ -250,15 +250,28 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         authorizationMessage = null
         authorizationUiModeName = DiscordAuthorizationUiMode.Waiting.name
 
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, session.authorizationUri).apply {
-                    addCategory(Intent.CATEGORY_BROWSABLE)
-                },
-            )
-        }.onFailure {
-            authorizationUiModeName = DiscordAuthorizationUiMode.Failure.name
-            authorizationMessage = it.message ?: context.getString(R.string.discord_authorization_failed)
+        if (presenceSupported) {
+            coroutineScope.launch {
+                DiscordSocialPresenceClient.authorize(context).onSuccess { linked ->
+                    authorizedToken = linked.accessToken
+                    authorizedUsername = linked.account?.username.orEmpty()
+                    authorizedName = linked.account?.displayName.orEmpty()
+                    authorizedAvatarUrl = linked.account?.avatarUrl.orEmpty()
+                    savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Linked
+                    authorizationUiModeName = DiscordAuthorizationUiMode.Success.name
+                    authorizationMessage = context.getString(R.string.discord_authorization_success)
+                }.onFailure {
+                    authorizationUiModeName = DiscordAuthorizationUiMode.Failure.name
+                    authorizationMessage = context.getString(R.string.discord_authorization_failed)
+                }
+            }
+        } else {
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, session.authorizationUri).apply { addCategory(Intent.CATEGORY_BROWSABLE) })
+            }.onFailure {
+                authorizationUiModeName = DiscordAuthorizationUiMode.Failure.name
+                authorizationMessage = context.getString(R.string.discord_authorization_failed)
+            }
         }
     }
 
@@ -573,23 +586,8 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
-                item {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.discord_presence_unavailable_title),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            text = stringResource(R.string.discord_presence_unavailable_description),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
+                item(visible = !presenceSupported) { DiscordSdkAvailabilityNotice() }
+
             }
 
             preferenceGroup(

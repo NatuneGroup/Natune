@@ -157,3 +157,6 @@ docs/superpowers/
 
 # iOS build credentials (see docs/build-credentials.md)
 iosApp/Configuration/Credentials.xcconfig
+
+# Optional licensed Discord SDK, supplied locally or by private CI checkout
+/third_party/discord-social-sdk/

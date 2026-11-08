@@ -21,6 +21,38 @@ abstract class ValidateStartIoReleaseConfigurationTask : DefaultTask() {
     }
 }
 
+@CacheableTask
+abstract class GenerateDiscordSdkManifestTask : DefaultTask() {
+    @get:Input abstract val redirectScheme: Property<String>
+    @get:OutputFile abstract val manifestOutputFile: RegularFileProperty
+    @TaskAction fun generate() {
+        val output = manifestOutputFile.get().asFile
+        output.parentFile.mkdirs()
+        output.writeText("""
+            <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+                xmlns:tools="http://schemas.android.com/tools">
+                <application>
+                    <!-- The SDK's own callback receiver; official SDK docs use a scheme-only filter. -->
+                    <activity
+                        android:name="com.discord.socialsdk.AuthenticationActivity"
+                        android:exported="true"
+                        tools:replace="android:exported">
+                        <intent-filter>
+                            <action android:name="android.intent.action.VIEW" />
+                            <category android:name="android.intent.category.DEFAULT" />
+                            <category android:name="android.intent.category.BROWSABLE" />
+                            <data android:scheme="${redirectScheme.get()}" />
+                        </intent-filter>
+                    </activity>
+                    <!-- SDK builds authorize through AuthenticationActivity; the browser callback is inert. -->
+                    <!-- Voice/call service; Natune uses auth and rich presence only. -->
+                    <service android:name="com.discord.socialsdk.ForegroundService" tools:node="remove" />
+                </application>
+            </manifest>
+        """.trimIndent())
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.hilt)
@@ -99,9 +131,18 @@ val discordApplicationIdLong = sequenceOf(
     localProperties.getProperty("DISCORD_APPLICATION_ID"),
     System.getenv("DISCORD_APPLICATION_ID"),
 ).mapNotNull { value -> value?.trim()?.toLongOrNull()?.takeIf { it > 0L } }
-    .firstOrNull() ?: 1165706613961789445L
+    .firstOrNull() ?: 1569030685010821170L
 val discordApplicationId = discordApplicationIdLong.toString()
 val discordRedirectScheme = "discord-$discordApplicationId"
+val discordSocialSdkAar = rootProject.file("third_party/discord-social-sdk/android/discord_partner_sdk.aar")
+// Strictly opt-in: the property must be set AND the licensed AAR must exist. Default builds,
+// release/nightly CI and pull-request builds never pass the property and never fetch the SDK.
+val discordSocialSdkEnabled = providers.gradleProperty("natune.discordSdk").orNull
+    ?.toBooleanStrictOrNull() == true && discordSocialSdkAar.isFile
+// SDK builds receive the OAuth callback in the SDK's AuthenticationActivity; the app's browser
+// callback keeps only an inert scheme so two activities never compete for the real redirect.
+val discordOAuthCallbackScheme =
+    if (discordSocialSdkEnabled) "discord-oauth-disabled-$discordApplicationId" else discordRedirectScheme
 val releaseKeystoreFile = file("keystore/release.keystore")
 val releaseStorePassword =
     System.getenv("STORE_PASSWORD")?.takeIf { it.isNotBlank() }
@@ -176,7 +217,8 @@ android {
     ndkVersion = "30.0.16248370"
 
     defaultConfig {
-    applicationId = "moe.rukamori.archivetune"
+        buildConfigField("boolean", "DISCORD_SOCIAL_SDK_AVAILABLE", discordSocialSdkEnabled.toString())
+        applicationId = "moe.rukamori.archivetune"
         // API 24 floor. Platform calls newer than 24 are guarded at their call sites, and the
         // AAudio entry points are loaded at runtime (native/dsp) so the library loads on 24-25.
         minSdk = 24
@@ -413,6 +455,7 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
+                arguments += "-DNATUNE_DISCORD_SOCIAL_SDK=${if (discordSocialSdkEnabled) "ON" else "OFF"}"
             }
         }
     }
@@ -428,6 +471,7 @@ android {
             buildConfigField("long", "DISCORD_APPLICATION_ID_LONG", "${discordApplicationIdLong}L")
             buildConfigField("String", "DISCORD_REDIRECT_SCHEME", "\"$discordRedirectScheme\"")
             manifestPlaceholders["discordRedirectScheme"] = discordRedirectScheme
+            manifestPlaceholders["discordOAuthCallbackScheme"] = discordOAuthCallbackScheme
         }
         create("foss") {
             dimension = "distribution"
@@ -437,6 +481,7 @@ android {
             buildConfigField("long", "DISCORD_APPLICATION_ID_LONG", "${discordApplicationIdLong}L")
             buildConfigField("String", "DISCORD_REDIRECT_SCHEME", "\"$discordRedirectScheme\"")
             manifestPlaceholders["discordRedirectScheme"] = discordRedirectScheme
+            manifestPlaceholders["discordOAuthCallbackScheme"] = discordOAuthCallbackScheme
         }
         create("mobile") {
             dimension = "device"
@@ -734,6 +779,10 @@ ksp {
 // protobuf-java runtime another dependency already ships (same `com.google.protobuf` package).
 
 dependencies {
+    if (discordSocialSdkEnabled) {
+        implementation(files(discordSocialSdkAar))
+        implementation("androidx.browser:browser:1.8.0")
+    }
     // Automix: the Beat This! beat/downbeat and open-unmix vocal models run through ONNX Runtime.
     // The full android artifact, not -mobile: mobile only loads .ort sessions.
     implementation(libs.onnxruntime.android)
@@ -959,6 +1008,14 @@ androidComponents {
             generateIconPack,
             GenerateIconPackTask::manifestOutputFile,
         )
+        if (discordSocialSdkEnabled) {
+            val sdkManifest = tasks.register<GenerateDiscordSdkManifestTask>("generate${capitalizedVariantName}DiscordSdkManifest") {
+                redirectScheme.set(discordRedirectScheme)
+                manifestOutputFile.set(layout.buildDirectory.file("generated/discordSdk/${variant.name}/AndroidManifest.xml"))
+            }
+            variant.sources.manifests.addGeneratedManifestFile(sdkManifest, GenerateDiscordSdkManifestTask::manifestOutputFile)
+        }
+
     }
 }
 
