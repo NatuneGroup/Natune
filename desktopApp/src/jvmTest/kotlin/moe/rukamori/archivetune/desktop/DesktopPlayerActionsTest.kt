@@ -23,6 +23,8 @@ class DesktopPlayerActionsTest {
                 share = { calls += "share" },
                 more = { calls += "more" },
                 sleep = { calls += "sleep" },
+                title = { calls += "title" },
+                artist = { calls += "artist" },
             )
             when {
                 action in DESKTOP_PLAYER_TRANSPORT_ACTIONS ->
@@ -43,11 +45,13 @@ class DesktopPlayerActionsTest {
         assertTrue(PlayerAction.LIKE in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.MORE in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.SLEEP in DESKTOP_PLAYER_ACTIONS)
+        assertTrue(PlayerAction.TITLE in DESKTOP_PLAYER_ACTIONS)
+        assertTrue(PlayerAction.ARTIST in DESKTOP_PLAYER_ACTIONS)
     }
 
     @Test
     fun actionsWithoutADesktopOwnerAreNotOffered() {
-        for (action in listOf(PlayerAction.TITLE, PlayerAction.ARTIST, PlayerAction.OUTPUT)) {
+        for (action in listOf(PlayerAction.OUTPUT)) {
             assertFalse(action in DESKTOP_PLAYER_ACTIONS, "$action has no desktop owner")
             assertFalse(desktopPlayerAction(action, "occ", {}, {}, {}, {}), "$action must not dispatch")
         }

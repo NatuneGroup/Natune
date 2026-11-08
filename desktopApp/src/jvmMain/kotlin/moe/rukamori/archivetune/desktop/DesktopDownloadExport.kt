@@ -22,7 +22,8 @@ internal suspend fun desktopDownloadExtension(file: Path): String = withContext(
 }
 
 /** Staging beside the destination keeps cancellation, a lost source or a size mismatch from truncating an old export. */
-internal suspend fun copyDesktopDownload(download: DesktopCompletedDownload, destination: Path) {
+internal suspend fun copyDesktopDownload(download: DesktopCompletedDownload, destination: Path,
+    tag: suspend (Path) -> Unit = {}) {
     withContext(Dispatchers.IO) {
         val source = download.path.toAbsolutePath().normalize()
         val target = destination.toAbsolutePath().normalize()
@@ -31,7 +32,7 @@ internal suspend fun copyDesktopDownload(download: DesktopCompletedDownload, des
             "An export must not overwrite its stored download"
         }
         currentCoroutineContext().ensureActive()
-        val staging = Files.createTempFile(target.parent, ".natune-export-", ".part")
+        val staging = Files.createTempFile(target.parent, ".natune-export-", ".${desktopDownloadExtension(source)}")
         try {
             var copied = 0L
             Files.newInputStream(source).use { input ->
@@ -48,6 +49,7 @@ internal suspend fun copyDesktopDownload(download: DesktopCompletedDownload, des
                 }
             }
             check(copied == download.bytes) { "The stored download changed while exporting" }
+            tag(staging)
             FileChannel.open(staging, StandardOpenOption.WRITE).use { it.force(true) }
             currentCoroutineContext().ensureActive()
             Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)

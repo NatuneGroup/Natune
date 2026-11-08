@@ -126,6 +126,7 @@ internal class DesktopNetworkOwner(
         lock.withLock {
             check(!closed)
             config = desktopProxyConfig(preferences)
+            dns.apply()
             if (!installed) {
                 ProxySelector.setDefault(selector)
                 Authenticator.setDefault(javaAuthenticator)
@@ -137,7 +138,8 @@ internal class DesktopNetworkOwner(
     }
 
     /** HTTP/SOCKS and scoped HTTP 407 authentication share one dynamic selector, including after settings edits. */
-    fun httpClient(): HttpClient = desktopProxyHttpClient(selector, connections) { config }
+    private val dns = DesktopDns { preferences() }
+    fun httpClient(): HttpClient = desktopProxyHttpClient(selector, connections, dns = dns) { config }
 
     fun start(scope: CoroutineScope) {
         startup = scope.launch {
@@ -308,11 +310,13 @@ internal fun desktopProxyConfig(preferences: PreferenceSnapshot): DesktopProxyCo
 internal fun desktopProxyHttpClient(
     selector: ProxySelector,
     connections: ConnectionPool? = null,
+    dns: okhttp3.Dns? = null,
     configured: () -> DesktopProxyConfig?,
 ): HttpClient = HttpClient(OkHttp) {
     engine {
         config {
             proxySelector(selector)
+            dns?.let { this.dns(it) }
             connections?.let { connectionPool(it) }
             proxyAuthenticator { route, response ->
                 val proxy = configured() ?: return@proxyAuthenticator null

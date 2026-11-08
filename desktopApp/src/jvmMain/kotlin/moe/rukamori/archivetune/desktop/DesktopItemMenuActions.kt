@@ -61,10 +61,10 @@ internal class DesktopSongMenuHost(
     }
 
     /** The streamed cache's index row; the producer is not wired, so the row only appears on cache occurrences. */
-    override suspend fun removeFromCache(song: ContentRef) = graph.storedSongIndex.cacheRemoved(song)
+    override suspend fun removeFromCache(song: ContentRef) = graph.songCache.remove(song)
 
     override suspend fun startDownload(song: ContentRef) {
-        if (song.kind != ContentKind.SONG) state.unavailable("content_menu_episode_download_unsupported")
+        if (!desktopDownloadSupported(song)) state.unavailable("content_menu_episode_download_unsupported")
         // A catalog row already carries canonical metadata; downloading it must not require saving it first.
         graph.downloads.start(selected.item)
     }
@@ -82,7 +82,7 @@ internal class DesktopSongMenuHost(
     }
 
     override suspend fun openWithExternalDownloader(song: ContentRef): Boolean =
-        state.unavailable("content_menu_external_downloader_unsupported")
+        desktopExternalDownload(graph, song)
 
     override suspend fun viewAlbum(albumId: String) {
         val kind = if (selected.item.ref.kind == ContentKind.EPISODE) ContentKind.PODCAST else ContentKind.ALBUM

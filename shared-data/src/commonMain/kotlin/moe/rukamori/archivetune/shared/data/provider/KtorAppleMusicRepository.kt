@@ -95,6 +95,19 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
     override suspend fun track(id: String): ProviderTrack =
         parse(call("songs/${pathId(id)}").array("data")?.singleOrNull()?.jsonObject ?: throw ProviderProtocolFailure())
 
+    /** AMP syllable/line TTML lyrics use the same personal account/storefront and catalog matching. */
+    suspend fun lyrics(request: AudioResolveRequest): String? {
+        val track = match(request) ?: return null
+        for (kind in listOf("syllable-lyrics", "lyrics")) {
+            try {
+                val result = call("songs/${pathId(track.item.ref.id)}/$kind").array("data")?.firstOrNull() as? JsonObject
+                result?.obj("attributes")?.text("ttml")?.let { return it }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: ProviderHttpFailure) { }
+        }
+        return null
+    }
+
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         // Retained ring order: personal first, then pool entries; rotate past each auth rejection.
         var authRejection: AppleAuthException? = null

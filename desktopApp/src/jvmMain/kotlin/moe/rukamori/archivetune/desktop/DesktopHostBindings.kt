@@ -43,6 +43,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityOverlay
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
@@ -98,7 +99,9 @@ internal fun desktopHostBindings(
     // typeface the settings page installs, so a SpatialFlow title draws in that typeface once it is installed.
     val sleepSheet = DesktopSleepTimerSheetState()
     val playerMenu = DesktopPlayerMenuState()
-    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily)
+    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily,
+        onTitle = { row -> row.item.albumRef()?.let { ownRoutes.trySend(ArchiveRoutes.content(it)) } ?: menu.open(row) },
+        onArtists = { row -> menu.openArtists(row.item) })
     val podcasts = createDesktopPodcasts(graph)
     val topMixes = createDesktopTopMixes(graph)
     val canvas = createDesktopCanvas(graph, settingsOwners.spotify)
@@ -341,6 +344,7 @@ private fun desktopPlayerSlots(
         customBackground = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         lyrics = { modifier ->
             Column(modifier) {
+                DesktopLyricsEditor(graph, current?.item, document)
                 val ref = current?.item?.ref
                 LyricsSyncControls(
                     storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },

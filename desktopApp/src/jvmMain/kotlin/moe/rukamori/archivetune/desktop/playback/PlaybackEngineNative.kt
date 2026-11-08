@@ -26,6 +26,7 @@ internal object PlaybackEngineNative {
     ): Long
 
     @JvmStatic external fun destroy(handle: Long)
+    @JvmStatic external fun setPcmProcessor(handle: Long, processor: DesktopPcmProcessor): Int
 
     @JvmStatic external fun load(handle: Long, source: String, startUs: Long, playWhenReady: Boolean): Long
 
@@ -42,6 +43,8 @@ internal object PlaybackEngineNative {
     @JvmStatic external fun seek(handle: Long, positionUs: Long)
 
     @JvmStatic external fun setSpeed(handle: Long, speed: Float)
+    @JvmStatic external fun setPitch(handle: Long, semitones: Float)
+    @JvmStatic external fun setSkipSilence(handle: Long, enabled: Boolean)
 
     @JvmStatic external fun stop(handle: Long)
 
