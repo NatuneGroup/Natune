@@ -96,3 +96,21 @@ fallback; type continuously with iOS composition/autocorrect; dismiss player
 and inner panels from every tab; inspect every player style, Solar vectors,
 compact mini player, safe areas and cold/warm/offline launch. A green light
 check is not simulator compilation or device evidence.
+
+## Implementation: playback transport and policy
+
+- Serialized NSURLSession suspend/resume with the buffer state lock. These state calls
+  enqueue work; neither waits for the delegate queue. The reader cannot now resume
+  before the producer suspends. `IosHttpRangeSource.kt` remains bounded to 4 MiB high /
+  1 MiB low water, with cancellation and credential checks preserved.
+- `IosResponseByteRange.kt` validates both range endpoints and total, continues complete
+  partial bodies at the next byte, retries truncation, and rejects changing resource lengths.
+- `IosAudioFormatPolicy.kt` prefers MP4/AAC in primary, NewPipe mechanism and Echo;
+  InnerTubeX requests MP4 except LOW, now honoring request-specific quality. Existing
+  SABR/HLS/bounded-range exclusions and the four-tier chain remain intact.
+- The shared progress watchdog now resets on resume and rearms after pause, matching
+  Metrolist's `expectingProgress` transition; zero/unknown duration cannot suppress stalls.
+  The 12 s threshold, end tolerance and bounded source-aware recovery stay unchanged.
+- Added simulator format/range policy tests and extended common watchdog tests. Native
+  scheduling, network starvation and physical output still require simulator/device QA;
+  these fixes identify code defects, not a proven diagnosis of the supplied recording.
