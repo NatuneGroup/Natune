@@ -31,10 +31,11 @@ class DetailScreenTest {
                     artwork, Modifier.size(540.dp, 600.dp))
             }
         }
-        onNodeWithTag("track-number-first").assertTextEquals("1")
-        onNodeWithTag("track-number-second").assertTextEquals("2")
-        onNodeWithTag("track-duration-first").assertTextEquals("3:04")
-        onNodeWithTag("track-duration-second").assertDoesNotExist()
+        // Clickable rows merge child semantics; inspect each numbered/duration cell itself.
+        onNodeWithTag("track-number-first", useUnmergedTree = true).assertTextEquals("1")
+        onNodeWithTag("track-number-second", useUnmergedTree = true).assertTextEquals("2")
+        onNodeWithTag("track-duration-first", useUnmergedTree = true).assertTextEquals("3:04")
+        onNodeWithTag("track-duration-second", useUnmergedTree = true).assertDoesNotExist()
         onNodeWithTag("occurrence-second").performClick()
         assertEquals("second", selected)
     }
