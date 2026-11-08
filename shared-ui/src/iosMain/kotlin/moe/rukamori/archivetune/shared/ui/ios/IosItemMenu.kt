@@ -31,6 +31,7 @@ import platform.Foundation.NSUUID
  */
 internal class IosItemMenuState {
     /** The row the menu is open for, or null while it is closed. */
+    var sourceTarget: ContentOccurrence? by mutableStateOf(null)
     var canvasSaveTarget: ContentItem? by mutableStateOf(null)
     var canvasResult: org.jetbrains.compose.resources.StringResource? by mutableStateOf(null)
 
@@ -145,7 +146,8 @@ internal fun IosItemMenuDialog(
 ) {
     IosLyricsToolsDialogs(graph)
     IosCanvasSaveDialog(menu, graph)
-    DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
+    DisposableEffect(routeKey) { onDispose { menu.dismiss(); menu.sourceTarget = null } }
+    menu.sourceTarget?.let { IosSongSourceDialog(graph, menu, it) }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
             artworkUrl = item.artworkUri,

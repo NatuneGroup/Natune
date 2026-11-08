@@ -60,6 +60,7 @@ fun ArchiveTuneShell(
     searchActive: Boolean = false,
     onSearchItemDoubleClick: (() -> Unit)? = null,
     contentModifier: Modifier = Modifier,
+    chromeVisible: Boolean = true,
     miniPlayer: @Composable () -> Unit,
     content: @Composable (route: String) -> Unit,
 ) {
@@ -117,14 +118,14 @@ fun ArchiveTuneShell(
         )
         // The page is recorded for frosted navigation only while a frosted bar, rail or compact row is composed on screen.
         val frostedGate = LocalFrostedNavigationGate.current
-        val frostedOnScreen = frostedNavigationOnScreen(layout, preferences)
+        val frostedOnScreen = chromeVisible && frostedNavigationOnScreen(layout, preferences)
         SideEffect { frostedGate?.onScreen = frostedOnScreen }
         val apple = preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC
         val pill = rememberPillStyle(preferences)
         val glowStrength = preferences.navigationBarGlowStrength()
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }
         // Pages reserve the measured bar and mini player, so no card sits under a control the shell drew.
-        val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
+        val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { if (chromeVisible) chromeHeight.toDp() else 0.dp })
         val pageArea: @Composable () -> Unit = {
             CompositionLocalProvider(LocalShellContentPadding provides chromePadding) {
                 Box(
@@ -189,7 +190,7 @@ fun ArchiveTuneShell(
             }
         }
         Row(Modifier.fillMaxSize()) {
-            if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
+            if (chromeVisible && (layout == ShellLayout.Rail || layout == ShellLayout.TvRail)) {
                 NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
                     containerColor = Color.Transparent) {
                     tabs.forEach { tab ->
@@ -205,7 +206,7 @@ fun ArchiveTuneShell(
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 pageArea()
-                Box(Modifier.align(Alignment.BottomCenter)) { bottomChrome() }
+                if (chromeVisible) Box(Modifier.align(Alignment.BottomCenter)) { bottomChrome() }
             }
         }
     }

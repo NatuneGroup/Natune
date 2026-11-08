@@ -208,10 +208,10 @@ data class PlayerQueueMenuState(
     val playbackSpeed: Float,
     val playbackPitch: Float,
     val sleepTimer: PlayerSleepTimerState,
-    val sourceChoices: List<AudioSourceType>,
-    val selectedSource: AudioSourceType?,
-    val amazonSearchEnabled: Boolean,
-    val searchableSources: Set<AudioSourceType>,
+    override val sourceChoices: List<AudioSourceType>,
+    override val selectedSource: AudioSourceType?,
+    override val amazonSearchEnabled: Boolean,
+    override val searchableSources: Set<AudioSourceType>,
     /** A host without an always-on display surface hides the AOD row instead of reporting a no-op. */
     val alwaysOnDisplaySupported: Boolean = true,
     /** A host without a radio-capable surface hides the Start radio grid tile. */
@@ -230,7 +230,7 @@ data class PlayerQueueMenuState(
     val tempoPitchRemembered: Boolean = false,
     /** Apple Music keeps the icon grid of actions; MD3 lists the same actions as rows with their icons. */
     val menuStyle: PlayerMenuStyle = PlayerMenuStyle.Default,
-)
+) : PlayerSongSourceState
 
 /**
  * Host clock for the sleep countdown. The menu never reads a platform clock, so the owner supplies time and tests can
@@ -251,7 +251,7 @@ fun interface PlayerQueueClock {
  * [removeDownload]. The source chooser closes only its own dialog, and the sleep timer closes the menu once a duration
  * or end-of-song choice is committed.
  */
-interface PlayerQueueMenuActions : PlayerSleepTimerCommands {
+interface PlayerQueueMenuActions : PlayerSleepTimerCommands, PlayerSongSourceActions {
     fun startRadio(track: PlayerQueueTrack)
     fun playNextFromQueue(occurrenceId: String)
     fun removeFromQueue(occurrenceId: String)
@@ -275,20 +275,20 @@ interface PlayerQueueMenuActions : PlayerSleepTimerCommands {
     fun openAcousticQuality(track: PlayerQueueTrack)
     /** Owner runs the Cast permission check and route picker. */
     fun cast(track: PlayerQueueTrack)
-    fun refreshSongSources(track: PlayerQueueTrack)
+    override fun refreshSongSources(track: PlayerQueueTrack)
     /**
      * Runs one search across the providers that [sourceFilter] selects, with Amazon included only when [includeAmazon]
      * is true. The dialog treats a thrown exception as no results and lets cancellation propagate, so the owner may
      * fail a provider without failing the whole search.
      */
-    suspend fun searchSongSources(
+    override suspend fun searchSongSources(
         query: String,
         sourceFilter: AudioSourceType?,
         includeAmazon: Boolean,
     ): List<PlayerSourceSearchResult>
-    fun chooseSongSource(track: PlayerQueueTrack, source: AudioSourceType?)
-    fun chooseSongSourceSearchResult(track: PlayerQueueTrack, request: PlayerSourceOverrideRequest)
-    fun playYouTubeSearchResult(track: PlayerQueueTrack, result: PlayerSourceSearchResult)
+    override fun chooseSongSource(track: PlayerQueueTrack, source: AudioSourceType?)
+    override fun chooseSongSourceSearchResult(track: PlayerQueueTrack, request: PlayerSourceOverrideRequest)
+    override fun playYouTubeSearchResult(track: PlayerQueueTrack, result: PlayerSourceSearchResult)
     /** Owner renders the playlist picker and persists the chosen song, as the baseline's AddToPlaylistDialog did. */
     fun addToPlaylist(track: PlayerQueueTrack)
     fun toggleSpeedDialPin(track: PlayerQueueTrack)

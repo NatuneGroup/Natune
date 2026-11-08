@@ -58,6 +58,9 @@ struct at_audio_output {
     // One serial source callback uses fixed scratch. The manual consumer starts only after that callback drains.
     float scratch[AT_AUDIO_RENDER_CHUNK * 2] = {};
     float volume = 1.0f;
+    uint32_t pcm_rate = AT_AUDIO_PCM_RATE;
+    uint32_t requested_usb_rate = 0;
+    bool usb_at_creation = false;
     float pitch_cents = 0.0f;
     at_eq_band eq_bands[AT_AUDIO_EQ_MAX_BANDS] = {};
     uint32_t eq_count = 0;
@@ -94,6 +97,26 @@ static NSString *g_snapshot_mode = nil;
 static AVAudioSessionCategoryOptions g_snapshot_options = (AVAudioSessionCategoryOptions)0;
 static AVAudioSessionRouteSharingPolicy g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
 static std::vector<std::shared_ptr<output_gate>> g_outputs;
+static uint32_t g_requested_usb_rate = 0;
+
+static bool usb_route(void) {
+    __block bool found = false;
+    audio_try(^BOOL {
+        for (AVAudioSessionPortDescription *port in [AVAudioSession sharedInstance].currentRoute.outputs)
+            if ([port.portType isEqualToString:AVAudioSessionPortUSBAudio]) found = true;
+        return YES;
+    });
+    return found;
+}
+static uint32_t accepted_pcm_rate(void) {
+    __block uint32_t rate = AT_AUDIO_PCM_RATE;
+    audio_try(^BOOL {
+        rate = at_audio_usb_pcm_rate(g_recording_windows == 0 ? g_requested_usb_rate : 0,
+                                    usb_route(), [AVAudioSession sharedInstance].sampleRate);
+        return YES;
+    });
+    return rate;
+}
 
 static AVAudioSessionCategoryOptions recording_options(void) {
     return (AVAudioSessionCategoryOptions)(AVAudioSessionCategoryOptionDefaultToSpeaker |
@@ -124,6 +147,11 @@ static bool configure_playback_locked(void) {
             ![session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
                routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
                           options:(AVAudioSessionCategoryOptions)0 error:&error]) return NO;
+        if (g_recording_windows == 0) {
+            const double wanted = g_requested_usb_rate && usb_route() ? g_requested_usb_rate : AT_AUDIO_PCM_RATE;
+            // A refused preference is not an output failure: the accepted rate below remains authoritative.
+            [session setPreferredSampleRate:wanted error:nil];
+        }
         return [session setActive:YES error:&error];
     });
 }
@@ -260,7 +288,7 @@ static bool build_graph(at_audio_output *p, bool plain) {
             at_audio_format target = {};
             const uint32_t layout_channels = hardware.channelLayout ? hardware.channelLayout.channelCount : 0;
             if (!at_audio_canonical_format(hardware.sampleRate, hardware.channelCount, layout_channels, &target)) return NO;
-            AVAudioFormat *pcm = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2];
+            AVAudioFormat *pcm = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:p->pcm_rate channels:2];
             AVAudioFormat *canonical = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:target.sample_rate
                                                                                      channels:target.channels];
             if (!pcm || !canonical || pcm.isInterleaved || canonical.isInterleaved ||
@@ -386,13 +414,27 @@ static at_audio_output *create_output(char *error, size_t error_len, bool plain)
     auto *p = new at_audio_output();
     p->gate = std::make_shared<output_gate>();
     p->gate->output = p;
-    ae_config config = {AE_ABI_VERSION, AE_OUTPUT_MANUAL, AE_BACKEND_DEFAULT, AT_AUDIO_PCM_RATE, 2000, 120};
-    p->core = ae_engine_create(&config, error, error_len);
-    if (!p->core) { delete p; return nullptr; }
     bool configured = false;
     {
         std::lock_guard<std::mutex> guard(g_session_lock);
-        configured = configure_playback_locked() && build_graph(p, plain);
+        configured = configure_playback_locked();
+        if (configured) {
+            p->requested_usb_rate = g_requested_usb_rate;
+            p->usb_at_creation = usb_route();
+            p->pcm_rate = accepted_pcm_rate();
+        }
+    }
+    if (!configured) {
+        if (error && error_len) strlcpy(error, "iOS audio session could not activate", error_len);
+        delete p;
+        return nullptr;
+    }
+    ae_config config = {AE_ABI_VERSION, AE_OUTPUT_MANUAL, AE_BACKEND_DEFAULT, p->pcm_rate, 2000, 120};
+    p->core = ae_engine_create(&config, error, error_len);
+    if (!p->core) { delete p; return nullptr; }
+    {
+        std::lock_guard<std::mutex> guard(g_session_lock);
+        configured = build_graph(p, plain);
     }
     if (!configured) {
         if (error && error_len) strlcpy(error, "iOS audio output rejected the canonical PCM format", error_len);
@@ -553,6 +595,27 @@ void at_audio_pause(at_audio_output *p) {
 }
 void at_audio_seek(at_audio_output *p, uint64_t position) { require_main(); ae_engine_seek(p->core, position); }
 void at_audio_speed(at_audio_output *p, float speed) { require_main(); ae_engine_set_speed(p->core, speed); }
+void at_audio_usb_sample_rate(uint32_t requested) {
+    require_main();
+    g_requested_usb_rate = at_audio_usb_request_valid(requested) ? requested : 0;
+}
+int at_audio_rate_reload_required(at_audio_output *p) {
+    require_main();
+    if (!p) return 0;
+    return p->requested_usb_rate != g_requested_usb_rate ||
+           (g_requested_usb_rate && (p->usb_at_creation != usb_route() || p->pcm_rate != accepted_pcm_rate()));
+}
+uint32_t at_audio_pcm_sample_rate(at_audio_output *p) { require_main(); return p ? p->pcm_rate : 0; }
+double at_audio_device_sample_rate(at_audio_output *p) {
+    require_main();
+    __block double rate = 0.0;
+    audio_try(^BOOL {
+        if (p && p->graph) rate = [p->graph.outputNode outputFormatForBus:0].sampleRate;
+        return YES;
+    });
+    return std::isfinite(rate) && rate > 0 ? rate : 0.0;
+}
+int at_audio_usb_route_active(void) { require_main(); return usb_route(); }
 void at_audio_pitch(at_audio_output *p, float cents) {
     require_main();
     p->pitch_cents = clamped(cents, -2400.0f, 2400.0f);

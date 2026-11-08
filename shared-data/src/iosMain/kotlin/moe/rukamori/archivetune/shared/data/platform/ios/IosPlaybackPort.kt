@@ -41,6 +41,8 @@ class IosPlaybackPort : PlaybackPort {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val inbox = Channel<Inbound>(64)
     private val state = MutableStateFlow<PlaybackSnapshot?>(null)
+    private val usbOutput = IosUsbOutputControl(scope)
+    val outputFormat: StateFlow<IosAudioOutputFormat> = usbOutput.state
     private val errors = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 16)
     private val mapper = EnginePlaybackMapper()
     private var output: CPointer<at_audio_output>? = null
@@ -191,6 +193,9 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
+    /** USB rate preferences affect future loads, without resetting the current occurrence or its position. */
+    fun setUsbOutputSampleRate(rate: Int) { if (!closed) usbOutput.setRate(rate) }
+
     /** Reports the app's activation, so the periodic read drops to the background rate while it is not frontmost. */
     fun setAppActive(active: Boolean) {
         pollCadence.appActive = active
@@ -209,7 +214,8 @@ class IosPlaybackPort : PlaybackPort {
                 val native = output ?: return@withContext false
                 val playing = state.value ?: return@withContext false
                 if (closed || inbox.isClosedForSend || overlapMs < 0L || blend?.hasNext == true || !playing.playWhenReady ||
-                    playing.isEnded || next.occurrenceId == request?.occurrenceId
+                    playing.isEnded || next.occurrenceId == request?.occurrenceId ||
+                    at_audio_pcm_sample_rate(native) != 48_000u || at_audio_rate_reload_required(native) != 0
                 ) return@withContext false
                 val issuedAt = handoffEpoch
                 val locator = next.locator
@@ -725,6 +731,7 @@ class IosPlaybackPort : PlaybackPort {
 
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
     private fun outputForLoad(): CPointer<at_audio_output>? {
+        if (output?.let { at_audio_rate_reload_required(it) != 0 } == true) reopenOutput = true
         if (reopenOutput) {
             output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
@@ -769,6 +776,7 @@ class IosPlaybackPort : PlaybackPort {
     private fun observe(): Boolean {
         if (closed) return false
         val native = output ?: return false
+        usbOutput.observe(native)
         blend?.let { engine ->
             val now = SystemMonotonicClock.nowNanos()
             val read = engine.poll(now)

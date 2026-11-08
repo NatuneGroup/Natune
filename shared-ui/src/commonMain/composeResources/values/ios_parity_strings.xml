@@ -31,6 +31,7 @@
     <string name="ios_modules_execution_failed">The module could not resolve audio within its limits. The next enabled source can try.</string>
     <string name="ios_modules_unsupported_stream">This module returned an unsupported inline, encrypted or DASH stream. The next enabled source can try.</string>
     <string name="ios_system_integrations">iOS system integrations</string>
+    <string name="ios_system_integrations_description">Widgets, CarPlay and playback controls that iOS provides instead of Android background services.</string>
     <string name="ios_widgets_title">Home-screen playback controls</string>
     <string name="ios_widgets_description">Add Natune controls from the iOS home-screen widget gallery. The small widget toggles playback; the medium widget also skips tracks. Controls open Natune and use your current queue. Current song text needs a signed App Group shared with the app. Listening insights and lock-screen lyrics widgets are not available yet.</string>
     <string name="ios_carplay_title">CarPlay requires Apple approval</string>
@@ -40,4 +41,19 @@
     <string name="ios_dsp_limits">AVAudioEngine supports independent pitch, EQ and preamp, the clarity filter contour and a high-pass approximation of DC removal. Full clarity stereo/exciter processing, the shared limiter/dither chain and silence skipping are unavailable. Track loudness measurement is not wired; unmeasured tracks keep their original level. Optional Audio Units may be bypassed if the output route rejects them.</string>
     <string name="ios_playback_os_unavailable">This setting uses an Android service or output contract unavailable on iOS.</string>
     <string name="ios_normalization_unavailable">Track loudness measurement is not available in this build. Unmeasured tracks keep their original level.</string>
+    <string name="ios_usb_rate_title">USB audio sample rate</string>
+    <string name="ios_usb_rate_standard">Standard (48 kHz PCM)</string>
+    <string name="ios_usb_rate_88200">Request 88.2 kHz</string>
+    <string name="ios_usb_rate_96000">Request 96 kHz</string>
+    <string name="ios_usb_rate_176400">Request 176.4 kHz</string>
+    <string name="ios_usb_rate_192000">Request 192 kHz</string>
+    <string name="ios_usb_rate_status">Current audio format</string>
+    <string name="ios_usb_rate_inactive">Start playback to check the accepted USB rate.</string>
+    <string name="ios_usb_rate_observed">Decoder PCM: %1$d Hz. iOS output route: %2$d Hz.</string>
+    <string name="ios_usb_rate_description">Higher rates are requested only for USB audio. iOS and your DAC choose the accepted rate; a request does not prove source quality or physical DAC output. Changes apply on the next track or playback reload. High-rate tracks use ordinary handoff instead of crossfade. EQ, pitch and system mixing remain available; this is not USB-exclusive or bit-perfect output.</string>
+    <string name="ios_choose_artist">Choose artist</string>
+    <string name="ios_output_routes">Audio output</string>
+    <string name="ios_lyrics_refresh">Refresh lyrics</string>
+    <string name="ios_spotify_top_tracks">Popular songs</string>
+    <string name="ios_spotify_releases">Albums and singles</string>
 </resources>

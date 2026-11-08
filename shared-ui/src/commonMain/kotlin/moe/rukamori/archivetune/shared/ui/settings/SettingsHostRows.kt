@@ -13,7 +13,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 object AndroidOnlySettingsAnchors {
     val appearance: Set<String> = setOf(
         // Theme rows with no shared/iOS reader.
-        "apple_music_palette", "random_theme_on_startup", "pure_black", "splash_overlay_enabled",
+        "apple_music_palette", "random_theme_on_startup", "splash_overlay_enabled",
         "hide_status_bar", "ui_scale", "blur_intensity", "backdrop_blur", "backdrop_blur_amount",
         // Home & library rows with no shared/iOS reader.
         "home_screen_style", "minimal_home_mode", "back_animation_style", "hide_scrollbar",

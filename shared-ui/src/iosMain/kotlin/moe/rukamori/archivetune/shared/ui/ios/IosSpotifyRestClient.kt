@@ -28,6 +28,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -45,6 +46,7 @@ import moe.rukamori.archivetune.shared.domain.library.LibrarySource
 import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
+import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -96,6 +98,9 @@ import moe.rukamori.archivetune.shared.ui.screens.LibraryShortcutsUi
 import moe.rukamori.archivetune.shared.ui.screens.LibraryTopMixesUi
 import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import org.jetbrains.compose.resources.stringResource
+
+internal data class IosSpotifyAlbumDetail(val album: ContentItem, val tracks: List<ContentOccurrence>,
+    val artists: List<ContentItem>, val year: Int?)
 
 internal class IosSpotifyRestClient(private val graph: IosSessionGraph) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -256,7 +261,8 @@ internal class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         ) to tracks
     }
 
-    suspend fun fetchAlbumDetail(albumId: String, defaultSubtitle: String): Pair<ContentItem, List<ContentOccurrence>> {
+    suspend fun fetchAlbumDetail(albumId: String, defaultSubtitle: String): IosSpotifyAlbumDetail = withTimeout(FinitePlaylistCompletion.TIMEOUT_MS) {
+        require(albumId.matches(Regex("[A-Za-z0-9]{1,128}")))
         val root = getJson("https://api.spotify.com/v1/albums/$albumId")
         val title = root["name"]?.jsonPrimitive?.contentOrNull ?: albumId
         val artists = (root["artists"] as? JsonArray)?.mapNotNull {
@@ -268,59 +274,74 @@ internal class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val firstItems = tracksObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
         firstItems.forEach { el ->
             val track = el as? JsonObject ?: return@forEach
-            parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
+            parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img, root)?.let { tracks += it }
         }
         var nextUrl = tracksObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         if (nextUrl != null && firstItems.isEmpty()) throw IncompleteFinitePlaylistException()
+        val consumed = mutableSetOf<String>()
         var pages = 1
         while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
             pages++
+            if (!consumed.add(nextUrl)) throw IncompleteFinitePlaylistException()
             val pageObj = getJson(nextUrl)
             val pageItems = pageObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
             if (pageItems.isEmpty()) throw IncompleteFinitePlaylistException()
             pageItems.forEach { el ->
                 val track = el as? JsonObject ?: return@forEach
-                parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
+                parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img, root)?.let { tracks += it }
             }
             nextUrl = pageObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
-        if (nextUrl != null) throw IncompleteFinitePlaylistException()
-        return ContentItem(
+        val expected = tracksObj["total"]?.jsonPrimitive?.intOrNull ?: root["total_tracks"]?.jsonPrimitive?.intOrNull
+            ?: throw IncompleteFinitePlaylistException()
+        if (nextUrl != null || tracks.size != expected) throw IncompleteFinitePlaylistException()
+        val artistItems = (root["artists"] as? JsonArray).orEmpty().mapNotNull { entry ->
+            val artist = entry as? JsonObject ?: return@mapNotNull null
+            val id = artist["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ARTIST, id),
+                artist["name"]?.jsonPrimitive?.contentOrNull ?: id)
+        }
+        IosSpotifyAlbumDetail(ContentItem(
             ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, albumId),
-            title = title,
-            subtitle = artists,
-            artworkUri = img,
-        ) to tracks
+            title = title, subtitle = artists, artworkUri = img,
+        ), tracks, artistItems, root["release_date"]?.jsonPrimitive?.contentOrNull?.take(4)?.toIntOrNull())
     }
 
-    suspend fun fetchEntityLookup(ref: ContentRef): SpotifyEntityLookup? = runCatching {
+    suspend fun fetchEntityLookup(ref: ContentRef): SpotifyEntityLookup? { return try {
         val path = if (ref.kind == ContentKind.ARTIST) "artists/${ref.id}" else "albums/${ref.id}"
         val root = getJson("https://api.spotify.com/v1/$path")
-        val title = root["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@runCatching null
+        val title = root["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
         val artists = (root["artists"] as? JsonArray)?.mapNotNull {
             it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
         }.orEmpty()
         SpotifyEntityLookup(title = title, artists = artists)
-    }.getOrNull()
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
+    }
 
-    fun parseTrackOccurrence(prefix: String, track: JsonObject, fallbackArtwork: String? = null): ContentOccurrence? {
+    fun parseTrackOccurrence(prefix: String, track: JsonObject, fallbackArtwork: String? = null, fallbackAlbum: JsonObject? = null): ContentOccurrence? {
         val id = track["id"]?.jsonPrimitive?.contentOrNull ?: return null
         val name = track["name"]?.jsonPrimitive?.contentOrNull ?: return null
-        val artists = (track["artists"] as? JsonArray)?.mapNotNull {
-            it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
-        }?.joinToString(", ").orEmpty()
-        val img = (track["album"]?.jsonObject?.get("images") as? JsonArray)
-            ?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-            ?: fallbackArtwork
+        val credits = (track["artists"] as? JsonArray).orEmpty().mapNotNull {
+            val artist = it as? JsonObject ?: return@mapNotNull null
+            val title = artist["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            ContentCredit(title, artist["id"]?.jsonPrimitive?.contentOrNull)
+        }
+        val album = track["album"] as? JsonObject ?: fallbackAlbum
+        val img = (album?.get("images") as? JsonArray)
+            ?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: fallbackArtwork
         val durationMs = track["duration_ms"]?.jsonPrimitive?.intOrNull?.toLong()
         return ContentOccurrence(
             occurrenceId = "$prefix:$id",
             item = ContentItem(
                 ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.SONG, id),
                 title = name,
-                subtitle = artists,
-                artworkUri = img,
-                durationMs = durationMs,
+                subtitle = credits.joinToString(", ") { it.name },
+                artworkUri = img, durationMs = durationMs, artists = credits,
+                album = album?.get("name")?.jsonPrimitive?.contentOrNull,
+                albumId = album?.get("id")?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank),
+                explicit = track["explicit"]?.jsonPrimitive?.contentOrNull == "true",
+                isrc = (track["external_ids"] as? JsonObject)?.get("isrc")?.jsonPrimitive?.contentOrNull,
             ),
         )
     }
