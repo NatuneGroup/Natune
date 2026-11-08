@@ -394,3 +394,11 @@ only for collision refusal. Streaming stays opt-in and excluded from downloads. 
 remain unavailable and fall through without changing the selected engine or method. Live Spotify
 success, changed-source compilation and device playback have not been verified. Repository
 checks and the 28 existing iOS Python contract tests pass; no local Gradle/JVM work was run.
+
+Android archive restore now accepts `settings.xml` and legacy `settings.preferences_pb`, and
+validates schema 36–39 `song.db` archives with journal siblings before converting the library.
+The Android table mapper is shared with the retained desktop Path entry point. Accounts/settings
+retain the existing export policy, font payloads are bounded but not installed, and local audio
+paths from an Android backup do not acquire iOS file access. The existing journaled iOS restore
+stages the converted database and applies chosen sections on restart. Android-format export is
+still absent. Real archives, Apple compilation and restore/device recovery remain unverified.

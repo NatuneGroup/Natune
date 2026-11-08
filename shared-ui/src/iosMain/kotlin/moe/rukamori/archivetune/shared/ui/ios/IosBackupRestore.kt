@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
+import moe.rukamori.archivetune.shared.data.backup.PortableAndroidBackup
+import moe.rukamori.archivetune.shared.data.backup.validateAndroidBackupDatabase
+import moe.rukamori.archivetune.shared.data.persistence.PortableAndroidLibraryImport
+import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.persistence.portableStateDriver
+import moe.rukamori.archivetune.shared.data.backup.backupCategoriesOf
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupArchive
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupFormat
 import moe.rukamori.archivetune.shared.data.backup.RestoreJournal
@@ -21,6 +27,7 @@ import moe.rukamori.archivetune.shared.data.backup.settingsSubset
 import moe.rukamori.archivetune.shared.data.backup.syncPortableDirectory
 import moe.rukamori.archivetune.shared.data.backup.writePortableFileBytes
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
+import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.persistence.inspectPortableStateFile
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveException
@@ -107,10 +114,13 @@ internal class IosBackupGateway(
     /**
      * The shared checks of [PortableBackupArchive.parse], plus the database inspection the desktop parser runs: the
      * staged file must be an intact portable state file this build can migrate before the archive is trusted.
-     * Archives in the Android format carry no manifest, so they are refused as not-a-backup on this host.
+     * Archives without a portable manifest are validated as Android backups and converted through the shared schema mapper.
      */
-    private fun parse(archive: ByteArray, scratch: String): ParsedIosArchive {
-        val parsed = PortableBackupArchive.parse(archive)
+    private suspend fun parse(archive: ByteArray, scratch: String): ParsedIosArchive {
+        val parsed = try { PortableBackupArchive.parse(archive) } catch (failure: BackupArchiveException) {
+            if (failure.problem != BackupArchiveProblem.NOT_A_BACKUP) throw failure
+            return parseAndroid(archive, scratch)
+        }
         val database = parsed.database?.let { bytes ->
             val path = "$scratch/${PortableBackupFormat.DATABASE}"
             writePortableFileBytes(path, bytes)
@@ -123,6 +133,29 @@ internal class IosBackupGateway(
         }
         return ParsedIosArchive(database, parsed.settings, parsed.categories)
     }
+
+    private suspend fun parseAndroid(archive: ByteArray, scratch: String): ParsedIosArchive = try {
+        val payload = PortableAndroidBackup.parse(archive)
+        val database = if ("song.db" in payload.files) {
+            payload.files.forEach { (name, bytes) -> writePortableFileBytes("$scratch/$name", bytes) }
+            val source = portableStateDriver().open("$scratch/song.db")
+            try { validateAndroidBackupDatabase(source) } catch (error: Exception) { source.close(); throw error }
+            val converted = openPortableStateDatabase("$scratch/android-converted.db")
+            val target = "$scratch/${PortableBackupFormat.DATABASE}"
+            try {
+                PortableAndroidLibraryImport.copy(source, converted)
+                converted.snapshotTo(target)
+            } finally { converted.close() }
+            inspectPortableStateFile(target)
+            target
+        } else null
+        val settings = payload.settings.takeIf { it.keys.isNotEmpty() }
+        val categories = backupCategoriesOf(database != null, settings)
+        if (categories.isEmpty()) throw BackupArchiveException(BackupArchiveProblem.NO_RESTORABLE_DATA)
+        ParsedIosArchive(database, settings, categories)
+    } catch (cancelled: CancellationException) { throw cancelled
+    } catch (error: BackupArchiveException) { throw error
+    } catch (_: Exception) { throw BackupArchiveException(BackupArchiveProblem.CORRUPTED) }
 
     private suspend fun <T> withScratch(block: suspend (String) -> T): T {
         val scratch = "$instanceDirectory/$BACKUP_WORK_DIRECTORY/" + NSUUID().UUIDString
