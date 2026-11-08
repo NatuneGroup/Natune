@@ -66,6 +66,7 @@ kotlin {
             // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
             implementation(project(":spotifycore"))
             implementation(project(":canvas"))
+            implementation(project(":musixmatch"))
             implementation("com.github.RouHim:jaudiotagger:1.4.31")
         }
         jvmTest.dependencies {

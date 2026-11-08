@@ -429,9 +429,10 @@ internal suspend fun assembleDesktopSessionOwners(
         lyprioBuildHmacKey = DesktopCredentials.lyprioHmacKey,
         readSaved = lyricsStore::saved,
         saveFetched = { item, raw -> lyricsStore.fetched(item, raw); Unit },
-        extraProviderNames = setOf("YouTube Music", "YouTube Subtitle", "Modules"),
+        extraProviderNames = setOf("YouTube Music", "YouTube Subtitle", "Modules", "Tidal", "Deezer", "Apple Music", "Musixmatch (experimental)"),
         extraProviders = { listOf(moe.rukamori.archivetune.lyrics.YouTubeLyricsProvider,
-            moe.rukamori.archivetune.lyrics.YouTubeSubtitleLyricsProvider, modules.lyrics) },
+            moe.rukamori.archivetune.lyrics.YouTubeSubtitleLyricsProvider, modules.lyrics) +
+            desktopAccountLyrics(http, accounts, { vault.snapshots.value }, playbackPool) },
     )
     val pack = try {
         jvmJapaneseLanguagePackManager(

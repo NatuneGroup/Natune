@@ -145,6 +145,17 @@ class KtorDeezerRepository(
         failureCache.invalidateWhere { it.startsWith("$mediaId:") }
     }
 
+    /** Android's account gateway lyric method, behind the existing admitted session and catalog match. */
+    suspend fun lyrics(request: AudioResolveRequest): String? {
+        if (access == null) return null
+        val session = session()
+        val track = match(request) ?: return null
+        val result = gateway("song.getLyrics", session.apiToken, buildJsonObject { put("song_id", track.item.ref.id.toLong()) })
+            .obj("results")?.obj("lyrics") ?: return null
+        check(access.isActive())
+        return result.text("text_time_synced") ?: result.text("text")
+    }
+
     private fun cacheStream(key: String, prepared: PreparedAudio, now: Long, generation: StreamUrlCache.Generation): Boolean {
         val expiry = when (prepared) {
             is PreparedAudio.Progressive -> prepared.stream.expiresAtEpochMs
