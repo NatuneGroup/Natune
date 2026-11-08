@@ -420,7 +420,7 @@ class DownloadUtil
                         DefaultDownloaderFactory(CacheDataSource.Factory().setCache(downloadCache)
                             .setUpstreamDataSourceFactory(dataSourceFactory), downloadExecutor),
                         moduleAudio, moduleBindings, moduleStorage, downloadScope,
-                        selectAudio = { id -> moduleAudio.resolveRegistry(); if (moduleAudio.enabled()) resolveDownloadStream(id)?.moduleSelection else null },
+                        selectAudio = { id -> moduleAudio.resolveRegistry(); if (moduleAudio.enabled()) resolveDownloadStream(id, allowModules = true)?.moduleSelection else null },
                     )
                 },
             ).apply {
@@ -715,7 +715,7 @@ class DownloadUtil
          * YouTube resolver, which is also where an empty chain (YouTube Music pinned or placed
          * first) lands.
          */
-        private fun resolveDownloadStream(mediaId: String): ResolvedDownload? {
+        private fun resolveDownloadStream(mediaId: String, allowModules: Boolean = false): ResolvedDownload? {
             val song = database.getSongByIdBlocking(mediaId) ?: return null
             val title = song.song.title.takeIf { it.isNotBlank() } ?: return null
             val artists = song.artists.mapNotNull { it.name.takeIf(String::isNotBlank) }
@@ -743,6 +743,7 @@ class DownloadUtil
             val pinnedDownloadSource = pinnedSource?.let(DownloadSourceConfig::fromAudioSource)
             for (source in chain) {
                 if (source == DownloadSource.MODULES) {
+                    if (!allowModules) continue
                     val selection = runBlocking { moduleAudio.resolve(mediaId) } ?: continue
                     return ResolvedDownload(source, selection.directStream(), selection)
                 }
@@ -895,12 +896,6 @@ class DownloadUtil
         }
 
 
-        /** The stream a download settled on, with the source whose cache-key prefix holds it. */
-        private data class ResolvedDownload(
-            val source: DownloadSource,
-            val stream: DirectStream,
-            val moduleSelection: ModuleAudioSelection? = null,
-        )
 
         /**
          * Reads a preference straight from the store. Used for the per-song pins, whose cached

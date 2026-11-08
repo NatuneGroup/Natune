@@ -8632,46 +8632,7 @@ class MusicService :
 
     private fun parseTidalInstances(): List<String> = parseInstances(TidalInstancesKey)
 
-    /** Metadata used to look a track up across the configured audio sources. */
-    private data class SourceQuery(
-        val mediaId: String,
-        val title: String,
-        val artists: List<String>,
-        val album: String?,
-        val durationMs: Long?,
-        /**
-         * ISRC of the wanted recording, when the queue item carried one (catalogue imports only).
-         * A source that can look up by ISRC uses it for an exact match and skips its text search.
-         */
-        val isrc: String? = null,
-        /**
-         * When non-null, the Qobuz resolver skips its title/artist search and
-         * downloads this exact trackId. Set when the user picks a specific
-         * Qobuz track from the "Play from" source-search popup — the mediaId
-         * encodes the trackId as "qobuz:{trackId}" and [resolveMultiSourceDataSpec]
-         * extracts it into this field.
-         */
-        val directQobuzTrackId: String? = null,
-        /**
-         * When non-null, the Qobuz-backup resolver asks the mirror for THIS video id
-         * instead of [mediaId]. Set when the user picks a specific row in the
-         * "Play from" search popup — the mirror is keyed by YouTube video id, and the
-         * row they chose is a different catalogue entry from the song that is playing.
-         * Keeping [mediaId] untouched is what makes the switch audio-only.
-         */
-        val directQobuzBackupVideoId: String? = null,
-        /**
-         * The Amazon row the user tapped in the "Play from" search popup. Amazon instances only
-         * resolve by metadata, so the Amazon resolver searches with this instead of the song's
-         * own title/artist and gates the result against it.
-         */
-        val amazonPick: AmazonTrackPick? = null,
-        /**
-         * The Spotify track id the queue item came from (catalogue imports only). The Spotify
-         * streaming source plays this exact track instead of searching for one.
-         */
-        val spotifyTrackId: String? = null,
-    )
+
 
     /**
      * One consistent read of every source preference the resolution paths consult: the stored
@@ -9238,11 +9199,12 @@ class MusicService :
         lowDataModeActive: Boolean,
         isPrefetch: Boolean = false,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+        allowModules: Boolean = false,
     ): DataSpec? {
         if (!isPrefetch) mediaIdsResolvingSource.add(mediaId)
         return try {
             AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
-                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch, prefs)
+                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch, prefs, allowModules)
             }
         } finally {
             if (!isPrefetch) mediaIdsResolvingSource.remove(mediaId)
@@ -9255,6 +9217,7 @@ class MusicService :
         lowDataModeActive: Boolean,
         isPrefetch: Boolean,
         prefs: PlaybackSourceSnapshot,
+        allowModules: Boolean,
     ): DataSpec? {
         if (mediaId.isLocalMediaId() || mediaId.isTelegramMediaId()) {
             Timber.tag("MusicService").d("Multi-source skip: %s is a local/telegram media id", mediaId)
@@ -9418,7 +9381,8 @@ class MusicService :
             (listOf(refreshSource) + ordinaryChain + PlaybackSourceChain.baseChain(prefs))
                 .distinct().filterNot(authenticityRejectedSources::contains)
         } else ordinaryChain
-        val chain = if (lowDataModeActive && !isDirectPick) unfilteredChain.filter { it == AudioSourceType.MODULES } else unfilteredChain
+        val eligibleChain = unfilteredChain.filter { allowModules || it != AudioSourceType.MODULES }
+        val chain = if (lowDataModeActive && !isDirectPick) eligibleChain.filter { it == AudioSourceType.MODULES } else eligibleChain
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -11237,6 +11201,7 @@ class MusicService :
         youtubeItag: Int? = null,
         formatContentLength: Long? = null,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+        allowModules: Boolean = false,
     ): DataSpec? {
         // Find the first key (enabled sources in the user's own preference order, then the
         // itag-scoped and legacy YouTube slots while it is enabled — cacheKeyOrder) that has the
@@ -11424,7 +11389,7 @@ class MusicService :
                 moduleAudio.resolveRegistry()
                 if (moduleAudio.enabled()) {
                     resolveMultiSourceDataSpec(DataSpec.Builder().setUri(item.mediaId).setKey(item.mediaId).build(),
-                        item.mediaId, applicationContext.isLowDataModeActive())
+                        item.mediaId, applicationContext.isLowDataModeActive(), allowModules = true)
                     activeModuleAudio[item.mediaId]
                 } else null
             },
