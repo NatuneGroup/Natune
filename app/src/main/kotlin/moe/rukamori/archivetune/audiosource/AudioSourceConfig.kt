@@ -278,7 +278,7 @@ object TitleMatch {
         }
     }
 
-    private fun jaroWinkler(a: String, b: String): Double {
+    internal fun jaroWinkler(a: String, b: String): Double {
         if (a == b) return 1.0
         if (a.isEmpty() || b.isEmpty()) return 0.0
         val distance = max(a.length, b.length) / 2 - 1
