@@ -41,6 +41,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -172,38 +175,69 @@ internal fun ModuleMorphBadge(active: Boolean, size: Dp, modifier: Modifier = Mo
 internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
     val focus = LocalFocusManager.current
     val save = remember(focus, onAction) { { focus.clearFocus(); onAction(ModuleSettingsAction.Save) } }
+    var informationExpanded by rememberSaveable(detail.row.id) { mutableStateOf(false) }
+    val quality = detail.fields.firstOrNull { it.key == "quality" }
+    val connection = detail.fields.firstOrNull { it.key == "mode" }
     val showSave = detail.fields.isNotEmpty() && detail.dirty
-    val bottomPadding by animateDpAsState(
-        SettingsDimensions.ScreenBottomPadding + if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
+    val bottomPadding by animateDpAsState(SettingsDimensions.ScreenBottomPadding +
+        if (showSave) ModuleSettingsLayout.FloatingActionClearance else 0.dp,
         MaterialTheme.motionScheme.defaultSpatialSpec(), label = "moduleDetailsBottomPadding")
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier.widthIn(max = ModuleSettingsLayout.ContentMaxWidth).fillMaxWidth().fillMaxHeight().imePadding(),
             contentPadding = PaddingValues(start = SettingsDimensions.ScreenHorizontalPadding, end = SettingsDimensions.ScreenHorizontalPadding,
-                top = 8.dp, bottom = bottomPadding),
-            verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
+                top = 8.dp, bottom = bottomPadding), verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap),
         ) {
+            item(key = "hero", contentType = "hero") { ModuleDetailHero(detail, model, onAction, moduleItemMotion()) }
+            if (!model.enabled) item(key = "playback_off", contentType = "notice") {
+                Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.info), null, Modifier.size(20.dp))
+                        Text(stringResource(R.string.modules_off), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
             if (model.message != null || model.busy != null) item(key = "message", contentType = "message") {
                 ModuleMessage(model, onAction, moduleItemMotion())
             }
-            item(key = "hero", contentType = "hero") { ModuleDetailHero(detail, model, onAction, moduleItemMotion()) }
+            item(key = "source_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_playback_source) }
+            item(key = "source", contentType = "source") {
+                ModulePlaybackSourcePanel(detail, connection, model, onAction)
+            }
+            quality?.let { field ->
+                item(key = "quality_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_quality_title) }
+                item(key = "quality", contentType = "quality") { ModuleField(field, model, onAction, moduleItemMotion()) }
+            }
+            item(key = "priority_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_priority_title) }
             item(key = "priority", contentType = "priority") { ModulePriorityPanel(detail, model, onAction, moduleItemMotion()) }
-            if (detail.information.isNotEmpty()) {
-                item(key = "information_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_metadata_information) }
-                item(key = "information", contentType = "information") {
+            val configuration = detail.fields.filter { it.key != quality?.key && it.key != connection?.key }
+            if (configuration.isNotEmpty()) item(key = "configuration_header", contentType = "heading") {
+                ModuleSectionHeading(R.string.modules_configuration)
+            }
+            items(configuration, key = { it.key }, contentType = { it.type.name }) { field ->
+                ModuleField(field, model, onAction, moduleItemMotion())
+            }
+            if (detail.information.isNotEmpty() || detail.description.isNotBlank()) {
+                item(key = "information_header", contentType = "heading") {
+                    Surface(onClick = { informationExpanded = !informationExpanded }, modifier = Modifier.fillMaxWidth(),
+                        color = Color.Transparent, shape = MaterialTheme.shapes.medium) {
+                        Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.modules_metadata_information), style = MaterialTheme.typography.titleSmallEmphasized,
+                                color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            Icon(painterResource(if (informationExpanded) R.drawable.expand_less else R.drawable.expand_more),
+                                stringResource(if (informationExpanded) R.string.modules_hide_details else R.string.modules_show_details))
+                        }
+                    }
+                }
+                if (informationExpanded) item(key = "information", contentType = "information") {
                     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                        Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (detail.description.isNotBlank()) Text(detail.description, style = MaterialTheme.typography.bodyMedium)
                             detail.information.forEach { ModuleInformation(it, onAction) }
                         }
                     }
                 }
-            }
-            item(key = "configuration_header", contentType = "heading") {
-                ModuleSectionHeading(R.string.modules_configuration,
-                    if (detail.qualityDeclared) R.string.modules_quality_description else R.string.modules_quality_default)
-            }
-            items(detail.fields, key = { it.key }, contentType = { it.type.name }) { field ->
-                ModuleField(field, model, onAction, moduleItemMotion())
             }
             item(key = "diagnostics_header", contentType = "heading") { ModuleSectionHeading(R.string.modules_diagnostics) }
             item(key = "diagnostics", contentType = "diagnostics") { ModuleDiagnosticsPanel(detail, model, onAction) }
@@ -217,60 +251,37 @@ internal fun ModuleDetails(detail: ModuleDetailUi, model: ModuleSettingsUiModel,
 @Composable
 private fun ModuleDetailHero(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit, modifier: Modifier) {
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLargeIncreased, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(ModuleSettingsLayout.HeroPadding), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                ModuleMorphBadge(active = detail.row.enabled && model.enabled, size = 72.dp) {
-                    detail.row.icon?.let { ModuleProviderIcon(it, size = 36.dp) }
-                        ?: Icon(painterResource(R.drawable.extension), contentDescription = null, modifier = Modifier.size(32.dp))
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(detail.origin.ifBlank { stringResource(R.string.modules_file_origin) }, style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    ModuleStatusLine(detail.row.status, moduleStatusLabel(detail.row))
+        Row(Modifier.padding(ModuleSettingsLayout.CardPadding), horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(64.dp).background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.large),
+                contentAlignment = Alignment.Center) {
+                detail.row.icon?.let { ModuleProviderIcon(it, size = 48.dp) }
+                    ?: Icon(painterResource(R.drawable.extension), null, Modifier.size(32.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(detail.row.name, style = MaterialTheme.typography.headlineSmallEmphasized)
+                Surface(shape = CircleShape, color = if (detail.row.enabled) MaterialTheme.colorScheme.tertiaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHighest) {
+                    Text(stringResource(if (detail.row.enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
+                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
             }
-            if (detail.description.isNotBlank()) Text(detail.description, style = MaterialTheme.typography.bodyLarge)
-            if (detail.capabilities.isNotEmpty() || detail.row.qualityTags.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.modules_capabilities), style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { heading() })
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        detail.row.qualityTags.forEach { ModuleBadge(stringResource(it), accent = true) }
-                        detail.capabilities.forEach { ModuleBadge(stringResource(it)) }
-                    }
-                }
-            }
-            ModuleEnableToggle(detail, model, onAction)
+            Switch(checked = detail.row.enabled, enabled = model.busy == null,
+                onCheckedChange = { onAction(ModuleSettingsAction.Enable(detail.row.id, it)) })
         }
     }
 }
 
 @Composable
-private fun ModuleEnableToggle(detail: ModuleDetailUi, model: ModuleSettingsUiModel, onAction: (ModuleSettingsAction) -> Unit) {
-    val motion = MaterialTheme.motionScheme
-    val checked = detail.row.enabled
-    val interactive = model.busy == null
-    val corner by animateDpAsState(if (checked) 32.dp else 12.dp, motion.defaultSpatialSpec(), label = "moduleToggleCorner")
-    val container by animateColorAsState(if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-        motion.defaultEffectsSpec(), label = "moduleToggleContainer")
-    val content by animateColorAsState(if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        motion.defaultEffectsSpec(), label = "moduleToggleContent")
-    val toggle = remember(detail.row.id, onAction) { { value: Boolean -> onAction(ModuleSettingsAction.Enable(detail.row.id, value)) } }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(corner), color = container, contentColor = content) {
-        Row(Modifier.toggleable(value = checked, enabled = interactive, role = Role.Switch, onValueChange = toggle)
-            .heightIn(min = 64.dp).padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                AnimatedContent(targetState = checked, transitionSpec = {
-                    (slideInVertically(motion.fastSpatialSpec()) { it / 2 } + fadeIn(motion.defaultEffectsSpec())) togetherWith
-                        (slideOutVertically(motion.fastSpatialSpec()) { -it / 2 } + fadeOut(motion.fastEffectsSpec()))
-                }, label = "moduleToggleLabel") { enabled ->
-                    Text(stringResource(if (enabled) R.string.modules_provider_enabled else R.string.modules_provider_disabled),
-                        style = MaterialTheme.typography.titleMediumEmphasized)
-                }
-                if (!model.enabled) Text(stringResource(R.string.modules_off), style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(checked, onCheckedChange = null, enabled = interactive)
+private fun ModulePlaybackSourcePanel(detail: ModuleDetailUi, connection: ModuleFieldUi?, model: ModuleSettingsUiModel,
+    onAction: (ModuleSettingsAction) -> Unit) {
+    if (connection != null) ModuleField(connection, model, onAction, Modifier)
+    else Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(detail.row.name, style = MaterialTheme.typography.titleMediumEmphasized)
+            detail.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+            if (detail.authentication) FilledTonalButton(onClick = { onAction(ModuleSettingsAction.Authorize(detail.row.id)) },
+                enabled = model.busy == null) { Text(stringResource(R.string.modules_authorize)) }
         }
     }
 }
@@ -477,7 +488,19 @@ private fun ModuleField(field: ModuleFieldUi, model: ModuleSettingsUiModel, onAc
             }
         } else Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (field.type) {
-                ModuleSettingType.SELECT -> {
+                ModuleSettingType.SELECT -> if (field.options.size in 2..4) {
+                    Text(field.label, style = MaterialTheme.typography.titleSmallEmphasized)
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        field.options.forEachIndexed { index, option ->
+                            SegmentedButton(selected = option.json == field.json, enabled = interactive,
+                                onClick = { change(option.json) }, shape = SegmentedButtonDefaults.itemShape(index, field.options.size),
+                                icon = {}) {
+                                Text(option.label.substringBefore("·").trim(), style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                } else {
                     val expanded = model.menu == "field:${field.key}"
                     ExposedDropdownMenuBox(expanded = expanded,
                         onExpandedChange = remember(field.key, onAction) { { open -> onAction(ModuleSettingsAction.Menu(if (open) "field:${field.key}" else null)) } }) {
