@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -23,65 +22,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.MarqueeText
 
 /**
- * The width budget of the lyrics header. The row is one line holding the artwork tile and the track's
- * title and artist — and nothing else. The close, favourite and lyric-menu controls are not in this
- * row: they are the sheet's chrome and live in its own row below the transport
- * (`LyricsScreenFooter`), which is what gives the title the width it needs. Three 48 dp targets in
- * this row left a phone about 100 dp for a name, and the name is what the row is for.
- *
- * What is left is the title/artist column, and a title that does not fit one line is allowed a second
- * one rather than being cut off (see [LyricsHeaderTitle]); the artwork is a share of the row so a
- * phone gets a tile that reads as artwork instead of a thumbnail.
+ * The lyrics header's row: the artwork tile, then the track's title and artist. The tile and gap match
+ * upstream ArchiveTune (72 dp and 14 dp) so the header stays a compact strip above the lyrics; the sheet's
+ * controls live in `LyricsScreenFooter`, so the title and artist get the rest of the row.
  */
 internal object LyricsHeaderMetrics {
-    /** The artwork tile's share of the row, clamped so it stays artwork and never a thumbnail. */
-    const val ARTWORK_SHARE = 0.28f
-    const val ARTWORK_MIN_DP = 72f
-    const val ARTWORK_MAX_DP = 104f
+    const val ARTWORK_DP = 72f
 
     /** The gap between the artwork and the title/artist column. */
-    const val ARTWORK_GAP_DP = 12f
+    const val ARTWORK_GAP_DP = 14f
 
     /** This row's end-to-end chrome, in dp, with the title and artist column left out. */
     const val CHROME_DP = ARTWORK_GAP_DP
 
-    /**
-     * The short-window header keeps a tile — the title needs the width — but a tile of a few
-     * hundred dp of sheet height cannot afford 72-104 dp of it. 48-64 dp is still recognisably
-     * artwork, and the gap tightens with it.
-     */
-    const val COMPACT_ARTWORK_SHARE = 0.2f
-    const val COMPACT_ARTWORK_MIN_DP = 48f
-    const val COMPACT_ARTWORK_MAX_DP = 64f
+    /** Short windows keep a smaller tile and tighter gap so the lyrics list keeps its room. */
+    const val COMPACT_ARTWORK_DP = 48f
     const val COMPACT_ARTWORK_GAP_DP = 8f
 
-    /** The artwork tile's edge for a row [rowWidthDp] wide. */
+    /** The artwork tile's edge for a row [rowWidthDp] wide; never wider than the row itself. */
     fun artworkSize(
         rowWidthDp: Float,
         compact: Boolean = false,
-    ): Float =
-        if (compact) {
-            (rowWidthDp * COMPACT_ARTWORK_SHARE).coerceIn(
-                COMPACT_ARTWORK_MIN_DP,
-                COMPACT_ARTWORK_MAX_DP,
-            )
-        } else {
-            (rowWidthDp * ARTWORK_SHARE).coerceIn(ARTWORK_MIN_DP, ARTWORK_MAX_DP)
-        }
+    ): Float = (if (compact) COMPACT_ARTWORK_DP else ARTWORK_DP).coerceAtMost(rowWidthDp.coerceAtLeast(0f))
 
     /** The gap that follows the artwork in a row [compact] tall or not. */
     fun artworkGapDp(compact: Boolean): Float =
@@ -96,10 +66,8 @@ internal object LyricsHeaderMetrics {
 }
 
 /**
- * The lyrics sheet's header: the track's artwork, its title and artist. The sizes come from
- * [LyricsHeaderMetrics] so the text column is measured against the row's real width. The sheet's
- * controls are not drawn here — see `LyricsScreenFooter`. [compact] is the short-window variant:
- * a smaller tile and a tighter gap, so the list below keeps the room the header would have taken.
+ * The lyrics sheet's header: the track's artwork, its title and artist, each on one line that scrolls
+ * when it does not fit. [compact] is the short-window variant with a smaller tile and tighter gap.
  */
 @Composable
 internal fun AppleMusicTrackHeader(
@@ -145,8 +113,8 @@ internal fun AppleMusicTrackHeader(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                LyricsHeaderTitle(
-                    title = mediaMetadata.title,
+                MarqueeText(
+                    text = mediaMetadata.title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = foregroundColor,
                 )
@@ -156,46 +124,6 @@ internal fun AppleMusicTrackHeader(
                     color = foregroundColor.copy(alpha = 0.72f),
                 )
             }
-        }
-    }
-}
-
-/**
- * The header's title. A title that fits its column keeps the app's one-line marquee; one that does not
- * is given a second line instead of being cut off at the first — the sheet's text column is narrow by
- * design, and a track title clipped to a few characters names nothing. The measurement is remembered on
- * the title, the style and the column width, so a recomposition does not shape the text again.
- */
-@Composable
-private fun LyricsHeaderTitle(
-    title: String,
-    style: TextStyle,
-    color: Color,
-) {
-    val measurer = rememberTextMeasurer()
-    BoxWithConstraints {
-        val density = LocalDensity.current
-        val widthPx = with(density) { maxWidth.roundToPx() }
-        // Laid out at the column's width with no line limit: a title that fits stays on one line, and one
-        // that does not reports the extra lines (or the width it could not use) here.
-        val measured =
-            remember(title, style, widthPx) {
-                measurer.measure(
-                    text = AnnotatedString(title),
-                    style = style,
-                    constraints = Constraints(maxWidth = widthPx),
-                )
-            }
-        if (measured.lineCount > 1 || measured.didOverflowWidth) {
-            Text(
-                text = title,
-                style = style,
-                color = color,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        } else {
-            MarqueeText(text = title, style = style, color = color)
         }
     }
 }
