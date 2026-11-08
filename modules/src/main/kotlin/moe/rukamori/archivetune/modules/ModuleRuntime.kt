@@ -87,6 +87,17 @@ class ModuleRuntime(context: Context, private val http: ModuleHttpClient) {
         }
     }
 
+    /** Metadata extensions use the same bounded runtime; catalog presentation stays with callers. */
+    suspend fun metadata(id: String, source: String, origin: String, function: String, entityId: String?, settings: Map<String, String>): Any {
+        val args = when (function) {
+            "getHome", "getLibrary" -> JSONArray().put(context(settings))
+            "getAlbum", "getArtist", "getPlaylist" -> JSONArray().put(entityId?.takeIf(String::isNotBlank)
+                ?: throw ModuleException(ModuleFailure.INVALID_CONFIGURATION)).put(context(settings))
+            else -> throw ModuleException(ModuleFailure.UNSUPPORTED)
+        }
+        return call(id, source, origin, function, args)
+    }
+
     suspend fun lyrics(id: String, source: String, origin: String, track: ModuleTrack, settings: Map<String, String>): ModuleLyrics? {
         val context = context(settings, track)
         return ModuleLyrics.parse(call(id, source, origin, "getLyrics", JSONArray().put(context.getJSONObject("track")).put(context)))

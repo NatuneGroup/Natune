@@ -435,10 +435,14 @@ def assess(manifest, entries, issues, origin, app_version=None, verify_hashes=Fa
         value = module.get(key, "")
         metadata[key] = value if isinstance(value, str) or (isinstance(value, list) and all(isinstance(item, str) for item in value)) else "<invalid>"
     runtime = manifest.get("runtime", "archivetune") if isinstance(manifest, dict) else "<invalid>"
+    types = module.get("type", [])
+    types = [types] if isinstance(types, str) else types if isinstance(types, list) else []
+    natune = any(kind in types for kind in ("metadata_provider", "lyrics_provider", "playback_provider"))
+    runtime_note = "Natune-only extension. Upstream ArchiveTune API v1 rejects this kind or its capabilities. JavaScript and live provider access were not executed." if natune else RUNTIME_NOTE
     report = {"operation": "validate", "status": "error" if any(item["level"] == "error" for item in issues) else "valid",
               "source": str(origin), "targetAppVersion": app_version, "runtime": runtime if isinstance(runtime, str) else "<invalid>", "metadata": metadata,
               "settings": settings, "files": [{"name": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()} for name, data in files.items()],
-              "ignoredFiles": ignored or [], "issues": issues, "runtimeVerification": "not_performed", "runtimeNote": RUNTIME_NOTE}
+              "ignoredFiles": ignored or [], "issues": issues, "runtimeVerification": "not_performed", "runtimeNote": runtime_note}
     return report, files
 
 

@@ -22,7 +22,7 @@ class ModuleLyricsProviders @Inject constructor(private val repository: ModuleRe
 
     private inner class Provider(private val module: InstalledModule) : LyricsProvider {
         // The installation id keeps two providers with identical publisher names distinct.
-        override val name = "${module.manifest.displayName.ifBlank { module.manifest.name }} (${module.manifest.id})"
+        override val name = "${module.metadata?.name ?: module.manifest.displayName.ifBlank { module.manifest.name }} (${module.id})"
 
         override fun isEnabled(context: Context): Boolean = repository.state.value?.let { registry ->
             registry.enabled && registry.modules.any { it.id == module.id && it.enabled && it.revision == module.revision }

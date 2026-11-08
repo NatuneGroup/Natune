@@ -1,4 +1,4 @@
-"""Bundle the API-v1 sources, package every module and generate the branch catalog (no JVM)."""
+"""Bundle API-v1 audio sources and package separate Natune extensions catalogs (no JVM)."""
 import hashlib
 import json
 from pathlib import Path
@@ -7,6 +7,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = 'feat/r3-modules'
+NATUNE_BRANCH = 'feat/r3-spotify-ext'
 
 
 def bundle_sources():
@@ -24,6 +25,27 @@ def bundle_sources():
                 parts.append(f'const {export} = (() => {{\n{script}\n}})();\n')
         parts.append(main.read_text())
         (folder / 'provider.js').write_text('\n'.join(parts))
+
+
+def build_natune_catalog():
+    entries = []
+    for folder in sorted((ROOT / 'natune').iterdir()):
+        if not folder.is_dir():
+            continue
+        target = ROOT / 'dist' / f'{folder.name}.arch'
+        for args in [(str(folder), '--check'), (str(folder), str(target)), ('--inspect', str(target))]:
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/package_module.py'), *args, '--json'], capture_output=True, text=True)
+            if result.returncode:
+                raise SystemExit(result.stdout + result.stderr)
+        meta = json.loads((folder / 'manifest.json').read_text())['module']
+        entries.append({'id': meta['id'], 'name': meta['name'], 'display_name': meta.get('displayName', meta['name']),
+            'version': meta['version'], 'author': meta.get('author', ''), 'description': meta['description'],
+            'download_url': f'https://raw.githubusercontent.com/NatuneGroup/Natune/{NATUNE_BRANCH}/addons/modules/dist/{target.name}',
+            'sha256': hashlib.sha256(target.read_bytes()).hexdigest(), 'capabilities': meta['capabilities'],
+            'labels': ['Natune only', 'lyrics'] if meta['type'] == 'lyrics_provider' else ['Natune only'],
+            'extensionKind': meta['type']})
+        print(f'{folder.name}: Natune extension checked, packaged and inspected ({target.stat().st_size} bytes)')
+    (ROOT / 'natune-extensions.json').write_text(json.dumps({'name': 'Natune extensions (Android)', 'version': 1, 'extensions': entries}, indent=2) + '\n')
 
 
 def main():
@@ -45,6 +67,7 @@ def main():
             'labels': meta.get('labels', []), 'category': 'download'})
         print(f'{folder.name}: checked, packaged and inspected ({target.stat().st_size} bytes)')
     (ROOT / 'registry.json').write_text(json.dumps({'name':'Natune modules','version':1,'extensions':entries},indent=2)+'\n')
+    build_natune_catalog()
 
 
 if __name__ == '__main__':

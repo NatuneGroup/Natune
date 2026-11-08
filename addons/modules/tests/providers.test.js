@@ -14,6 +14,33 @@ function load(relative, fetch) {
 }
 function settings(values) { return {settings:Object.fromEntries(Object.entries(values).map(([key,value])=>[key,{value}]))}; }
 function response(status, data, headers={}) { return {status,ok:status>=200&&status<300,headers:new Headers(headers),json:async()=>data,text:async()=>JSON.stringify(data)}; }
+test('Natune LRCLIB extension passes recording metadata and preserves synced LRC', async()=>{
+  let request;
+  const c=load('natune/lrclib/provider.js',async(url)=>{
+    request=new URL(url);
+    return response(200,{syncedLyrics:'[00:01.25]Hello',plainLyrics:'Hello'});
+  });
+  const result=await c.module.exports.getLyrics({title:'Song & title',artist:'Artist',album:'Album',duration:123},settings({}));
+  assert.equal(request.hostname,'lrclib.net');
+  assert.equal(request.searchParams.get('track_name'),'Song & title');
+  assert.equal(request.searchParams.get('artist_name'),'Artist');
+  assert.equal(request.searchParams.get('duration'),'123');
+  assert.equal(result.format,'lrc');assert.equal(result.text,'[00:01.25]Hello');
+});
+test('Natune LRCLIB plain, missing and instrumental answers are distinct',async()=>{
+  for (const [status,body,expected] of [[200,{plainLyrics:'Hello'},'Hello'],[404,{},null],[200,{instrumental:true,plainLyrics:'Instrumental'},null]]) {
+    const c=load('natune/lrclib/provider.js',async()=>response(status,body));
+    const result=await c.module.exports.getLyrics({title:'Song',artist:'Artist'},settings({}));
+    if (expected===null) assert.equal(result,null);
+    else {assert.equal(result.format,'plain');assert.equal(result.text,expected);}
+  }
+});
+test('Natune LRCLIB errors do not become cacheable lyrics or request retries',async()=>{
+  let calls=0;
+  const c=load('natune/lrclib/provider.js',async()=>{calls++;return response(429,{});});
+  await assert.rejects(c.module.exports.getLyrics({title:'Song',artist:'Artist'},settings({})),/LRCLIB request failed/);
+  assert.equal(calls,1);
+});
 test('ArchivePool SHA-256 and AES-256-GCM match independently encrypted Node vectors; tampered tag fails',()=>{
   const c=load('lib/crypto.js'),api=vm.runInContext('PoolCrypto',c);
   const readKey='synthetic-fixture-key';

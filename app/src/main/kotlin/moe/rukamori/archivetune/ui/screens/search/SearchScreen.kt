@@ -108,7 +108,6 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.spotify.rememberAvailableSearchProvider
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
-import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.SearchBarPosition
