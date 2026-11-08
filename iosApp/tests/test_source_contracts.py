@@ -454,6 +454,52 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
         self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
+    def test_existing_ios_editors_are_reachable_from_the_route_registry(self):
+        lane = (UI_IOS / "IosLaneSettings.kt").read_text()
+        routes = lane.split('internal val IOS_LANE_SETTINGS_ROUTES = setOf(', 1)[1].split('\n)', 1)[0]
+        for path in ['settings/modules', 'settings/appearance/liquid_glass', 'settings/discord/experimental']:
+            self.assertIn('"' + path + '"', routes)
+            self.assertIn('"' + path + '" ->', lane)
+        settings = (UI_IOS / "IosSettings.kt").read_text()
+        self.assertIn('in IOS_LANE_SETTINGS_ROUTES -> IosLaneSettingsPage(', settings)
+
+    def test_dsp_native_and_blend_keep_additional_filters_and_report_limits(self):
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn('#define AT_AUDIO_EQ_MAX_BANDS 24', header)
+        for name in ['ATNativeAudio.mm', 'ATAudioGraph.mm']:
+            self.assertIn('AVAudioUnitEQFilterTypeHighPass', (IOS / "Native" / name).read_text())
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn('EQ_UNIT_BANDS = 24u', blend)
+        port = (KOTLIN / "IosPlaybackPort.kt").read_text()
+        self.assertIn('setTone(true, settings.toIosEqBands(), settings.iosInputGainDb)', port)
+        settings = (UI_IOS / "IosPlaybackSettingsPage.kt").read_text()
+        self.assertIn('"skip_silence", "audio_normalization", "audio_offload"', settings)
+        self.assertIn('enabled = false', settings)
+        self.assertIn('Res.string.ios_dsp_limits', settings)
+
+    def test_widget_controls_embed_extension_and_use_authoritative_queue(self):
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        self.assertIn('productType = "com.apple.product-type.app-extension"', project)
+        self.assertIn('name = "Embed App Extensions"', project)
+        self.assertIn('dependencies = (B00000000000000000000036)', project)
+        widget = (IOS / "Widgets/NatuneControls.swift").read_text()
+        self.assertIn('.supportedFamilies([.systemSmall, .systemMedium])', widget)
+        self.assertIn('natune://widget/', widget)
+        self.assertIn('family == .systemSmall ? "natune://widget/toggle"', widget)
+        self.assertIn('control("toggle"', widget)
+        self.assertNotIn('ArchiveTuneShared', widget)
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn('host.widgetCommand(action:', session)
+        host = (UI_ROOT / "IosHost.kt").read_text()
+        command = host.split('fun widgetCommand(action: String)', 1)[1].split('/** One line', 1)[0]
+        self.assertIn('withTimeoutOrNull(15_000L)', command)
+        self.assertIn('sessionState.first', command)
+        self.assertIn('ready.graph.skipNext()', command)
+        self.assertIn('ready.graph.player.pause()', command)
+        workflow = (ROOT / ".github/workflows/ios_compile.yml").read_text()
+        self.assertIn('-application-extension', workflow)
+        self.assertIn('iosApp/Widgets/NatuneControls.swift', workflow)
+
     def test_native_bridge_is_built_and_tested_not_only_header_parsed(self):
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
         self.assertIn("path = Native/ATAudioGraph.mm", project)

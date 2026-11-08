@@ -130,9 +130,10 @@ invariants remain unchanged.
   shell, the Compose controller representable and URL/user-activity handling; the one UIKit
   job is the root controller that reports the window's safe area to Compose, which reserves
   it once inside the app theme. Do not add a second renderer: no SwiftUI-rendered app content,
-  no `UIHostingController`, no parallel UIKit screens, chrome or lyric surface. A future
-  WidgetKit/ActivityKit feature requires an explicit, documented system-only exception, never
-  silent deletion. Keep the shared clock, one-host lifetime, adaptive layouts and MediaPlayer
+  no `UIHostingController`, no parallel UIKit screens, chrome or lyric surface. The user-authorized R3 WidgetKit extension and CarPlay CPTemplate scene are documented
+  system-only exceptions: they read credential-free shared-host snapshots and dispatch to its
+  existing queue/player. They never render ordinary app content. ActivityKit still requires an
+  explicit, documented system-only exception. Keep the shared clock, one-host lifetime, adaptive layouts and MediaPlayer
   transport; the `native_ios_interface` preference stays stored but inert. See
   [iOS shell comparison](docs/engineering/ios-swiftui-parity.md).
 - **Remote foundation constraints (merged 2026-10-25):**

@@ -113,6 +113,7 @@ internal class IosQueueLocatorResolver(
     private val localFile: (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
     /** The stored file of a completed download, or null when the song is not a stored download. */
     private val downloadedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
+    private val cachedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef, Set<AudioSourceType>) -> String? = { _, _ -> null },
 ) : QueueLocatorResolver {
     override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator = locate(occurrence, QueueSourceRecovery())
 
@@ -127,6 +128,7 @@ internal class IosQueueLocatorResolver(
         }
         // A stored download plays from the app container before any provider is asked for it.
         downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
+        cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
         // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
         if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
@@ -140,7 +142,7 @@ internal class IosQueueLocatorResolver(
         val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
         var refused = recovery.rejectedSources
         while (true) {
-            val prepared = when (val resolution = audio.resolve(request, recovery.settings(hostSourceSnapshot(preferences())),
+            val prepared = when (val resolution = audio.resolve(request, recovery.settings(hostSourceSnapshot(preferences(), spotifyStreamingReady = iosSpotifyStreamingReady(preferences()))),
                 pinned = recovery.pinned(pinned), rejected = refused)) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
@@ -178,8 +180,8 @@ internal object IosYouTubeUnavailable : YouTubeResolutionPort {
  * account leases of [accounts] on every resolution, so a sign-out or a replaced account stops them at once; Qobuz,
  * Apple and Amazon read their preference credentials the same way. [pool] supplies the Playback Pool accounts and
  * discovered instances to TIDAL, Qobuz, Deezer, Apple and Amazon. JioSaavn needs the build's DES key to decode its
- * stream URLs, so it is composed only when the key exists. Spotify stays out of this list on iOS — there is no iOS
- * transport for its catalog or streaming transports — so it answers as an unavailable attempt.
+ * stream URLs, so it is composed only when the key exists. Spotify uses the portable Echo pipeline under its dedicated streaming account; other engines remain
+ * unavailable until their platform transports can honour the selected method.
  */
 internal fun iosAudioProviders(
     http: HttpClient,
@@ -187,6 +189,7 @@ internal fun iosAudioProviders(
     preferences: () -> PreferenceSnapshot?,
     tidalSessionRefresh: TidalSessionRefresh?,
     pool: IosPlaybackPool?,
+    modules: AudioProviderRepository? = null,
 ): List<AudioProviderRepository> = listOfNotNull(
     IosTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
@@ -196,6 +199,8 @@ internal fun iosAudioProviders(
     IosAmazonSource(http, preferences, accounts, pool),
     iosJioSaavnSource(http),
     IosQqMusicSource(http, accounts),
+    IosSpotifySource(http, accounts, preferences),
+    modules,
 )
 
 /**

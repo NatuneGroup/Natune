@@ -323,6 +323,7 @@ internal fun IosLaneServiceSettingsPage(
                 },
                 applyCacheLimits = { preferences ->
                     iosApplyCacheLimits(preferences, owners.graph.canvasStore)
+                    owners.graph.songCache.trim()
                     cacheTick += 1
                 },
                 onFailure = onFailure,
