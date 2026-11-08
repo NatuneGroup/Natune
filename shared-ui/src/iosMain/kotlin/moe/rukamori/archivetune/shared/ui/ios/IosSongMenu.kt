@@ -402,21 +402,14 @@ internal fun IosSongMenu(
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
 internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence, graph: IosSessionGraph) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val ref = occurrence.item.ref
-    val actions = buildList<OverflowAction> {
-        when (ref.kind) {
-            ContentKind.ARTIST -> if (ref.id.length > 2 && ref.id.startsWith("UC") && ref.id.none(Char::isWhitespace)) {
-                add(collectionShareAction { check(sharing.artist(ref.id)) { "Share target unavailable" } })
-            }
-            ContentKind.PLAYLIST -> if (ref.provider == ContentProvider.YOUTUBE.id) {
-                add(collectionShareAction { check(sharing.playlist(ref.id, null)) { "Share target unavailable" } })
-            }
-            else -> { }
-        }
+    val result by produceState<Pair<Boolean, String?>>(false to null, ref, host) {
+        value = true to iosNowPlayingShareLink(ref, host)
     }
+    val (loaded, link) = result
+    val actions = link?.let { url -> listOf(collectionShareAction { iosShareText(host, url) }) }.orEmpty()
     if (actions.isEmpty()) {
-        LaunchedEffect(occurrence) { menu.refuse() }
+        if (loaded) LaunchedEffect(occurrence) { menu.refuse() }
         return
     }
     SharedOverflowMenu(
