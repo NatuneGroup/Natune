@@ -35,8 +35,15 @@ class UpdateCheckWorker(
             val revision = Updater.selectionRevision
             val updateChannel = Updater.selectedChannel(dataStore.data.first())
             Updater.getLatestRelease(updateChannel).onSuccess { release ->
-                Updater.eligibleOffer(release, updateChannel)?.let { offer ->
+                val offer = Updater.eligibleOffer(release, updateChannel)
+                // A notification survives an app update. When the reader is already on the newest
+                // build (the common case right after installing a nightly) there is no eligible
+                // offer, so clear any stale "Update available" notification instead of leaving an
+                // action that opens a build which is already installed.
+                if (offer != null) {
                     UpdateNotificationManager.notifyIfNewVersion(applicationContext, offer, revision)
+                } else {
+                    UpdateNotificationManager.cancelUpdateNotification(applicationContext)
                 }
             }
 
