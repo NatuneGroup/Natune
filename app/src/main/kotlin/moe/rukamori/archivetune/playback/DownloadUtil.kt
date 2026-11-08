@@ -420,7 +420,12 @@ class DownloadUtil
                         DefaultDownloaderFactory(CacheDataSource.Factory().setCache(downloadCache)
                             .setUpstreamDataSourceFactory(dataSourceFactory), downloadExecutor),
                         moduleAudio, moduleBindings, moduleStorage, downloadScope,
-                        selectAudio = { id -> moduleAudio.resolveRegistry(); if (moduleAudio.enabled()) resolveDownloadStream(id, allowModules = true)?.moduleSelection else null },
+                        selectAudio = { id ->
+                            moduleAudio.resolveRegistry()
+                            if (moduleAudio.enabled()) kotlinx.coroutines.runInterruptible(Dispatchers.IO) {
+                                resolveDownloadStream(id, allowModules = true)?.moduleSelection
+                            } else null
+                        },
                     )
                 },
             ).apply {

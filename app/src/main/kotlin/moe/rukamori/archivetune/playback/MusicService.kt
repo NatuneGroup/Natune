@@ -9468,9 +9468,11 @@ class MusicService :
                                     query,
                                     trusted = overrideIsSourceOverride && override == AudioSourceType.SPOTIFY,
                                 )
-                            AudioSourceType.MODULES -> runBlocking {
-                                moduleAudio.resolve(mediaId, ModuleMatchMetadata(query.title, query.artists, query.album,
-                                    (query.durationMs?.div(1000) ?: 0).toInt(), null, true))
+                            AudioSourceType.MODULES -> runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                                AudioSourceAttemptScope.withinSuspending {
+                                    moduleAudio.resolve(mediaId, ModuleMatchMetadata(query.title, query.artists, query.album,
+                                        (query.durationMs?.div(1000) ?: 0).toInt(), null, true))
+                                }
                             }?.also { activeModuleAudio[mediaId] = it }?.directStream()
                             AudioSourceType.YOUTUBE -> null
                         }
@@ -11391,9 +11393,11 @@ class MusicService :
             selectAudio = { item ->
                 moduleAudio.resolveRegistry()
                 if (moduleAudio.enabled()) {
-                    resolveMultiSourceDataSpec(DataSpec.Builder().setUri(item.mediaId).setKey(item.mediaId).build(),
-                        item.mediaId, applicationContext.isLowDataModeActive(), allowModules = true)
-                    activeModuleAudio[item.mediaId]
+                    kotlinx.coroutines.runInterruptible(Dispatchers.IO) {
+                        resolveMultiSourceDataSpec(DataSpec.Builder().setUri(item.mediaId).setKey(item.mediaId).build(),
+                            item.mediaId, applicationContext.isLowDataModeActive(), allowModules = true)
+                        activeModuleAudio[item.mediaId]
+                    }
                 } else null
             },
         )
