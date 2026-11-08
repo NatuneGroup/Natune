@@ -18,7 +18,7 @@ static void raw_output_pull(void *user, void *out, uint32_t frames) {
 static void shared_output_pull(void *user, void *out, uint32_t frames) { mixer_pull(user, out, frames); }
 
 static ae_device *open_shared_output(ae_mixer *m, char *error, size_t len) {
-    ae_device_request request = {{m->shared_rate, 2, AE_PCM_F32, 32}, 0, m->backend == AE_BACKEND_NULL,
+    ae_device_request request = {{m->shared_rate, 2, AE_PCM_F32, 32, 3}, 0, m->backend == AE_BACKEND_NULL,
         m->device_id[0] ? m->device_id : NULL};
     ae_device *device = ae_device_open_pcm(&request, shared_output_pull, m, error, len);
     if (!device && request.device_id) {
@@ -99,7 +99,7 @@ void ae_mixer_output_tick(ae_mixer *m) {
     int compatible = m->raw_pcm.format == format.format ||
         ((format.format == AE_PCM_S16 || format.format == AE_PCM_S24) && m->raw_pcm.format == AE_PCM_S32);
     int same = m->raw_output && m->exclusive_requested && m->raw_pcm.rate == format.rate &&
-        m->raw_pcm.channels == format.channels && compatible && m->raw_pcm.bits >= format.bits;
+        m->raw_pcm.channels == format.channels && m->raw_pcm.channel_mask == format.channel_mask && compatible && m->raw_pcm.bits >= format.bits;
     if (same && ae_engine_configure_output(engine, 1, &m->raw_pcm, ae_device_buffer_frames(m->device))) return;
     close_output(m);
     m->output_state.input = format;
