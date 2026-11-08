@@ -689,6 +689,7 @@ internal class IosSessionGraph private constructor(
                 settings = vault,
                 resolver = audioResolver,
                 root = mediaDirectories.downloads,
+                accounts = accounts,
                 client = http,
                 scope = scope,
                 nowMs = ::iosNowMillis,

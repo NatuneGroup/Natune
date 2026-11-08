@@ -408,3 +408,12 @@ shared Compose podcast screens. Local follows persist in vault-backed settings a
 as local subscriptions. Episodes keep their own content kind and use the normal finite queue and
 progress store. Header parsing shares the provider header parser; date/description extraction and
 remote subscription mutation are still incomplete. No live podcast/device evidence is claimed.
+
+The iOS download queue now admits episodes and prepares Deezer, TIDAL DASH, QQ/Amazon native
+recipes and supported clear/AES-128 HLS through the existing playback plaintext route. The
+optional `PreparedDownloadTransfer` contract is additive; the desktop progressive transfer
+keeps its behavior. iOS writes validated plaintext to task-owned staging, resumes by plaintext
+byte position, checks length/expiry, closes every preparation, and commits through the existing
+stored-song transaction. Protected Apple FairPlay remains refused and falls through. Telegram
+still belongs to TDLib's cache; streaming Spotify stays excluded. Native transfer, device offline
+playback and compilation remain unverified. No background download entitlement is claimed.
