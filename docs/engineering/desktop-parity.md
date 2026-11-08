@@ -224,3 +224,35 @@ paste into compatible apps/file managers; missing files or unavailable clipboard
 report failure. Download export remains the format-named, tagged file path. Clipboard
 behavior is unverified on Windows/Linux. The existing missing-file contract test is
 updated without running local JVM tests.
+
+## Desktop navigation follow-up
+
+Artist Latest release and release-grid cards now use an explicit album action,
+preserving the provider browse ID even when a stored reference has a podcast kind
+hint. A shared navigation UI regression uses the Daft Punk Drumless Edition title
+and verifies the album destination, ID and provider. The reported N20261108
+`f8893595` screenshot has not been reproduced on the follow-up build; that source
+already typed YouTube releases as albums, so its original runtime cause remains
+unverified.
+
+Desktop title-bar and destination dropdowns permit outside clicks to reach the
+underlying controls; the gear also clears the toolbar popup before opening
+Settings. A pointer regression covers the single-click action. The current title
+bar's list glyph toggles the sidebar; it does not own a dropdown. Phone destination
+menus retain their existing focus behavior.
+
+Generic album details and the dedicated album screen display aligned occurrence
+numbers and available track durations. Unknown durations stay absent, and the
+repeated-track UI regression verifies that numbering preserves selection identity.
+These fixes change shared-ui commonMain presentation/navigation only. The earlier
+four-seed scheme callback also lives in commonMain. No iosMain or iosApp files were
+edited. All new UI regressions await the orchestrator's follow-up PR CI; only the
+permitted repository check ran locally.
+
+Remaining material boundaries include module DASH/live/master or protected
+manifest forms, Android binary extensions, protected Apple audio, bit-perfect/USB
+output, Cast/output routing and voice capture. They need additional platform or
+provider adapters. Scheduled backups still require a running desktop process, and
+advanced Automix/refraction remain limited by the current mixer/renderer. Live
+accounts, clipboard integration, physical output and the reported nightly UI
+behavior need Windows/Linux runtime validation.
