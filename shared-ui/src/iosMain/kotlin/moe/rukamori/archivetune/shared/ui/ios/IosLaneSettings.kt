@@ -78,8 +78,8 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (the palette picker, the icon picker, Android Auto, the Android-only AOD and Liquid Glass tuning pages,
- * and the Discord button editor) mount an honest unavailable page instead of the unbound boundary.
+ * this host (the Android-only AOD tuning page and the Android Auto route) mount an honest unavailable or system page
+ * instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",

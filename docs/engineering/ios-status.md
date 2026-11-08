@@ -666,3 +666,11 @@ YouTube, QQ discovery/search, podcasts and local-library screens were already sh
 and remain wired. QQ artist/album details, Spotify radio continuations and direct
 catalog-song downloads are not supplied by these adapters. Compilation and real
 provider/device execution of this follow-up remain pending CI/QA.
+
+The saved default search source now also selects Apple Music, using the same
+personal media-user-token or Playback Pool admission the Apple playback source
+uses; the developer bearer is still fetched from the existing token owner. A host
+without a usable Apple account shows the search's failed state instead of silently
+searching YouTube. QQ search and the QQ home charts still use the anonymous RPC,
+and Apple search returns songs only. Live Apple/QQ catalog access and new-source
+compilation are unverified.
