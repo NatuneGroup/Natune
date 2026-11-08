@@ -90,9 +90,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
-import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
-import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
 import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
@@ -101,11 +99,9 @@ import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
-import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
-import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherAvatarIndex
@@ -141,7 +137,6 @@ internal class IosSessionGraph private constructor(
     val accountLifecycle: ProviderAccountLifecycle,
     val tidalAuth: TidalAccountAuth,
     val http: HttpClient,
-    /** The proxy route this process's Darwin session was built with; it cannot change while the session lives. */
     val network: IosNetworkOwner,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
@@ -160,6 +155,7 @@ internal class IosSessionGraph private constructor(
     val history: RoomListeningHistory,
     val lyrics: HostLyrics,
     val lyricsSurface: LyricsSurfaceRuntime,
+    val lyricsStorage: IosLyricsStore,
     val modules: IosModulesRepository,
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
@@ -172,6 +168,7 @@ internal class IosSessionGraph private constructor(
     val uploads: IosYouTubeUploads,
     /** Downloads: the shared portable queue over this host's source chain, stored in the app container. */
     val downloads: IosDownloadsOwner,
+    val songCache: IosSongCache,
     /** Backup and restore: the portable-format gateway, the prepared-restore registry and the restart request. */
     val backup: IosBackupOwner,
     /** The Google Drive app-data backup owners. Its rows report the not-configured state when the build carries no iOS OAuth client id. */
@@ -199,13 +196,10 @@ internal class IosSessionGraph private constructor(
 
     /** The persisted per-song lyrics offsets this host applies on every lyrics surface. */
     val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
-    /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
-    /** The CSV export owner over the same Room library rows. */
     val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
-    /** The request the engine was last told to load; consumers gating on the resolved source read it. */
     val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
 
     /** The `news` feed and its unread mark, over the shared client and the build's NATUNE_NEWS_URL; blank disables it. */
@@ -384,6 +378,7 @@ internal class IosSessionGraph private constructor(
         uploads.close()
         listenDriver.close()
         progressDriver.close()
+        songCache.close()
         modules.close()
         backupSync?.close()
         topMixes.close()
@@ -668,7 +663,6 @@ internal class IosSessionGraph private constructor(
             // never lands inside a resolve; the owner derives the session id from the transport
             // itself and stays a no-op while the poToken preference is off.
             scope.launch { poTokens.preWarm() }
-            // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
             val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(
                 transport = youtubeTransport,
@@ -676,7 +670,7 @@ internal class IosSessionGraph private constructor(
                 personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
                 syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
             )
-            val modules = IosModulesRepository(http, "$databaseDirectory/modules", host.credentials) { vault.snapshots.value }
+            val modules = IosModulesRepository("$databaseDirectory/modules", host.credentials) { vault.snapshots.value }
             val audioResolver = OrderedAudioResolver(
                 providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool, modules),
                 youtube = IosYouTubeResolver(
@@ -690,7 +684,6 @@ internal class IosSessionGraph private constructor(
                     report = report,
                 ),
             )
-            // Both media owners write into the app container, which the host creates once here.
             val mediaDirectories = IosMediaDirectories().also { it.ensure() }
             val localMedia = IosLocalMediaOwner(
                 host = host,
@@ -713,7 +706,8 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
                 report = report,
             )
-            // The canvas store and the image cache are the two this host keeps; the saved limits apply at open.
+            val songCache = IosSongCache(database.storedSongs(), "$databaseDirectory/song-cache", http, vault,
+                audioResolver, accounts, scope, ::iosNowMillis, report)
             val canvasStore = IosCanvasCacheStore().also { it.ensure() }
             iosApplyCacheLimits(vault.snapshots.value, canvasStore)
             // Backup archives hold a VACUUM INTO snapshot of this same database, staged beside it on restore.
@@ -745,6 +739,7 @@ internal class IosSessionGraph private constructor(
                 preferences = { vault.snapshots.value },
                 localFile = { ref -> localMedia.pathOf(ref.id) },
                 downloadedFile = { ref -> downloads.committedFile(ref) },
+                cachedFile = songCache::file,
             )
             // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
@@ -834,6 +829,7 @@ internal class IosSessionGraph private constructor(
                 report = report,
             )
             // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
+            val lyricsStorage = IosLyricsStore("$databaseDirectory/lyrics")
             val lyrics = HostLyrics(
                 scope = scope,
                 http = http,
@@ -844,7 +840,7 @@ internal class IosSessionGraph private constructor(
                 report = report,
                 lyprioBuildBaseUrl = IosProviderCredentials.lyprioBaseUrl,
                 lyprioBuildHmacKey = IosProviderCredentials.lyprioHmacKey,
-                storage = IosLyricsStore("$databaseDirectory/lyrics"),
+                storage = lyricsStorage,
             )
             val lyricsSurface = LyricsSurfaceRuntime(scope, vault, KtorAiTextService(http), lyrics.current,
                 host.japaneseLanguagePack.flatMapLatest { it?.tokenizer ?: flowOf(null) }, null,
@@ -852,7 +848,6 @@ internal class IosSessionGraph private constructor(
             val libraryContent = LibraryContentOwner(
                 settings = vault,
                 library = library,
-                // No YouTube account binding exists on this host, so every library change stays local.
                 writes = library,
                 statistics = history,
                 blocked = artistBlocks.observeBlockedArtists(),
@@ -958,6 +953,7 @@ internal class IosSessionGraph private constructor(
                 history = history,
                 lyrics = lyrics,
                 lyricsSurface = lyricsSurface,
+                lyricsStorage = lyricsStorage,
                 modules = modules,
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
@@ -966,6 +962,7 @@ internal class IosSessionGraph private constructor(
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
+                songCache = songCache,
                 backup = backup,
                 driveBackup = driveBackup,
                 localMedia = localMedia,
@@ -984,6 +981,7 @@ internal class IosSessionGraph private constructor(
             // is needed by restored local songs; network playback preparation runs after Ready.
             localMedia.start()
             downloads.start()
+            songCache.start(queue.state, player)
             lyrics.start()
             lyricsSurface.start()
             graph.lyricsTools

@@ -468,3 +468,12 @@ existing host. Inline DASH, signed/native extension APIs, raw legacy text module
 provider mounting and catalog update browsing remain incomplete. Native extension packages are
 refused, not treated as ordinary modules. Package/runtime/device/Apple compilation is unverified.
 The source settings now advertise the Echo transport while preserving engine/account readiness.
+
+The managed iOS song cache now prefetches complete files for the active song through the existing
+portable preparation/transfer and a distinct CACHE stored-song row. Byte-count checks gate offline
+reuse; source pins/rejections can bypass a cached source. Cache limits stop oversized transfers and
+evict oldest entries, and song-menu removal/storage clearing remove real files and rows. Prefetch
+is an additional request rather than reuse of the playback response; streaming Spotify and TDLib
+tracks are excluded. Lyrics cache usage/clearing is wired and clearing preserves durable edits.
+The stored-song writer now accepts episodes as well as songs, completing episode file commits.
+Device/offline behavior and new-source Apple compilation remain unverified.

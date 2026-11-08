@@ -11,6 +11,8 @@ import moe.rukamori.archivetune.shared.data.bytesource.Md5
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.ui.host.HostLyricsStorage
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSNumber
+import platform.Foundation.NSFileSize
 import platform.posix.rename
 
 /** Provider text and durable edits are source-bound; an edit always wins over a refreshed provider cache. */
@@ -42,6 +44,16 @@ internal class IosLyricsStore(private val root: String) : HostLyricsStorage {
             check(rename(temporary, target) == 0) { "Cannot commit lyrics" }
         } finally { NSFileManager.defaultManager.removeItemAtPath(temporary, null) }
         true
+    }
+    fun usedBytes(): Long = NSFileManager.defaultManager.contentsOfDirectoryAtPath(root, null).orEmpty()
+        .filterIsInstance<String>().sumOf { name ->
+            (NSFileManager.defaultManager.attributesOfItemAtPath("$root/$name", null)?.get(NSFileSize) as? NSNumber)?.longLongValue ?: 0L
+        }
+    suspend fun clearProviderCache() = lock.withLock {
+        NSFileManager.defaultManager.contentsOfDirectoryAtPath(root, null).orEmpty().filterIsInstance<String>().forEach { name ->
+            if (readRow("$root/$name")?.get("edited")?.jsonPrimitive?.booleanOrNull != true)
+                NSFileManager.defaultManager.removeItemAtPath("$root/$name", null)
+        }
     }
     private fun readRow(path: String): JsonObject? = try {
         if (!NSFileManager.defaultManager.fileExistsAtPath(path)) null else
