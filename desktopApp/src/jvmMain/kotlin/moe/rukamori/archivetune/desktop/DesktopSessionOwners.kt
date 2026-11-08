@@ -540,6 +540,7 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     val downloadsOwner = DesktopDownloadsOwner(
+        playback = playback,
         downloads = downloadStore,
         storedSongs = database.storedSongs(),
         resolver = audioResolver,

@@ -24,3 +24,15 @@ Native compilation, packaging and authenticated playback remain unverified.
 The other unofficial Spotify methods use Android WebView/MediaDrm Widevine.
 The JVM host has no licensed desktop CDM binding, so these remain unavailable;
 the stored method is never silently changed to Echo.
+
+## Offline downloads
+
+Desktop downloads now read the player's plaintext lease for progressive, TIDAL
+DASH, supported HLS/AES-128, Deezer, Amazon CENC and QQ preparations. Spotify
+remains excluded and protected Apple/FairPlay remains unsupported. Request-owned
+staging, bounded reads, cancellation interruption, complete-length checks and the
+existing atomic file/index commit are retained. Podcast episode refs are accepted
+by the download/player menus and retain their kind in the portable stored row.
+The only commonMain change is allowing downloaded EPISODE rows in that existing
+index serializer; songs and cache rows keep their previous contract.
+Playback/export of these files still needs CI and Windows/Linux runtime validation.
