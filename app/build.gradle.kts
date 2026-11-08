@@ -95,13 +95,12 @@ fun addonSha256(relativePath: String): String =
             .joinToString("") { "%02x".format(it) }
     } ?: ""
 
-val discordApplicationId =
-    (
-        localProperties.getProperty("DISCORD_APPLICATION_ID")
-            ?: System.getenv("DISCORD_APPLICATION_ID")
-            ?: "1165706613961789445"
-        ).trim()
-val discordApplicationIdLong = discordApplicationId.toLongOrNull() ?: 1165706613961789445L
+val discordApplicationIdLong = sequenceOf(
+    localProperties.getProperty("DISCORD_APPLICATION_ID"),
+    System.getenv("DISCORD_APPLICATION_ID"),
+).mapNotNull { value -> value?.trim()?.toLongOrNull()?.takeIf { it > 0L } }
+    .firstOrNull() ?: 1165706613961789445L
+val discordApplicationId = discordApplicationIdLong.toString()
 val discordRedirectScheme = "discord-$discordApplicationId"
 val releaseKeystoreFile = file("keystore/release.keystore")
 val releaseStorePassword =
