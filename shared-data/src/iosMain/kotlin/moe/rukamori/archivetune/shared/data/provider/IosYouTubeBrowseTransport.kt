@@ -134,9 +134,10 @@ class IosYouTubeBrowseTransport(
         when (browse) {
             is YouTubeBrowse.Playlist -> shelfPage(browseId = "VL${browse.playlistId}", continuation = continuation)
             is YouTubeBrowse.Album -> shelfPage(browseId = browse.browseId, continuation = continuation)
-            // The iOS host's podcast route is still a placeholder, so a show page has no surface to render; it
-            // refuses explicitly instead of parsing a show as the shelf it is not.
-            is YouTubeBrowse.Podcast -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.Podcast -> shelfPage(browse.browseId, continuation).let { page ->
+                page.copy(entries = page.entries.filter { it.kind == ContentKind.SONG || it.kind == ContentKind.EPISODE }
+                    .map { it.copy(kind = ContentKind.EPISODE) })
+            }
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.Section -> sectionPage(browse)
             is YouTubeBrowse.ArtistItems -> artistItemsPage(browse, continuation)

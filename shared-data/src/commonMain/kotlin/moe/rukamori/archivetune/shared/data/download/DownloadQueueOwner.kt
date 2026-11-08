@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.download.DownloadSourceResolver
 import moe.rukamori.archivetune.shared.domain.download.DownloadTask
 import moe.rukamori.archivetune.shared.domain.download.DownloadTaskStore
+import moe.rukamori.archivetune.shared.domain.download.PreparedDownloadTransfer
 import moe.rukamori.archivetune.shared.domain.download.DownloadTransfer
 import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -162,15 +163,21 @@ class DownloadQueueOwner(
             }
             val downloading = claimDownloading(task) ?: return
             val prepared = resolver.resolve(downloading)
-            val stream = (prepared as? PreparedAudio.Progressive)?.stream
-                ?: error("Source did not resolve to a progressive stream")
-            // The committed file is keyed by the resolved source, so the task records it before the transfer.
-            if (!updateWhileDownloading(downloading.id) { it.copy(source = stream.source) }) return
-            val size = transfer.transfer(downloading, stream, downloading.resumeBytes, itemOf(downloading.ref)) { done, total ->
+            requireNotNull(prepared) { "Source did not resolve audio" }
+            if (!updateWhileDownloading(downloading.id) { it.copy(source = prepared.source) }) return
+            val progress: suspend (Long, Long?) -> Unit = { done, total ->
                 updateWhileDownloading(downloading.id) {
                     it.copy(bytesDownloaded = done, totalBytes = total ?: it.totalBytes,
                         resumeBytes = done, updateTimeMs = timeMs())
                 }
+                Unit
+            }
+            val size = if (transfer is PreparedDownloadTransfer) {
+                transfer.transferPrepared(downloading, prepared, downloading.resumeBytes, itemOf(downloading.ref), progress)
+            } else {
+                val stream = (prepared as? PreparedAudio.Progressive)?.stream
+                    ?: error("Source did not resolve to a progressive stream")
+                transfer.transfer(downloading, stream, downloading.resumeBytes, itemOf(downloading.ref), progress)
             }
             updateWhileDownloading(downloading.id) {
                 it.copy(phase = DownloadPhase.COMPLETED, bytesDownloaded = size, totalBytes = size,
@@ -184,6 +191,7 @@ class DownloadQueueOwner(
                     updateTimeMs = timeMs())
             }
         } finally {
+            (transfer as? PreparedDownloadTransfer)?.releasePreparation(task.id)
             // A cancelled worker still has to release its slot: stop()/remove() hold this gate while
             // they cancel, and a plain withLock in a cancelled coroutine would throw before removing
             // the entry, leaving every later resume queued behind a worker that no longer exists.
@@ -197,11 +205,6 @@ class DownloadQueueOwner(
         }
     }
 
-    /**
-     * Refreshes [snapshot] from [DownloadTaskStore] without discarding a live worker's entry. A store
-     * emission can have been read before the worker's latest progress/completion write, and the
-     * worker's writes are gated on its DOWNLOADING phase, so a stale collector copy must not win.
-     */
     private suspend fun syncSnapshotLocked() {
         val activeIds = workers.keys
         snapshot = store.tasks().associateBy { it.id } + snapshot.filterKeys { it in activeIds }

@@ -235,3 +235,7 @@ LGPL-3.0-only NOTICE/LICENSE, GPL COPYING, manifest license declarations and GPL
 packager notice are retained together under `addons/modules/`. Natune's provider
 adapters, catalog builder and pure JS ArchivePool crypto state GPL-3.0-or-later
 terms. See [module compatibility and comparison](modules.md).
+
+The portable Spotify Echo pipeline in shared-data derives from ArchiveTune's retained Echo
+implementation and brahmkshatriya/echo-spotify-extension (GPL-3.0), including the extended
+metadata protobuf and PlayPlay key transform. Original Android attribution remains in place.

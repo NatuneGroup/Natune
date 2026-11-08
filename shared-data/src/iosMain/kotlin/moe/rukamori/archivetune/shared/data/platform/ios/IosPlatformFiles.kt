@@ -9,6 +9,8 @@ import moe.rukamori.archivetune.shared.domain.platform.PlatformFiles
 import platform.Foundation.*
 import platform.UIKit.*
 import platform.UniformTypeIdentifiers.UTTypeData
+import platform.UniformTypeIdentifiers.UTTypeFolder
+import platform.UniformTypeIdentifiers.UTType
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -24,9 +26,9 @@ class IosPlatformFiles : PlatformFiles {
     private var pickerDelegate: UIDocumentPickerDelegateProtocol? = null
     private var cancelPicker: (() -> Unit)? = null
 
-    suspend fun pickDocument(presenter: UIViewController): FileHandle? = withContext(Dispatchers.Main) {
+    suspend fun pickDocument(presenter: UIViewController, type: UTType = UTTypeData): FileHandle? = withContext(Dispatchers.Main) {
         check(picker == null) { "Document picker already active" }
-        val controller = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeData), asCopy = false)
+        val controller = UIDocumentPickerViewController(forOpeningContentTypes = listOf(type), asCopy = false)
         controller.allowsMultipleSelection = false
         picker = controller
         try {
@@ -149,6 +151,25 @@ class IosPlatformFiles : PlatformFiles {
                         check(data.writeToURL(target, options = NSDataWritingAtomic, error = error.ptr)) {
                             "Atomic document replacement failed"
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun pickDirectory(presenter: UIViewController): FileHandle? = pickDocument(presenter, UTTypeFolder)
+
+    suspend fun writeChildAtomic(folder: FileHandle, name: String, bytes: ByteArray) = withContext(Dispatchers.Default) {
+        require(name.isNotBlank() && name != "." && name != ".." && name.none { it in "/\\\u0000" })
+        access(folder) { parent ->
+            val child = requireNotNull(parent.URLByAppendingPathComponent(name))
+            coordinate(child, writing = true) { target ->
+                bytes.usePinned { pinned ->
+                    val data = NSData.create(bytes = if (bytes.isEmpty()) null else pinned.addressOf(0), length = bytes.size.toULong())
+                    memScoped {
+                        val error = alloc<ObjCObjectVar<NSError?>>()
+                        error.value = null
+                        check(data.writeToURL(target, NSDataWritingAtomic, error.ptr)) { "Cannot write backup folder" }
                     }
                 }
             }

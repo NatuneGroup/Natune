@@ -10,6 +10,9 @@ import kotlinx.cinterop.memScoped
 import moe.rukamori.archivetune.nativeaudio.AT_AUDIO_EQ_MAX_BANDS
 import moe.rukamori.archivetune.nativeaudio.at_audio_equalizer
 import moe.rukamori.archivetune.nativeaudio.at_audio_preamp
+import kotlin.math.log10
+import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityFilterType
+import moe.rukamori.archivetune.shared.domain.dsp.DcBlocker
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
@@ -32,7 +35,18 @@ internal data class IosEqBand(
  * bands are the shared model's, so this adapter carries no layout, no gain conversion and no coefficient design;
  * AVAudioUnitEQ renders the parameters the core describes.
  */
-internal fun DspSettings.toIosEqBands(): List<IosEqBand> = equalizerBands.toIosEqBands()
+internal fun DspSettings.toIosEqBands(): List<IosEqBand> = buildList {
+    if (equalizerEnabled) addAll(equalizerBands.toIosEqBands())
+    clarity?.bands?.forEach { band ->
+        add(IosEqBand(when (band.type) {
+            ClarityFilterType.HIGH_PASS -> 3
+            ClarityFilterType.PEAKING -> 0
+            ClarityFilterType.HIGH_SHELF -> 2
+        }, band.frequencyHz.toFloat(), EqualizerBandwidth.octavesForQ(band.q).toFloat(), band.gainDb.toFloat()))
+    }
+    // AVAudioUnitEQ's high-pass is an available approximation, not the shared first-order DC-blocker transfer.
+    if (dcBlockerEnabled) add(IosEqBand(3, DcBlocker.DEFAULT_CUTOFF_HZ.toFloat(), 1f, 0f))
+}
 
 /** The shared band list converted once, for both the native output and the blend decks. */
 internal fun List<EqualizerBand>.toIosEqBands(): List<IosEqBand> = map { band ->
@@ -59,6 +73,10 @@ internal val EqualizerBandType.iosEqType: Int
 internal val DspSettings.iosPreampDb: Float
     get() = if (preampEnabled) preampDb.toFloat() else 0f
 
+/** The gain actually supplied by the host, with unknown track measurement remaining unity. */
+internal val DspSettings.iosInputGainDb: Float
+    get() = (iosPreampDb + if (normalizationEnabled) 20f * log10(linearGain) else 0f).coerceIn(-24f, 24f)
+
 /**
  * Applies the shared settings' tone to [output]: the equalizer bands and their switch, and the user preamp on the
  * same unit's global gain. The one value the desktop and iOS ports both take, so the host never passes a band list
@@ -66,7 +84,7 @@ internal val DspSettings.iosPreampDb: Float
  */
 @OptIn(ExperimentalForeignApi::class)
 internal fun applyIosDsp(output: CPointer<at_audio_output>, settings: DspSettings) {
-    applyIosTone(output, settings.toIosEqBands(), settings.equalizerEnabled, settings.iosPreampDb)
+    applyIosTone(output, settings.toIosEqBands(), true, settings.iosInputGainDb)
 }
 
 /**

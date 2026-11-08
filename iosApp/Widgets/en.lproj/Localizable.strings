@@ -1,0 +1,11 @@
+"widget_name" = "Natune controls";
+"widget_description" = "Open Natune and control the current queue.";
+"widget_open_hint" = "Tap a control to open Natune";
+"widget_play" = "Play";
+"widget_pause" = "Pause";
+"widget_previous" = "Previous";
+"widget_next" = "Next";
+
+"widget_playing" = "Playback active";
+"widget_paused" = "Playback paused";
+"widget_toggle" = "Play or pause";

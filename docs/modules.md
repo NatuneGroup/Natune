@@ -320,3 +320,11 @@ chain, and module failure continues to the existing fallback. Pure JS crypto,
 provider API dialects and user-instance response shapes require CI/live testing
 before claiming service parity. The portable module variants intentionally do
 not replace native DRM/decryption/queued-job features.
+
+### R3 iOS source increment (unverified)
+
+The iOS manager installs bounded readable API-v1 `.arch` audio packages and executes the retained
+`module-host.js` through the already-declared QuickJS dependency. Typed configuration is kept in
+Keychain. The ordinary source chain consumes supported progressive/HLS answers. Inline DASH,
+signed/native extension APIs, raw legacy text import, module lyrics and catalog update browsing
+remain unavailable; no Apple compilation, provider success or device execution is claimed.
