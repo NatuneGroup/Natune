@@ -147,10 +147,142 @@ static void decoder_fixture(const char *path) {
     ae_engine_destroy(e);
     puts("PASS realtime actual FFmpeg WAV decode/refill/EOF and exact consumed-frame position");
 }
+typedef struct pcm_memory { uint8_t bytes[44 + 256 * 8]; size_t length, position; int closes; } pcm_memory;
+static int32_t pcm_open(void *opaque, int64_t *size, int32_t *seekable) {
+    pcm_memory *memory = opaque; memory->position = 0; *size = (int64_t)memory->length; *seekable = 1; return 0;
+}
+static int32_t pcm_read(void *opaque, uint8_t *out, uint32_t size) {
+    pcm_memory *memory = opaque;
+    size_t remaining = memory->length - memory->position;
+    size_t count = remaining < size ? remaining : size;
+    if (!count) return AE_IO_EOF;
+    memcpy(out, memory->bytes + memory->position, count); memory->position += count; return (int32_t)count;
+}
+static int64_t pcm_seek(void *opaque, int64_t position) {
+    pcm_memory *memory = opaque;
+    if (position < 0 || (uint64_t)position > memory->length) return AE_IO_FAILED;
+    memory->position = (size_t)position; return position;
+}
+static void pcm_close(void *opaque) { ((pcm_memory *)opaque)->closes++; }
+static void pcm_u16(uint8_t *out, uint16_t value) { out[0] = (uint8_t)value; out[1] = (uint8_t)(value >> 8); }
+static void pcm_u32(uint8_t *out, uint32_t value) {
+    for (int i = 0; i < 4; i++) out[i] = (uint8_t)(value >> (i * 8));
+}
+static int unexpected_pcm_processor(void *opaque, float *samples, uint32_t frames, uint32_t rate,
+    uint64_t generation, double gain, double peak) {
+    (void)opaque; (void)samples; (void)frames; (void)rate; (void)generation; (void)gain; (void)peak;
+    CHECK(0 && "direct PCM must not enter software processing"); return -1;
+}
+
+/* Actual FFmpeg decode through the host-source ABI. Manual output characterizes samples, not a physical device. */
+static void direct_pcm_fixture(uint32_t bits, uint32_t transport) {
+    const int32_t samples32[] = {INT32_MIN, INT32_MAX, -1, 0, 1, 0x01020304, 0x7ffffffe, (int32_t)0x80000001u};
+    const int32_t samples24[] = {-8388608, 8388607, -1, 0, 1, 0x010203, 8388606, -8388607};
+    const int32_t samples16[] = {-32768, 32767, -1, 0, 1, 0x0102, 32766, -32767};
+    const int32_t *values = bits == 32 ? samples32 : bits == 24 ? samples24 : samples16;
+    pcm_memory memory = {0};
+    uint32_t bytes = bits / 8u, stride = bytes * 2u, data_size = 256u * stride;
+    memory.length = 44u + data_size;
+    memcpy(memory.bytes, "RIFF", 4); pcm_u32(memory.bytes + 4, 36u + data_size);
+    memcpy(memory.bytes + 8, "WAVEfmt ", 8); pcm_u32(memory.bytes + 16, 16);
+    pcm_u16(memory.bytes + 20, 1); pcm_u16(memory.bytes + 22, 2);
+    pcm_u32(memory.bytes + 24, 44100); pcm_u32(memory.bytes + 28, 44100u * stride);
+    pcm_u16(memory.bytes + 32, (uint16_t)stride); pcm_u16(memory.bytes + 34, (uint16_t)bits);
+    memcpy(memory.bytes + 36, "data", 4); pcm_u32(memory.bytes + 40, data_size);
+    for (uint32_t frame = 0; frame < 256; frame++) for (uint32_t channel = 0; channel < 2; channel++) {
+        uint32_t value = (uint32_t)values[(frame + channel) % 8];
+        for (uint32_t byte = 0; byte < bytes; byte++) memory.bytes[44u + frame * stride + channel * bytes + byte] = (uint8_t)(value >> (byte * 8));
+    }
+    ae_engine *engine = create();
+    ae_pcm_processor processor = {NULL, unexpected_pcm_processor, NULL};
+    CHECK(ae_engine_set_pcm_processor(engine, &processor) == 0);
+    ae_engine_direct_request(engine, 1);
+    ae_stream_io io = {AE_STREAM_IO_VERSION, &memory, pcm_open, pcm_read, pcm_seek, NULL, pcm_close};
+    CHECK(ae_engine_load_stream(engine, &io, 0, 1) != 0);
+    ae_pcm_format format;
+    double deadline = seconds() + 10;
+    while (!ae_engine_pending_output(engine, &format)) {
+        CHECK(seconds() < deadline);
+        struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL);
+    }
+    CHECK(format.rate == 44100 && format.channels == 2 && format.bits == bits && format.channel_mask == AV_CH_LAYOUT_STEREO);
+    format.format = transport;
+    ae_pcm_format wrong_layout = format;
+    wrong_layout.channel_mask = AV_CH_LAYOUT_STEREO_DOWNMIX;
+    CHECK(!ae_engine_configure_output(engine, 1, &wrong_layout, 24));
+    CHECK(ae_engine_configure_output(engine, 1, &format, 24));
+    uint32_t sample_bytes = pcm_bytes(transport), total = 0;
+    uint8_t out[8 * 2 * 4];
+    ae_snapshot snapshot;
+    do {
+        in_callback = 1;
+        uint32_t count = ae_engine_pull_native(engine, out, 8, &format);
+        in_callback = 0;
+        for (uint32_t frame = 0; frame < count; frame++) for (uint32_t channel = 0; channel < 2; channel++) {
+            uint32_t expected = (uint32_t)values[(total + frame + channel) % 8];
+            if (transport == AE_PCM_S32 && bits < 32) expected <<= 32u - bits;
+            uint32_t actual = 0;
+            for (uint32_t byte = 0; byte < sample_bytes; byte++) actual |= (uint32_t)out[(frame * 2u + channel) * sample_bytes + byte] << (byte * 8);
+            uint32_t mask = sample_bytes == 4 ? UINT32_MAX : (1u << (sample_bytes * 8u)) - 1u;
+            CHECK(actual == (expected & mask));
+        }
+        total += count;
+        ae_engine_snapshot(engine, &snapshot);
+        CHECK(snapshot.error_code == 0 && seconds() < deadline);
+        if (!count) { struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL); }
+    } while (!(snapshot.flags & AE_FLAG_ENDED));
+    CHECK(total == 256 && llabs(snapshot.position_us - llround(256.0 * 1e6 / 44100.0)) <= 1);
+    /* The hardware queue must empty after the last real sample. Silence never advances position. */
+    pthread_mutex_lock(&engine->mutex);
+    ring_clear_locked(engine);
+    engine->ended = 0; engine->ready = 1; engine->play_intent = 1; engine->eof = 1;
+    engine->output_tail_frames = 24;
+    pthread_mutex_unlock(&engine->mutex);
+    for (uint32_t tail = 0; tail < 3; tail++) {
+        in_callback = 1;
+        CHECK(ae_engine_pull_native(engine, out, 8, &format) == 0);
+        in_callback = 0;
+        ae_engine_snapshot(engine, &snapshot);
+        CHECK(!!(snapshot.flags & AE_FLAG_ENDED) == (tail == 2));
+        CHECK(llabs(snapshot.position_us - llround(256.0 * 1e6 / 44100.0)) <= 1);
+        for (size_t byte = 0; byte < 8u * 2u * sample_bytes; byte++) CHECK(out[byte] == 0);
+    }
+    ae_engine_destroy(engine);
+    CHECK(memory.closes == 1);
+    printf("PASS direct PCM %ubit through native format %u, exact integers and no software processing\n", bits, transport);
+}
+
+static void unexpected_layout_pull(void *user, void *out, uint32_t frames) {
+    (void)user; (void)out; (void)frames;
+    CHECK(0 && "an unknown speaker map must be refused before opening a device");
+}
+
+static void channel_layout_fixture(void) {
+    AVChannelLayout quad = AV_CHANNEL_LAYOUT_QUAD, surround = AV_CHANNEL_LAYOUT_4POINT0;
+    ae_pcm_format a = decoded_format(AV_SAMPLE_FMT_S16, 48000, &quad, 16);
+    ae_pcm_format b = decoded_format(AV_SAMPLE_FMT_S16, 48000, &surround, 16);
+    CHECK(a.channels == b.channels && a.channel_mask != b.channel_mask);
+    CHECK(ae_pcm_channel_mask_valid(&a) && ae_pcm_channel_mask_valid(&b));
+    AVChannelCustom reversed[2] = {{.id = AV_CHAN_FRONT_RIGHT}, {.id = AV_CHAN_FRONT_LEFT}};
+    AVChannelLayout custom = {.order = AV_CHANNEL_ORDER_CUSTOM, .nb_channels = 2, .u.map = reversed};
+    a = decoded_format(AV_SAMPLE_FMT_S16, 48000, &custom, 16);
+    CHECK(!ae_pcm_channel_mask_valid(&a));
+    ae_device_request request = {a, 1, 1, NULL};
+    char error[256] = {0};
+    CHECK(!ae_device_open_pcm(&request, unexpected_layout_pull, NULL, error, sizeof error));
+    CHECK(strstr(error, "speaker layout") != NULL);
+}
+
 int main(int argc, char **argv) {
     (void)checked_malloc; /* Keep the allocator tripwire even while the core uses calloc only. */
     CHECK(argc == 2);
     ring_fixture();
     decoder_fixture(argv[1]);
+    channel_layout_fixture();
+    direct_pcm_fixture(16, AE_PCM_S16);
+    direct_pcm_fixture(16, AE_PCM_S32);
+    direct_pcm_fixture(24, AE_PCM_S24);
+    direct_pcm_fixture(24, AE_PCM_S32);
+    direct_pcm_fixture(32, AE_PCM_S32);
     return 0;
 }

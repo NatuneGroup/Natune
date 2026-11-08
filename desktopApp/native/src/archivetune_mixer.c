@@ -50,6 +50,11 @@ struct ae_mixer {
     ae_device *device;
     ae_engine *deck[AE_MIXER_DECKS];
     uint32_t rate;
+    uint32_t shared_rate;
+    int backend, exclusive_requested, raw_output, output_enabled;
+    ae_pcm_format raw_pcm;
+    char device_id[512];
+    ae_mixer_output_state output_state;
 
     uint64_t timeline;         /* output frames delivered so far */
     uint64_t commit_sequence;  /* bumps whenever the incoming deck becomes active */
@@ -236,10 +241,18 @@ static void mixer_pull(void *user, float *out, uint32_t frames) {
         mix_chunk_locked(m, out + (size_t)done * AE_MIXER_CHANNELS, chunk);
         done += chunk;
     }
+    if (!m->output_enabled) memset(out, 0, (size_t)frames * AE_MIXER_CHANNELS * sizeof(float));
     pthread_mutex_unlock(&m->mutex);
 }
 
+#include "archivetune_mixer_output.h"
+
 ae_mixer *ae_mixer_create(const ae_mixer_config *config, char *error, size_t error_len) {
+    return ae_mixer_create_output(config, 0, NULL, error, error_len);
+}
+
+ae_mixer *ae_mixer_create_output(const ae_mixer_config *config, int exclusive, const char *device_id,
+                                char *error, size_t error_len) {
     if (error && error_len > 0) {
         error[0] = '\0';
     }
@@ -266,6 +279,12 @@ ae_mixer *ae_mixer_create(const ae_mixer_config *config, char *error, size_t err
         return NULL;
     }
     m->rate = rate;
+    m->shared_rate = rate;
+    m->backend = config->backend;
+    m->exclusive_requested = !!exclusive;
+    m->output_enabled = 1;
+    if (device_id) snprintf(m->device_id, sizeof m->device_id, "%s", device_id);
+    m->output_state.requested = !!exclusive;
     m->deck_gain[0] = 1.0f;
     m->deck_gain[1] = 1.0f;
 
@@ -287,16 +306,18 @@ ae_mixer *ae_mixer_create(const ae_mixer_config *config, char *error, size_t err
             ae_mixer_destroy(m);
             return NULL;
         }
+        ae_engine_direct_request(m->deck[i], exclusive && i == 0);
     }
 
     char device_error[AE_MIXER_ERROR_CAPACITY];
-    m->device = ae_device_open(rate, config->backend == AE_BACKEND_NULL, mixer_pull, m, device_error,
-                               sizeof device_error);
-    if (!m->device) {
+    if (!exclusive) m->device = open_shared_output(m, device_error, sizeof device_error);
+    if (!exclusive && !m->device) {
         set_error(error, error_len, device_error[0] ? device_error : "the audio output did not start");
         ae_mixer_destroy(m);
         return NULL;
     }
+    if (exclusive) snprintf(m->output_state.reason, sizeof m->output_state.reason, "Waiting for the decoded track format");
+    else ae_device_state_read(m->device, &m->output_state.sink);
     return m;
 }
 
@@ -347,6 +368,7 @@ void ae_mixer_cancel(ae_mixer *m) {
         return;
     }
     pthread_mutex_lock(&m->mutex);
+    if (m->exclusive_requested || m->raw_output) { pthread_mutex_unlock(&m->mutex); return AE_MIXER_REJECTED; }
     m->armed = 0;
     pthread_mutex_unlock(&m->mutex);
 }

@@ -19,9 +19,10 @@ import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
 /** Palette generation is the shared MaterialKolor policy; desktop owns only file choosers and the editor. */
 @Composable
 internal fun DesktopAppearanceEditor(graph: DesktopSessionGraph, path: String) {
+    if (path.endsWith("/theme_creator")) { DesktopSeedThemeEditor(graph); return }
     val preferences by graph.settings.snapshots.collectAsState()
     val scope = rememberCoroutineScope()
-    var color by remember { mutableStateOf(preferences?.get(CustomThemeColorKey) ?: "#6750A4") }
+    var color by remember { mutableStateOf(preferences?.get(CustomThemeColorKey)?.takeIf { it.startsWith("#") } ?: "#6750A4") }
     var style by remember { mutableStateOf(preferences?.themePaletteStyle() ?: ThemePaletteStyle.AUTOMATIC) }
     var failed by remember { mutableStateOf(false) }
     fun run(action: suspend () -> Unit) { scope.launch {

@@ -181,17 +181,23 @@ internal class DesktopModules(private val root: Path, private val preferences: (
             }
             val stream = runtime.stream(entry.id, entry.source, entry.origin, track.id, settings, track)
             if (entries.value.none { it.id == entry.id && it.enabled && it.source == entry.source }) return null
-            // Header-bearing progressive streams are already supported by the ordinary host route.
-            if (stream.mimeType in setOf("application/dash+xml", "application/x-mpegURL")) continue
-            val admission = admissions.accept(moe.rukamori.archivetune.shared.domain.platform.ProviderIdentity("modules",
-                moe.rukamori.archivetune.shared.domain.platform.CredentialScope.PERSONAL, entry.id), captured) {
+            if (stream.mimeType == "application/dash+xml") continue
+            val permissions = runtime.streamNetworkPermissions(entry.id)
+            val admission = admissions.acceptPermitted(moe.rukamori.archivetune.shared.domain.platform.ProviderIdentity("modules",
+                moe.rukamori.archivetune.shared.domain.platform.CredentialScope.PERSONAL, entry.id), captured,
+                urlAllowed = { url -> permissions?.requireAllowed(url); true }) {
                 generation.get() == captured && preferences()?.get(ModulesEnabledKey, false) == true &&
                     entries.value.any { it.id == entry.id && it.enabled && it.source == entry.source }
             } ?: return null
-            return PreparedAudio.Progressive(DirectStream(stream.url, stream.mimeType, stream.codecs,
+            admissions.bindCookies(admission, desktopModuleCookies(environment, entry.id))
+            val directStream = DirectStream(stream.url, stream.mimeType, stream.codecs,
                 stream.contentLength.takeIf { it > 0 }, entry.manifest.name, source, track.title, track.artists.joinToString(", "),
                 track.album, track.durationSeconds?.times(1000L), headers = PlaybackHeaders.of(stream.headers),
-                accountScope = admission.scope, expiresAtEpochMs = stream.expiresAtMs))
+                accountScope = admission.scope, expiresAtEpochMs = stream.expiresAtMs)
+            return if (stream.mimeType in setOf("application/x-mpegURL", "application/vnd.apple.mpegurl")) {
+                PreparedAudio.Native(directStream, NativeAudioRecipe.SegmentedHls(stream.url, stream.inlineManifest,
+                    source, admission.scope, stream.expiresAtMs))
+            } else PreparedAudio.Progressive(directStream)
         }
         return null
     }

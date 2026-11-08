@@ -141,8 +141,8 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
-        // The desktop engine has no bit-perfect output path, so its restart reasons are never offered.
-        bitPerfectSupported = false,
+        bitPerfectSupported = DesktopOutputCapabilities.supported,
+        bitPerfectRestartRequired = false,
     )
     val accounts: ProviderAccountLifecycle = graph.accountLifecycle
     private val tidalAuth = graph.tidalAuth
@@ -366,6 +366,7 @@ private fun DesktopSettingsRouteBody(
             "settings/modules" -> DesktopModulesPage(graph, navigate)
             in DESKTOP_GENERAL_SETTINGS_ROUTES -> DesktopGeneralSettingsPage(
                 path = path,
+                graph = graph,
                 controller = owners.controller,
                 navigate = navigate,
                 onFailure = onFailure,
