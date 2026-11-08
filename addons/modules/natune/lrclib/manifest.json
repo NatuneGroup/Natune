@@ -1,0 +1,20 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.lyrics.lrclib",
+    "name": "LRCLIB lyrics extension",
+    "displayName": "LRCLIB lyrics extension",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "Optional LRCLIB lyrics provider. Returns synced LRC or plain lyrics for the requested recording. Natune only; upstream ArchiveTune has no lyrics extension API.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": "lyrics_provider",
+    "requiredRuntimeFeatures": ["fetch@1", "natuneExtensions@1", "lyrics@1"],
+    "capabilities": ["getLyrics"],
+    "settings": {}
+  }
+}

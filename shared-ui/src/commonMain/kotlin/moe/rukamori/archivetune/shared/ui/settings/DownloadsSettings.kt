@@ -24,6 +24,12 @@ fun DownloadsSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /**
+     * The desktop download owner has no "download on like" trigger, and its content menu refuses an
+     * external downloader: those rows would only write keys nothing reads. The Android host keeps
+     * them, and the stored values stay readable for it and for backups.
+     */
+    desktop: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -31,14 +37,12 @@ fun DownloadsSettings(
     var clear by remember { mutableStateOf(false) }
     var reorder by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val rows = listOf(
-        SettingsRow.Action("clear_all_downloads", Res.string.m6_clear_downloads, { clear = true }),
-        SettingsRow.Action("export_downloaded_songs", Res.string.m6_export_downloads, { navigate("settings/storage/export_songs") }),
-        SettingsRow.Toggle("auto_download_like", Res.string.m6_download_like, AutoDownloadOnLikeKey, false),
-        SettingsRow.Action("download_source", Res.string.m6_download_sources, { reorder = true }),
-        SettingsRow.Toggle("external_downloader", Res.string.m6_external_downloader, ExternalDownloaderEnabledKey, false),
-        SettingsRow.Text("external_downloader_package", Res.string.m6_external_downloader_package, ExternalDownloaderPackageKey,
-            enabled = preferences[ExternalDownloaderEnabledKey, false]),
+    val rows = downloadsSettingsRows(
+        preferences = preferences,
+        desktop = desktop,
+        clearAll = { clear = true },
+        export = { navigate("settings/storage/export_songs") },
+        reorder = { reorder = true },
     )
     SettingsPage(rows, preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier)
     if (clear) SettingsConfirmActionDialog(Res.string.m6_clear_downloads, clearDownloads, { clear = false }, onFailure)
@@ -84,5 +88,31 @@ fun DownloadsSettings(
             }) { Text(stringResource(Res.string.m6_save)) } },
             dismissButton = { TextButton(enabled = !saving, onClick = { reorder = false }) { Text(stringResource(Res.string.m6_cancel)) } },
         )
+    }
+}
+
+/**
+ * The Downloads rows. The phone host offers auto-download-on-like and an external downloader with its
+ * package; their only consumers live in the Android service and menus. A desktop window's download
+ * owner and content menu have neither, so it leaves those rows off rather than writing keys nothing
+ * reads. The stored preferences stay readable for Android and for backups.
+ */
+fun downloadsSettingsRows(
+    preferences: PreferenceSnapshot,
+    desktop: Boolean = false,
+    clearAll: () -> Unit = {},
+    export: () -> Unit = {},
+    reorder: () -> Unit = {},
+): List<SettingsRow> = buildList {
+    add(SettingsRow.Action("clear_all_downloads", Res.string.m6_clear_downloads, clearAll))
+    add(SettingsRow.Action("export_downloaded_songs", Res.string.m6_export_downloads, export))
+    if (!desktop) {
+        add(SettingsRow.Toggle("auto_download_like", Res.string.m6_download_like, AutoDownloadOnLikeKey, false))
+    }
+    add(SettingsRow.Action("download_source", Res.string.m6_download_sources, reorder))
+    if (!desktop) {
+        add(SettingsRow.Toggle("external_downloader", Res.string.m6_external_downloader, ExternalDownloaderEnabledKey, false))
+        add(SettingsRow.Text("external_downloader_package", Res.string.m6_external_downloader_package, ExternalDownloaderPackageKey,
+            enabled = preferences[ExternalDownloaderEnabledKey, false]))
     }
 }

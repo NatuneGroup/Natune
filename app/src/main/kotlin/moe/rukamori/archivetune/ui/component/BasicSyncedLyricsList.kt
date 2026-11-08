@@ -315,7 +315,7 @@ private fun BasicSyncedLyricLine(
     val secondary = line is KaraokeLine.AccompanimentKaraokeLine
     val lineStyle = if (secondary) accompanimentLineTextStyle else normalLineTextStyle
     // A word sweep needs real per-word spans. A line-synced row carries a KaraokeLine only to hang its
-    // reading on, and every syllable in it is a peg at the line's own start (see buildLineSyncedLrcLine):
+    // reading on, and every syllable in it is a peg at the line's own start (see buildAlternateLineSyncedLrcLine):
     // sweeping those lights the whole row at one instant and drags it through a completion lift it never
     // earned. Those rows keep the line highlight alone — the row's own fade and pop — which is all their
     // timing supports.

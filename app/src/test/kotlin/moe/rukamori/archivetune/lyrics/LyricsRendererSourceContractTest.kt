@@ -29,11 +29,11 @@ class LyricsRendererSourceContractTest {
     }
 
     @Test fun allRenderersAndSettingsShareFalseJapaneseDefaultAndFullAiEligibility() {
-        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt",
+        listOf("ui/component/NatuneLyricsEnhanced.kt", "ui/component/LyricsAlternateData.kt", "ui/component/LyricsV2.kt",
             "ui/player/simpmusic/SimpMusicLyrics.kt", "ui/screens/settings/LyricsRomanisationSettings.kt").forEach { path ->
             assertTrue(path, Regex("rememberPreference\\(LyricsRomanizeJapaneseKey,\\s*defaultValue = false\\)").containsMatchIn(source(path)))
         }
-        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt", "ui/player/simpmusic/SimpMusicLyrics.kt").forEach { path ->
+        listOf("ui/component/NatuneLyricsEnhanced.kt", "ui/component/LyricsAlternateData.kt", "ui/component/LyricsV2.kt", "ui/player/simpmusic/SimpMusicLyrics.kt").forEach { path ->
             val text = source(path)
             assertTrue(path, text.contains("AiLyricsRomanization.isEligible("))
             assertTrue(path, text.contains("sourceLanguageHints"))
@@ -53,7 +53,7 @@ class LyricsRendererSourceContractTest {
     }
 
     @Test fun lyricsBoxesFadeTheirOwnEdgesWithoutAStackedSecondMask() {
-        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt",
+        listOf("ui/component/LyricsAlternateContent.kt", "ui/component/LyricsV2.kt",
             "ui/player/simpmusic/SimpMusicLyrics.kt").forEach { path ->
             val text = source(path)
             assertTrue(path, text.contains(".lyricsViewportFade("))
@@ -61,9 +61,12 @@ class LyricsRendererSourceContractTest {
         }
         val karaokePane = source("ui/component/EnhancedKaraokePane.kt")
         assertTrue(karaokePane.contains(".lyricsViewportFade("))
-        assertTrue(karaokePane.contains(".outsetKaraokeLibraryMask()"))
-        assertTrue(karaokePane.contains("offset = anchorOffset + KaraokeLibraryTopMask"))
-        assertTrue(source("ui/component/LyricsEnhanced.kt").contains("EnhancedKaraokePane("))
+        assertTrue(karaokePane.contains("BasicSyncedLyricsList("))
+        assertTrue(source("ui/component/LyricsAlternate.kt").contains("EnhancedKaraokePane("))
+        val enhanced = source("ui/component/LyricsEnhanced.kt")
+        assertTrue(enhanced.contains("KaraokeLyricsView("))
+        assertFalse(enhanced.contains("EnhancedKaraokePane("))
+        assertFalse(enhanced.contains(".lyricsViewportFade("))
         assertFalse(source("ui/player/simpmusic/SimpMusicPlayer.kt").contains("smoothFadingEdge"))
         val flamingo = source("ui/player/flamingo/FlamingoPlayer.kt")
         assertFalse(flamingo.contains("FlamingoLyricsEdgeFadeStopsControlsHidden"))

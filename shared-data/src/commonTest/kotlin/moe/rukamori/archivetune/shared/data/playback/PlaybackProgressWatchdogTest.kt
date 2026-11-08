@@ -53,9 +53,11 @@ class PlaybackProgressWatchdogTest {
                 ),
             )
         }
-        // Resumed playback still gets a full window from the last paused read before a stall is claimed.
-        assertFalse(watchdog.observe(state(positionUs = 500_000L), expectProgress = true, nowNanos = start + 11 * TIMEOUT_NANOS - 1))
-        assertTrue(watchdog.observe(state(positionUs = 500_000L), expectProgress = true, nowNanos = start + 11 * TIMEOUT_NANOS))
+        // A host may stop polling during interruption/backgrounding. Resume starts a fresh window.
+        val resumed = start + 20 * TIMEOUT_NANOS
+        assertFalse(watchdog.observe(state(positionUs = 500_000L), true, resumed))
+        assertFalse(watchdog.observe(state(positionUs = 500_000L), true, resumed + TIMEOUT_NANOS - 1))
+        assertTrue(watchdog.observe(state(positionUs = 500_000L), true, resumed + TIMEOUT_NANOS))
     }
 
     @Test
@@ -94,6 +96,16 @@ class PlaybackProgressWatchdogTest {
         assertFalse(watchdog.observe(state(positionUs = 20_000L), expectProgress = true, nowNanos = start + TIMEOUT_NANOS + 1))
         assertFalse(watchdog.observe(state(positionUs = 20_000L), expectProgress = true, nowNanos = start + 2 * TIMEOUT_NANOS))
         assertTrue(watchdog.observe(state(positionUs = 20_000L), expectProgress = true, nowNanos = start + 2 * TIMEOUT_NANOS + 1))
+    }
+
+    @Test
+    fun pauseAfterReportedStallRearmsAndUnknownDurationDoesNotSuppressStalls() {
+        val read = state(durationUs = 0L)
+        assertFalse(watchdog.observe(read, true, 0L))
+        assertTrue(watchdog.observe(read, true, TIMEOUT_NANOS))
+        assertFalse(watchdog.observe(read, false, 2 * TIMEOUT_NANOS))
+        assertFalse(watchdog.observe(read, true, 5 * TIMEOUT_NANOS))
+        assertTrue(watchdog.observe(read, true, 6 * TIMEOUT_NANOS))
     }
 
     private fun state(

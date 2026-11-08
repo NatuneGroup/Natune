@@ -748,3 +748,5 @@ val DesktopArtworkSeedKey = LongPreferenceKey("desktop_artwork_seed")
 /** The stored window-chrome choice; unset means the shell draws its own caption. */
 val PreferenceSnapshot.desktopSystemWindowFrame: Boolean
     get() = this[DesktopSystemWindowFrameKey, false]
+
+val ModulesEnabledKey = BooleanPreferenceKey("modulesEnabled")

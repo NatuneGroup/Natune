@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pool_cached_counts">Cached accounts: %1$d Tidal, %2$d Qobuz, %3$d Deezer, %4$d Apple Music, %5$d Amazon</string>
+    <string name="pool_last_refresh_attempt">Last refresh attempt: %1$s</string>
+    <string name="pool_never_refreshed">Pool has not been refreshed yet</string>
+    <string name="pool_status_ready">Pool feed is available</string>
+    <string name="pool_status_failed">Pool refresh failed; showing cached accounts</string>
+    <string name="pool_key_retry_cooldown">Pool API-key retry is in cooldown. Try again later.</string>
+    <string name="pool_refresh_cancelled">Pool refresh was cancelled. Try again to update the cached accounts.</string>
+</resources>

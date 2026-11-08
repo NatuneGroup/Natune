@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
@@ -296,33 +297,10 @@ private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
 /** Resource labels remain accessible even when a compact circle has no visible caption. */
 @Composable
 internal fun TabMark(tab: ShellTab) {
-    val color = LocalContentColor.current
-    androidx.compose.foundation.Canvas(
-        Modifier.size(24.dp),
-        contentDescription = stringResource(tab.label),
-    ) {
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
-        when (tab) {
-            ShellTab.Home -> {
-                val path = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * .1f, size.height * .45f); lineTo(size.width * .5f, size.height * .1f)
-                    lineTo(size.width * .9f, size.height * .45f); lineTo(size.width * .9f, size.height * .9f)
-                    lineTo(size.width * .1f, size.height * .9f); close()
-                }
-                drawPath(path, color, style = stroke)
-            }
-            ShellTab.Search -> {
-                drawCircle(color, size.width * .3f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * .4f, size.height * .4f), style = stroke)
-                drawLine(color,
-                    androidx.compose.ui.geometry.Offset(size.width * .62f, size.height * .62f),
-                    androidx.compose.ui.geometry.Offset(size.width * .95f, size.height * .95f), strokeWidth = 2.dp.toPx())
-            }
-            ShellTab.Library -> repeat(3) { i ->
-                drawRect(color,
-                    androidx.compose.ui.geometry.Offset(size.width * (.1f + i * .3f), size.height * .15f),
-                    androidx.compose.ui.geometry.Size(size.width * .18f, size.height * .75f), style = stroke)
-            }
-        }
+    val drawable = when (tab) {
+        ShellTab.Home -> Res.drawable.m4_icon_home_outlined
+        ShellTab.Search -> Res.drawable.solar_magnifer_linear
+        ShellTab.Library -> Res.drawable.solar_library_linear
     }
+    Icon(painterResource(drawable), stringResource(tab.label), Modifier.size(24.dp))
 }

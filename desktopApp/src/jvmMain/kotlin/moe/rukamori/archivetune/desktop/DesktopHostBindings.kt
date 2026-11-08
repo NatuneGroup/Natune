@@ -156,6 +156,10 @@ internal fun desktopHostBindings(
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
             DesktopLyricsShareNotice(lyricsTools)
+            // Device Connect spans playback, queue handoff and remote control on this window. Mounting it
+            // once here means an incoming pairing/hand-off prompt or the Connected devices sheet can show
+            // over any page, and its settings row stays reachable through the settings tree.
+            DesktopDeviceConnectHost(graph) { ownRoutes.trySend("settings/integrations/device_connect") }
         },
         playerSlots = { expanded, active, _ -> desktopPlayerSlots(graph, canvas, canvasFrames, lyricsTools, expanded, active) },
         // Native volume and output state come from the same engine as playback.

@@ -20,29 +20,27 @@ internal fun DesktopDeviceConnectSettingsPage(graph: DesktopSessionGraph) {
     val state by manager.state.collectAsState()
     val scope = rememberCoroutineScope()
     val actions = desktopDeviceConnectActions(manager, scope)
-    state.pairing?.let { prompt ->
-        DevicePairingDialog(prompt, onApprove = actions.approvePairing, onReject = actions.rejectPairing)
-    }
-    state.incomingTransfer?.let { request ->
-        DeviceTransferDialog(request, onAccept = actions.acceptTransfer, onDecline = actions.declineTransfer)
-    }
+    // Pairing and incoming-transfer dialogs are owned by [DesktopDeviceConnectHost], mounted over the
+    // whole window, so a request that arrives while this page is closed still shows. This page only
+    // draws its settings rows.
     DeviceConnectSettingsPage(state = state, actions = actions, modifier = Modifier.fillMaxSize())
 }
 
 /**
- * The Connected devices sheet hook for the desktop shell. The shell renders this when
- * [DesktopDeviceConnect.sheetVisible] is true; the settings entry alone is enough until the
- * desktop player chrome owns the entry point.
+ * The desktop Device Connect host, mounted once over the whole window (like the iOS host). It is the
+ * one place that owns the pairing and incoming-transfer dialogs, so a request shows even when neither
+ * the settings page nor the Connected devices sheet is open. The sheet itself appears when
+ * [DesktopDeviceConnect.openConnectedDevices] raises the visible flag, which the settings tree's
+ * Connected devices row calls.
  */
 @Composable
-internal fun DesktopConnectedDevicesSheet(
+internal fun DesktopDeviceConnectHost(
     graph: DesktopSessionGraph,
     onOpenSettings: () -> Unit,
 ) {
     val manager = graph.deviceConnect
-    val visible by manager.sheetVisible.collectAsState()
-    if (!visible) return
     val state by manager.state.collectAsState()
+    val visible by manager.sheetVisible.collectAsState()
     val scope = rememberCoroutineScope()
     val actions = desktopDeviceConnectActions(manager, scope)
     state.pairing?.let { prompt ->
@@ -51,15 +49,17 @@ internal fun DesktopConnectedDevicesSheet(
     state.incomingTransfer?.let { request ->
         DeviceTransferDialog(request, onAccept = actions.acceptTransfer, onDecline = actions.declineTransfer)
     }
-    ConnectedDevicesSheet(
-        state = state,
-        actions = actions,
-        onOpenSettings = {
-            manager.closeConnectedDevices()
-            onOpenSettings()
-        },
-        onDismiss = manager::closeConnectedDevices,
-    )
+    if (visible) {
+        ConnectedDevicesSheet(
+            state = state,
+            actions = actions,
+            onOpenSettings = {
+                manager.closeConnectedDevices()
+                onOpenSettings()
+            },
+            onDismiss = manager::closeConnectedDevices,
+        )
+    }
 }
 
 private fun desktopDeviceConnectActions(manager: DesktopDeviceConnect, scope: CoroutineScope) = DeviceConnectActions(

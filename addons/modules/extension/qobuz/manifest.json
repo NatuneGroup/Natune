@@ -1,0 +1,102 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.qobuz",
+    "name": "Qobuz",
+    "displayName": "Qobuz (Natune)",
+    "icon": "icon.png",
+    "version": "1.1.0",
+    "author": "morieattonkatsu; Natune contributors",
+    "description": "Natune fork: own-account Qobuz FLAC/MP3, signed requests using your app ID/secret, login and one session retry, bounded 429/503 cooldown and fallback only for an explicit unavailable format. Full tracks only; region follows the authenticated account.",
+    "homepage": "https://github.com/NatuneGroup/Natune/tree/feat/r3-modules/addons/modules",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1",
+      "qualityOptions@1"
+    ],
+    "labels": [
+      "FLAC",
+      "Hi-Res",
+      "Lossless",
+      "Subscription"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "appId": {
+        "type": "text",
+        "label": "App ID",
+        "description": "Numeric Qobuz application ID used for API requests.",
+        "defaultValue": null,
+        "required": true
+      },
+      "appSecret": {
+        "type": "password",
+        "label": "App secret",
+        "description": "Secret paired with the app ID. Used to sign stream requests.",
+        "defaultValue": null,
+        "required": true,
+        "secret": true
+      },
+      "userAuthToken": {
+        "type": "password",
+        "label": "User auth token",
+        "description": "Session token for your Qobuz account. Optional when email and password are set.",
+        "defaultValue": null,
+        "secret": true
+      },
+      "email": {
+        "type": "text",
+        "label": "Email",
+        "description": "Qobuz account email. Used with the password when no user auth token is set, or when the token expires.",
+        "defaultValue": null
+      },
+      "password": {
+        "type": "password",
+        "label": "Password",
+        "description": "Qobuz account password. Sent only to Qobuz as an MD5 digest during sign-in.",
+        "defaultValue": null,
+        "secret": true
+      }
+    },
+    "qualityLabel": "Audio quality",
+    "defaultQuality": 6,
+    "qualityOptions": [
+      {
+        "id": 27,
+        "label": "Hi-Res \u00b7 FLAC up to 24-bit/192 kHz",
+        "description": "Highest available resolution. Qobuz serves a lower resolution when the track or plan does not include it.",
+        "kind": "lossless"
+      },
+      {
+        "id": 7,
+        "label": "Hi-Res \u00b7 FLAC up to 24-bit/96 kHz",
+        "description": "Hi-Res capped at 96 kHz to reduce data usage.",
+        "kind": "lossless"
+      },
+      {
+        "id": 6,
+        "label": "CD \u00b7 FLAC 16-bit/44.1 kHz",
+        "description": "CD-quality lossless FLAC.",
+        "kind": "lossless"
+      },
+      {
+        "id": 5,
+        "label": "MP3 \u00b7 320 kbps",
+        "description": "MP3 at 320 kbps to reduce data usage.",
+        "kind": "lossy"
+      }
+    ]
+  }
+}

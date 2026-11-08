@@ -40,6 +40,10 @@ import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
+import moe.rukamori.archivetune.modules.SpotifyMetadataExtensionEnabledKey
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.spotify.SpotifyAccountViewModel
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -66,6 +70,9 @@ fun IntegrationScreen(
     val (usePoolAccounts, onUsePoolAccountsChange) = rememberPreference(UsePoolAccountsKey, true)
 
     val spotifyState by spotifyAccountViewModel.uiState.collectAsStateWithLifecycle()
+    val extensionPrefs = rememberPreferenceSnapshot()
+    val (metadataExtensionEnabled, onMetadataExtensionEnabledChange) = extensionPrefs.state(SpotifyMetadataExtensionEnabledKey,
+        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_METADATA, extensionPrefs.current))
     val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) = rememberPreference(ShowSpotifyPlaylistsKey, false)
     val (syncSpotifyHistory, onSyncSpotifyHistoryChange) = rememberPreference(SpotifyHistorySyncEnabledKey, false)
     var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
@@ -311,6 +318,13 @@ fun IntegrationScreen(
                         .then(positions.modifierFor("spotify")),
                 title = stringResource(R.string.external_sources),
             ) {
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.extensions_spotify_metadata)) },
+                        checked = metadataExtensionEnabled,
+                        onCheckedChange = onMetadataExtensionEnabledChange,
+                    )
+                }
                 spotifyAccountPreferences(
                     state = spotifyState,
                     showPlaylists = showSpotifyPlaylists,

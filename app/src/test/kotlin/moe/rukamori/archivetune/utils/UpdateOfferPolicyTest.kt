@@ -76,4 +76,60 @@ class UpdateOfferPolicyTest {
         assertFalse(updateRequestIsCurrent(b, 11, a, 12))
         assertTrue(updateRequestIsCurrent(a, 12, a, 12))
     }
+
+    private fun offer(code: Int, url: String = "https://example.test/a.apk") =
+        UpdateOffer(UpdateChannel.NIGHTLY, "N20261108", code, "N20261108 (build $code)", null, url)
+
+    @Test
+    fun resolveUpdateAction_newerOfferInstallsOrOpensUrl() {
+        val newer = offer(101)
+        assertEquals(
+            UpdateAction.INSTALL_DIRECT,
+            resolveUpdateAction(newer, installedCode = 100, selectionIsCurrent = true, canInstallDirectly = true),
+        )
+        assertEquals(
+            UpdateAction.OPEN_URL,
+            resolveUpdateAction(newer, installedCode = 100, selectionIsCurrent = true, canInstallDirectly = false),
+        )
+    }
+
+    @Test
+    fun resolveUpdateAction_latestNightlyHasNoOfferAndReportsUpToDate() {
+        // Reported device: N20261108 / versionCode 1794114062 equals the newest published nightly,
+        // so the feed yields no eligible offer. The action must report "up to date" rather than
+        // silently doing nothing, which was the "Update button does nothing" symptom.
+        assertEquals(
+            UpdateAction.UP_TO_DATE,
+            resolveUpdateAction(null, installedCode = 1794114062, selectionIsCurrent = true, canInstallDirectly = true),
+        )
+        // A stale offer already installed, or one captured before a channel switch, is the same.
+        val installed = offer(1794114062)
+        assertEquals(
+            UpdateAction.UP_TO_DATE,
+            resolveUpdateAction(installed, installedCode = 1794114062, selectionIsCurrent = true, canInstallDirectly = true),
+        )
+        assertEquals(
+            UpdateAction.UP_TO_DATE,
+            resolveUpdateAction(installed, installedCode = 1794114062, selectionIsCurrent = false, canInstallDirectly = true),
+        )
+    }
+
+    @Test
+    fun resolveUpdateAction_olderOrEqualOfferNeverInstalls() {
+        for (code in listOf(99, 100)) {
+            assertEquals(
+                UpdateAction.UP_TO_DATE,
+                resolveUpdateAction(offer(code), installedCode = 100, selectionIsCurrent = true, canInstallDirectly = true),
+            )
+        }
+    }
+
+    @Test
+    fun resolveUpdateAction_blankDownloadUrlIsAVisibleError() {
+        val noUrl = offer(101, url = "")
+        assertEquals(
+            UpdateAction.ERROR,
+            resolveUpdateAction(noUrl, installedCode = 100, selectionIsCurrent = true, canInstallDirectly = true),
+        )
+    }
 }

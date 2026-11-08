@@ -205,7 +205,7 @@ private fun ArchiveTuneLoadedRoot(
         val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
         val sheetControls = remember(host.playerControls, interaction) {
-            CollapsingPlayerControls(host.playerControls) { if (!interaction.back()) expanded = false }
+            CollapsingPlayerControls(host.playerControls) { interaction.backOrCollapse { expanded = false } }
         }
         val active = visible && resumed
         val queue by host.queue.state.collectAsState()
@@ -224,13 +224,13 @@ private fun ArchiveTuneLoadedRoot(
                 desktopShell && desktopShellState.expandedPlayer -> desktopShellState.expandedPlayer = false
                 desktopShell && (desktopShellState.queueOpen || desktopShellState.lyricsOpen) ->
                     desktopShellState.closePanes()
-                expanded && interaction.back() -> Unit
-                expanded -> expanded = false
+                expanded -> interaction.backOrCollapse { expanded = false }
                 !navigation.back() -> host.onBackAtRoot()
             }
         }
+        val currentGoBack by rememberUpdatedState(goBack)
         LaunchedEffect(host, navigation, interaction) {
-            host.backRequests.collect { goBack() }
+            host.backRequests.collect { currentGoBack() }
         }
         fun load(request: QueueLoadRequest) {
             host.actionScope.launch {
@@ -391,9 +391,7 @@ private fun ArchiveTuneLoadedRoot(
                             modifier = pageModifier)
                     }
                 }
-                fun playPause() {
-                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                }
+                fun playPause() = host.queue.player.togglePlayPause()
                 fun desktopPlayerAction(action: PlayerAction) =
                     dispatchNativePlayerAction(host.queue.player, host.playerControls, action)
                 fun seekTo(targetMs: Long) = host.queue.player.seekTo(targetMs)

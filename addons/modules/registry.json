@@ -1,0 +1,162 @@
+{
+  "name": "Natune modules",
+  "version": 1,
+  "extensions": [
+    {
+      "id": "app.natune.provider.amazon",
+      "name": "Amazon Music instance",
+      "display_name": "Amazon Music instance",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "Uses Deezer public recording metadata to query the same recording on your authorized Amazon instance, via v2 then v1.5. Requires actual response recording metadata and plaintext audio. Challenge solving, encrypted CENC audio and queued jobs require native playback.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/amazon.arch",
+      "sha256": "0d061133e79062bb31f15a167d2ada7b2efc1b88a2ebe670b6deb28f61df1b8f",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.archivepool",
+      "name": "ArchivePool",
+      "display_name": "ArchivePool",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/archivepool.arch",
+      "sha256": "fa3419c140a461e92e158d6881522516d18396849737d0248b00f6f3ed1724f9",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.deezer",
+      "name": "Deezer instance",
+      "display_name": "Deezer instance",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "Deezer public catalog matched against a user-configured plaintext instance. Probes FLAC/MP3 bytes; never returns public previews. Direct ARL encrypted streams require Natune native playback and are not part of API v1.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/deezer.arch",
+      "sha256": "d14d04e581d8180be746c0d289f6aa14eece9618165aab258e957367982392b8",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    },
+    {
+      "id": "moe.rukamori.provider.jiosaavn",
+      "name": "JioSaavn",
+      "display_name": "JioSaavn",
+      "version": "1.0.0",
+      "author": "morieattonkatsu",
+      "description": "Plays songs from the JioSaavn catalog using the public JioSaavn web player API. Streams are AAC in MP4, at up to 320 kbps when JioSaavn offers that encoding for the track, otherwise 96 kbps. No account is required. Catalog coverage is strongest for Indian music.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/jiosaavn.arch",
+      "sha256": "745f122d761b8dcf117d885f246a28f8ee4274a70edbdf64651de9b59161f55a",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [
+        "AAC"
+      ],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.qobuz",
+      "name": "Qobuz",
+      "display_name": "Qobuz (Natune)",
+      "version": "1.1.0",
+      "author": "morieattonkatsu; Natune contributors",
+      "description": "Natune fork: own-account Qobuz FLAC/MP3, signed requests using your app ID/secret, login and one session retry, bounded 429/503 cooldown and fallback only for an explicit unavailable format. Full tracks only; region follows the authenticated account.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/qobuz.arch",
+      "sha256": "afe871cc0ca483668f33cde2d41651f8153f9a625c93f490302699d56d0e6bc8",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [
+        "FLAC",
+        "Hi-Res",
+        "Lossless",
+        "Subscription"
+      ],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.qobuz.instance",
+      "name": "Qobuz public instance",
+      "display_name": "Qobuz public instance",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "No account required. Uses your community instance /api/get-music and /api/download-music protocols. Direct full audio only; no queued jobs or preview URLs.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/qobuz-instance.arch",
+      "sha256": "6fbc2674071d5453e02bc9d652f5f102e448c12063e8222614153173fe801b65",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.qq",
+      "name": "QQ Music",
+      "display_name": "QQ Music",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "Uses QQ desktop search and your personal entitled Vkey account. Accepts plaintext FLAC, MP3 and unencrypted HLS. Encrypted QMC/eKey resources are refused; native Natune supports them separately.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/qq.arch",
+      "sha256": "f700ea51c1aa738287257953be5894b3a894fe39af414557ee9fdef12696eee6",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.tidal",
+      "name": "TIDAL",
+      "display_name": "TIDAL (Natune)",
+      "version": "1.2.0",
+      "author": "morieattonkatsu; Natune contributors",
+      "description": "Natune fork: own-account TIDAL audio with explicit quality restriction fallback, bounded rate-limit cooldown, optional OAuth refresh and account country lookup. Plain BTS or unprotected inline DASH only. Refreshed tokens stay in runtime memory; configure again after restart if the service rotates your refresh token.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/tidal.arch",
+      "sha256": "8a1b97a874c7adaaf9ac95c40fa44f4968a6d25dafe3562650930d25a5216242",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [
+        "FLAC",
+        "Hi-Res",
+        "Lossless",
+        "Subscription"
+      ],
+      "category": "download"
+    },
+    {
+      "id": "app.natune.provider.tidal.instance",
+      "name": "TIDAL public instance",
+      "display_name": "TIDAL public instance",
+      "version": "1.0.0",
+      "author": "Natune contributors",
+      "description": "No account required. Uses your community instance /search/ and /track/ protocol, plaintext BTS or unprotected DASH. Explicit user endpoint; no embedded account, discovery key or server list.",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/dist/tidal-instance.arch",
+      "sha256": "fa62e835599e9a0124c8f63e6621ea312f493a2a9d9c9799d0ca7f03d8fb7284",
+      "capabilities": [
+        "searchTracks",
+        "getTrackStreamUrl"
+      ],
+      "labels": [],
+      "category": "download"
+    }
+  ]
+}

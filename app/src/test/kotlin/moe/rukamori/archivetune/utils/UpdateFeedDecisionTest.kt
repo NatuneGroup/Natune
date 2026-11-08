@@ -9,8 +9,10 @@
 package moe.rukamori.archivetune.utils
 
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.constants.UpdateChannel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -164,5 +166,39 @@ class UpdateFeedDecisionTest {
             )
 
         assertEquals("https://github.com/NatuneGroup/Natune/releases/tag/N202610131530", release.htmlUrl)
+    }
+
+    @Test
+    fun equalVersionCodeFeedResolvesToVisibleUpToDateAction() {
+        // Reported nightly N20261108: the published manifest's versionCode equals the installed
+        // BuildConfig.VERSION_CODE, so eligibleOffer is null and tapping Update must report
+        // "up to date" instead of silently doing nothing.
+        val release = releaseFor(BuildConfig.VERSION_CODE.toLong())
+        val selectedAsset = selectUpdateFeedAssetUrl(
+            parseUpdateFeedManifest(manifestJson(BuildConfig.VERSION_CODE.toLong()), "nightly")!!.assets,
+            "app-gms-mobile-arm64-nightly.apk",
+        )
+        val offer = Updater.eligibleOffer(release, UpdateChannel.NIGHTLY)
+
+        assertNull("equal versionCode must not produce an offer", offer)
+        assertEquals(
+            "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
+            selectedAsset,
+        )
+        assertEquals(
+            UpdateAction.UP_TO_DATE,
+            resolveUpdateAction(offer, BuildConfig.VERSION_CODE, selectionIsCurrent = true, canInstallDirectly = true),
+        )
+    }
+
+    @Test
+    fun greaterVersionCodeFeedResolvesToInstallAction() {
+        val release = releaseFor((BuildConfig.VERSION_CODE + 1).toLong())
+        val offer = Updater.eligibleOffer(release, UpdateChannel.NIGHTLY)!!
+
+        assertEquals(
+            UpdateAction.INSTALL_DIRECT,
+            resolveUpdateAction(offer, BuildConfig.VERSION_CODE, selectionIsCurrent = true, canInstallDirectly = true),
+        )
     }
 }

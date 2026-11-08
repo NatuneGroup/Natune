@@ -1,0 +1,101 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.tidal",
+    "name": "TIDAL",
+    "displayName": "TIDAL (Natune)",
+    "icon": "icon.png",
+    "version": "1.2.0",
+    "author": "morieattonkatsu; Natune contributors",
+    "description": "Natune fork: own-account TIDAL audio with explicit quality restriction fallback, bounded rate-limit cooldown, optional OAuth refresh and account country lookup. Plain BTS or unprotected inline DASH only. Refreshed tokens stay in runtime memory; configure again after restart if the service rotates your refresh token.",
+    "homepage": "https://github.com/NatuneGroup/Natune/tree/feat/r3-modules/addons/modules",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1",
+      "qualityOptions@1"
+    ],
+    "labels": [
+      "FLAC",
+      "Hi-Res",
+      "Lossless",
+      "Subscription"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "accessToken": {
+        "type": "password",
+        "label": "Access token",
+        "description": "Static OAuth access token for your TIDAL account. Replace it here when it expires.",
+        "defaultValue": null,
+        "secret": true
+      },
+      "countryCode": {
+        "type": "text",
+        "label": "Country code",
+        "description": "Two-letter catalog region, such as US. Leave empty to use your account's region.",
+        "defaultValue": null
+      },
+      "refreshToken": {
+        "type": "password",
+        "label": "Refresh token",
+        "description": "Optional personal OAuth refresh token. Rotated tokens are retained only while the engine lives.",
+        "defaultValue": null,
+        "secret": true
+      },
+      "clientId": {
+        "type": "text",
+        "label": "OAuth client ID",
+        "description": "Your OAuth client identifier for token refresh; no identifier is bundled.",
+        "defaultValue": null,
+        "secret": false
+      },
+      "clientSecret": {
+        "type": "password",
+        "label": "OAuth client secret",
+        "description": "Optional confidential OAuth client secret, only when required by your client.",
+        "defaultValue": null,
+        "secret": true
+      }
+    },
+    "qualityLabel": "Audio quality",
+    "defaultQuality": "LOSSLESS",
+    "qualityOptions": [
+      {
+        "id": "HI_RES_LOSSLESS",
+        "label": "Max \u00b7 Hi-Res FLAC",
+        "description": "Up to 24-bit/192 kHz FLAC delivered through DASH. TIDAL returns lossless when a track or client has no Hi-Res version.",
+        "kind": "lossless"
+      },
+      {
+        "id": "LOSSLESS",
+        "label": "High \u00b7 FLAC 16-bit/44.1 kHz",
+        "description": "CD-quality FLAC as a single file.",
+        "kind": "lossless"
+      },
+      {
+        "id": "HIGH",
+        "label": "Low \u00b7 AAC 320 kbps",
+        "description": "AAC at 320 kbps.",
+        "kind": "lossy"
+      },
+      {
+        "id": "LOW",
+        "label": "Data saver \u00b7 AAC 96 kbps",
+        "description": "AAC at 96 kbps to reduce data usage.",
+        "kind": "lossy"
+      }
+    ]
+  }
+}

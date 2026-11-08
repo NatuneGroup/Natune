@@ -33,6 +33,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.modules.NativeExtensionPolicy
 import moe.rukamori.archivetune.constants.SpotifyAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.constants.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.constants.SpotifyAccountAvatarUrlKey
@@ -79,7 +81,7 @@ class SpotifyLibraryRepository
         val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
         internal val accountChanges = context.dataStore.data
-            .map { it[SpotifySpDcKey].orEmpty() }
+            .map { it[SpotifySpDcKey].orEmpty() to NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_METADATA, it) }
             .distinctUntilChanged()
             .map { Unit }
 
@@ -438,6 +440,7 @@ class SpotifyLibraryRepository
          */
         suspend fun recentlyPlayed(force: Boolean = false): List<SpotifyPlayHistory> =
             withContext(Dispatchers.IO) {
+                if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_METADATA, context.dataStore.data.first())) return@withContext emptyList()
                 recentlyPlayedMutex.withLock {
                     if (recentlyPlayedCache == null) restoreCachedRecentlyPlayed()
                     val cached = recentlyPlayedCache
@@ -653,6 +656,7 @@ class SpotifyLibraryRepository
          */
         suspend fun enrichMetadata(metadata: MediaMetadata): MediaMetadata? =
             withContext(Dispatchers.IO) {
+                if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_METADATA, context.dataStore.data.first())) return@withContext null
                 if (metadata.spotifyTrackId != null) return@withContext metadata
                 val cacheKey = "${metadata.id}|${metadata.title}|${metadata.artists.joinToString { it.name }}"
                 val now = System.currentTimeMillis()
@@ -732,20 +736,8 @@ class SpotifyLibraryRepository
                 Spotify.accessToken?.takeIf { it.isNotBlank() }
             }.getOrNull()
 
-        private suspend fun ensureAuthenticated() {
-            val prefs = context.dataStore.data.first()
-            val token = prefs[SpotifyAccessTokenKey].orEmpty()
-            val expiresAt = prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L
-            if (token.isNotBlank() && expiresAt > System.currentTimeMillis() + TOKEN_EXPIRY_GRACE_MS) {
-                Spotify.accessToken = token
-                return
-            }
-
-            val spDc = prefs[SpotifySpDcKey].orEmpty()
-            if (spDc.isBlank()) {
-                throw IllegalStateException(context.getString(R.string.spotify_not_connected))
-            }
-            refreshAccessToken(spDc = spDc, spKey = prefs[SpotifySpKeyKey].orEmpty()).getOrThrow()
+        private suspend fun ensureAuthenticated() = ensureSpotifyCatalogAuthenticated(context) { spDc, spKey ->
+            refreshAccessToken(spDc, spKey).getOrThrow()
         }
 
         private suspend fun refreshAccessToken(

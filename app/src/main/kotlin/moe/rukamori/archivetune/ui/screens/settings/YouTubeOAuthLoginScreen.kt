@@ -66,6 +66,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -75,7 +76,6 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.auth.YouTubeOAuthRepository
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
-import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
 
@@ -150,10 +150,11 @@ fun YouTubeOAuthLoginScreen(navController: NavController) {
         topBar = {
             LargeFlexibleTopAppBar(
                 title = {
-                    MarqueeText(
+                    Text(
                         text = stringResource(R.string.yt_oauth_sign_in),
                         fontWeight = FontWeight.Bold,
-                        phaseKey = R.string.yt_oauth_sign_in,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {

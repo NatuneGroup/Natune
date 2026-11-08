@@ -276,7 +276,7 @@ class IosYouTubeBrowseTransport(
             kind = ContentKind.SONG,
             id = videoId,
             title = title,
-            subtitle = item.longBylineText?.runs?.text().orEmpty(),
+            subtitle = youTubeArtistSubtitle(artists, item.longBylineText?.runs?.text().orEmpty()),
             artworkUri = item.thumbnail?.thumbnails?.lastOrNull()?.url,
             durationSeconds = item.lengthText?.runs?.text()?.toSeconds(),
             explicit = item.badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
@@ -541,7 +541,7 @@ private fun ResponsiveItem.toEntry(): YouTubeEntry? {
         kind = kind,
         id = id,
         title = title,
-        subtitle = artists.joinToString(", ") { it.name }.ifBlank { groups.firstOrNull()?.text().orEmpty() },
+        subtitle = youTubeArtistSubtitle(artists, groups.firstOrNull()?.text().orEmpty()),
         artworkUri = thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
         durationSeconds = duration?.toSeconds(),
         explicit = badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
@@ -579,16 +579,7 @@ private fun String.contentKind(): ContentKind? =
     }
 
 private fun List<List<Run>>.artistCredits(): List<ContentCredit> =
-    firstOrNull()?.mapNotNull { run ->
-        val browseId = run.navigationEndpoint?.browseEndpoint?.browseId
-        val text = run.text.takeIf(String::isNotBlank)
-        when {
-            text == null -> null
-            browseId != null && (browseId.startsWith("UC") || browseId.startsWith("FEMC")) ->
-                ContentCredit(text, browseId)
-            else -> null
-        }
-    }.orEmpty()
+    youTubeArtistCredits(this, { it.text }, { it.navigationEndpoint?.browseEndpoint?.browseId })
 
 /** The (browseId, title) of the album credit, keyed on the album browse id's MPRE prefix. */
 private fun Run.albumId(): Pair<String, String>? {
@@ -601,11 +592,13 @@ private fun TwoRowItem.toEntry(): YouTubeEntry? {
     val kind = navigationEndpoint.endpointKind() ?: return null
     val id = navigationEndpoint.endpointId() ?: return null
     val name = title?.runs?.text().takeUnless { it.isNullOrBlank() } ?: return null
+    val artists = subtitle?.runs?.splitBySeparator().orEmpty().artistCredits()
     return YouTubeEntry(
         kind = kind,
         id = id,
         title = name,
-        subtitle = subtitle?.runs?.text().orEmpty(),
+        subtitle = youTubeArtistSubtitle(artists, subtitle?.runs?.text().orEmpty()),
+        artists = artists,
         artworkUri = thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
     )
 }

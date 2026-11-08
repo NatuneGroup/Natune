@@ -27,7 +27,10 @@ import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.audiosource.DirectStream
-import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.TidalFailureKind
+import moe.rukamori.archivetune.shared.data.provider.TidalPlaybackFailure
+import moe.rukamori.archivetune.shared.data.provider.classifyTidalFailure
+import moe.rukamori.archivetune.shared.data.provider.resolveTidalQuality
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -410,21 +413,26 @@ object TidalAccountManager {
     ): DirectStream? =
         AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
             withContext(Dispatchers.IO) {
-            val country = countryCode.ifBlank { COUNTRY_CODE }
-            val match = searchTrack(accessToken, title, artists, durationMs, country) ?: return@withContext null
-            resolvePlaybackInfo(
-                accessToken = accessToken,
-                trackId = match.id,
-                audioQuality = audioQuality,
-                durationMs = durationMs,
-                cacheDir = cacheDir,
-                preferLiveDash = preferLiveDash,
-            )?.copy(
-                matchedTitle = match.title,
-                matchedArtist = match.artist,
-                matchedAlbum = match.album,
-                matchedDurationMs = match.durationMs,
-            )
+                val country = countryCode.ifBlank { COUNTRY_CODE }
+                val match = searchTrack(accessToken, title, artists, durationMs, country) ?: return@withContext null
+                resolveTidalQuality(audioQuality, onDowngrade = { from, to ->
+                    Timber.tag("TidalAccount").i("TIDAL subscription quality restricted: %s -> %s; keeping credential", from, to)
+                }) { allowedQuality ->
+                    resolvePlaybackInfo(
+                        accessToken = accessToken,
+                        trackId = match.id,
+                        audioQuality = allowedQuality,
+                        durationMs = durationMs,
+                        cacheDir = cacheDir,
+                        preferLiveDash = preferLiveDash,
+                        countryCode = country,
+                    )
+                }?.copy(
+                    matchedTitle = match.title,
+                    matchedArtist = match.artist,
+                    matchedAlbum = match.album,
+                    matchedDurationMs = match.durationMs,
+                )
             }
         } ?: null
 
@@ -447,8 +455,7 @@ object TidalAccountManager {
                 .build()
         return runCatching {
             resolveClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                if (response.code == 401) throw TidalUnauthorizedException()
-                if (!response.isSuccessful) throw ProviderHttpFailure(response.code)
+                if (!response.isSuccessful) throw accountFailure(response)
                 val payload = response.body?.string().orEmpty()
                 if (payload.isBlank()) return@use null
                 val items = JSONObject(payload).optJSONArray("items") ?: return@use null
@@ -499,7 +506,7 @@ object TidalAccountManager {
             }
         }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             if (it is TidalUnauthorizedException) throw it
-            if (it is ProviderHttpFailure) throw it
+            if (it is TidalPlaybackFailure) throw it
             Timber.tag("TidalAccount").w(it, "account track search error")
             null
         }
@@ -518,23 +525,23 @@ object TidalAccountManager {
         durationMs: Long?,
         cacheDir: File,
         preferLiveDash: Boolean,
+        countryCode: String,
     ): DirectStream? {
         val url =
             "$API_BASE/tracks/$trackId/playbackinfopostpaywall" +
-                "?audioquality=$audioQuality&playbackmode=STREAM&assetpresentation=FULL"
+                "?audioquality=$audioQuality&playbackmode=STREAM&assetpresentation=FULL&countryCode=$countryCode"
         val request =
             Request
                 .Builder()
                 .url(url)
                 .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
                 .get()
                 .build()
         return runCatching {
             resolveClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                if (response.code == 401) throw TidalUnauthorizedException()
                 if (!response.isSuccessful) {
-                    Timber.tag("TidalAccount").w("playbackinfo failed: %d", response.code)
-                    throw ProviderHttpFailure(response.code)
+                    throw accountFailure(response)
                 }
                 val payload = response.body?.string().orEmpty()
                 if (payload.isBlank()) return@use null
@@ -546,11 +553,13 @@ object TidalAccountManager {
                 }
                 val manifestB64 = json.optString("manifest").takeIf { it.isNotBlank() } ?: return@use null
                 val manifestMime = json.optString("manifestMimeType").ifBlank { null }
+                val deliveredQuality = json.optString("audioQuality").ifBlank { audioQuality }
+                Timber.tag("TidalAccount").i("TIDAL full playback manifest: requested=%s delivered=%s", audioQuality, deliveredQuality)
                 TidalAudioProvider.resolveAccountManifest(
                     manifestB64 = manifestB64,
                     declaredMimeType = manifestMime,
                     trackId = trackId,
-                    quality = audioQuality,
+                    quality = deliveredQuality,
                     durationMs = durationMs,
                     cacheDir = cacheDir,
                     preferLiveDash = preferLiveDash,
@@ -558,10 +567,23 @@ object TidalAccountManager {
             }
         }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             if (it is TidalUnauthorizedException) throw it
-            if (it is ProviderHttpFailure) throw it
+            if (it is TidalPlaybackFailure) throw it
             Timber.tag("TidalAccount").w(it, "playbackinfo error")
             null
         }
+    }
+
+    /** Read the error before interpreting 401: 401/5003 is a subscription ceiling, not token rejection. */
+    private fun accountFailure(response: okhttp3.Response): Exception {
+        val json = runCatching { JSONObject(response.body?.string().orEmpty()) }
+            .onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
+        val subStatus = json?.optInt("subStatus")?.takeIf { it > 0 }
+        val kind = classifyTidalFailure(response.code, subStatus, json?.optString("userMessage"))
+        Timber.tag("TidalAccount").w("TIDAL account API refused: HTTP=%d substatus=%s kind=%s", response.code, subStatus, kind)
+        if (kind == TidalFailureKind.AUTH_REJECTED && response.code == 401) return TidalUnauthorizedException()
+        val retryAfterMs = response.header("Retry-After")?.toLongOrNull()
+            ?.coerceIn(0L, 600L)?.times(1000L)
+        return TidalPlaybackFailure(response.code, subStatus, kind, retryAfterMs)
     }
 
     // Lyrics (official API, needs a bearer token)

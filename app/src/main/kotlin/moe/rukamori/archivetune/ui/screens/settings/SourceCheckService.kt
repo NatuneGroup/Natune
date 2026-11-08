@@ -14,6 +14,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.constants.AmazonBypassTokenKey
 import moe.rukamori.archivetune.constants.AmazonInstancesKey
@@ -75,6 +76,7 @@ object SourceCheckService {
                 AudioSourceType.DEEZER -> checkDeezer(context)
                 AudioSourceType.APPLE -> checkAppleMusic()
                 AudioSourceType.AMAZON -> checkAmazon(context)
+                AudioSourceType.MODULES -> SourceCheckResult(healthy = false, summary = context.getString(R.string.modules_check_in_settings))
                 AudioSourceType.QQ -> checkQqMusic(context)
                 AudioSourceType.SPOTIFY -> checkSpotifyStream(context)
                 AudioSourceType.JIOSAAVN -> checkJioSaavn()

@@ -93,19 +93,22 @@ fun controllerPlayerActions(
     onAction: (PlayerAction) -> Unit,
     onLyricsVisibility: (Boolean) -> Unit,
 ): PlayerActions = PlayerActions(
-    playPause = {
-        val snapshot = controller.snapshot.value
-        if (snapshot?.isEnded == true) {
-            controller.seekTo(0L)
-            controller.play()
-        } else if (snapshot?.playWhenReady == true) controller.pause() else controller.play()
-    },
+    playPause = { controller.togglePlayPause() },
     seekTo = controller::seekTo,
     selectOccurrence = selectOccurrence,
     setVolume = setVolume,
     onAction = onAction,
     onLyricsVisibility = onLyricsVisibility,
 )
+
+/** The full player and mini player use the same replay behaviour. */
+internal fun MusicPlayerController.togglePlayPause() {
+    val current = snapshot.value
+    if (current?.isEnded == true) {
+        seekTo(0L)
+        play()
+    } else if (current?.playWhenReady == true) pause() else play()
+}
 
 /**
  * All media/lyrics/queue surfaces are supplied by their real owners. No decoder, renderer, queue

@@ -83,6 +83,7 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.spotify.SpotifyMapper
@@ -125,6 +126,10 @@ fun SpotifyPlaylistScreen(
     scrollBehavior: TopAppBarScrollBehavior,
     viewModel: SpotifyPlaylistViewModel = hiltViewModel(),
 ) {
+    if (!rememberSpotifyMetadataExtensionEnabled()) {
+        Text(stringResource(R.string.extensions_disabled))
+        return
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadUtil = LocalDownloadUtil.current
     val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
