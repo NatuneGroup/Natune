@@ -353,6 +353,8 @@ internal suspend fun iosLaneCheckSource(
     AudioSourceType.QQ -> iosLaneProbe(http, "https://c.y.qq.com/")
     // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
     AudioSourceType.SPOTIFY -> false
+    // Modules run only in the Android host.
+    AudioSourceType.MODULES -> false
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
     AudioSourceType.YOUTUBE -> iosLaneProbe(http, "https://music.youtube.com/generate_204")

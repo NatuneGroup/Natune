@@ -418,7 +418,7 @@ private fun DownloadSource.displayName(): String =
         DownloadSource.QOBUZ_BACKUP -> "Qobuz Backup"
         DownloadSource.TIDAL -> "Tidal"
         DownloadSource.DEEZER -> "Deezer"
-        DownloadSource.MODULES -> context.getString(R.string.modules_title)
+        DownloadSource.MODULES -> "Modules"
         DownloadSource.JIOSAAVN -> "JioSaavn"
         DownloadSource.YOUTUBE_MUSIC -> "YouTube Music"
     }
