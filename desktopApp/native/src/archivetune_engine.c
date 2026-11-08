@@ -157,6 +157,8 @@ struct ae_engine {
     uint64_t output_revision;
     uint32_t ring_head;
     uint32_t ring_count;
+    uint32_t output_drain_frames;
+    uint64_t output_tail_frames;
 
     uint32_t seg_head;
     uint32_t seg_count;
@@ -309,6 +311,7 @@ static void close_stream_io(const ae_stream_io *io) {
  * ---------------------------------------------------------------------------------------------- */
 
 static void ring_clear_locked(ae_engine *e) {
+    e->output_tail_frames = 0;
     e->quiet_frames = 0;
     e->ring_head = 0;
     e->ring_count = 0;

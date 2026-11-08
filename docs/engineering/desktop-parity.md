@@ -250,8 +250,8 @@ edited. All new UI regressions await the orchestrator's follow-up PR CI; only th
 permitted repository check ran locally.
 
 Remaining material boundaries include module DASH/live/master or protected
-manifest forms, Android binary extensions, protected Apple audio, bit-perfect/USB
-output, Cast/output routing and voice capture. They need additional platform or
+manifest forms, Android binary extensions, protected Apple audio, raw USB host
+control, Cast/output routing and voice capture. They need additional platform or
 provider adapters. Scheduled backups still require a running desktop process, and
 advanced Automix/refraction remain limited by the current mixer/renderer. Live
 accounts, clipboard integration, physical output and the reported nightly UI
@@ -262,9 +262,14 @@ behavior need Windows/Linux runtime validation.
 - Other unofficial Spotify methods and protected Apple playback require licensed
   WebView/MediaDrm/CDM hosts absent from this JVM adapter. Echo/Librespot remain
   independently selected, and refusal keeps the established source fallback.
-- Bit-perfect and USB-exclusive output stay disabled: the existing decoder and
-  two-deck miniaudio output use mixed float PCM at a fixed output rate. There is no
-  validated WASAPI-exclusive/ALSA-hw format/route negotiation or raw USB host.
+- Optional exclusive output now uses WASAPI exclusive on Windows, direct ALSA
+  `hw:` on Linux, and Core Audio hog ownership with native rate/physical-format
+  selection on macOS. The decoded integer/float lane bypasses software stages;
+  rate/format changes reopen the sink, and device refusal has a visible shared
+  fallback. Output settings retain the device picker and publish sink diagnostics.
+  The raw lane drains the negotiated hardware queue after its last PCM before
+  closing on EOF or a format change. Stop/seek still discard obsolete output.
+  Physical DAC behavior remains unverified; raw USB-host control is not implemented.
 - Google Cast and speech search have no portable receiver/STT host in the retained
   dependencies. OS routing and microphone recognition are existing separate features.
 - Folder/Drive schedules remain process-bound. A standalone OS service/task entry

@@ -207,7 +207,7 @@ static void direct_pcm_fixture(uint32_t bits, uint32_t transport) {
     }
     CHECK(format.rate == 44100 && format.channels == 2 && format.bits == bits);
     format.format = transport;
-    CHECK(ae_engine_configure_output(engine, 1, &format));
+    CHECK(ae_engine_configure_output(engine, 1, &format, 24));
     uint32_t sample_bytes = pcm_bytes(transport), total = 0;
     uint8_t out[8 * 2 * 4];
     ae_snapshot snapshot;
@@ -229,6 +229,21 @@ static void direct_pcm_fixture(uint32_t bits, uint32_t transport) {
         if (!count) { struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL); }
     } while (!(snapshot.flags & AE_FLAG_ENDED));
     CHECK(total == 256 && llabs(snapshot.position_us - llround(256.0 * 1e6 / 44100.0)) <= 1);
+    /* The hardware queue must empty after the last real sample. Silence never advances position. */
+    pthread_mutex_lock(&engine->mutex);
+    ring_clear_locked(engine);
+    engine->ended = 0; engine->ready = 1; engine->play_intent = 1; engine->eof = 1;
+    engine->output_tail_frames = 24;
+    pthread_mutex_unlock(&engine->mutex);
+    for (uint32_t tail = 0; tail < 3; tail++) {
+        in_callback = 1;
+        CHECK(ae_engine_pull_native(engine, out, 8, &format) == 0);
+        in_callback = 0;
+        ae_engine_snapshot(engine, &snapshot);
+        CHECK(!!(snapshot.flags & AE_FLAG_ENDED) == (tail == 2));
+        CHECK(llabs(snapshot.position_us - llround(256.0 * 1e6 / 44100.0)) <= 1);
+        for (size_t byte = 0; byte < 8u * 2u * sample_bytes; byte++) CHECK(out[byte] == 0);
+    }
     ae_engine_destroy(engine);
     CHECK(memory.closes == 1);
     printf("PASS direct PCM %ubit through native format %u, exact integers and no software processing\n", bits, transport);

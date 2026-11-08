@@ -31,6 +31,8 @@ typedef void (*ae_device_raw_pull)(void *user, void *out, uint32_t frames);
 ae_device *ae_device_open_pcm(const ae_device_request *request, ae_device_raw_pull pull, void *user,
                              char *error, size_t error_len);
 void ae_device_state_read(ae_device *device, ae_device_state *state);
+/* Negotiated hardware queue depth; the raw lane renders silence for this tail before closing. */
+uint32_t ae_device_buffer_frames(ae_device *device);
 uint32_t ae_device_list(ae_device_description *out, uint32_t capacity, char *error, size_t error_len);
 
 /* Called on the audio thread. It must fill exactly frames interleaved stereo float frames. */
