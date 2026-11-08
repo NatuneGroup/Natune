@@ -85,7 +85,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/theme_creator", "settings/appearance/navigation_bar",
-    "settings/appearance/aod_customized",
+    "settings/appearance/aod_customized", "settings/appearance/liquid_glass", "settings/discord/experimental",
     "settings/android_auto", "settings/modules", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
