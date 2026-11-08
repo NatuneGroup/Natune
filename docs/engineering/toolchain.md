@@ -55,5 +55,6 @@ Release shrinking/signing or device behavior.
 - `:spotifycore`
 - `:deobfuscator`
 - `:jiosaavn`
+- `:modules`
 
 Submodule pins and initialization remain separate from this generated reference.

@@ -306,6 +306,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.APPLE -> probeReachable("https://amp-api.music.apple.com/v1/catalog/us/genres")
                 AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
                     ?.let { probeReachable(it) } ?: false
+                AudioSourceType.MODULES -> false // Android-only module host
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY ->
                     preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective())

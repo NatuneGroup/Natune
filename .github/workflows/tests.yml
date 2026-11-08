@@ -61,6 +61,10 @@ jobs:
         timeout-minutes: 2
         run: chmod +x gradlew
 
+      - name: Source module runtime fixtures
+        run: node --test addons/modules/tests/providers.test.js
+        timeout-minutes: 2
+
       - name: Run unit tests
         shell: bash
         # The job timeout is the outer bound; the step bound keeps a hung Gradle invocation from

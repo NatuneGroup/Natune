@@ -121,7 +121,7 @@ object PlaybackSourceChain {
             AudioSourceType.DEEZER -> "deezer:$mediaId"
             AudioSourceType.JIOSAAVN -> "jiosaavn:$mediaId"
             AudioSourceType.YOUTUBE -> mediaId
-            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
+            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY, AudioSourceType.MODULES -> null
         }
 
     /**

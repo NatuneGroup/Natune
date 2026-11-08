@@ -75,6 +75,7 @@ object SourceCheckService {
                 AudioSourceType.DEEZER -> checkDeezer(context)
                 AudioSourceType.APPLE -> checkAppleMusic()
                 AudioSourceType.AMAZON -> checkAmazon(context)
+                AudioSourceType.MODULES -> SourceCheckResult(healthy = false, summary = context.getString(R.string.modules_check_in_settings))
                 AudioSourceType.QQ -> checkQqMusic(context)
                 AudioSourceType.SPOTIFY -> checkSpotifyStream(context)
                 AudioSourceType.JIOSAAVN -> checkJioSaavn()

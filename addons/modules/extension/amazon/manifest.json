@@ -1,0 +1,74 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.amazon",
+    "name": "Amazon Music instance",
+    "displayName": "Amazon Music instance",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "Uses Deezer public recording metadata to query the same recording on your authorized Amazon instance, via v2 then v1.5. Requires actual response recording metadata and plaintext audio. Challenge solving, encrypted CENC audio and queued jobs require native playback.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "description": "Your HTTPS community or private instance; no built-in account or server list.",
+        "defaultValue": null,
+        "required": true
+      },
+      "operatorToken": {
+        "type": "password",
+        "label": "Operator token",
+        "description": "Your authorized instance token, if required.",
+        "defaultValue": null,
+        "required": false,
+        "secret": true
+      },
+      "turnstileJwt": {
+        "type": "password",
+        "label": "Turnstile JWT",
+        "description": "A legitimate instance-issued challenge session, if required.",
+        "defaultValue": null,
+        "required": false,
+        "secret": true
+      },
+      "quality": {
+        "type": "select",
+        "label": "Audio quality",
+        "description": "",
+        "defaultValue": "LOSSLESS",
+        "required": false,
+        "options": [
+          {
+            "label": "Lossless",
+            "value": "LOSSLESS"
+          },
+          {
+            "label": "Hi-Res",
+            "value": "HI_RES"
+          },
+          {
+            "label": "High",
+            "value": "HIGH"
+          }
+        ]
+      }
+    }
+  }
+}

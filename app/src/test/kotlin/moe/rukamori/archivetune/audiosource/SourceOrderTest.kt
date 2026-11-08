@@ -45,6 +45,7 @@ class SourceOrderTest {
         assertFalseByDefault(AudioSourceType.SPOTIFY)
         assertFalseByDefault(AudioSourceType.AMAZON)
         assertFalseByDefault(AudioSourceType.QQ)
+        assertFalseByDefault(AudioSourceType.MODULES)
         assertTrue(AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL))
         assertTrue(AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE))
     }
@@ -70,6 +71,7 @@ class SourceOrderTest {
                 AudioSourceType.JIOSAAVN,
                 AudioSourceType.AMAZON,
                 AudioSourceType.QQ,
+                AudioSourceType.MODULES,
                 AudioSourceType.SPOTIFY,
                 AudioSourceType.YOUTUBE,
             ),
