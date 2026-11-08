@@ -84,7 +84,7 @@ class ModuleTrackMetadataRepository @Inject constructor(private val database: Mu
         database.withTransaction {
             getSongByIdBlocking(id)?.let { item ->
                 ModuleMatchMetadata(item.title, item.artists.map { it.name }, item.song.albumName, item.song.duration,
-                    item.song.explicit.takeIf { it }, !item.song.isLocal && !item.song.isPodcast && !item.song.isMusicVideo)
+                    item.song.explicit.takeIf { it }, !item.song.isLocal && !item.song.isMusicVideo && podcastProgress.read(id) == null)
             }
         }
     }
