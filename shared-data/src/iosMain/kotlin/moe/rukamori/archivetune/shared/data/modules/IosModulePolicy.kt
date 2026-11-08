@@ -86,10 +86,12 @@ internal fun validateModuleMetadata(metadata: JsonObject): JsonObject {
         moduleRequire(min == null || max == null || min <= max)
         moduleRequire(moduleSettingAccepts(field, field["defaultValue"] ?: field["value"] ?: JsonNull, required = false))
     }
-    return JsonObject(metadata + ("settings" to JsonObject(fields)))
+    // The stored descriptor is validated again when listed; retain only the normalized field.
+    return JsonObject((metadata - "qualityOptions") + ("settings" to JsonObject(fields)))
 }
 
-internal fun optionValue(option: JsonElement): JsonElement = (option as? JsonObject)?.get("value") ?: option
+internal fun optionValue(option: JsonElement): JsonElement =
+    (option as? JsonObject)?.let { it["value"] ?: it["id"] } ?: option
 
 internal fun moduleSettingAccepts(field: JsonObject, value: JsonElement, required: Boolean = true): Boolean {
     if (value == JsonNull) return !required || field["required"]?.jsonPrimitive?.booleanOrNull != true

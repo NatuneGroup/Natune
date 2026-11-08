@@ -30,4 +30,18 @@ class IosModulePolicyTest {
         assertNull(moduleDurationMs(buildJsonObject { put("duration", 1_000_000) }))
         assertNull(moduleDurationMs(JsonObject(emptyMap())))
     }
+
+    @Test fun apiV1QualityIdsAreScalarSettings() {
+        val meta = validateModuleMetadata(JsonObject(metadata(JsonPrimitive("qualityOptions@1")) + mapOf(
+            "defaultQuality" to JsonPrimitive("LOSSLESS"),
+            "qualityOptions" to buildJsonArray {
+                add(buildJsonObject { put("id", "LOSSLESS"); put("label", "Lossless") })
+                add(buildJsonObject { put("id", "HIGH"); put("label", "AAC") })
+            },
+        )))
+        assertEquals(meta, validateModuleMetadata(meta))
+        assertEquals(JsonPrimitive("LOSSLESS"), moduleSettings(meta, JsonObject(emptyMap()))["quality"]?.jsonObject?.get("value"))
+        assertEquals(JsonPrimitive("HIGH"), moduleSettings(meta, buildJsonObject { put("quality", "HIGH") })["quality"]?.jsonObject?.get("value"))
+        assertFailsWith<IosModuleFailure> { moduleSettings(meta, buildJsonObject { put("quality", "DRM") }) }
+    }
 }
