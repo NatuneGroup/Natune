@@ -34,13 +34,18 @@ internal class DesktopAudioSources(
     val admissions: DesktopSourceAdmissions,
     tidalSessionRefresh: TidalSessionRefresh? = null,
     pool: DesktopPlaybackPool? = null,
+    cacheDirectory: java.nio.file.Path = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "natune-librespot"),
+    modules: DesktopModules? = null,
 ) {
+    private val librespot = DesktopSpotifyLibrespotAudio(http, preferences, admissions, cacheDirectory)
+    fun bindLibrespotAccessToken(provider: suspend () -> String?) { librespot.accessToken = provider }
+    fun revokeLibrespot() { moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative.close() }
     private val qobuz = DesktopQobuzSource(http, preferences, admissions, pool)
     private val spotify = DesktopSpotifySource(http, preferences, admissions,
-        DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) })
+        DesktopSpotifyEchoConfiguration.supplied()?.let { DesktopSpotifyEchoClient(http, it) }, librespot)
     private val retained = desktopAudioProviders(http, accounts, preferences, tidalSessionRefresh, pool)
     val providers: List<AudioProviderRepository> = retained +
-        listOf(qobuz, DesktopAppleMusicSource(http, preferences), DesktopAmazonSource(http, preferences), spotify)
+        listOf(qobuz, DesktopAppleMusicSource(http, preferences), DesktopAmazonSource(http, preferences, pool = pool, admissions = admissions), spotify) + listOfNotNull(modules)
     private val deezerCatalogue = KtorDeezerRepository(http, System::currentTimeMillis)
     private val amazonSuggestions = KtorAmazonSourceSuggestions(http)
 
@@ -90,4 +95,6 @@ internal fun desktopAudioSources(
     admissions: DesktopSourceAdmissions,
     tidalSessionRefresh: TidalSessionRefresh? = null,
     pool: DesktopPlaybackPool? = null,
-): DesktopAudioSources = DesktopAudioSources(http, accounts, preferences, admissions, tidalSessionRefresh, pool)
+    cacheDirectory: java.nio.file.Path = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "natune-librespot"),
+    modules: DesktopModules? = null,
+): DesktopAudioSources = DesktopAudioSources(http, accounts, preferences, admissions, tidalSessionRefresh, pool, cacheDirectory, modules)

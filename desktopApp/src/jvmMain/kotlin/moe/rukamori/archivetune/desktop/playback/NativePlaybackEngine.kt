@@ -27,6 +27,10 @@ internal class NativePlaybackEngine private constructor(
     private val owned: Boolean,
 ) : AutoCloseable {
     private var closed = false
+    private val pcm = DesktopPcmProcessor()
+    init { check(PlaybackEngineNative.setPcmProcessor(handle, pcm) == 0) { "The decoder could not bind shared DSP" } }
+    fun configurePcm(settings: moe.rukamori.archivetune.shared.domain.dsp.DspSettings,
+        plan: moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan) = pcm.configure(settings, plan)
 
     /** Replaces the current source and returns its load generation, or 0 when the engine rejects it. */
     fun load(source: String, startUs: Long, playWhenReady: Boolean): Long =
@@ -48,6 +52,8 @@ internal class NativePlaybackEngine private constructor(
     fun seek(positionUs: Long) = PlaybackEngineNative.seek(handle, positionUs)
 
     fun setSpeed(speed: Float) = PlaybackEngineNative.setSpeed(handle, speed)
+    fun setPitch(semitones: Float) = PlaybackEngineNative.setPitch(handle, semitones)
+    fun setSkipSilence(enabled: Boolean) = PlaybackEngineNative.setSkipSilence(handle, enabled)
 
     fun stop() = PlaybackEngineNative.stop(handle)
 

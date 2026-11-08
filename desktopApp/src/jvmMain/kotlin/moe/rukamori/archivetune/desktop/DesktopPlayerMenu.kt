@@ -532,7 +532,9 @@ internal class DesktopPlayerQueueActions(
         )
     }
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
-    override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
+    override fun openWithExternalDownloader(url: String) {
+        graph.scope.launch { if (!desktopExternalDownload(graph, url)) graph.report("External downloader did not launch") }
+    }
     /** The canvas owner's own resolve; a stale menu target refetches nothing. */
     override suspend fun refetchCanvas(track: PlayerQueueTrack, requireVertical: Boolean): PlayerQueueCanvasRefetchResult {
         val item = menu.target?.takeIf { it.ref.id == track.mediaId }
@@ -661,7 +663,7 @@ internal fun DesktopPlayerMenuDialog(
         pinnedToSpeedDial = snapshot?.get(SpeedDialSongIdsKey)?.let { raw ->
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }
         } ?: false,
-        externalDownloaderEnabled = false,
+        externalDownloaderEnabled = snapshot?.get(moe.rukamori.archivetune.shared.domain.settings.ExternalDownloaderEnabledKey) == true,
         canvasFeatureEnabled = snapshot?.canvasPlaybackEnabled() ?: false,
         lowDataModeActive = snapshot?.lowDataMode() ?: false,
         hasCanvasArtwork = hasCanvasArtwork,
@@ -681,8 +683,7 @@ internal fun DesktopPlayerMenuDialog(
         radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = true,
         equalizerSupported = true,
-        // The engine graph has no pitch stage, so the dialog hides the control instead of publishing a no-op value.
-        pitchSupported = false,
+        pitchSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
         tempoPitchPresets = parseTempoPitchPresets(snapshot?.get(TempoPitchPresetsJsonKey)),
         tempoPitchRemembered = snapshot?.get(TempoPitchRememberedKey) ?: false,

@@ -50,14 +50,18 @@ class DesktopDownloadMenuTest {
     }
 
     @Test
-    fun catalogSongsCanDownloadButNativeStreamingAndNonSongsCannot() {
+    fun catalogSongsAndEpisodesCanDownloadButStreamingAndNonAudioCannot() {
         assertTrue(desktopDownloadSupported(song))
         assertTrue(desktopDownloadSupported(song.copy(provider = ContentProvider.SPOTIFY_CATALOG.id)))
         assertFalse(desktopDownloadSupported(song.copy(provider = ContentProvider.SPOTIFY_STREAMING.id)))
         assertFalse(desktopDownloadSupported(song.copy(provider = ContentProvider.LOCAL.id)))
         assertFalse(desktopDownloadSupported(song.copy(provider = ContentProvider.TELEGRAM.id)))
         assertFalse(desktopDownloadSupported(song.copy(id = "telegram://1/2")))
-        assertFalse(desktopDownloadSupported(song.copy(kind = ContentKind.EPISODE)))
+        assertTrue(desktopDownloadSupported(song.copy(kind = ContentKind.EPISODE)))
+        assertFalse(desktopDownloadSupported(song.copy(kind = ContentKind.EPISODE, provider = ContentProvider.SPOTIFY_STREAMING.id)))
+        ContentKind.entries.filter { it !in setOf(ContentKind.SONG, ContentKind.EPISODE) }.forEach { kind ->
+            assertFalse(desktopDownloadSupported(song.copy(kind = kind)))
+        }
     }
 
     @Test

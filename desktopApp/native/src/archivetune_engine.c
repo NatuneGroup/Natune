@@ -122,6 +122,7 @@ typedef struct ae_source {
     int stream_index;
     int seekable;
     int64_t duration_us; /* -1 when unknown */
+    double graph_pitch;
     double graph_tempo;  /* tempo the current graph applies */
     double trim_seconds; /* absolute stream time the current graph starts at, -1 when untrimmed */
     int flushed;         /* end of input has been sent through the graph */
@@ -164,6 +165,10 @@ struct ae_engine {
 
     int play_intent;
     double speed;
+    double pitch_semitones;
+    ae_pcm_processor processor;
+    int skip_silence;
+    uint32_t quiet_frames;
     int has_source;
     int ready;
     int failed;
@@ -294,6 +299,7 @@ static void close_stream_io(const ae_stream_io *io) {
  * ---------------------------------------------------------------------------------------------- */
 
 static void ring_clear_locked(ae_engine *e) {
+    e->quiet_frames = 0;
     e->ring_head = 0;
     e->ring_count = 0;
     e->seg_head = 0;
@@ -312,13 +318,23 @@ static void fail_locked(ae_engine *e, uint32_t code, const char *message) {
 }
 
 /* Copies frames out of the ring. The caller guarantees frames <= ring_count. */
-static void consume_copy_locked(ae_engine *e, float *out, uint32_t frames) {
-    while (frames > 0) {
+static uint32_t consume_copy_locked(ae_engine *e, float *out, uint32_t frames) {
+    uint32_t written = 0;
+    while (frames > 0 && e->ring_count > 0) {
         uint32_t seg = e->seg_head;
         uint32_t n = min_u32(e->seg_frames[seg], frames);
+        int skip = 0;
+        if (e->skip_silence) {
+            n = 1;
+            const float *sample = e->ring + (size_t)e->ring_head * AE_CHANNELS;
+            if (fabsf(sample[0]) < 0.0031623f && fabsf(sample[1]) < 0.0031623f) {
+                if (e->quiet_frames < e->rate) e->quiet_frames++;
+                skip = e->quiet_frames > e->rate * 15 / 100;
+            } else e->quiet_frames = 0;
+        }
         uint32_t first = min_u32(n, e->capacity - e->ring_head);
-        memcpy(out, e->ring + (size_t)e->ring_head * AE_CHANNELS, (size_t)first * AE_CHANNELS * sizeof(float));
-        if (n > first) {
+        if (!skip) memcpy(out, e->ring + (size_t)e->ring_head * AE_CHANNELS, (size_t)first * AE_CHANNELS * sizeof(float));
+        if (!skip && n > first) {
             memcpy(out + (size_t)first * AE_CHANNELS, e->ring, (size_t)(n - first) * AE_CHANNELS * sizeof(float));
         }
         e->ring_head = (e->ring_head + n) % e->capacity;
@@ -329,9 +345,13 @@ static void consume_copy_locked(ae_engine *e, float *out, uint32_t frames) {
             e->seg_head = (e->seg_head + 1) % AE_SEGMENTS;
             e->seg_count--;
         }
-        out += (size_t)n * AE_CHANNELS;
-        frames -= n;
+        if (!skip) {
+            out += (size_t)n * AE_CHANNELS;
+            frames -= n;
+            written += n;
+        }
     }
+    return written;
 }
 
 static void silence(float *out, uint32_t frames) {
@@ -370,7 +390,7 @@ static uint32_t consume_locked(ae_engine *e, float *out, uint32_t frames, int mo
     e->buffering = 0;
     taken = min_u32(frames, e->ring_count);
     if (taken > 0) {
-        consume_copy_locked(e, out, taken);
+        taken = consume_copy_locked(e, out, taken);
         if (mode == AE_CONSUME_BLOCKING) pthread_cond_broadcast(&e->changed);
     }
     if (taken < frames) {
@@ -643,7 +663,12 @@ static void format_fixed9(char *out, size_t len, double value) {
  * timestamp in seconds; a negative value disables the trim. Tempo 1.0 bypasses atempo so that
  * unity-speed output is sample-exact.
  */
-static int build_graph(ae_source *s, double tempo, double trim_seconds, uint32_t rate, char *message, size_t len) {
+static int build_graph(ae_engine *e, ae_source *s, double tempo, double trim_seconds, uint32_t rate, char *message, size_t len) {
+    pthread_mutex_lock(&e->mutex);
+    double pitch = e->pitch_semitones;
+    pthread_mutex_unlock(&e->mutex);
+    double factor = pow(2.0, pitch / 12.0);
+    double stretch_tempo = tempo / factor;
     const AVFilter *buffer = avfilter_get_by_name("abuffer");
     const AVFilter *sink = avfilter_get_by_name("abuffersink");
     const AVFilter *format = avfilter_get_by_name("aformat");
@@ -665,7 +690,7 @@ static int build_graph(ae_source *s, double tempo, double trim_seconds, uint32_t
     s->flushed = 0;
 
     if (!buffer || !sink || !format || !duplicate || (trim_seconds >= 0.0 && !trim) ||
-        (fabs(tempo - 1.0) > 1e-9 && !stretch)) {
+        (fabs(stretch_tempo - 1.0) > 1e-9 && !stretch)) {
         snprintf(message, len, "required FFmpeg filters are missing from the native build");
         return -1;
     }
@@ -716,15 +741,31 @@ static int build_graph(ae_source *s, double tempo, double trim_seconds, uint32_t
         prev = ctx;
     }
 
-    if (fabs(tempo - 1.0) > 1e-9) {
-        format_fixed9(number, sizeof number, tempo);
-        snprintf(args, sizeof args, "tempo=%s", number);
-        r = avfilter_graph_create_filter(&ctx, stretch, "tempo", args, NULL, s->graph);
+    if (fabs(pitch) > 1e-9) {
+        const AVFilter *rate_filter = avfilter_get_by_name("asetrate");
+        if (!rate_filter) { snprintf(message, len, "pitch filter unavailable"); return -1; }
+        snprintf(args, sizeof args, "sample_rate=%d", (int)llround(s->decoder->sample_rate * factor));
+        r = avfilter_graph_create_filter(&ctx, rate_filter, "pitch", args, NULL, s->graph);
         if (r < 0 || avfilter_link(prev, 0, ctx, 0) < 0) {
-            format_error(message, len, "time stretch", r < 0 ? r : AVERROR(EINVAL));
-            return -1;
+            format_error(message, len, "pitch", r < 0 ? r : AVERROR(EINVAL)); return -1;
         }
         prev = ctx;
+    }
+    if (fabs(stretch_tempo - 1.0) > 1e-9) {
+        double remaining = stretch_tempo;
+        for (int stage = 0; stage < 16; stage++) {
+            double part = remaining < 0.5 ? 0.5 : (remaining > 2.0 ? 2.0 : remaining);
+            format_fixed9(number, sizeof number, part);
+            snprintf(args, sizeof args, "tempo=%s", number);
+            char name[32]; snprintf(name, sizeof name, "tempo%d", stage);
+            r = avfilter_graph_create_filter(&ctx, stretch, name, args, NULL, s->graph);
+            if (r < 0 || avfilter_link(prev, 0, ctx, 0) < 0) {
+                format_error(message, len, "time stretch", r < 0 ? r : AVERROR(EINVAL)); return -1;
+            }
+            prev = ctx;
+            remaining /= part;
+            if (fabs(remaining - 1.0) < 1e-9) break;
+        }
     }
 
     /*
@@ -763,6 +804,7 @@ static int build_graph(ae_source *s, double tempo, double trim_seconds, uint32_t
     }
     s->buffer_src = src;
     s->buffer_sink = out;
+    s->graph_pitch = pitch;
     s->graph_tempo = tempo;
     s->trim_seconds = trim_seconds;
     return 0;
@@ -781,6 +823,20 @@ static int drain_sink(ae_engine *e, ae_source *s, uint64_t epoch, char *message,
         }
         int status = 0;
         if (s->out->nb_samples > 0) {
+            if (e->processor.process) {
+                pthread_mutex_lock(&e->mutex);
+                uint64_t processing_generation = (e->load_generation << 32) | (e->seek_generation & UINT64_C(0xffffffff));
+                pthread_mutex_unlock(&e->mutex);
+                AVDictionaryEntry *gain = av_dict_get(s->format->metadata, "replaygain_track_gain", NULL, 0);
+                AVDictionaryEntry *peak = av_dict_get(s->format->metadata, "replaygain_track_peak", NULL, 0);
+                if (!gain) gain = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_gain", NULL, 0);
+                if (!peak) peak = av_dict_get(s->format->streams[s->stream_index]->metadata, "replaygain_track_peak", NULL, 0);
+                if (av_frame_make_writable(s->out) < 0 || e->processor.process(e->processor.opaque,
+                    (float *)s->out->data[0], (uint32_t)s->out->nb_samples, e->rate, processing_generation,
+                    gain ? strtod(gain->value, NULL) : NAN, peak ? strtod(peak->value, NULL) : NAN) != 0) {
+                    snprintf(message, len, "shared PCM processing failed"); av_frame_unref(s->out); return -1;
+                }
+            }
             status = append_frames(e, epoch, (const float *)s->out->data[0], (uint32_t)s->out->nb_samples,
                                    s->graph_tempo);
         }
@@ -872,7 +928,7 @@ static int source_finish_open(ae_engine *e, ae_source *s, int64_t start_us, doub
     if (start_us > 0) {
         trim = (double)s->start_time * av_q2d(s->time_base) + (double)start_us / 1e6;
     }
-    if (build_graph(s, tempo, trim, e->rate, message, len) < 0) {
+    if (build_graph(e, s, tempo, trim, e->rate, message, len) < 0) {
         source_close(s);
         return -1;
     }
@@ -1005,7 +1061,7 @@ static int seek_source(ae_engine *e, ae_source *s, int64_t target_us, double tem
     }
     avcodec_flush_buffers(s->decoder);
     double trim = (double)s->start_time * av_q2d(s->time_base) + (double)target_us / 1e6;
-    return build_graph(s, tempo, trim, e->rate, message, len);
+    return build_graph(e, s, tempo, trim, e->rate, message, len);
 }
 
 /*
@@ -1139,7 +1195,7 @@ static int work_pending_locked(const ae_engine *e, const ae_source *s) {
     if (!e->ready) {
         return 0;
     }
-    if (!s->flushed && e->speed != s->graph_tempo) {
+    if (!s->flushed && (e->speed != s->graph_tempo || e->pitch_semitones != s->graph_pitch)) {
         return 1;
     }
     return !s->flushed && e->ring_count < e->high_water;
@@ -1240,7 +1296,7 @@ static void *producer_main(void *argument) {
                 }
             }
             pthread_cond_broadcast(&e->changed);
-        } else if (!s.flushed && e->speed != s.graph_tempo) {
+        } else if (!s.flushed && (e->speed != s.graph_tempo || e->pitch_semitones != s.graph_pitch)) {
             /* Speed changed: drain the old graph with its own tempo, then start a new graph. */
             uint64_t epoch = e->epoch;
             double tempo = e->speed;
@@ -1256,7 +1312,7 @@ static void *producer_main(void *argument) {
                     status = drain_sink(e, &s, epoch, message, sizeof message);
                 }
             }
-            if (status == 0 && build_graph(&s, tempo, s.trim_seconds, e->rate, message, sizeof message) < 0) {
+            if (status == 0 && build_graph(e, &s, tempo, s.trim_seconds, e->rate, message, sizeof message) < 0) {
                 status = -1;
             }
             pthread_mutex_lock(&e->mutex);
@@ -1416,6 +1472,7 @@ void ae_engine_destroy(ae_engine *e) {
     pthread_cond_broadcast(&e->changed);
     pthread_mutex_unlock(&e->mutex);
     pthread_join(e->producer, NULL);
+    if (e->processor.close) e->processor.close(e->processor.opaque);
 
     /* The producer leaves without taking a queued host source, so the engine closes that source here. */
     ae_stream_io unconsumed;
@@ -1594,6 +1651,33 @@ void ae_engine_set_speed(ae_engine *e, float speed) {
     pthread_mutex_lock(&e->mutex);
     e->speed = clamped;
     pthread_cond_broadcast(&e->changed);
+    pthread_mutex_unlock(&e->mutex);
+}
+
+int ae_engine_set_pcm_processor(ae_engine *e, const ae_pcm_processor *processor) {
+    if (!e || !processor || !processor->process) return -1;
+    pthread_mutex_lock(&e->mutex);
+    int accepted = !e->has_source && !e->pending_load && !e->decoding && !e->processor.process;
+    if (accepted) e->processor = *processor;
+    pthread_mutex_unlock(&e->mutex);
+    return accepted ? 0 : -1;
+}
+
+void ae_engine_set_pitch(ae_engine *e, float semitones) {
+    if (!e || !isfinite(semitones) || fabsf(semitones) > 24.0f) return;
+    pthread_mutex_lock(&e->mutex);
+    e->pitch_semitones = semitones;
+    pthread_cond_broadcast(&e->changed);
+    pthread_mutex_unlock(&e->mutex);
+}
+
+void ae_engine_set_skip_silence(ae_engine *e, int enabled) {
+    if (!e) return;
+    pthread_mutex_lock(&e->mutex);
+    if (e->skip_silence != (enabled != 0)) {
+        e->skip_silence = enabled != 0;
+        e->quiet_frames = 0;
+    }
     pthread_mutex_unlock(&e->mutex);
 }
 

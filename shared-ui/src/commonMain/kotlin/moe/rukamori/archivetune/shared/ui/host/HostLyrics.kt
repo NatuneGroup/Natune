@@ -53,6 +53,9 @@ import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
  */
 enum class HostLyricsStatus { LOADING, READY, NOT_FOUND, FAILED }
 
+/** Optional host persistence; edited documents survive an ordinary provider refresh. */
+data class HostSavedLyrics(val raw: String, val edited: Boolean = false)
+
 /**
  * The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any.
  * [raw] is the exact document text the provider returned; it is the AI session's identity and input
@@ -116,13 +119,18 @@ class HostLyrics(
     private val storage: HostLyricsStorage? = null,
     additionalProviderNames: List<String> = emptyList(),
     additionalProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
+    private val readSaved: suspend (ContentItem) -> HostSavedLyrics? = { null },
+    private val saveFetched: suspend (ContentItem, String) -> Unit = { _, _ -> },
+    extraProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
+    extraProviderNames: Set<String> = emptySet(),
 ) {
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
-        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES + additionalProviderNames),
+        availableProviderNames = MutableStateFlow((SHARED_PROVIDER_NAMES + extraProviderNames + additionalProviderNames).distinct()),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) + additionalProviders(preferences) },
+        providerFactory = { preferences -> extraProviders(preferences) +
+            sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) + additionalProviders(preferences) },
         networkAvailable = networkAvailable,
         // The provider's own message is what says whether the read failed or simply found nothing; the class name
         // alone made every ordinary miss look like a broken provider.
@@ -201,12 +209,20 @@ class HostLyrics(
         }
         val readRevision = revision
         var status = HostLyricsStatus.NOT_FOUND
+        var fetched = false
         val (raw, lines) = try {
-            val cached = storage?.read(requireNotNull(item), force)
-            if (cached != null) { status = HostLyricsStatus.READY; cached to parse(cached) } else {
+            val saved = item?.let { readSaved(it) }?.takeIf { !force || it.edited }
+            val cached = if (saved?.edited == true) saved.raw else storage?.read(requireNotNull(item), force) ?: saved?.raw
+            if (cached != null) {
+                status = HostLyricsStatus.READY
+                cached to parse(cached)
+            } else {
                 val result = runtime.lyrics(request, forceRefresh = force)
                 status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
-                if (result.providerName.isEmpty()) "" to emptyList() else result.lyrics to parse(result.lyrics)
+                if (result.providerName.isEmpty()) "" to emptyList() else {
+                    fetched = true
+                    result.lyrics to parse(result.lyrics)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -222,7 +238,12 @@ class HostLyrics(
         val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
         documentGate.withLock {
             if (revision != readRevision || state.value?.occurrenceId != occurrenceId) return@withLock
-            if (status == HostLyricsStatus.READY && lines.isNotEmpty()) storage?.write(requireNotNull(item), raw, edited = false)
+            if (status == HostLyricsStatus.READY && lines.isNotEmpty() && fetched && item != null) {
+                storage?.write(item, raw, edited = false)
+                try { saveFetched(item, raw) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { report("lyrics persistence failed: ${failure::class.simpleName}") }
+            }
             state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw, credits = credits,
                 status = if (status == HostLyricsStatus.READY && lines.isEmpty()) HostLyricsStatus.NOT_FOUND else status)
         }

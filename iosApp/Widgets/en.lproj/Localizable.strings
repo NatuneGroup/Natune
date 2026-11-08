@@ -5,3 +5,6 @@
 "widget_pause" = "Pause";
 "widget_previous" = "Previous";
 "widget_next" = "Next";
+
+"widget_playing" = "Playback active";
+"widget_paused" = "Playback paused";

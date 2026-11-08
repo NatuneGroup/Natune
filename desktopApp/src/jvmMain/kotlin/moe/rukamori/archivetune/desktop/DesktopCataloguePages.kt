@@ -71,12 +71,14 @@ internal fun desktopHomePage(
     val available = resolvedHomeSources(
         stored = preferences?.get(ActiveHomeSourcesKey).orEmpty(),
         spotifyAvailable = spotify.catalogConnected(),
-        qqAvailable = false,
+        qqAvailable = !preferences?.get(moe.rukamori.archivetune.shared.domain.settings.QqMusicUinKey).isNullOrBlank() &&
+            !preferences?.get(moe.rukamori.archivetune.shared.domain.settings.QqMusicMusickeyKey).isNullOrBlank(),
     )
     val source = resolvedHomeSource(preferences?.get(HomeSourceKey), available)
     val sourceChange: (HomeSource) -> Unit = { target ->
         graph.scope.launch { graph.settings.edit { this[HomeSourceKey] = target.name } }
     }
+    if (source == HomeSource.QQ) return desktopQqHome(graph, HomeSourceBinding(source, available, sourceChange))
     if (source == HomeSource.SPOTIFY) {
         val owner = remember(graph, spotify) { DesktopSpotifyHome(graph, spotify, openRoute) }
         val catalogAccount = preferences?.get(SpotifySpDcKey).orEmpty()

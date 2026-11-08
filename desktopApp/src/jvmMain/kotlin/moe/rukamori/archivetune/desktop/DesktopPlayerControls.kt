@@ -55,6 +55,8 @@ internal class DesktopPlayerControls(
     private val playerMenu: DesktopPlayerMenuState,
     /** The installed SpatialFlow typeface. The shared player draws its title in it while that style is selected. */
     private val spatialFont: StateFlow<FontFamily?> = MutableStateFlow(null),
+    private val onTitle: (moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence) -> Unit,
+    private val onArtists: (moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence) -> Unit,
 ) : PlayerNativeControls {
     private var lastSeekAt = 0L
     private var seekMultiplier = 1
@@ -170,6 +172,8 @@ internal class DesktopPlayerControls(
             share = ::share,
             more = ::openMenu,
             sleep = { sleepSheet.open = true },
+            title = { id -> graph.queue.state.value.entries.firstOrNull { it.occurrenceId == id }?.let(onTitle) },
+            artist = { id -> graph.queue.state.value.entries.firstOrNull { it.occurrenceId == id }?.let(onArtists) },
         )
         if (!handled) graph.report("player action ${action.name} is not connected on the desktop host")
     }
@@ -223,12 +227,16 @@ internal fun desktopPlayerAction(
     share: (String?) -> Unit,
     more: (String?) -> Unit,
     sleep: () -> Unit,
+    title: (String?) -> Unit = {},
+    artist: (String?) -> Unit = {},
 ): Boolean = when (action) {
     PlayerAction.COLLAPSE -> true
     PlayerAction.LIKE -> { like(occurrenceId); true }
     PlayerAction.SHARE -> { share(occurrenceId); true }
     PlayerAction.MORE -> { more(occurrenceId); true }
     PlayerAction.SLEEP -> { sleep(); true }
+    PlayerAction.TITLE -> { title(occurrenceId); true }
+    PlayerAction.ARTIST -> { artist(occurrenceId); true }
     else -> false
 }
 
@@ -242,11 +250,7 @@ internal val DESKTOP_PLAYER_TRANSPORT_ACTIONS: Set<PlayerAction> = setOf(
     PlayerAction.SEEK_FORWARD,
 )
 
-/**
- * Every player action this host can perform. Title and artist taps would need a song or artist page route from the
- * player, and the output picker is the Android audio route's, so those stay out and the shared player hides their
- * controls here instead of showing a tap whose only effect could be a diagnostic.
- */
+/** Player actions with live desktop owners; output routing remains an OS/device boundary. */
 internal val DESKTOP_PLAYER_ACTIONS: Set<PlayerAction> = PlayerAction.entries
     .filter { it in DESKTOP_PLAYER_TRANSPORT_ACTIONS || desktopPlayerAction(it, null, {}, {}, {}, {}) }
     .toSet()

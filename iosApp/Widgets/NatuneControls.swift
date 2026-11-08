@@ -3,15 +3,27 @@ import WidgetKit
 
 private struct ControlsEntry: TimelineEntry {
     let date: Date
+    var title: String = ""
+    var artist: String = ""
+    var playing: Bool = false
 }
 
 private struct ControlsProvider: TimelineProvider {
+    private func entry() -> ControlsEntry {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "NatuneAppGroup") as? String,
+              let raw = UserDefaults(suiteName: group)?.string(forKey: "NatunePlaybackSnapshot"),
+              let data = raw.data(using: .utf8), let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ControlsEntry(date: Date())
+        }
+        return ControlsEntry(date: Date(), title: state["title"] as? String ?? "",
+            artist: state["artist"] as? String ?? "", playing: state["playing"] as? Bool ?? false)
+    }
     func placeholder(in context: Context) -> ControlsEntry { ControlsEntry(date: Date()) }
     func getSnapshot(in context: Context, completion: @escaping (ControlsEntry) -> Void) {
-        completion(ControlsEntry(date: Date()))
+        completion(entry())
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<ControlsEntry>) -> Void) {
-        completion(Timeline(entries: [ControlsEntry(date: Date())], policy: .never))
+        completion(Timeline(entries: [entry()], policy: .after(Date().addingTimeInterval(900))))
     }
 }
 
@@ -21,8 +33,12 @@ private struct ControlsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Natune").font(.headline)
-            Text("widget_open_hint").font(.caption).foregroundColor(.secondary)
+            Text(entry.title.isEmpty ? "Natune" : entry.title).font(.headline).lineLimit(2)
+            if entry.title.isEmpty { Text("widget_open_hint").font(.caption).foregroundColor(.secondary) }
+            else {
+                Text(entry.artist).font(.caption).lineLimit(1)
+                Text(entry.playing ? "widget_playing" : "widget_paused").font(.caption).foregroundColor(.secondary)
+            }
             HStack(spacing: 16) {
                 control("play", "play.fill", "widget_play")
                 control("pause", "pause.fill", "widget_pause")

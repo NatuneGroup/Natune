@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLangua
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapanesePackIo
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.modules.providesAudio
 import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
@@ -198,6 +199,7 @@ internal class DesktopSettingsServices(
     }
 
     suspend fun clearCache(kind: SettingsCacheKind): Unit = withContext(Dispatchers.IO) {
+        if (kind == SettingsCacheKind.SONG) graph.songCache.clear()
         val dir = instanceDirectory.resolve(requireNotNull(cacheDirectories[kind]))
         if (Files.isDirectory(dir)) {
             Files.list(dir).use { stream ->
@@ -207,7 +209,7 @@ internal class DesktopSettingsServices(
     }
 
     suspend fun applyCacheLimits(preferences: PreferenceSnapshot): Unit = withContext(Dispatchers.IO) {
-        trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.SONG)), preferences[MaxSongCacheSizeKey, -1])
+        graph.songCache.applyLimit(preferences[MaxSongCacheSizeKey, -1])
         trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.IMAGE)), preferences[MaxImageCacheSizeKey, -1])
         trimToLimit(instanceDirectory.resolve(cacheDirectories.getValue(SettingsCacheKind.CANVAS)), preferences[MaxCanvasCacheSizeKey, -1])
     }
@@ -306,7 +308,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.APPLE -> probeReachable("https://amp-api.music.apple.com/v1/catalog/us/genres")
                 AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
                     ?.let { probeReachable(it) } ?: false
-                AudioSourceType.MODULES -> false // Android-only module host
+                AudioSourceType.MODULES -> graph.modules.entries.value.any { it.enabled && it.manifest.providesAudio }
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY ->
                     preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective())
@@ -318,8 +320,7 @@ internal class DesktopSettingsServices(
     suspend fun refreshPool(): SourcePoolRefreshOutcome = withContext(Dispatchers.IO) {
         runCatching {
             if (!graph.playbackPool.configured) return@withContext SourcePoolRefreshOutcome.FAILED
-            val accounts = graph.playbackPool.tidalAccounts()
-            if (accounts.isEmpty()) SourcePoolRefreshOutcome.FAILED else SourcePoolRefreshOutcome.REFRESHED
+            if (graph.playbackPool.refresh(force = true)) SourcePoolRefreshOutcome.REFRESHED else SourcePoolRefreshOutcome.FAILED
         }.getOrDefault(SourcePoolRefreshOutcome.FAILED)
     }
 

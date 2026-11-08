@@ -554,3 +554,11 @@ profile, full app linking and CarPlay device execution remain required/unverifie
 host exports only credential-free snapshots and bounded queue commands. CPTemplate and WidgetKit
 are documented system-only renderer exceptions in AGENTS.md; ordinary app content stays Compose.
 This source increment supersedes the earlier statement that no CarPlay scene exists.
+
+The existing WidgetKit controls now read real title/artist/play state from a credential-free
+shared-host snapshot in an App Group. The app publishes only when the configured group container
+is actually available, and coalesces timeline reloads; the extension retains the controls-only
+fallback when no snapshot exists. App and widget entitlements declare the same configurable group.
+Provisioning, full extension/app linkage, timeline delivery and home-screen behavior are unverified.
+Listening-insight and ActivityKit/lock-screen lyric widgets remain incomplete. This supersedes
+the earlier controls-only/no-App-Group source description.

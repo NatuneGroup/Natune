@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PreparedPlaintextHandle
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
 import moe.rukamori.archivetune.shared.domain.repository.QueueSourceRecovery
@@ -59,6 +60,8 @@ internal class DesktopQueueLocatorResolver(
      * downloaded song keeps playing offline, the way Android's DownloadUtil serves a stored file first.
      */
     private val storedFile: suspend (provider: String, mediaId: String) -> java.nio.file.Path? = { _, _ -> null },
+    private val cacheAudio: (ContentItem, PreparedAudio) -> Unit = { _, _ -> },
+    private val sourceSelected: (ContentOccurrence, java.nio.file.Path?) -> Unit = { _, _ -> },
 ) : QueueLocatorResolver {
     /** Guards [issued] and [closed] together, so a view prepared during shutdown is released instead of leaked. */
     private val lock = Any()
@@ -75,12 +78,17 @@ internal class DesktopQueueLocatorResolver(
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
             // A local ref's id is its absolute path. A missing file fails instead of naming another song.
             val file = java.io.File(occurrence.item.ref.id)
-            if (file.isFile) return PlaybackLocator.LocalFile(file.absolutePath)
+            if (file.isFile) {
+                sourceSelected(occurrence, file.toPath())
+                return PlaybackLocator.LocalFile(file.absolutePath)
+            }
             throw IllegalStateException("the local file is missing: ${occurrence.item.ref.id}")
         }
         storedFile(occurrence.item.ref.provider, occurrence.item.ref.id)?.let { path ->
+            sourceSelected(occurrence, path)
             return PlaybackLocator.LocalFile(path.toFile().absolutePath)
         }
+        sourceSelected(occurrence, null)
         if (occurrence.item.ref.provider == "telegram") {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
                 ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
@@ -91,6 +99,7 @@ internal class DesktopQueueLocatorResolver(
         // A "play from" pin forces the attempt chain for this one song, as the Android service's per-song
         // source override does; a refused pinned source falls through to the ordinary chain.
         val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
+            ?: AudioSourceType.MODULES.takeIf { occurrence.item.ref.provider == "modules" && occurrence.item.ref.id.startsWith("module:") }
         var refused = recovery.rejectedSources
         while (true) {
             val resolution = audio.resolve(request, recovery.settings(desktopSourceSnapshot(preferences())),
@@ -104,13 +113,20 @@ internal class DesktopQueueLocatorResolver(
             // Anonymous progressive audio keeps its ordinary locator. A personal stream reads its cookies only
             // through the admitted route, so the engine never receives it as a bare remote URL.
             if (prepared is PreparedAudio.Progressive && !prepared.requiresAdmittedRoute()) {
+                cacheAudio(occurrence.item, prepared)
                 return prepared.stream.toPlaybackLocator()
             }
             when (prepared) {
-                is PreparedAudio.DeezerEncrypted -> return prepared.toPlaybackLocator()
+                is PreparedAudio.DeezerEncrypted -> {
+                    cacheAudio(occurrence.item, prepared)
+                    return prepared.toPlaybackLocator()
+                }
                 is PreparedAudio.Progressive, is PreparedAudio.Native, is PreparedAudio.TidalManifest ->
                     when (val outcome = port.prepareNative(prepared)) {
-                        is NativeRouteOutcome.Ready -> return remember(outcome.handle, prepared.source)
+                        is NativeRouteOutcome.Ready -> {
+                            cacheAudio(occurrence.item, prepared)
+                            return remember(outcome.handle, prepared.source)
+                        }
                         is NativeRouteOutcome.Refused -> refused = refused + prepared.source
                     }
             }
@@ -163,6 +179,8 @@ internal class DesktopQueueLocatorResolver(
 /** The source snapshot one resolution reads, as every host reads it. */
 internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot =
     hostSourceSnapshot(preferences, spotifyStreamingReady = desktopSpotifyStreamingReady(preferences))
+        .let { snapshot -> if (preferences?.get(moe.rukamori.archivetune.shared.domain.settings.ModulesEnabledKey) == true)
+            snapshot.copy(enabled = snapshot.enabled + AudioSourceType.MODULES) else snapshot }
 
 /**
  * The audio providers this host connects, each over the one HTTP client of the graph, in no particular order: the

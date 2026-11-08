@@ -138,6 +138,11 @@ fun appearanceThemeSettingsRows(
                 ),
             )
     }
+    if (desktop) {
+        add(SettingsRow.Action("palette_picker", Res.string.m6_palette, { navigate("settings/appearance/palette_picker") }))
+        add(SettingsRow.Action("theme_creator", Res.string.desktop_theme_creator, { navigate("settings/appearance/theme_creator") }))
+        add(SettingsRow.Action("app_icon", Res.string.m6_app_icon, { navigate("settings/appearance/icon") }))
+    }
     // The style shapes the saved palette color, which applies only while dynamic theme is off.
     if (!dynamic)
         add(
