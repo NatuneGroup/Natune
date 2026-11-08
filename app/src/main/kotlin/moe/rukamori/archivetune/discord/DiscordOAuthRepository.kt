@@ -11,6 +11,7 @@ package moe.rukamori.archivetune.discord
 import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
@@ -173,9 +174,11 @@ object DiscordOAuthRepository {
                 return@withContext null
             }
 
-            refreshAccessToken(context, refreshToken)
-                .getOrNull()
-                ?.accessToken
+            if (DiscordSocialPresenceClient.isAvailable) {
+                DiscordSocialPresenceClient.refreshAuthorization(context, refreshToken)?.accessToken
+            } else {
+                refreshAccessToken(context, refreshToken).getOrNull()?.accessToken
+            }
         }
 
     suspend fun fetchAccount(accessToken: String): DiscordAccount =
@@ -266,6 +269,26 @@ object DiscordOAuthRepository {
                     "code_verifier" to codeVerifier,
                 ),
         ).let { json.decodeFromString(it) }
+
+    internal suspend fun storeSdkGrant(context: Context, grant: DiscordSdkTokenGrant): DiscordAuthSession {
+        val account =
+            try {
+                fetchAccount(grant.accessToken)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        val expiresAt =
+            if (grant.expiresInSeconds > 0) {
+                System.currentTimeMillis() + grant.expiresInSeconds * 1000L
+            } else {
+                0L
+            }
+        val session = DiscordAuthSession(grant.accessToken, grant.refreshToken, expiresAt, account)
+        storeSession(context, session)
+        return session
+    }
 
     private suspend fun storeSession(
         context: Context,

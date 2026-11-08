@@ -88,3 +88,14 @@ find_library(log-lib-dsp log)
 find_library(dl-lib-dsp dl)
 target_link_libraries(archivetune_dsp ${log-lib-dsp} ${dl-lib-dsp})
 target_link_options(archivetune_dsp PRIVATE "-Wl,-z,max-page-size=16384")
+
+# The optional Discord target/package lookup is disabled without the licensed AAR.
+# Native audio keeps its existing CMake/prefab configuration independently.
+option(NATUNE_DISCORD_SOCIAL_SDK "Build the OAuth-only Discord Social SDK bridge" OFF)
+if(NATUNE_DISCORD_SOCIAL_SDK)
+    find_package(discord_partner_sdk REQUIRED CONFIG)
+    add_library(natune_discord_social SHARED jni/discord_social_jni.cpp)
+    target_link_libraries(natune_discord_social PRIVATE discord_partner_sdk::discord_partner_sdk)
+    target_compile_options(natune_discord_social PRIVATE -fexceptions -fvisibility=hidden)
+    target_link_options(natune_discord_social PRIVATE "-Wl,-z,max-page-size=16384")
+endif()

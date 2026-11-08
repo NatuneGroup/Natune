@@ -19,7 +19,7 @@ import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
  * The Discord OAuth application id, an intentionally public client constant: the same default the Android build
  * carries and the desktop host uses. The OAuth client has no confidential secret — PKCE proves the caller.
  */
-const val DISCORD_APPLICATION_ID = "1165706613961789445"
+const val DISCORD_APPLICATION_ID = "1569030685010821170"
 
 /** The redirect the application registers, the same string the Android build sends. */
 const val DISCORD_REDIRECT_URI = "discord-$DISCORD_APPLICATION_ID:/authorize/callback"
