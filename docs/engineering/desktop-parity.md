@@ -271,6 +271,8 @@ behavior need Windows/Linux runtime validation.
   closing on EOF or a format change. Stop/seek still discard obsolete output.
   Native/WAVE speaker masks are passed to the sink; mismatched, custom or unknown
   channel maps fall back to shared output rather than silently mix/reorder PCM.
+  Core Audio physical-format readback must match the rate, signedness, endian and
+  integer alignment of the direct lane before the hogged sink is accepted.
   Physical DAC behavior remains unverified; raw USB-host control is not implemented.
 - Google Cast and speech search have no portable receiver/STT host in the retained
   dependencies. OS routing and microphone recognition are existing separate features.

@@ -24,6 +24,20 @@ static AudioObjectPropertyAddress property(AudioObjectPropertySelector selector,
     return address;
 }
 
+static int physical_pcm_matches(const AudioStreamBasicDescription *format, const ae_pcm_format *pcm) {
+    uint32_t bytes = pcm->format == AE_PCM_U8 ? 1u : pcm->format == AE_PCM_S16 ? 2u : pcm->format == AE_PCM_S24 ? 3u : 4u;
+    int floating = (format->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
+    int signed_integer = (format->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
+    /* The direct lane supplies little-endian samples with meaningful integer bits left-aligned. */
+    return format->mFormatID == kAudioFormatLinearPCM && format->mChannelsPerFrame == pcm->channels &&
+        format->mBitsPerChannel >= pcm->bits && format->mBitsPerChannel <= bytes * 8u &&
+        format->mBytesPerFrame == bytes * pcm->channels && format->mFramesPerPacket == 1 &&
+        format->mBytesPerPacket == format->mBytesPerFrame && floating == (pcm->format == AE_PCM_F32) &&
+        (floating || signed_integer == (pcm->format != AE_PCM_U8)) &&
+        !(format->mFormatFlags & kAudioFormatFlagIsBigEndian) &&
+        (format->mBitsPerChannel == bytes * 8u || (format->mFormatFlags & kAudioFormatFlagIsAlignedHigh));
+}
+
 void ae_coreaudio_release(ae_coreaudio_owner *owner) {
     if (!owner) return;
     AudioObjectPropertyAddress hog = property(kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal);
@@ -109,19 +123,25 @@ ae_coreaudio_owner *ae_coreaudio_acquire(const char *uid, const ae_pcm_format *p
     int found = 0;
     for (UInt32 i = 0; i < size / sizeof formats[0]; i++) {
         AudioStreamBasicDescription format = formats[i].mFormat;
-        int floating = (format.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
-        uint32_t bytes = pcm->format == AE_PCM_U8 ? 1u : pcm->format == AE_PCM_S16 ? 2u : pcm->format == AE_PCM_S24 ? 3u : 4u;
-        if (format.mFormatID != kAudioFormatLinearPCM || format.mChannelsPerFrame != pcm->channels ||
-            format.mBitsPerChannel < pcm->bits || format.mBitsPerChannel > bytes * 8u ||
-            format.mBytesPerFrame != bytes * pcm->channels || floating != (pcm->format == AE_PCM_F32) ||
+        if (!physical_pcm_matches(&format, pcm) ||
             requested_rate < formats[i].mSampleRateRange.mMinimum || requested_rate > formats[i].mSampleRateRange.mMaximum) continue;
         format.mSampleRate = requested_rate;
         address = property(kAudioStreamPropertyPhysicalFormat, kAudioObjectPropertyScopeGlobal);
         if (AudioObjectSetPropertyData(owner->stream, &address, 0, NULL, sizeof format, &format) == noErr) {
-            owner->format_changed = 1; found = 1; break;
+            owner->format_changed = 1;
+            AudioStreamBasicDescription actual_format = {0};
+            UInt32 actual_size = sizeof actual_format;
+            if (AudioObjectGetPropertyData(owner->stream, &address, 0, NULL, &actual_size, &actual_format) == noErr &&
+                physical_pcm_matches(&actual_format, pcm) && fabs(actual_format.mSampleRate - requested_rate) <= 0.001) {
+                found = 1; break;
+            }
+            reason = "Core Audio device did not latch the native PCM format";
         }
     }
-    if (!found) { reason = "Core Audio device refused the native PCM format"; goto refused; }
+    if (!found) {
+        if (!owner->format_changed) reason = "Core Audio device refused the native PCM format";
+        goto refused;
+    }
     return owner;
 refused:
     snprintf(error, error_len, "%s", reason);
