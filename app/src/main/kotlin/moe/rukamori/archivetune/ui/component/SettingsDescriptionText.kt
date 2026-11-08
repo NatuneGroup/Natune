@@ -23,14 +23,13 @@ import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import moe.rukamori.archivetune.LocalAnimationsDisabled
-import moe.rukamori.archivetune.shared.ui.marquee.SettingsMarqueeText
 import java.util.WeakHashMap
 
-/** Scrolls through the shared marquee, so leaving and re-entering a settings page keeps its pass phase. */
+/** Two automatic passes per visible run; the shared renderer measures actual text overflow. */
 @Composable
 fun SettingsDescriptionText(
     text: String,
@@ -48,12 +47,16 @@ fun SettingsDescriptionText(
     }
     val active by entry.active
     var visible by remember { mutableStateOf(false) }
-    SettingsMarqueeText(
+    MarqueeText(
         text = text,
         style = style,
         color = color,
         fontWeight = fontWeight,
-        active = active && visible && !LocalAnimationsDisabled.current,
+        iterations = 2,
+        animationEnabled = active && visible,
+        // Motion here starts only once the row is resumed and measured on screen, so an edge fade
+        // would pop in late over text that was already readable. Settings text scrolls unfaded.
+        fadeWidth = 0.dp,
         phaseKey = phaseKey,
         modifier = modifier.onGloballyPositioned { coordinates ->
             visible = coordinates.isAttached &&

@@ -22,7 +22,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -187,6 +189,7 @@ fun BitChordPlayingBars(modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BitChordHeroCard(
     artworkUrl: String?,
@@ -249,6 +252,7 @@ fun BitChordHeroCard(
                 color = if (isCurrent) BitChordPlayingAccent else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().basicMarquee(),
             )
             Text(
                 text = subtitle,
@@ -264,6 +268,7 @@ fun BitChordHeroCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BitChordShelfCard(
     artworkUrl: String?,
@@ -321,6 +326,7 @@ fun BitChordShelfCard(
             color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().basicMarquee(),
         )
         Text(
             text = subtitle,
@@ -330,11 +336,12 @@ fun BitChordShelfCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.fillMaxWidth().basicMarquee().padding(top = 2.dp),
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BitChordCompactTrackRow(
     artworkUrl: String?,
@@ -386,6 +393,7 @@ fun BitChordCompactTrackRow(
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().basicMarquee(),
             )
             Text(
                 text = subtitle,
@@ -395,7 +403,7 @@ fun BitChordCompactTrackRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 1.dp),
+                modifier = Modifier.fillMaxWidth().basicMarquee().padding(top = 1.dp),
             )
         }
     }
