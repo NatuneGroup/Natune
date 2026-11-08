@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffEngine
@@ -99,15 +100,33 @@ internal class DesktopCrossfadeHandoff(
     private val port: DesktopPlaybackPort,
     private val settings: StateFlow<PreferenceSnapshot?>,
     private val hold: StateFlow<Boolean>,
+    private val analysis: DesktopAutomixAnalysis? = null,
 ) : QueueHandoffEngine {
+    @Volatile private var incomingCue: Pair<String, Long>? = null
     override val configuration: Flow<Any?> = combine(
         settings.map { it.desktopHandoffSettings() }.distinctUntilChanged(),
         hold,
-    ) { stored, held -> stored to held }
+        analysis?.revision ?: flowOf(0L),
+    ) { stored, held, revision -> Triple(stored, held, revision) }
 
     override fun overlapMs(current: ContentOccurrence, next: ContentOccurrence, durationMs: Long): Long? {
+        incomingCue = null
         if (hold.value) return null
-        return desktopHandoffOverlapMs(settings.value.desktopHandoffSettings(), current.item, next.item, durationMs)
+        val stored = settings.value.desktopHandoffSettings()
+        val fallback = desktopHandoffOverlapMs(stored, current.item, next.item, durationMs) ?: return null
+        if (!stored.automix || fallback == 0L || analysis == null) return fallback
+        analysis.consider(current.item)
+        analysis.consider(next.item)
+        val outgoing = runCatching { analysis.features(current, requireSelected = true) }.getOrNull() ?: return fallback
+        val incoming = runCatching { analysis.features(next, requireSelected = false) }.getOrNull() ?: return fallback
+        // This mixer can execute adaptive equal-power fading/cues. Keep stretch/bass/sweep tiers conservative.
+        val plan = moe.rukamori.archivetune.playback.smart.planTransition(
+            analysis = outgoing.copy(bpm = 0.0, beatConfidence = 0.0), nextAnalysis = incoming.copy(bpm = 0.0, beatConfidence = 0.0),
+            duration = durationMs / 1000.0, fadeSeconds = fallback / 1000.0,
+            mode = moe.rukamori.archivetune.playback.smart.CrossfadeMode.SMART)
+        if (plan.blocked || plan.fadeSeconds <= 0 || !plan.fadeSeconds.isFinite()) return fallback
+        incomingCue = next.occurrenceId to (plan.incomingCueTime.coerceIn(0.0, (incoming.duration - 1.0).coerceAtLeast(0.0)) * 1000).roundToLong()
+        return (plan.fadeSeconds * 1000).roundToLong().coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_SMART_FALLBACK_MS)
     }
 
     override suspend fun arm(request: PlaybackRequest, overlapMs: Long): Boolean {
@@ -117,7 +136,8 @@ internal class DesktopCrossfadeHandoff(
             else -> TransitionKind.CROSSFADE
         }
         // The port blocks for one hop to its playback thread, which must never be a snapshot collector's thread.
-        val armed = withContext(Dispatchers.IO) { port.armNext(request, kind, overlapMs) }
+        val cue = incomingCue?.takeIf { it.first == request.occurrenceId && kind == TransitionKind.AUTOMIX }?.second ?: 0L
+        val armed = withContext(Dispatchers.IO) { port.armNext(request, kind, overlapMs, startPositionMs = cue) }
         desktopDiagnostic("transition ${kind.name.lowercase()} into ${request.occurrenceId} over $overlapMs ms: ${if (armed) "armed" else "refused"}")
         return armed
     }

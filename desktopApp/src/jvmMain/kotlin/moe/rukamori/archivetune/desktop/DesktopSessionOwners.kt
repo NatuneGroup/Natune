@@ -286,6 +286,7 @@ internal suspend fun assembleDesktopSessionOwners(
     )
     val songCache = DesktopSongCache(directory.resolve("cache/songs"), http, database.storedSongs(), storedIndex,
         playback, { vault.snapshots.value }, scope)
+    val automixAnalysis = DesktopAutomixAnalysis(scope, { vault.snapshots.value })
     // A committed download answers before the network does, so a stored song keeps playing offline.
     val storedFile: suspend (String, String) -> java.nio.file.Path? = { provider, mediaId ->
         var found: java.nio.file.Path? = null
@@ -298,12 +299,17 @@ internal suspend fun assembleDesktopSessionOwners(
         }
         found ?: songCache.fileOf(provider, mediaId)
     }
+    automixAnalysis.fileLookup = { item ->
+        if (item.ref.provider == "local") java.nio.file.Path.of(item.ref.id).takeIf { java.nio.file.Files.isRegularFile(it) }
+        else storedFile(item.ref.provider, item.ref.id)
+    }
     val locators = DesktopQueueLocatorResolver(
         audio = audioResolver,
         port = playback,
         preferences = { vault.snapshots.value },
         storedFile = storedFile,
         cacheAudio = songCache::consider,
+        sourceSelected = automixAnalysis::sourceSelected,
     )
     val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
     val youtubeLibrarySync = DesktopYouTubeLibrarySync(
@@ -346,7 +352,7 @@ internal suspend fun assembleDesktopSessionOwners(
         hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
         blockedArtistIds = { queueArtistBlocks.value },
         blockedSongRefs = blockedSongs,
-        handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
+        handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold, automixAnalysis),
         songMetadata = songMetadata,
         recommendation = queueRecommendation,
     )
