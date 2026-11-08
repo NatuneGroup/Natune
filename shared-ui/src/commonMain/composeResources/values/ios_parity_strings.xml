@@ -40,4 +40,14 @@
     <string name="ios_dsp_limits">AVAudioEngine supports independent pitch, EQ and preamp, the clarity filter contour and a high-pass approximation of DC removal. Full clarity stereo/exciter processing, the shared limiter/dither chain and silence skipping are unavailable. Track loudness measurement is not wired; unmeasured tracks keep their original level. Optional Audio Units may be bypassed if the output route rejects them.</string>
     <string name="ios_playback_os_unavailable">This setting uses an Android service or output contract unavailable on iOS.</string>
     <string name="ios_normalization_unavailable">Track loudness measurement is not available in this build. Unmeasured tracks keep their original level.</string>
+    <string name="ios_usb_rate_title">USB audio sample rate</string>
+    <string name="ios_usb_rate_standard">Standard (48 kHz PCM)</string>
+    <string name="ios_usb_rate_88200">Request 88.2 kHz</string>
+    <string name="ios_usb_rate_96000">Request 96 kHz</string>
+    <string name="ios_usb_rate_176400">Request 176.4 kHz</string>
+    <string name="ios_usb_rate_192000">Request 192 kHz</string>
+    <string name="ios_usb_rate_status">Current audio format</string>
+    <string name="ios_usb_rate_inactive">Start playback to check the accepted USB rate.</string>
+    <string name="ios_usb_rate_observed">Decoder PCM: %1$d Hz. iOS output route: %2$d Hz.</string>
+    <string name="ios_usb_rate_description">Higher rates are requested only for USB audio. iOS and your DAC choose the accepted rate; a request does not prove source quality or physical DAC output. Changes apply on the next track or playback reload. High-rate tracks use ordinary handoff instead of crossfade. EQ, pitch and system mixing remain available; this is not USB-exclusive or bit-perfect output.</string>
 </resources>

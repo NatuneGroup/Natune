@@ -72,6 +72,7 @@ val LiquidGlassAdaptiveLuminanceKey = BooleanPreferenceKey("liquidGlassAdaptiveL
 // moe/rukamori/archivetune/constants/PreferenceKeys.kt
 val DynamicThemeKey = BooleanPreferenceKey("dynamicTheme")
 val CustomThemeColorKey = StringPreferenceKey("customThemeColor")
+val IosUsbOutputSampleRateKey = IntPreferenceKey("ios_usb_output_sample_rate")
 val DesktopAppIconPathKey = StringPreferenceKey("desktop_app_icon_path")
 val RandomThemeOnStartupKey = BooleanPreferenceKey("randomThemeOnStartup")
 val DarkModeKey = StringPreferenceKey("darkMode")

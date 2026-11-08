@@ -62,7 +62,7 @@ internal class IosBlendAudioGraph private constructor(
     }
 
     fun arm(output: CPointer<at_audio_output>): Boolean {
-        if (closed || incoming != null) return false
+        if (closed || incoming != null || at_audio_pcm_sample_rate(output) != PCM_RATE.toUInt()) return false
         val deck = try { Deck(output, 0f) } catch (_: Exception) { return false }
         incoming = deck
         if (at_audio_play(output) == 0) {
@@ -555,7 +555,7 @@ internal class IosBlendAudioGraph private constructor(
 
     companion object {
         fun open(output: CPointer<at_audio_output>, volume: Float): IosBlendAudioGraph? {
-            if (at_audio_begin_manual_output(output) == 0) return null
+            if (at_audio_pcm_sample_rate(output) != PCM_RATE.toUInt() || at_audio_begin_manual_output(output) == 0) return null
             var graph: IosBlendAudioGraph? = null
             val engine = at_graph_create()
             try {

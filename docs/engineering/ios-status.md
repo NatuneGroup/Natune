@@ -562,3 +562,20 @@ fallback when no snapshot exists. App and widget entitlements declare the same c
 Provisioning, full extension/app linkage, timeline delivery and home-screen behavior are unverified.
 Listening-insight and ActivityKit/lock-screen lyric widgets remain incomplete. This supersedes
 the earlier controls-only/no-App-Group source description.
+
+
+### Follow-up: negotiated USB PCM rate
+
+The USB-rate preference requests 88.2/96/176.4/192 kHz through AVAudioSession only
+on a USB route. After activation, the rate iOS actually accepted configures the
+retained native decoder and the source node; it is no longer forced through 48 kHz
+PCM before conversion. The current track retains its decoder, position and lease.
+A later load recreates the output when the preference, USB route or accepted rate
+changes. Native getters show decoder configuration and the graph-reported device
+rate separately. A refused request uses the accepted lower rate, and non-USB routes
+retain the standard 48 kHz decoder configuration. Recording windows retain their
+existing session policy. High-rate PCM uses ordinary handoff because the blend pump
+is still 48 kHz; guards prevent a high-rate buffer from entering that timebase.
+This is shared-system USB output: exclusive access, bit-perfectness, original-source
+provenance and physical DAC output remain unverified or unsupported. No desktop or
+Android source was changed. Native fixture tests run in the Apple CI gate.
