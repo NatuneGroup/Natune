@@ -135,8 +135,8 @@ val discordApplicationIdLong = sequenceOf(
 val discordApplicationId = discordApplicationIdLong.toString()
 val discordRedirectScheme = "discord-$discordApplicationId"
 val discordSocialSdkAar = rootProject.file("third_party/discord-social-sdk/android/discord_partner_sdk.aar")
-// Opt-in: the property must be set AND the licensed AAR must exist. Trusted Android CI sets
-// the property only after its secret-gated checkout contains the AAR; PR builds stay SDK-free.
+// Strictly opt-in: the property must be set AND the licensed AAR must exist. Default builds,
+// release/nightly CI and pull-request builds never pass the property and never fetch the SDK.
 val discordSocialSdkEnabled = providers.gradleProperty("natune.discordSdk").orNull
     ?.toBooleanStrictOrNull() == true && discordSocialSdkAar.isFile
 // SDK builds receive the OAuth callback in the SDK's AuthenticationActivity; the app's browser

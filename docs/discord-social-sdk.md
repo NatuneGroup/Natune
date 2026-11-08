@@ -1,9 +1,9 @@
 # Discord Social SDK on Android
 
-Now Playing uses the **official Discord Social SDK with OAuth PKCE**, scope
-`sdk.social_layer_presence`. The licensed Android AAR is optional and stays in
-the private `NatuneGroup/discord-social-sdk` repository. There is no user-token
-login or direct Gateway authentication.
+Now Playing uses the **official Discord Social SDK with OAuth PKCE**. There is no
+user-token WebView login and no direct Gateway IDENTIFY transport. The SDK is
+strictly opt-in: default builds, release/nightly artifacts and every CI workflow
+are SDK-free and do not grow in APK size.
 
 ## Default builds (SDK absent)
 
@@ -15,39 +15,11 @@ Nothing in the default build references the SDK:
   playback never tries to send presence;
 - Discord settings keeps browser PKCE account linking and shows an
   "unavailable" notice instead of a broken SDK login;
-- Android CI skips the private checkout when `DISCORD_SDK_TOKEN` is unset or the
-  event is a pull request. These builds stay SDK-free with unchanged APK size.
+- no workflow fetches the private SDK repository, passes the opt-in property or
+  references `DISCORD_SDK_TOKEN` (that secret does not exist).
 
-When enabled, the AAR adds its native libraries to the APK for the selected ABIs.
-
-## Developer Portal and private repository
-
-1. In the Discord Developer Portal, enable Social SDK access for the Natune
-   application **1569030685010821170** and turn on **Public Client** under OAuth2.
-2. Register `discord-1569030685010821170:/authorize/callback` for Android and
-   `http://127.0.0.1/callback` for desktop. For another application ID, the Android
-   redirect becomes `discord-<APP_ID>:/authorize/callback`.
-3. Download the licensed Android Social SDK and upload
-   `android/discord_partner_sdk.aar` to the private repository's `main` branch,
-   together with a README and version information. The current API is 1.10.19337.
-4. Create a fine-grained PAT with **Contents: read-only** access only to
-   `NatuneGroup/discord-social-sdk`. Store it as the Natune repository Actions
-   secret **DISCORD_SDK_TOKEN**; never commit it or a Discord client secret.
-5. Set the public Actions variable **DISCORD_APPLICATION_ID** to
-   `1569030685010821170`.
-
-## Android CI
-
-The shared `prepare-discord-sdk` action checks out only the private Android
-directory and version/README files with credential persistence disabled. Build,
-unit-test, emulator and release-candidate jobs use it; Stable and Nightly share
-the Android job in `_release-artifacts.yml` and already inherit repository secrets.
-The token is passed only to checkout, never to Gradle or the app.
-
-Trusted builds pass `-Pnatune.discordSdk=true` only when the checkout contains the
-AAR. Missing AARs use the no-SDK build. Pull requests always receive an empty
-token and do not fetch the SDK, including same-repository PRs. Invalid configured
-credentials fail the checkout instead of silently hiding a configuration error.
+The licensed SDK adds roughly 3.7 MB compressed per ABI, so it must not be
+bundled in release APKs.
 
 ## Building locally with the SDK
 
@@ -66,7 +38,7 @@ Then build with the Gradle property:
 
 Both conditions are required: `natune.discordSdk=true` **and** the AAR file being
 present. An absent property or AAR leaves the integration off, even if the other
-condition is met. CI uses the same property after its optional checkout.
+condition is met. Release APKs are never built with this property.
 
 ## Application ID and redirects
 
@@ -127,11 +99,11 @@ unavailable/no-op backend. MainActivity calls the AAR's Java
 song/artist, album-art URL/caption, timestamps and up to two buttons. Playback
 policy still owns update and clear/stop decisions.
 
-**Verification status:** JNI signatures were checked against SDK 1.10.19337's
-`discordpp.h`, including `Activity.AddButton` and the callback-free
-`Client.ClearRichPresence`. No Gradle/JVM or native build is run on the constrained
-development host. SDK-enabled CI compilation remains pending until the token is
-configured; device authorization and presence still need verification.
+**Verification status:** the JNI and manifest wiring are written against SDK
+1.10.19337's `discordpp.h`. No Gradle/JVM or native build is run on the
+constrained development host; CI builds are SDK-free. A local SDK-enabled build
+plus a device authorization/presence check is still required before shipping an
+SDK build.
 
 References: [mobile account linking](https://docs.discord.com/developers/discord-social-sdk/development-guides/account-linking-on-mobile),
 [mobile SDK guide](https://discord.com/developers/docs/social-sdk/md_pages_2mobile.html),
