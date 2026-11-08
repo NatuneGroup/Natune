@@ -847,6 +847,7 @@ dependencies {
     implementation(project(":spotifycore"))
     implementation(project(":deobfuscator"))
     implementation(project(":jiosaavn"))
+    implementation(project(":modules"))
     implementation("com.materialkolor:material-kolor:5.0.0-alpha07")
 
     implementation(libs.ktor.client.core)

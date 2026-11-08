@@ -81,6 +81,16 @@
             android:name="org.apache.http.legacy"
             android:required="false" />
 
+        <activity android:name=".modules.ModuleAuthorizationActivity" android:exported="true"
+            android:excludeFromRecents="true" android:theme="@style/Theme.ArchiveTune.Transparent">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="archivetune" android:host="module-session" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".startup.StartupRecoveryActivity"
             android:exported="true"
