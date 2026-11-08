@@ -1,0 +1,47 @@
+name: Prepare optional Discord Social SDK
+description: Check out the licensed Android AAR for trusted builds when a read-only token is configured.
+
+inputs:
+  token:
+    description: Read-only contents token for NatuneGroup/discord-social-sdk; empty disables the SDK.
+    required: false
+    default: ''
+
+outputs:
+  enabled:
+    description: Whether the private checkout contains the Android AAR.
+    value: ${{ steps.configure.outputs.enabled }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the optional Social SDK
+      id: sdk-checkout
+      if: inputs.token != '' && github.event_name != 'pull_request' && github.repository == 'NatuneGroup/Natune'
+      uses: actions/checkout@v7
+      with:
+        repository: NatuneGroup/discord-social-sdk
+        ref: main
+        token: ${{ inputs.token }}
+        path: third_party/discord-social-sdk
+        fetch-depth: 1
+        persist-credentials: false
+        sparse-checkout-cone-mode: false
+        sparse-checkout: |
+          /android/
+          /README*
+          /version*
+          /VERSION*
+
+    - name: Resolve SDK availability
+      id: configure
+      shell: bash
+      env:
+        CHECKOUT_READY: ${{ steps.sdk-checkout.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        enabled=false
+        if [[ "$CHECKOUT_READY" == true && -f third_party/discord-social-sdk/android/discord_partner_sdk.aar ]]; then
+          enabled=true
+        fi
+        echo "enabled=$enabled" >> "$GITHUB_OUTPUT"

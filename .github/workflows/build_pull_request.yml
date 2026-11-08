@@ -77,6 +77,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: true
 
+      - name: Prepare optional Discord Social SDK
+        id: discord-sdk
+        uses: ./.github/actions/prepare-discord-sdk
+        with:
+          token: ${{ github.event_name != 'pull_request' && secrets.DISCORD_SDK_TOKEN || '' }}
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -129,6 +135,7 @@ jobs:
           # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
           # has more RAM, and the app module needs a bigger Kotlin daemon to compile.
           ./gradlew --console=plain --stacktrace --profile "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            -Pnatune.discordSdk=${{ steps.discord-sdk.outputs.enabled }} \
             assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
           import re
           import sys
@@ -737,6 +744,12 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      - name: Prepare optional Discord Social SDK
+        id: discord-sdk
+        uses: ./.github/actions/prepare-discord-sdk
+        with:
+          token: ${{ secrets.DISCORD_SDK_TOKEN }}
+
       - name: Assert the checked-out source is the dispatched commit
         shell: bash
         env:
@@ -994,6 +1007,7 @@ jobs:
           # Standard slim Nightly shape: no optional ONNX models/runtime, TDLib stays the
           # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
           ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
+            -Pnatune.discordSdk=${{ steps.discord-sdk.outputs.enabled }} \
             -Pautomix=false -PslimTdlib=true
 
       - name: Verify Librespot in the candidate APK
