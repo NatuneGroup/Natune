@@ -305,6 +305,8 @@ internal fun BottomControls(c: PlayerRenderContext, metrolist: Boolean = false) 
         PlayerIcon(PlayerSymbol.QUEUE,stringResource(Res.string.m5_queue),{ c.interaction.panel=PlayerPanel.QUEUE },
             selected=c.interaction.panel==PlayerPanel.QUEUE)
         if(metrolist) ActionButton(PlayerAction.REPEAT,c)
+        // A native route control is offered only by hosts that supply one; the rest keep their own output action.
+        if(metrolist && c.slots.outputButton != null) ActionButton(PlayerAction.OUTPUT,c)
         ActionButton(PlayerAction.SLEEP,c)
         ActionButton(PlayerAction.MORE,c)
     }

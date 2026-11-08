@@ -135,6 +135,9 @@
     <string name="m9_media_info_usb_exclusive_direct">USB Exclusive (Direct DAC)</string>
     <string name="m9_media_info_bit_perfect_usb_title">Bit-perfect USB output</string>
     <string name="m9_media_info_default_mixer">Default Android System Mixer</string>
+    <string name="m9_media_info_exclusive_direct">Exclusive output (direct)</string>
+    <string name="m9_media_info_system_mixer">System mixer</string>
+    <string name="m9_media_info_system_output">System default output</string>
     <string name="m9_media_info_ti_hardware_clock">Hardware clock</string>
     <string name="m9_media_info_ti_usb_id">USB hardware ID</string>
     <string name="m9_media_info_ti_pipeline_state">Pipeline state</string>
@@ -145,6 +148,8 @@
     <string name="m9_media_info_float_usb_out">Float · %1$d-bit USB out</string>
     <string name="m9_media_info_usb_out">%1$d-bit USB out</string>
     <string name="m9_media_info_bit_perfect_mixer">%1$d-bit bit-perfect mixer</string>
+    <string name="m9_media_info_float_direct_out">Float · %1$d-bit direct out</string>
+    <string name="m9_media_info_direct_out">%1$d-bit direct out</string>
     <string name="m9_media_info_float_out">Float · %1$d-bit out</string>
     <string name="m9_media_info_bit_out">%1$d-bit out</string>
     <string name="m9_media_info_ti_decoder">Decoder</string>
@@ -152,6 +157,7 @@
     <string name="m9_media_info_output_device">Device</string>
     <string name="m9_media_info_output_device_rates">Device sample rates</string>
     <string name="m9_media_info_output_mix_rate">Android mix rate</string>
+    <string name="m9_media_info_output_sink_rate">Sink rate</string>
     <string name="m9_media_info_output_conversion">Sample-rate conversion</string>
     <string name="m9_media_info_output_no_conversion">None — matches the output route</string>
     <string name="m9_media_info_conversion_same">No conversion — source matches the %1$d Hz output route</string>

@@ -336,11 +336,12 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     val unknownText = stringResource(Res.string.m9_media_info_unknown)
     val title = stringResource(Res.string.m9_media_info_ti_section_dac)
     val dacDeviceLabel = stringResource(Res.string.m9_media_info_ti_dac_device)
-    val builtInOutputText = stringResource(Res.string.m9_media_info_android_builtin_output)
+    val builtInOutputText = mediaInfoOutputFallbackLabel(pipeline?.hostDesktop == true)
     val signalPathLabel = stringResource(Res.string.m9_media_info_ti_signal_path)
     val usbExclusiveText = stringResource(Res.string.m9_media_info_usb_exclusive_direct)
+    val exclusiveDirectText = stringResource(Res.string.m9_media_info_exclusive_direct)
     val bitPerfectUsbTitle = stringResource(Res.string.m9_media_info_bit_perfect_usb_title)
-    val mixerText = stringResource(Res.string.m9_media_info_default_mixer)
+    val mixerText = mediaInfoMixerLabel(pipeline?.hostDesktop == true)
     val hardwareClockLabel = stringResource(Res.string.m9_media_info_ti_hardware_clock)
     val usbIdLabel = stringResource(Res.string.m9_media_info_ti_usb_id)
     val pipelineStateLabel = stringResource(Res.string.m9_media_info_ti_pipeline_state)
@@ -350,6 +351,7 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     val signalPathValue: String =
         when {
             pipeline?.usbExclusive == true -> usbExclusiveText
+            pipeline?.exclusiveDirect == true -> exclusiveDirectText
             live?.bitPerfectUsbActive == true -> bitPerfectUsbTitle
             else -> mixerText
         }
@@ -408,6 +410,19 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
     MediaInfoSectionCard(title = title, rows = rows)
 }
 
+/** The route fallback Android names for its built-in output; a desktop host names its own system output. */
+@Composable
+private fun mediaInfoOutputFallbackLabel(hostDesktop: Boolean): String =
+    stringResource(
+        if (hostDesktop) Res.string.m9_media_info_system_output
+        else Res.string.m9_media_info_android_builtin_output
+    )
+
+/** The mixer label Android names for its system mixer; a desktop host names its own mixer. */
+@Composable
+private fun mediaInfoMixerLabel(hostDesktop: Boolean): String =
+    stringResource(if (hostDesktop) Res.string.m9_media_info_system_mixer else Res.string.m9_media_info_default_mixer)
+
 /**
  * Output route card: the device, its supported rates, the Android mix rate and the sample-rate
  * conversion between the source and the route. Shown only when the platform probe observed data.
@@ -417,7 +432,11 @@ private fun MediaInfoOutputSection(state: MediaInfoUi) {
     val stats = state.outputStats?.takeIf { it.hasData } ?: return
     val deviceLabel = stringResource(Res.string.m9_media_info_output_device)
     val deviceRatesLabel = stringResource(Res.string.m9_media_info_output_device_rates)
-    val mixRateLabel = stringResource(Res.string.m9_media_info_output_mix_rate)
+    val mixRateLabel = if (stats.hostDesktop) {
+        stringResource(Res.string.m9_media_info_output_sink_rate)
+    } else {
+        stringResource(Res.string.m9_media_info_output_mix_rate)
+    }
     val conversionLabel = stringResource(Res.string.m9_media_info_output_conversion)
     val noConversionText = stringResource(Res.string.m9_media_info_output_no_conversion)
 
@@ -513,6 +532,12 @@ private fun mediaInfoPipelineStateText(
                     stringResource(Res.string.m9_media_info_usb_out, wireBits)
                 }
             }
+            pipeline?.exclusiveDirect == true ->
+                if (bitPerfect.outputFloatEncoding) {
+                    stringResource(Res.string.m9_media_info_float_direct_out, outBits)
+                } else {
+                    stringResource(Res.string.m9_media_info_direct_out, outBits)
+                }
             bitPerfect.mixerBitPerfectActive ->
                 stringResource(Res.string.m9_media_info_bit_perfect_mixer, outBits)
             bitPerfect.outputFloatEncoding -> stringResource(Res.string.m9_media_info_float_out, outBits)

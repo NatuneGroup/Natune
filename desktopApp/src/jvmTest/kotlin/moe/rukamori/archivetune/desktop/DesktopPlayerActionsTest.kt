@@ -23,6 +23,7 @@ class DesktopPlayerActionsTest {
                 share = { calls += "share" },
                 more = { calls += "more" },
                 sleep = { calls += "sleep" },
+                output = { calls += "output" },
                 title = { calls += "title" },
                 artist = { calls += "artist" },
             )
@@ -45,15 +46,13 @@ class DesktopPlayerActionsTest {
         assertTrue(PlayerAction.LIKE in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.MORE in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.SLEEP in DESKTOP_PLAYER_ACTIONS)
+        assertTrue(PlayerAction.OUTPUT in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.TITLE in DESKTOP_PLAYER_ACTIONS)
         assertTrue(PlayerAction.ARTIST in DESKTOP_PLAYER_ACTIONS)
     }
 
     @Test
-    fun actionsWithoutADesktopOwnerAreNotOffered() {
-        for (action in listOf(PlayerAction.OUTPUT)) {
-            assertFalse(action in DESKTOP_PLAYER_ACTIONS, "$action has no desktop owner")
-            assertFalse(desktopPlayerAction(action, "occ", {}, {}, {}, {}), "$action must not dispatch")
-        }
+    fun theSheetOffersEveryActionTheHostCanAnswer() {
+        assertEquals(PlayerAction.entries.toSet(), DESKTOP_PLAYER_ACTIONS)
     }
 }

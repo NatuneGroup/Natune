@@ -56,15 +56,27 @@ internal class DesktopPlaybackOutput {
     fun plan(config: StageConfig) = DesktopExclusiveOutputPolicy.plan(
         observed.value.copy(requested = requested || observed.value.directPcm), config)
 
-    fun settings(stored: DspSettings, bands: List<EqualizerBand>, gainDb: Double?, peak: Double?): DspSettings {
-        val bypass = requested || observed.value.directPcm
-        val settings = if (bypass) stored.withoutProcessing() else stored
-        return settings.copy(equalizerBands = if (bypass) emptyList() else bands,
-            linearGain = NormalizationGain.linearGain(gainDb, peak))
-    }
+    fun settings(stored: DspSettings, bands: List<EqualizerBand>, gainDb: Double?, peak: Double?): DspSettings =
+        desktopOutputSettings(observed.value, stored, bands, gainDb, peak)
 
     fun close(mixer: NativeTwoDeckMixer?) {
         mixer?.close()
         observed.value = DesktopOutputState(requested = requested, muted = !enabled)
     }
+}
+
+/**
+ * The settings one engine deck renders with. Only a sink that is actually playing the direct lane may drop the
+ * user's stages: a requested but refused exclusive route is still shared output, where the stored equalizer and
+ * normalization must keep working. The bit-perfect gate decides the reported/bypass plan separately.
+ */
+internal fun desktopOutputSettings(
+    state: DesktopOutputState,
+    stored: DspSettings,
+    bands: List<EqualizerBand>,
+    gainDb: Double?,
+    peak: Double?,
+): DspSettings {
+    if (state.directPcm) return stored.withoutProcessing().copy(linearGain = 1f)
+    return stored.copy(equalizerBands = bands, linearGain = NormalizationGain.linearGain(gainDb, peak))
 }
