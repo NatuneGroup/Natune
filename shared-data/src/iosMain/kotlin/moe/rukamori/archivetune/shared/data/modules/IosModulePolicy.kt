@@ -37,7 +37,15 @@ internal fun validateModuleMetadata(metadata: JsonObject): JsonObject {
     moduleRequire(types.all { it == "audio_provider" }, IosModuleIssue.UNSUPPORTED_CONTRACT)
     val capabilities = (metadata["capabilities"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
     moduleRequire(capabilities.toSet() == iosAudioCapabilities && capabilities.size == 2, IosModuleIssue.UNSUPPORTED_CONTRACT)
-    val features = (metadata["requiredRuntimeFeatures"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
+    val features = when (val raw = metadata["requiredRuntimeFeatures"]) {
+        null -> emptyList()
+        is JsonPrimitive -> { moduleRequire(raw.isString); listOf(raw.content) }
+        is JsonArray -> raw.map { value ->
+            moduleRequire(value is JsonPrimitive && value.isString)
+            value.jsonPrimitive.content
+        }
+        else -> throw IosModuleFailure(IosModuleIssue.INVALID_PACKAGE)
+    }
     moduleRequire(features.size <= 32 && features.all { it in iosModuleFeatures }, IosModuleIssue.UNSUPPORTED_CONTRACT)
     val version = metadata["minAppVersion"]?.jsonPrimitive?.content.orEmpty()
     if (version.isNotBlank()) {
@@ -112,4 +120,12 @@ internal fun moduleSettings(metadata: JsonObject, values: JsonObject): JsonObjec
         moduleRequire(moduleSettingAccepts(field, value), IosModuleIssue.INVALID_CONFIGURATION)
         JsonObject(field + ("value" to value))
     })
+}
+
+/** API-v1 uses seconds; millisecond records are also accepted without weakening duration matching. */
+internal fun moduleDurationMs(row: JsonObject): Long? {
+    val millis = (row["durationMs"] as? JsonPrimitive)?.longOrNull
+    if (millis != null && millis in 1..86_400_000L) return millis
+    val seconds = (row["duration"] as? JsonPrimitive)?.doubleOrNull ?: return null
+    return seconds.takeIf { it.isFinite() && it > 0.0 && it <= 86_400.0 }?.let { (it * 1000.0).toLong() }
 }
