@@ -269,6 +269,8 @@ behavior need Windows/Linux runtime validation.
   fallback. Output settings retain the device picker and publish sink diagnostics.
   The raw lane drains the negotiated hardware queue after its last PCM before
   closing on EOF or a format change. Stop/seek still discard obsolete output.
+  Native/WAVE speaker masks are passed to the sink; mismatched, custom or unknown
+  channel maps fall back to shared output rather than silently mix/reorder PCM.
   Physical DAC behavior remains unverified; raw USB-host control is not implemented.
 - Google Cast and speech search have no portable receiver/STT host in the retained
   dependencies. OS routing and microphone recognition are existing separate features.

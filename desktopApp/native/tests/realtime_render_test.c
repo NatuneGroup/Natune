@@ -205,8 +205,11 @@ static void direct_pcm_fixture(uint32_t bits, uint32_t transport) {
         CHECK(seconds() < deadline);
         struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL);
     }
-    CHECK(format.rate == 44100 && format.channels == 2 && format.bits == bits);
+    CHECK(format.rate == 44100 && format.channels == 2 && format.bits == bits && format.channel_mask == AV_CH_LAYOUT_STEREO);
     format.format = transport;
+    ae_pcm_format wrong_layout = format;
+    wrong_layout.channel_mask = AV_CH_LAYOUT_STEREO_DOWNMIX;
+    CHECK(!ae_engine_configure_output(engine, 1, &wrong_layout, 24));
     CHECK(ae_engine_configure_output(engine, 1, &format, 24));
     uint32_t sample_bytes = pcm_bytes(transport), total = 0;
     uint8_t out[8 * 2 * 4];
@@ -249,11 +252,33 @@ static void direct_pcm_fixture(uint32_t bits, uint32_t transport) {
     printf("PASS direct PCM %ubit through native format %u, exact integers and no software processing\n", bits, transport);
 }
 
+static void unexpected_layout_pull(void *user, void *out, uint32_t frames) {
+    (void)user; (void)out; (void)frames;
+    CHECK(0 && "an unknown speaker map must be refused before opening a device");
+}
+
+static void channel_layout_fixture(void) {
+    AVChannelLayout quad = AV_CHANNEL_LAYOUT_QUAD, surround = AV_CHANNEL_LAYOUT_4POINT0;
+    ae_pcm_format a = decoded_format(AV_SAMPLE_FMT_S16, 48000, &quad, 16);
+    ae_pcm_format b = decoded_format(AV_SAMPLE_FMT_S16, 48000, &surround, 16);
+    CHECK(a.channels == b.channels && a.channel_mask != b.channel_mask);
+    CHECK(ae_pcm_channel_mask_valid(&a) && ae_pcm_channel_mask_valid(&b));
+    AVChannelCustom reversed[2] = {{.id = AV_CHAN_FRONT_RIGHT}, {.id = AV_CHAN_FRONT_LEFT}};
+    AVChannelLayout custom = {.order = AV_CHANNEL_ORDER_CUSTOM, .nb_channels = 2, .u.map = reversed};
+    a = decoded_format(AV_SAMPLE_FMT_S16, 48000, &custom, 16);
+    CHECK(!ae_pcm_channel_mask_valid(&a));
+    ae_device_request request = {a, 1, 1, NULL};
+    char error[256] = {0};
+    CHECK(!ae_device_open_pcm(&request, unexpected_layout_pull, NULL, error, sizeof error));
+    CHECK(strstr(error, "speaker layout") != NULL);
+}
+
 int main(int argc, char **argv) {
     (void)checked_malloc; /* Keep the allocator tripwire even while the core uses calloc only. */
     CHECK(argc == 2);
     ring_fixture();
     decoder_fixture(argv[1]);
+    channel_layout_fixture();
     direct_pcm_fixture(16, AE_PCM_S16);
     direct_pcm_fixture(16, AE_PCM_S32);
     direct_pcm_fixture(24, AE_PCM_S24);

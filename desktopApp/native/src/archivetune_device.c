@@ -40,6 +40,7 @@ struct ae_device {
     ae_device_pull pull;
     ae_device_raw_pull raw_pull;
     void *user;
+    uint64_t channel_mask;
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
     ae_coreaudio_owner *hog;
 #endif
@@ -135,6 +136,19 @@ static void release_platform(ae_device *d) {
     if (d->owns_context) { ma_context_uninit(&d->context); d->owns_context = 0; }
 }
 
+static void pcm_channel_map(const ae_pcm_format *pcm, ma_channel *map) {
+    static const ma_channel speakers[] = {
+        MA_CHANNEL_FRONT_LEFT, MA_CHANNEL_FRONT_RIGHT, MA_CHANNEL_FRONT_CENTER, MA_CHANNEL_LFE,
+        MA_CHANNEL_BACK_LEFT, MA_CHANNEL_BACK_RIGHT, MA_CHANNEL_FRONT_LEFT_CENTER, MA_CHANNEL_FRONT_RIGHT_CENTER,
+        MA_CHANNEL_BACK_CENTER, MA_CHANNEL_SIDE_LEFT, MA_CHANNEL_SIDE_RIGHT, MA_CHANNEL_TOP_CENTER,
+        MA_CHANNEL_TOP_FRONT_LEFT, MA_CHANNEL_TOP_FRONT_CENTER, MA_CHANNEL_TOP_FRONT_RIGHT,
+        MA_CHANNEL_TOP_BACK_LEFT, MA_CHANNEL_TOP_BACK_CENTER, MA_CHANNEL_TOP_BACK_RIGHT
+    };
+    if (pcm->channels == 1 && pcm->channel_mask == 4) { map[0] = MA_CHANNEL_MONO; return; }
+    uint32_t channel = 0;
+    for (uint32_t bit = 0; bit < 18; bit++) if (pcm->channel_mask & (UINT64_C(1) << bit)) map[channel++] = speakers[bit];
+}
+
 static ae_device *open_device(const ae_device_request *request, ae_device_pull pull, ae_device_raw_pull raw_pull,
                              void *user, char *error, size_t error_len) {
     uint32_t rate = request->pcm.rate;
@@ -155,6 +169,12 @@ static ae_device *open_device(const ae_device_request *request, ae_device_pull p
     config.dataCallback = device_data_callback;
     config.pUserData = d;
     config.noClip = MA_TRUE;
+    ma_channel channel_map[8];
+    if (request->exclusive) {
+        pcm_channel_map(&request->pcm, channel_map);
+        config.playback.pChannelMap = channel_map;
+        d->channel_mask = request->pcm.channel_mask;
+    }
 
     ma_backend backend = platform_backend();
     ma_device_id selected;
@@ -232,8 +252,9 @@ static ae_device *open_device(const ae_device_request *request, ae_device_pull p
     }
 
     if (request->exclusive && (d->device.playback.internalFormat != config.playback.format ||
-        d->device.playback.internalChannels != config.playback.channels || d->device.playback.internalSampleRate != rate)) {
-        set_error(error, error_len, "the exclusive device negotiated a different PCM rate, format or channel count");
+        d->device.playback.internalChannels != config.playback.channels || d->device.playback.internalSampleRate != rate ||
+        !ma_channel_map_is_equal(channel_map, d->device.playback.internalChannelMap, config.playback.channels))) {
+        set_error(error, error_len, "the exclusive device negotiated a different PCM rate, format or speaker layout");
         ma_device_uninit(&d->device); release_platform(d); free(d); return NULL;
     }
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
@@ -257,7 +278,7 @@ static ae_device *open_device(const ae_device_request *request, ae_device_pull p
 }
 
 ae_device *ae_device_open(uint32_t rate, int null_backend, ae_device_pull pull, void *user, char *error, size_t error_len) {
-    ae_device_request request = {{rate, 2, AE_PCM_F32, 32}, 0, null_backend, NULL};
+    ae_device_request request = {{rate, 2, AE_PCM_F32, 32, 3}, 0, null_backend, NULL};
     return open_device(&request, pull, NULL, user, error, error_len);
 }
 
@@ -267,6 +288,9 @@ ae_device *ae_device_open_pcm(const ae_device_request *request, ae_device_raw_pu
         request->pcm.channels < 1 || request->pcm.channels > 8 || request->pcm.format < AE_PCM_U8 || request->pcm.format > AE_PCM_F32) {
         set_error(error, error_len, "unsupported native PCM output configuration"); return NULL;
     }
+    if (request->exclusive && !ae_pcm_channel_mask_valid(&request->pcm)) {
+        set_error(error, error_len, "exclusive output requires a known native PCM speaker layout"); return NULL;
+    }
     return open_device(request, NULL, pull, user, error, error_len);
 }
 
@@ -274,7 +298,7 @@ void ae_device_state_read(ae_device *d, ae_device_state *state) {
     memset(state, 0, sizeof *state);
     if (!d) return;
     state->pcm = (ae_pcm_format){d->device.playback.internalSampleRate, d->device.playback.internalChannels,
-        d->device.playback.internalFormat, ma_get_bytes_per_sample(d->device.playback.internalFormat) * 8u};
+        d->device.playback.internalFormat, ma_get_bytes_per_sample(d->device.playback.internalFormat) * 8u, d->channel_mask};
     state->exclusive = d->device.playback.shareMode == ma_share_mode_exclusive;
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
     if (d->hog) state->exclusive = 1;

@@ -957,7 +957,7 @@ static int source_finish_open(ae_engine *e, ae_source *s, int64_t start_us, doub
     }
     s->trim_seconds = trim;
     ae_pcm_format pcm = decoded_format(s->decoder->sample_fmt, s->decoder->sample_rate,
-        s->decoder->ch_layout.nb_channels, s->decoder->bits_per_raw_sample > 0 ? s->decoder->bits_per_raw_sample : stream->codecpar->bits_per_raw_sample);
+        &s->decoder->ch_layout, s->decoder->bits_per_raw_sample > 0 ? s->decoder->bits_per_raw_sample : stream->codecpar->bits_per_raw_sample);
     if (prepare_direct_output(e, s, &pcm, s->epoch, message, len) < 0 ||
         (!s->direct_pcm && build_graph(e, s, tempo, trim, e->rate, message, len) < 0)) {
         source_close(s);

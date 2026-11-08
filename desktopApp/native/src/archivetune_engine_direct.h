@@ -7,13 +7,14 @@ static uint32_t pcm_bytes(uint32_t format) {
         format == AE_PCM_S32 || format == AE_PCM_F32 ? 4u : 0u;
 }
 
-static ae_pcm_format decoded_format(int format, int rate, int channels, int bits) {
+static ae_pcm_format decoded_format(int format, int rate, const AVChannelLayout *layout, int bits) {
     int packed = av_get_packed_sample_fmt(format);
     uint32_t type = packed == AV_SAMPLE_FMT_U8 ? AE_PCM_U8 : packed == AV_SAMPLE_FMT_S16 ? AE_PCM_S16 :
         packed == AV_SAMPLE_FMT_S32 ? (bits == 24 ? AE_PCM_S24 : AE_PCM_S32) : packed == AV_SAMPLE_FMT_FLT ? AE_PCM_F32 : AE_PCM_UNKNOWN;
     uint32_t width = pcm_bytes(type) * 8u;
-    return (ae_pcm_format){rate > 0 ? (uint32_t)rate : 0, channels > 0 ? (uint32_t)channels : 0, type,
-        bits > 0 && (uint32_t)bits <= width ? (uint32_t)bits : width};
+    return (ae_pcm_format){rate > 0 ? (uint32_t)rate : 0, layout->nb_channels > 0 ? (uint32_t)layout->nb_channels : 0, type,
+        bits > 0 && (uint32_t)bits <= width ? (uint32_t)bits : width,
+        layout->order == AV_CHANNEL_ORDER_NATIVE ? layout->u.mask : 0};
 }
 
 void ae_engine_direct_request(ae_engine *e, int requested) {
@@ -49,10 +50,11 @@ int ae_engine_pending_output(ae_engine *e, ae_pcm_format *format) {
 int ae_engine_configure_output(ae_engine *e, int direct, const ae_pcm_format *transport, uint32_t drain_frames) {
     pthread_mutex_lock(&e->mutex);
     if (!e->format_pending) { pthread_mutex_unlock(&e->mutex); return 0; }
-    ae_pcm_format pcm = direct ? e->input_pcm : (ae_pcm_format){e->shared_rate, 2, AE_PCM_F32, 32};
+    ae_pcm_format pcm = direct ? e->input_pcm : (ae_pcm_format){e->shared_rate, 2, AE_PCM_F32, 32, 3};
+    if (direct && !ae_pcm_channel_mask_valid(&pcm)) { pthread_mutex_unlock(&e->mutex); return 0; }
     if (direct && transport) {
         int widening = (e->input_pcm.format == AE_PCM_S16 || e->input_pcm.format == AE_PCM_S24) && transport->format == AE_PCM_S32;
-        if (transport->rate != pcm.rate || transport->channels != pcm.channels ||
+        if (transport->rate != pcm.rate || transport->channels != pcm.channels || transport->channel_mask != pcm.channel_mask ||
             (transport->format != pcm.format && !widening)) { pthread_mutex_unlock(&e->mutex); return 0; }
         pcm = *transport;
     }
@@ -173,7 +175,7 @@ static int append_direct_frame(ae_engine *e, ae_source *s, uint64_t epoch, uint3
 
 static int synchronize_frame_output(ae_engine *e, ae_source *s, uint64_t epoch, char *message, size_t len) {
     ae_pcm_format format = decoded_format(s->frame->format, s->frame->sample_rate > 0 ? s->frame->sample_rate : s->decoder->sample_rate,
-        s->frame->ch_layout.nb_channels > 0 ? s->frame->ch_layout.nb_channels : s->decoder->ch_layout.nb_channels,
+        s->frame->ch_layout.nb_channels > 0 ? &s->frame->ch_layout : &s->decoder->ch_layout,
         s->decoder->bits_per_raw_sample);
     if (format.format == AE_PCM_S24) {
         int planar = av_sample_fmt_is_planar(s->frame->format);
@@ -187,7 +189,8 @@ static int synchronize_frame_output(ae_engine *e, ae_source *s, uint64_t epoch, 
         }
         if (s->precision_unreliable) { format.format = AE_PCM_S32; format.bits = 32; }
     }
-    if (format.rate != s->pcm.rate || format.channels != s->pcm.channels || format.format != s->pcm.format || format.bits != s->pcm.bits) {
+    if (format.rate != s->pcm.rate || format.channels != s->pcm.channels || format.channel_mask != s->pcm.channel_mask ||
+        format.format != s->pcm.format || format.bits != s->pcm.bits) {
         pthread_mutex_lock(&e->mutex);
         int requested = e->direct_requested;
         if (epoch != e->epoch || e->shutdown) { pthread_mutex_unlock(&e->mutex); return 1; }
@@ -228,7 +231,8 @@ uint32_t ae_engine_pull_native(ae_engine *e, void *out, uint32_t frames, const a
        runs during prebuffer starvation/pauses, when the device keeps consuming silence. */
     e->output_tail_frames = e->output_tail_frames > frames ? e->output_tail_frames - frames : 0;
     if (!e->direct_enabled || e->output_pcm.format != format->format || e->output_pcm.channels != format->channels ||
-        e->output_pcm.rate != format->rate || !e->has_source || e->failed || !e->play_intent || !e->ready || e->ended ||
+        e->output_pcm.rate != format->rate || e->output_pcm.channel_mask != format->channel_mask ||
+        !e->has_source || e->failed || !e->play_intent || !e->ready || e->ended ||
         (e->filling && e->ring_count < e->prebuffer && !e->eof)) {
         pthread_mutex_unlock(&e->mutex); return 0;
     }
