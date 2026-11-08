@@ -94,7 +94,8 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeAuthorize(JNI
         auto verifier = client->CreateAuthorizationCodeVerifier();
         discordpp::AuthorizationArgs args;
         args.SetClientId(applicationId);
-        args.SetScopes(discordpp::Client::GetDefaultPresenceScopes());
+        // The account row reads /users/@me, which needs identify on top of the SDK presence scopes.
+        args.SetScopes(discordpp::Client::GetDefaultPresenceScopes() + " identify");
         args.SetCodeChallenge(verifier.Challenge());
         client->Authorize(args, [expected, verifier, id](auto result, std::string code, std::string redirectUri) {
             if (expected != client) return;
