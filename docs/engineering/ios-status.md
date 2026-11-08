@@ -579,3 +579,20 @@ is still 48 kHz; guards prevent a high-rate buffer from entering that timebase.
 This is shared-system USB output: exclusive access, bit-perfectness, original-source
 provenance and physical DAC output remain unverified or unsupported. No desktop or
 Android source was changed. Native fixture tests run in the Apple CI gate.
+
+
+### Follow-up: CarPlay and widget signing configuration
+
+App and widget targets now share `Configuration/SharedSigning.xcconfig` for their
+public development-team/App Group metadata and optional ignored `Signing.xcconfig`
+overrides. The widget does not inherit provider credentials from the app's native
+configuration. Xcode target capabilities declare CarPlay audio on the app and App
+Groups on both targets; each target keeps its own entitlement file and bundle id.
+For a signed build, copy `Signing.xcconfig.example` and supply the registered team
+and group. Both explicit provisioning profiles must grant that same group, and the
+app profile must grant Apple's CarPlay audio entitlement. The local helper
+`iosApp/scripts/check_signing_capabilities.py` checks these fields in decoded
+profiles with `--app-profile`, `--widget-profile`, `--app-group` and optional `--team`.
+It does not authenticate a profile, grant approval or sign an app. The existing CI
+release remains explicitly unsigned; approved provisioning, signing and CarPlay/
+widget device execution are still separate owner-run gates.
