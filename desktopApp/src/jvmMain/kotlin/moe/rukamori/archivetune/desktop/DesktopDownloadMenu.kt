@@ -11,7 +11,7 @@ import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueDownloadSt
 internal fun ContentRef.desktopDownloadId(): String = "$provider:$id"
 
 internal fun desktopDownloadSupported(ref: ContentRef): Boolean =
-    ref.kind == ContentKind.SONG &&
+    ref.kind in setOf(ContentKind.SONG, ContentKind.EPISODE) &&
         ref.provider !in setOf(ContentProvider.LOCAL.id, ContentProvider.TELEGRAM.id, ContentProvider.SPOTIFY_STREAMING.id) &&
         !ref.id.startsWith("telegram://")
 

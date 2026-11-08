@@ -85,11 +85,38 @@ class JvmDownloadRepository(
         download(key, resolvedUrl, song, PlaybackHeaders.NONE)
 
     private suspend fun download(key: DownloadKey, resolvedUrl: String, song: ContentItem?, headers: PlaybackHeaders): Path {
+        require(resolvedUrl.startsWith("https://")) { "Download requires a resolved HTTPS source" }
+        return downloadBytes(key, song) { staging ->
+            client.prepareGet(resolvedUrl) {
+                headers.reveal().forEach { (name, value) -> header(name, value) }
+            }.execute { response ->
+                require(response.status.value in 200..299) { "Download HTTP ${response.status.value}" }
+                val channel = response.bodyAsChannel()
+                Files.newOutputStream(staging, StandardOpenOption.CREATE_NEW).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = channel.readAvailable(buffer)
+                        if (count < 0) break
+                        if (count == 0) { yield(); continue }
+                        total += count
+                        require(total <= maxBytes) { "Download exceeds size limit" }
+                        output.write(buffer, 0, count)
+                    }
+                    require(total > 0) { "Empty download" }
+                    total
+                }
+            }
+        }
+    }
+
+    /** A host-prepared plaintext writer shares the same request-owned staging, listing and atomic commit. */
+    suspend fun downloadBytes(key: DownloadKey, song: ContentItem?, write: suspend (Path) -> Long): Path {
         require(key.mediaId.isNotBlank())
         require(key.source != AudioSourceType.SPOTIFY) { "Spotify streaming is not a download source" }
-        require(resolvedUrl.startsWith("https://")) { "Download requires a resolved HTTPS source" }
         require(index == null || song != null) { "An indexed download needs the song it stores" }
-        require(song == null || (song.ref.kind == ContentKind.SONG && song.ref.id == key.mediaId)) {
+        require(song == null || (song.ref.kind in setOf(ContentKind.SONG, ContentKind.EPISODE) && song.ref.id == key.mediaId)) {
             "Download song does not match its media id"
         }
         val provider = requireNotNull(key.provider ?: song?.ref?.provider) { "A download names its provider" }
@@ -106,27 +133,8 @@ class JvmDownloadRepository(
             withContext(Dispatchers.IO) {
                 Files.createDirectories(requestDirectory)
                 Files.createDirectories(destination.parent)
-                client.prepareGet(resolvedUrl) {
-                    headers.reveal().forEach { (name, value) -> header(name, value) }
-                }.execute { response ->
-                    require(response.status.value in 200..299) { "Download HTTP ${response.status.value}" }
-                    val channel = response.bodyAsChannel()
-                    Files.newOutputStream(staging, StandardOpenOption.CREATE_NEW).use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var total = 0L
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val count = channel.readAvailable(buffer)
-                            if (count < 0) break
-                            if (count == 0) { yield(); continue }
-                            total += count
-                            require(total <= maxBytes) { "Download exceeds size limit" }
-                            output.write(buffer, 0, count)
-                        }
-                        require(total > 0) { "Empty download" }
-                        committedBytes = total
-                    }
-                }
+                committedBytes = write(staging)
+                require(committedBytes in 1..maxBytes && Files.size(staging) == committedBytes) { "Invalid plaintext download size" }
                 // The bytes reach the disk before the rename publishes the file. Otherwise a crash could leave a file
                 // of the committed size whose blocks were never written.
                 FileChannel.open(staging, StandardOpenOption.WRITE).use { it.force(true) }
@@ -189,7 +197,7 @@ class JvmDownloadRepository(
      */
     suspend fun importLocalFile(key: DownloadKey, source: Path, song: ContentItem): Path = withContext(Dispatchers.IO) {
         require(Files.isRegularFile(source)) { "Local download source is missing: $source" }
-        require(song.ref.kind == ContentKind.SONG && song.ref.id == key.mediaId) {
+        require(song.ref.kind in setOf(ContentKind.SONG, ContentKind.EPISODE) && song.ref.id == key.mediaId) {
             "Download song does not match its media id"
         }
         val provider = key.provider ?: song.ref.provider

@@ -9,6 +9,7 @@ import moe.rukamori.archivetune.shared.data.download.DownloadKey
 import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
 import moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongDao
 import moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongRow
+import moe.rukamori.archivetune.shared.data.persistence.storedOccurrence
 import moe.rukamori.archivetune.shared.data.provider.AudioResolution
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.domain.repository.AudioPurpose
@@ -30,15 +31,7 @@ import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 /** The origin a committed download row carries, the `StoredSongOrigin.DOWNLOAD` schema value. */
 private const val DOWNLOAD_ORIGIN = "DOWNLOAD"
 
-/**
- * The `downloads` owner on this host, implementing the domain [DownloadActions]. The transfer path is the
- * baseline's: an occurrence's own resolve request with `purpose = DOWNLOAD` runs through the same
- * [OrderedAudioResolver] and the same configured source chain playback uses, and a
- * [PreparedAudio.Progressive] result is committed by [JvmDownloadRepository], which lists the row in the
- * stored-song index before the bytes land. Non-progressive preparations (encrypted or manifest sources)
- * honestly fail rather than write bytes the engine cannot play back. Completed rows play offline: the
- * desktop locator resolver maps the stored file to a local locator before any source resolution.
- */
+/** Transfers prepared plaintext through the player's existing admitted/decrypting routes and atomic download store. */
 internal class DesktopDownloadsOwner(
     private val downloads: JvmDownloadRepository,
     private val storedSongs: PortableStoredSongDao,
@@ -48,6 +41,7 @@ internal class DesktopDownloadsOwner(
     private val queue: QueueController,
     private val scope: CoroutineScope,
     private val report: (String) -> Unit,
+    private val playback: moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort,
 ) : DownloadActions {
 
     private val transfers = DesktopDownloadTransfers(scope, ::runTransfer, report)
@@ -55,7 +49,7 @@ internal class DesktopDownloadsOwner(
     override fun observe(): Flow<List<ContentDownload>> =
         combine(storedSongs.observe(DOWNLOAD_ORIGIN), transfers.state) { rows, transfers ->
             val listed = rows.map { row ->
-                val ref = ContentRef(row.provider, ContentKind.SONG, row.mediaId)
+                val ref = row.storedOccurrence().item.ref
                 val id = ref.desktopDownloadId()
                 val job = transfers[id]
                 ContentDownload(
@@ -85,6 +79,7 @@ internal class DesktopDownloadsOwner(
 
     override suspend fun start(ref: ContentRef, quality: String) {
         val item = library.findSong(ref.id, ref.provider)
+            ?: queue.state.value.entries.firstOrNull { it.item.ref == ref }?.item
             ?: throw IllegalStateException("The song metadata is not available")
         start(item, quality)
     }
@@ -132,15 +127,12 @@ internal class DesktopDownloadsOwner(
             request, hostSourceSnapshot(settings.snapshots.value), rejected = emptySet())
         val audio = (resolution as? AudioResolution.Resolved)?.audio
             ?: throw IllegalStateException("no connected source resolved the song")
-        if (audio !is PreparedAudio.Progressive) {
-            throw IllegalStateException("the resolved source cannot be stored as a file")
-        }
         val key = DownloadKey(
             ref.id, audio.source,
             quality.ifBlank { request.qualities[audio.source] ?: "" },
             ref.provider,
         )
-        downloads.download(key, audio, item)
+        downloads.downloadBytes(key, item) { file -> writeDesktopPreparedDownload(playback, audio, file) }
     }
 
     /**
@@ -151,7 +143,7 @@ internal class DesktopDownloadsOwner(
         downloads.find(DownloadKey(mediaId, source, quality, provider))
 
     suspend fun completedFile(ref: ContentRef): DesktopCompletedDownload? {
-        if (ref.kind != ContentKind.SONG) return null
+        if (ref.kind !in setOf(ContentKind.SONG, ContentKind.EPISODE)) return null
         val row = storedSongs.find(DOWNLOAD_ORIGIN, ref.provider, ref.id) ?: return null
         val source = AudioSourceType.entries.firstOrNull { it.name == row.source } ?: return null
         val quality = row.quality ?: return null
