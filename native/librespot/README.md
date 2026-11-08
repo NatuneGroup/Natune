@@ -29,7 +29,9 @@ bash native/librespot/build-android.sh universal
 # Other selections: arm64, armeabi, x86, x86_64, all, or a shipping variant.
 ```
 
-The recipe requires Linux, Rust 1.97.1 and NDK 30.0.16248370. It builds API-24
+The recipe requires Linux, Rust 1.97.1 and NDK 30.0.16248370 (verified from
+`source.properties`). It honors the SDK/NDK environment paths, with the workflows'
+`/usr/local/lib/android/sdk` fallback when both SDK variables are unset. It builds API-24
 libraries with 16 KiB ELF alignment, writes them under
 `app/build/generated/librespot/jniLibs/<abi>/`, and reports ELF segments and size.
 The composite CI action first restores an exact prepared-JNI cache. Its manifest
