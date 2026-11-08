@@ -31,6 +31,7 @@
     <string name="ios_modules_execution_failed">The module could not resolve audio within its limits. The next enabled source can try.</string>
     <string name="ios_modules_unsupported_stream">This module returned an unsupported inline, encrypted or DASH stream. The next enabled source can try.</string>
     <string name="ios_system_integrations">iOS system integrations</string>
+    <string name="ios_system_integrations_description">Widgets, CarPlay and playback controls that iOS provides instead of Android background services.</string>
     <string name="ios_widgets_title">Home-screen playback controls</string>
     <string name="ios_widgets_description">Add Natune controls from the iOS home-screen widget gallery. The small widget toggles playback; the medium widget also skips tracks. Controls open Natune and use your current queue. Current song text needs a signed App Group shared with the app. Listening insights and lock-screen lyrics widgets are not available yet.</string>
     <string name="ios_carplay_title">CarPlay requires Apple approval</string>

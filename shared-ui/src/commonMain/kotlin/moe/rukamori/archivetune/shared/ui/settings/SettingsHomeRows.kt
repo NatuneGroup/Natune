@@ -18,6 +18,7 @@ fun settingsHomeRows(
     desktop: Boolean = false,
     /** False on a host with no key path to the shortcut overlay (the iOS root never takes key focus). */
     keyboardShortcuts: Boolean = true,
+    hostIntegration: SettingsRow.Action? = null,
 ): List<SettingsRow> {
     fun entry(anchor: String, title: StringResource, description: StringResource, route: String) =
         SettingsRow.Action(anchor, title, run = { navigate(route) }, description = description, navRoute = route)
@@ -62,6 +63,7 @@ fun settingsHomeRows(
             add(entry("android_auto", Res.string.m6_settings_home_android_auto,
                 Res.string.m6_settings_home_android_auto_desc, "settings/android_auto"))
         }
+        hostIntegration?.let { add(it) }
         add(entry("integration", Res.string.m6_settings_home_integration, Res.string.m6_settings_home_integration_desc,
             "settings/integration"))
         add(entry("ai_integration", Res.string.m6_settings_home_ai_integration,

@@ -462,6 +462,9 @@ private fun IosSettingsRouteBody(
                 scrollTo = scrollTo,
                 // The root never takes key focus on this host, so a shortcut table here could never fire.
                 keyboardShortcuts = false,
+                hostIntegration = SettingsRow.Action("ios_system_integrations", Res.string.ios_system_integrations,
+                    run = { navigate("settings/system_integrations") },
+                    description = Res.string.ios_system_integrations_description, navRoute = "settings/system_integrations"),
             )
             "settings/tidal" -> {
                 val health by owners.tidalInstanceHealth.collectAsState()
