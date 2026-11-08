@@ -147,3 +147,16 @@ A missing executable reports failure. Launch means handoff, not a completed down
 Android package/plugin intents are not a desktop protocol. The remaining episode
 menu restriction is removed, and cache clear/limit actions now reconcile cache rows
 with removed files. Process/UI/runtime validation remains unverified.
+
+## Automix analysis
+
+Automix now analyzes complete local/download/cache files through a manual native
+decoder at 11,025 Hz and the shared TrackFeatures analyzer. Work is opt-in, serial,
+limited to six-minute songs and a 30-second budget, cancellable, and cached in a
+bounded source-file/revision-bound memory store. The retained Android transition
+planner is reused without changing its source notices. Its conservative fade/cue
+answers feed the desktop handoff; an analysis revision can refresh an armed decision.
+Beat/vocal features are heuristics. Advanced beat stretching, bass-swap/sweep
+envelopes and optional ONNX models remain unavailable on this mixer, so higher
+ambition tiers are not claimed. Native decoding, analysis and transitions remain
+unverified. No commonMain change was needed for this mount.

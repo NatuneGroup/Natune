@@ -61,6 +61,7 @@ internal class DesktopQueueLocatorResolver(
      */
     private val storedFile: suspend (provider: String, mediaId: String) -> java.nio.file.Path? = { _, _ -> null },
     private val cacheAudio: (ContentItem, PreparedAudio) -> Unit = { _, _ -> },
+    private val sourceSelected: (ContentOccurrence, java.nio.file.Path?) -> Unit = { _, _ -> },
 ) : QueueLocatorResolver {
     /** Guards [issued] and [closed] together, so a view prepared during shutdown is released instead of leaked. */
     private val lock = Any()
@@ -77,12 +78,17 @@ internal class DesktopQueueLocatorResolver(
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
             // A local ref's id is its absolute path. A missing file fails instead of naming another song.
             val file = java.io.File(occurrence.item.ref.id)
-            if (file.isFile) return PlaybackLocator.LocalFile(file.absolutePath)
+            if (file.isFile) {
+                sourceSelected(occurrence, file.toPath())
+                return PlaybackLocator.LocalFile(file.absolutePath)
+            }
             throw IllegalStateException("the local file is missing: ${occurrence.item.ref.id}")
         }
         storedFile(occurrence.item.ref.provider, occurrence.item.ref.id)?.let { path ->
+            sourceSelected(occurrence, path)
             return PlaybackLocator.LocalFile(path.toFile().absolutePath)
         }
+        sourceSelected(occurrence, null)
         if (occurrence.item.ref.provider == "telegram") {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
                 ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
