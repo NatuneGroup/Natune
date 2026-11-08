@@ -1,10 +1,102 @@
 package moe.rukamori.archivetune.playback
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AutoBrowseChildrenCacheTest {
+    @Test
+    fun concurrentLoadsOfOneFolderShareASingleLoad() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val gate = CompletableDeferred<Unit>()
+            var loads = 0
+            val load: suspend () -> List<Int> = {
+                loads++
+                gate.await()
+                listOf(loads)
+            }
+
+            val first = async { cache.children("home_quick_picks", 0, load) }
+            val second = async { cache.children("home_quick_picks", 0, load) }
+            val third = async { cache.children("home_quick_picks", 2, load) }
+            runCurrent()
+
+            assertEquals(1, loads)
+            assertFalse(first.isCompleted)
+            assertFalse(second.isCompleted)
+            assertFalse(third.isCompleted)
+
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(listOf(1), first.await())
+            assertEquals(listOf(1), second.await())
+            assertEquals(listOf(1), third.await())
+            assertEquals(1, loads)
+        }
+
+    @Test
+    fun aLaterPageDuringAReloadAwaitsTheFreshSnapshot() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val gate = CompletableDeferred<Unit>()
+            var loads = 0
+            val load: suspend () -> List<Int> = {
+                loads++
+                if (loads == 1) listOf(1) else {
+                    gate.await()
+                    listOf(2)
+                }
+            }
+            cache.children("liked", 0, load) // cached snapshot = [1]
+
+            val reopen = async { cache.children("liked", 0, load) }
+            val later = async { cache.children("liked", 1, load) }
+            runCurrent()
+            assertFalse(later.isCompleted) // must not serve the stale [1]
+
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(listOf(2), reopen.await())
+            assertEquals(listOf(2), later.await())
+            assertEquals(2, loads)
+        }
+
+    @Test
+    fun aFailedSharedLoadThrowsForAwaitersAndCanBeRetried() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val gate = CompletableDeferred<Unit>()
+            var loads = 0
+            val load: suspend () -> List<Int> = {
+                loads++
+                if (loads == 1) {
+                    gate.await()
+                    throw IllegalStateException("network down")
+                }
+                listOf(loads)
+            }
+
+            val first = async { runCatching { cache.children("album/x", 0, load) } }
+            val second = async { runCatching { cache.children("album/x", 0, load) } }
+            runCurrent()
+            assertEquals(1, loads)
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(true, first.await().exceptionOrNull() is IllegalStateException)
+            assertEquals(true, second.await().exceptionOrNull() is IllegalStateException)
+            assertEquals(listOf(2), cache.children("album/x", 0, load))
+            assertEquals(2, loads)
+        }
+
     @Test
     fun laterPagesSliceTheSnapshotTakenForPageZero() =
         runTest {
@@ -39,6 +131,32 @@ class AutoBrowseChildrenCacheTest {
         runTest {
             val cache = AutoBrowseChildrenCache<Int>()
             assertEquals(listOf(1, 2), cache.children("album/x", 3) { listOf(1, 2) })
+        }
+
+    @Test
+    fun clearInvalidatesALoadAlreadyInFlight() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val gate = CompletableDeferred<Unit>()
+            var loads = 0
+            val load: suspend () -> List<Int> = {
+                loads++
+                if (loads == 1) gate.await() // the slow load is started before clear()
+                listOf(loads)
+            }
+
+            val stale = async { cache.children("home_quick_picks", 0, load) }
+            runCurrent()
+            assertEquals(1, loads)
+            cache.clear()
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(listOf(1), stale.await()) // its own caller still gets a result
+            // ...but it did not repopulate the cache: a later page must reload under the new
+            // generation instead of serving the pre-clear snapshot.
+            assertEquals(listOf(2), cache.children("home_quick_picks", 1, load))
+            assertEquals(2, loads)
         }
 
     @Test
