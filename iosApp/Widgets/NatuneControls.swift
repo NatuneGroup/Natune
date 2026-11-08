@@ -40,14 +40,18 @@ private struct ControlsView: View {
                 Text(entry.playing ? "widget_playing" : "widget_paused").font(.caption).foregroundColor(.secondary)
             }
             HStack(spacing: 16) {
-                control("play", "play.fill", "widget_play")
-                control("pause", "pause.fill", "widget_pause")
-                if family == .systemMedium { control("previous", "backward.end.fill", "widget_previous") }
-                control("next", "forward.end.fill", "widget_next")
+                if family == .systemSmall {
+                    control("toggle", entry.playing ? "pause.fill" : "play.fill", "widget_toggle")
+                } else {
+                    control("play", "play.fill", "widget_play")
+                    control("pause", "pause.fill", "widget_pause")
+                    control("previous", "backward.end.fill", "widget_previous")
+                    control("next", "forward.end.fill", "widget_next")
+                }
             }
         }
         .padding()
-        .widgetURL(URL(string: "natune://widget/open"))
+        .widgetURL(URL(string: family == .systemSmall ? "natune://widget/toggle" : "natune://widget/open"))
         .natuneWidgetBackground()
     }
 

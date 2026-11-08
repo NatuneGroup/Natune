@@ -8,3 +8,4 @@
 
 "widget_playing" = "Playback active";
 "widget_paused" = "Playback paused";
+"widget_toggle" = "Play or pause";

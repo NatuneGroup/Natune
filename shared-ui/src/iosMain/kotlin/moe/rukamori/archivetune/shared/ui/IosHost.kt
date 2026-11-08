@@ -270,11 +270,12 @@ class IosHost {
 
     /** Widget links foreground the app and wait once for the restored, authoritative queue. */
     fun widgetCommand(action: String) {
-        if (closed || action !in setOf("play", "pause", "next", "previous")) return
+        if (closed || action !in setOf("play", "pause", "next", "previous", "toggle")) return
         scope.launch {
             kotlinx.coroutines.withTimeoutOrNull(15_000L) {
                 val ready = sessionState.first { it !is IosSessionState.Opening } as? IosSessionState.Ready ?: return@withTimeoutOrNull
                 when (action) {
+                    "toggle" -> if (ready.graph.player.snapshot.value?.playWhenReady == true) ready.graph.player.pause() else ready.graph.player.play()
                     "play" -> ready.graph.player.play()
                     "pause" -> ready.graph.player.pause()
                     "next" -> ready.graph.skipNext()
