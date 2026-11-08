@@ -89,6 +89,7 @@ on:
         default: false
 
 env:
+  DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
   EFFECTIVE_COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
 
 jobs:
