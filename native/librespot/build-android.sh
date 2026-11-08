@@ -4,7 +4,12 @@ set -euo pipefail
 recipe_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_dir="$(cd "$recipe_dir/../.." && pwd)"
 sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-ndk_dir="${ANDROID_NDK_HOME:-$sdk_dir/ndk/30.0.16248370}"
+ndk_dir="$sdk_dir/ndk/30.0.16248370"
+# Runner images often export ANDROID_NDK_HOME for a different preinstalled version.
+# Prefer the pinned package that these workflows install; a custom path is a fallback.
+if [[ ! -d "$ndk_dir" ]]; then
+    ndk_dir="${ANDROID_NDK_HOME:-$ndk_dir}"
+fi
 toolchain_dir="$ndk_dir/toolchains/llvm/prebuilt/linux-x86_64/bin"
 if [[ ! -x "$toolchain_dir/llvm-ar" || ! -f "$ndk_dir/source.properties" ]]; then
     echo 'Install the pinned Android NDK on the CI build host first.' >&2

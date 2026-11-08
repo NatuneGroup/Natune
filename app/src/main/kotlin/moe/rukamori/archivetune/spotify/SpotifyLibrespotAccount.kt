@@ -65,7 +65,8 @@ data class SpotifyLibrespotAuthorizationSession(
 /**
  * The OAuth grant the Librespot engine streams with. It is the library account's own session — the
  * authorize step verifies the account equals the catalog sign-in and is Premium — so the engine
- * appears to Spotify as an ordinary Connect device the listener owns. The grant lives apart from
+ * opens a protocol audio session owned by that account; it does not advertise a Connect receiver.
+ * The grant lives apart from
  * the catalog's sp_dc session and mints its own access tokens by refresh grant; the stored access
  * token is only a cache so the engine can start without waiting on the token endpoint.
  *
