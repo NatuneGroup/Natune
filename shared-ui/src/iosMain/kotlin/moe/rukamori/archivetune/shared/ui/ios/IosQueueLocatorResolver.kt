@@ -178,8 +178,8 @@ internal object IosYouTubeUnavailable : YouTubeResolutionPort {
  * account leases of [accounts] on every resolution, so a sign-out or a replaced account stops them at once; Qobuz,
  * Apple and Amazon read their preference credentials the same way. [pool] supplies the Playback Pool accounts and
  * discovered instances to TIDAL, Qobuz, Deezer, Apple and Amazon. JioSaavn needs the build's DES key to decode its
- * stream URLs, so it is composed only when the key exists. Spotify stays out of this list on iOS — there is no iOS
- * transport for its catalog or streaming transports — so it answers as an unavailable attempt.
+ * stream URLs, so it is composed only when the key exists. Spotify uses the portable Echo pipeline under its dedicated streaming account; other engines remain
+ * unavailable until their platform transports can honour the selected method.
  */
 internal fun iosAudioProviders(
     http: HttpClient,
@@ -196,6 +196,7 @@ internal fun iosAudioProviders(
     IosAmazonSource(http, preferences, accounts, pool),
     iosJioSaavnSource(http),
     IosQqMusicSource(http, accounts),
+    IosSpotifySource(http, accounts, preferences),
 )
 
 /**

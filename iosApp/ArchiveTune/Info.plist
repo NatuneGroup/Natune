@@ -64,5 +64,11 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>ArchiveTuneSpotifyDesktopClientId</key>
+    <string>$(ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID)</string>
+    <key>ArchiveTuneSpotifyWebClientId</key>
+    <string>$(ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID)</string>
+    <key>ArchiveTuneSpotifyAudioIv</key>
+    <string>$(ARCHIVETUNE_SPOTIFY_AUDIO_IV)</string>
 </dict>
 </plist>
