@@ -21,6 +21,7 @@ import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeVariant
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.*
+import androidx.compose.ui.window.PopupProperties
 import moe.rukamori.archivetune.shared.ui.screens.commenttogether.CommentTogetherBoundScreen
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoScreen
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoActions
@@ -340,6 +341,7 @@ private class NavigationArtistAlbumHost(
     override fun back() { navigation.back() }
     override fun backToMain() = navigation.backToMain()
     override fun openContent(ref: ContentRef) = navigation.open(ArchiveRoutes.content(ref))
+    override fun openAlbum(ref: ContentRef) = navigation.open(ArchiveRoutes.content(ref.copy(kind = ContentKind.ALBUM)))
     override fun openArtistSongs(artist: ContentRef) = navigation.open(ArchiveRoutes.artistSongs(artist))
     override fun openArtistAlbums(artist: ContentRef) = navigation.open(ArchiveRoutes.artistAlbums(artist))
     override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) =
@@ -389,9 +391,10 @@ data class NewsEntry(val available: Boolean = true, val unread: Boolean = false)
 @Composable
 private fun ArchiveEntryLinks(navigation: ShellNavigation, newsEntry: NewsEntry, myTopSize: Int? = null) {
     var expanded by remember { mutableStateOf(false) }
+    val desktop = LocalDesktopLayout.current
     Box {
         TextButton({ expanded = true }, Modifier.testTag("archive-destinations")) { Text(stringResource(Res.string.m4_more)) }
-        DropdownMenu(expanded, { expanded = false }) {
+        DropdownMenu(expanded, { expanded = false }, properties = PopupProperties(focusable = !desktop)) {
             // The My top entry opens the list the baseline card opens. The caller passes null when that card is hidden.
             val myTop = myTopSize?.let { "top_playlist/$it" to Res.string.m4_my_top }
             listOfNotNull(

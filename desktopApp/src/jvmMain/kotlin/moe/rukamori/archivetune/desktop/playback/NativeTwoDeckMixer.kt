@@ -35,9 +35,10 @@ internal data class TwoDeckMixerState(
  */
 internal class NativeTwoDeckMixer private constructor(
     private val handle: Long,
-    val sampleRateHz: Int,
+    var sampleRateHz: Int,
 ) : AutoCloseable {
     private var closed = false
+    private val sharedSampleRateHz = sampleRateHz
     private val decks: Array<NativePlaybackEngine> = arrayOf(
         NativePlaybackEngine.borrow(TwoDeckMixerNative.deck(handle, 0)),
         NativePlaybackEngine.borrow(TwoDeckMixerNative.deck(handle, 1)),
@@ -66,6 +67,25 @@ internal class NativeTwoDeckMixer private constructor(
     fun setDeckGain(deck: Int, gain: Float) = TwoDeckMixerNative.setDeckGain(handle, deck, gain)
 
     fun setBypass(bypass: Boolean) = TwoDeckMixerNative.setBypass(handle, bypass)
+    fun configureOutput(exclusive: Boolean, deviceId: String) {
+        require(deviceId.length < 512 && deviceId.none { it.code < 32 })
+        TwoDeckMixerNative.setOutput(handle, exclusive, deviceId)
+    }
+    fun prepareTrack() = TwoDeckMixerNative.prepareTrack(handle)
+    fun setOutputEnabled(enabled: Boolean) = TwoDeckMixerNative.outputEnabled(handle, enabled)
+    fun pollOutput(): DesktopOutputState {
+        TwoDeckMixerNative.outputTick(handle)
+        val values = LongArray(12)
+        val texts = arrayOfNulls<String>(3)
+        TwoDeckMixerNative.outputSnapshot(handle, values, texts)
+        if (values[1] != 0L) sampleRateHz = values[4].toInt() else sampleRateHz = sharedSampleRateHz
+        return DesktopOutputState(requested = values[0] != 0L, directPcm = values[1] != 0L, exclusiveActive = values[2] != 0L,
+            muted = values[3] != 0L, inputRateHz = values[4].toInt(), inputBits = values[5].toInt(),
+            inputChannels = values[6].toInt(), inputFormat = DesktopPcmFormat.fromCode(values[7].toInt()),
+            outputRateHz = values[8].toInt(), outputBits = values[9].toInt(), outputChannels = values[10].toInt(),
+            outputFormat = DesktopPcmFormat.fromCode(values[11].toInt()), deviceName = texts[0].orEmpty(),
+            backend = texts[1].orEmpty(), reason = texts[2].orEmpty())
+    }
 
     /**
      * Replaces the equalizer with [packedSections], laid out as [equalizerCoefficients] returns them. An empty
@@ -119,11 +139,19 @@ internal class NativeTwoDeckMixer private constructor(
             sampleRateHz: Int = DEFAULT_SAMPLE_RATE_HZ,
             ringMs: Int = DEFAULT_RING_MS,
             prebufferMs: Int = DEFAULT_PREBUFFER_MS,
+            exclusive: Boolean = false,
+            deviceId: String = "",
         ): NativeTwoDeckMixer {
+            require(deviceId.length < 512 && deviceId.none { it.code < 32 })
             PlaybackEngineLibrary.ensureLoaded()
-            val handle = TwoDeckMixerNative.create(backend.nativeValue, sampleRateHz, ringMs, prebufferMs)
+            val handle = TwoDeckMixerNative.create(backend.nativeValue, sampleRateHz, ringMs, prebufferMs, exclusive, deviceId)
             check(handle != 0L) { "the audio mixer did not start" }
             return NativeTwoDeckMixer(handle, sampleRateHz)
+        }
+
+        fun outputDevices(): List<DesktopOutputDevice> {
+            PlaybackEngineLibrary.ensureLoaded()
+            return TwoDeckMixerNative.outputDevices().toList().chunked(2).map { DesktopOutputDevice(it[0], it[1]) }
         }
     }
 }

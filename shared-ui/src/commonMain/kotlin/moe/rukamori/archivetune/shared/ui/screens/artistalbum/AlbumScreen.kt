@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import moe.rukamori.archivetune.shared.ui.screens.contentTrackDuration
 import moe.rukamori.archivetune.shared.ui.theme.DesktopType
 import org.jetbrains.compose.resources.stringResource
 
@@ -264,11 +265,12 @@ fun AlbumScreen(
                                 itemsIndexed(
                                     songs,
                                     key = { _, occurrence -> "m5-album-song-${occurrence.occurrenceId}" },
-                                ) { _, occurrence ->
+                                ) { index, occurrence ->
                                     val active = occurrence.item.ref.id == nowPlaying.songId
                                     val selected = occurrence.occurrenceId in selectedIds
                                     AlbumSongRow(
                                         occurrence = occurrence,
+                                        ordinal = index + 1,
                                         active = active,
                                         playing = nowPlaying.isPlaying,
                                         artwork = artwork,
@@ -574,6 +576,7 @@ private fun AlbumDownloadButton(state: AlbumDownloadState, onClick: () -> Unit) 
 @Composable
 private fun AlbumSongRow(
     occurrence: ContentOccurrence,
+    ordinal: Int,
     active: Boolean,
     playing: Boolean,
     artwork: ContentArtwork,
@@ -593,18 +596,25 @@ private fun AlbumSongRow(
         onClick = onClick,
         onLongClick = onLongClick,
         selected = selecting && selected,
+        ordinal = ordinal,
         trailing = {
-            when {
-                !selecting -> ArtistAlbumMoreButton(
-                    description = stringResource(Res.string.m5_artist_more_options),
-                    onClick = onMore,
-                )
-                selected -> ArtistAlbumIcon(
-                    symbol = ArtistAlbumSymbol.CHECK,
-                    tint = scheme.primary,
-                    size = 24.dp,
-                )
-                else -> Unit
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                contentTrackDuration(occurrence.item.durationMs)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
+                }
+                when {
+                    !selecting -> ArtistAlbumMoreButton(
+                        description = stringResource(Res.string.m5_artist_more_options),
+                        onClick = onMore,
+                    )
+                    selected -> ArtistAlbumIcon(
+                        symbol = ArtistAlbumSymbol.CHECK,
+                        tint = scheme.primary,
+                        size = 24.dp,
+                    )
+                    else -> Unit
+                }
             }
         },
     )

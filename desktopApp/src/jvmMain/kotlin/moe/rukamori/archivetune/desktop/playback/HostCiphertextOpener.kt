@@ -33,6 +33,9 @@ internal class HostCiphertextOpener(
     private val boundScope: String,
     private val account: ByteSourceAccount,
     private val cookies: ScopedCookieSource?,
+    private val headers: PlaybackHeaders = PlaybackHeaders.NONE,
+    private val headerOrigin: StreamOrigin? = null,
+    private val urlAllowed: (String) -> Boolean = { true },
 ) : NativeCiphertextOpener {
     private val lock = Any()
     private val sources = ArrayList<HttpRangeSource>()
@@ -43,7 +46,7 @@ internal class HostCiphertextOpener(
         url: String,
         accountScope: String,
     ): RandomAccessByteSource? {
-        if (accountScope != boundScope) return null
+        if (accountScope != boundScope || !urlAllowed(url)) return null
         val origin = StreamOrigin.parse(url) ?: return null
         val lease =
             ByteSourceLease(
@@ -57,7 +60,7 @@ internal class HostCiphertextOpener(
                 lengthBytes = null,
             )
         val stored = cookies?.cookiesForLease(lease, origin) ?: emptyList()
-        val http = HttpRangeSource(lease, url, PlaybackHeaders.NONE, stored)
+        val http = HttpRangeSource(lease, url, if (origin == headerOrigin) headers else PlaybackHeaders.NONE, stored)
         if (!register(http)) return null
         // The first response states the length. The shared TIDAL reader needs it on the lease before it can index a
         // raw segment. The probe keeps that response for the first read, so the probe adds no request of its own.

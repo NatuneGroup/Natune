@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuHost
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuState
 import moe.rukamori.archivetune.shared.ui.component.profileMenuItems
@@ -71,10 +72,13 @@ fun DesktopTitleBarActions(
     if (onOpenSettings == null && profile == null) return
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (onOpenSettings != null) DesktopSettingsButton(settingsBadge, onOpenSettings)
+        if (onOpenSettings != null) DesktopSettingsButton(settingsBadge) {
+            menuOpen = false
+            onOpenSettings()
+        }
         if (profile != null) {
             Box {
-                DesktopAccountButton(profile, active = menuOpen, onClick = { menuOpen = true })
+                DesktopAccountButton(profile, active = menuOpen, onClick = { menuOpen = !menuOpen })
                 DesktopProfileMenuList(
                     profile,
                     expanded = menuOpen,
@@ -186,6 +190,8 @@ private fun DesktopProfileMenuList(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
+        // Toolbar menus leave the title bar clickable; an outside press dismisses and reaches its button.
+        properties = PopupProperties(focusable = false),
         modifier = Modifier.widthIn(min = 220.dp).testTag("desktop-account-menu"),
     ) {
         // The account row the dialog draws as its header, so a signed-in listener sees whose menu
