@@ -105,8 +105,7 @@ import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.defaultUpdateChannel
 import moe.rukamori.archivetune.effectiveUpdateChannel
-import moe.rukamori.archivetune.ui.component.BottomSheetPage
-import moe.rukamori.archivetune.ui.component.BottomSheetPageState
+import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.theme.LocalYumaColors
@@ -175,7 +174,8 @@ fun UpdateScreen(
         )
     }
     val isUpdateAvailable = BuildConfig.UPDATER_AVAILABLE && latestOffer?.channel == updateChannel
-    val updateSheetState = remember { BottomSheetPageState() }
+    val updateSheetState = LocalBottomSheetPageState.current
+    val updateSheetOwner = remember { Any() }
     var updateSheetLoading by remember(updateChannel, channelRevision) { mutableStateOf(false) }
     var updateSheetVersion by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
     var updateSheetNotes by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
@@ -269,8 +269,8 @@ fun UpdateScreen(
             }
         }
     }
-    DisposableEffect(Unit) {
-        onDispose { updateCheckJob?.cancel() }
+    DisposableEffect(updateSheetState, updateSheetOwner) {
+        onDispose { updateCheckJob?.cancel(); updateSheetState.dismiss(updateSheetOwner) }
     }
 
     // Terminal states are consumed exactly once. A download that finished while the reader was on
@@ -426,7 +426,7 @@ fun UpdateScreen(
                                     showUpdateUpToDateDialog = true
                                     onUpToDate()
                                 } else {
-                                    updateSheetState.show(updateSheetContent)
+                                    updateSheetState.show(updateSheetOwner, updateSheetContent)
                                 }
                             }.onFailure { error ->
                                 latestVersion = ""
@@ -746,13 +746,6 @@ fun UpdateScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        BottomSheetPage(
-            state = updateSheetState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            contentWindowInsets = LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom),
-        )
-    }
 
     if (updateSheetLoading) {
         AlertDialog(

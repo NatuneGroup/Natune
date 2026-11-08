@@ -119,12 +119,16 @@ fun BottomSheet(
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val dragEnabled = (collapsedDragEnabled && collapsedContentVisible) || !state.isCollapsed
+    val hitTargets by remember(state, collapsedContentVisible) {
+        derivedStateOf { bottomSheetHitTargets(state.progress, state.isDismissed, collapsedContentVisible) }
+    }
+    val dragEnabled = hitTargets.root && ((collapsedDragEnabled && hitTargets.collapsed) || state.progress > 0f)
     val predictiveBack = predictiveBackState ?: rememberPredictiveSheetBackState()
     val predictiveBackStyle = LocalBackAnimationStyle.current == BackAnimationStyle.PREDICTIVE
     Box(
         modifier =
             modifier
+                .placeOnlyWhen(hitTargets.root)
                 .fillMaxSize()
                 .graphicsLayer {
                     if (predictiveBackStyle) {
@@ -174,12 +178,13 @@ fun BottomSheet(
         }
 
         if (keepContentAlive) {
-            // Always compose the content, but hide it when collapsed.
+            // Retain composition, but do not place invisible content or its touch targets.
             // This keeps stateful composables (e.g. InlineVideoPlayer's
             // ExoPlayer) alive across collapse/expand cycles.
             BoxWithConstraints(
                 modifier =
                     Modifier
+                        .placeOnlyWhen(hitTargets.expanded)
                         .fillMaxSize()
                         .graphicsLayer {
                             if (morphMode) {
@@ -202,6 +207,7 @@ fun BottomSheet(
             BoxWithConstraints(
                 modifier =
                     Modifier
+                        .placeOnlyWhen(hitTargets.expanded)
                         .fillMaxSize()
                         .graphicsLayer {
                             if (morphMode) {
@@ -217,7 +223,7 @@ fun BottomSheet(
             )
         }
 
-        if (collapsedContentVisible && !state.isExpanded && (onDismiss == null || !state.isDismissed)) {
+        if (hitTargets.collapsed) {
             Box(
                 modifier =
                     Modifier

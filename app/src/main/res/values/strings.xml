@@ -1794,4 +1794,18 @@
     <string name="delete_upload">Delete upload</string>
     <string name="delete_upload_confirm_title">Delete upload?</string>
     <string name="delete_upload_confirm_message">“%1$s” will be removed from your YouTube Music library. This cannot be undone.</string>
+    <string name="modules_source_code">Source code</string>
+    <string name="modules_playback_source">Playback source</string>
+    <string name="modules_quality_title">Quality</string>
+    <string name="modules_priority_title">Priority</string>
+    <string name="modules_use_own_account">Use my own account</string>
+    <string name="modules_account_configured">Account configured</string>
+    <string name="modules_account_sign_in_required">Add your account credentials below</string>
+    <string name="modules_public_instance_active">Public instance selected; no account required</string>
+    <string name="modules_use_archivepool">Use ArchivePool</string>
+    <string name="modules_pool_fallback_description">Use a leased account when needed</string>
+    <string name="modules_pool_configuration_required">Enable ArchivePool and configure its read key</string>
+    <string name="modules_own_account_first">Try my own account before the pool</string>
+    <string name="modules_own_account_first_description">When off, try the pool first, then your account</string>
+    <string name="modules_provider_description">Description</string>
 </resources>

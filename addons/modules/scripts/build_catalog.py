@@ -6,8 +6,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-BRANCH = 'feat/r3-modules'
-NATUNE_BRANCH = 'feat/r3-spotify-ext'
+BRANCH = 'dev'
+NATUNE_BRANCH = 'dev'
 
 
 def bundle_sources():
@@ -17,10 +17,15 @@ def bundle_sources():
         if not main.exists():
             continue
         parts = [common]
+        if folder.name in ('tidal', 'qobuz'):
+            for filename, export in [('account.js', 'AccountProvider'), ('instance.js', 'InstanceProvider')]:
+                script = (folder / filename).read_text()
+                script = script.replace('module.exports = {searchTracks, getTrackStreamUrl};', 'return {searchTracks, getTrackStreamUrl};').replace('module.exports={searchTracks,getTrackStreamUrl};', 'return {searchTracks, getTrackStreamUrl};')
+                parts.append(f'const {export} = (() => {{\n{script}\n}})();\n')
         if folder.name == 'archivepool':
             parts.append((ROOT / 'lib/crypto.js').read_text())
             for source, export in [('tidal', 'PoolTidal'), ('qobuz', 'PoolQobuz')]:
-                script = (ROOT / f'extension/{source}/provider.js').read_text()
+                script = (ROOT / f'extension/{source}/account.js').read_text()
                 script = script.replace('module.exports = {searchTracks, getTrackStreamUrl};', 'return {searchTracks, getTrackStreamUrl};')
                 parts.append(f'const {export} = (() => {{\n{script}\n}})();\n')
         parts.append(main.read_text())
@@ -52,6 +57,8 @@ def main():
     bundle_sources()
     dist = ROOT / 'dist'
     dist.mkdir(exist_ok=True)
+    for retired in ('tidal-instance', 'qobuz-instance'):
+        (dist / f'{retired}.arch').unlink(missing_ok=True)
     entries = []
     for folder in sorted((ROOT / 'extension').iterdir()):
         target = dist / f'{folder.name}.arch'
@@ -68,6 +75,11 @@ def main():
         print(f'{folder.name}: checked, packaged and inspected ({target.stat().st_size} bytes)')
     (ROOT / 'registry.json').write_text(json.dumps({'name':'Natune modules','version':1,'extensions':entries},indent=2)+'\n')
     build_natune_catalog()
+    # Only upgrade existing installations; these assets never install providers by default.
+    migrations = ROOT.parents[1] / 'app/src/main/assets/module-migrations'
+    migrations.mkdir(parents=True, exist_ok=True)
+    for name in ('tidal', 'qobuz', 'archivepool'):
+        (migrations / f'{name}.arch').write_bytes((dist / f'{name}.arch').read_bytes())
 
 
 if __name__ == '__main__':

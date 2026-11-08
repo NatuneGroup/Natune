@@ -9,7 +9,7 @@
       "version": "1.0.0",
       "author": "Natune contributors",
       "description": "Optional LRCLIB lyrics provider. Returns synced LRC or plain lyrics for the requested recording. Natune only; upstream ArchiveTune has no lyrics extension API.",
-      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-spotify-ext/addons/modules/dist/lrclib.arch",
+      "download_url": "https://raw.githubusercontent.com/NatuneGroup/Natune/dev/addons/modules/dist/lrclib.arch",
       "sha256": "bc9e5e75ca80b948e46ec57198df9420bb077079f92495d505ed50e7fe058bf9",
       "capabilities": [
         "getLyrics"

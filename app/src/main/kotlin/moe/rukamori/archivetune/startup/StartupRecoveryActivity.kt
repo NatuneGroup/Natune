@@ -64,7 +64,7 @@ import moe.rukamori.archivetune.backup.AndroidRestoreCoordinator
 import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
 
 /**
- * Launcher gate and recovery UI. Nothing from the main process is initialised before the recovery decision:
+ * Explicit recovery UI for a blocked restore or a user-requested report. Nothing from the main process is initialised before the recovery decision:
  * no Hilt graph, preferences, providers or native runtime. The theme's default path reads bundled fonts and
  * the system palette only, and text follows the system font scale.
  */
