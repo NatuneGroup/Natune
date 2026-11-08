@@ -1358,4 +1358,5 @@
     <string name="queue_select_tracks">Select tracks</string>
     <string name="queue_selection_count">%1$d selected</string>
     <string name="queue_save_failed">Could not save the queue. Try again.</string>
+    <string name="lyrics_searching_lyrics_providers">Searching lyrics providers…</string>
 </resources>
