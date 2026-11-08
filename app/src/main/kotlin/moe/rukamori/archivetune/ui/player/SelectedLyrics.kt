@@ -13,7 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import moe.rukamori.archivetune.constants.LyricsMode
 import moe.rukamori.archivetune.constants.LyricsModeKey
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.component.LyricsAlternate
+import moe.rukamori.archivetune.ui.component.NatuneLyricsEnhanced
 import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -34,7 +35,7 @@ fun SelectedLyrics(
     val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
     when (lyricsMode) {
         LyricsMode.ENHANCED ->
-            LyricsEnhanced(
+            NatuneLyricsEnhanced(
                 sliderPositionProvider = sliderPositionProvider,
                 lyricsSyncOffset = lyricsSyncOffset,
                 modifier = modifier,
@@ -43,7 +44,7 @@ fun SelectedLyrics(
             )
 
         LyricsMode.SPOTIFY ->
-            LyricsEnhanced(
+            LyricsAlternate(
                 sliderPositionProvider = sliderPositionProvider,
                 lyricsSyncOffset = lyricsSyncOffset,
                 modifier = modifier,
