@@ -81,9 +81,8 @@ import platform.Foundation.localizedStringForLanguageCode
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
-    "settings/appearance/icon", "settings/appearance/navigation_bar",
-    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/discord/experimental",
+    "settings/appearance/icon", "settings/appearance/theme_creator", "settings/appearance/navigation_bar",
+    "settings/appearance/aod_customized",
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
@@ -92,10 +91,9 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/appearance/palette_picker", "settings/appearance/icon", "settings/android_auto",
+    "settings/android_auto",
     // Pages whose rows are Android-only and which this host does not mount.
-    "settings/appearance/aod_customized", "settings/appearance/liquid_glass",
-    "settings/discord/experimental",
+    "settings/appearance/aod_customized",
 )
 
 /** One mounted lane page; the host, notices and the unavailable snackbar come from [IosSettingsScreen]. */
@@ -114,6 +112,12 @@ internal fun IosLaneSettingsPage(
 ) {
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
+        "settings/appearance/icon" -> IosIconEditor(onFailure)
+        "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
+        "settings/appearance/liquid_glass" -> moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings(
+            owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo)
+        "settings/discord/experimental" -> moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalSettings(
+            owners.controller, onFailure, scrollTo)
         "settings/hidden_playlists" -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
         "settings/backup_restore" ->
             IosBackupRestorePage(host, owners.graph, owners.controller, onNotice, onFailure, scrollTo)

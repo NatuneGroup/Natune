@@ -10,4 +10,13 @@
     <string name="ios_podcast_local_follows">Subscriptions are saved on this device.</string>
     <string name="ios_ai_mix_hint">Generate mixes from your listening history using your configured AI service.</string>
     <string name="ios_ai_mix_generate">Generate mixes</string>
+    <string name="ios_palette_title">Theme palette</string>
+    <string name="ios_palette_hex">Seed color (#RRGGBB)</string>
+    <string name="ios_release_title">Updates</string>
+    <string name="ios_release_handoff">Open the release page to get the latest iOS package and installation instructions.</string>
+    <string name="ios_release_open">Open releases</string>
+    <string name="ios_release_changelog">Changelog</string>
+    <string name="ios_icon_title">App icon</string>
+    <string name="ios_icon_default">Natune</string>
+    <string name="ios_icon_android">ArchiveTune Android</string>
 </resources>
