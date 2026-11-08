@@ -1,0 +1,4 @@
+// Copy to Signing.xcconfig, then use your registered team and App Group on both targets.
+// CarPlay additionally requires Apple's approved audio-app entitlement in the app profile.
+DEVELOPMENT_TEAM =
+ARCHIVETUNE_APP_GROUP = group.moe.rukamori.archivetune

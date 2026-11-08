@@ -157,3 +157,4 @@ docs/superpowers/
 
 # iOS build credentials (see docs/build-credentials.md)
 iosApp/Configuration/Credentials.xcconfig
+iosApp/Configuration/Signing.xcconfig
