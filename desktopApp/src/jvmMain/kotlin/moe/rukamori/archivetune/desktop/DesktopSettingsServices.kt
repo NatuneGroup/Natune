@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLangua
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapanesePackIo
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.modules.providesAudio
 import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
@@ -306,7 +307,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.APPLE -> probeReachable("https://amp-api.music.apple.com/v1/catalog/us/genres")
                 AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
                     ?.let { probeReachable(it) } ?: false
-                AudioSourceType.MODULES -> false // Android-only module host
+                AudioSourceType.MODULES -> graph.modules.entries.value.any { it.enabled && it.manifest.providesAudio }
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY ->
                     preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective())

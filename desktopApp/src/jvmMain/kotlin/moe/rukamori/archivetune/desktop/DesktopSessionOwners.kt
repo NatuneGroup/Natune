@@ -213,6 +213,12 @@ internal suspend fun assembleDesktopSessionOwners(
         scope = scope,
         log = ::desktopDiagnostic,
     )
+    val modules = DesktopModules(directory.resolve("modules"), { vault.snapshots.value }, sourceAdmissions)
+    scope.launch {
+        try { modules.load() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { desktopDiagnostic("Module restoration declined: ${failure.javaClass.simpleName}") }
+    }
     val audioSources = desktopAudioSources(
         http = http,
         accounts = accounts,
@@ -221,6 +227,7 @@ internal suspend fun assembleDesktopSessionOwners(
         tidalSessionRefresh = tidalSessionRefresh,
         pool = playbackPool,
         cacheDirectory = directory.resolve("cache/librespot"),
+        modules = modules,
     )
     // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
     // as Android's BotGuardTokenGenerator object feeds every resolver there. On a build with empty
@@ -421,9 +428,9 @@ internal suspend fun assembleDesktopSessionOwners(
         lyprioBuildHmacKey = DesktopCredentials.lyprioHmacKey,
         readSaved = lyricsStore::saved,
         saveFetched = { item, raw -> lyricsStore.fetched(item, raw); Unit },
-        extraProviderNames = setOf("YouTube Music", "YouTube Subtitle"),
+        extraProviderNames = setOf("YouTube Music", "YouTube Subtitle", "Modules"),
         extraProviders = { listOf(moe.rukamori.archivetune.lyrics.YouTubeLyricsProvider,
-            moe.rukamori.archivetune.lyrics.YouTubeSubtitleLyricsProvider) },
+            moe.rukamori.archivetune.lyrics.YouTubeSubtitleLyricsProvider, modules.lyrics) },
     )
     val pack = try {
         jvmJapaneseLanguagePackManager(
@@ -637,6 +644,7 @@ internal suspend fun assembleDesktopSessionOwners(
         network = network,
         playbackPool = playbackPool,
         audioSources = audioSources,
+        modules = modules,
         youtubeLibrarySync = youtubeLibrarySync,
         listenTogether = listenTogether,
         feedback = feedback,

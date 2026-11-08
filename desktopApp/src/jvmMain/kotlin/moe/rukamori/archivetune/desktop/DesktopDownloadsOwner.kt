@@ -125,7 +125,7 @@ internal class DesktopDownloadsOwner(
         val request = occurrence.toAudioResolveRequest(settings.snapshots.value)
             .copy(purpose = AudioPurpose.DOWNLOAD)
         val resolution = resolver.resolve(
-            request, hostSourceSnapshot(settings.snapshots.value), rejected = emptySet())
+            request, desktopSourceSnapshot(settings.snapshots.value), rejected = emptySet())
         val audio = (resolution as? AudioResolution.Resolved)?.audio
             ?: throw IllegalStateException("no connected source resolved the song")
         val key = DownloadKey(
