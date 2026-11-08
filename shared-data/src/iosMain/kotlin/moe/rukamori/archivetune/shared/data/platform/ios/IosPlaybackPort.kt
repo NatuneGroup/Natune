@@ -240,7 +240,7 @@ class IosPlaybackPort : PlaybackPort {
                     val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
                         blend = it
                         it.setPitch(desiredPitchCents)
-                        it.setTone(dspSettings.equalizerEnabled, dspSettings.toIosEqBands(), dspSettings.iosPreampDb)
+                        it.setTone(true, dspSettings.toIosEqBands(), dspSettings.iosInputGainDb)
                     } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
@@ -750,7 +750,7 @@ class IosPlaybackPort : PlaybackPort {
             if (closed) return@launch
             dspSettings = settings
             output?.let { applyDsp(it) }
-            blend?.setTone(settings.equalizerEnabled, settings.toIosEqBands(), settings.iosPreampDb)
+            blend?.setTone(true, settings.toIosEqBands(), settings.iosInputGainDb)
         }
     }
 

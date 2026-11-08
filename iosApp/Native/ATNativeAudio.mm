@@ -171,12 +171,13 @@ static void apply_tone(at_audio_output *p) {
         AVAudioUnitEQFilterParameters *unit = units[i];
         if (i >= p->eq_count) { unit.bypass = YES; continue; }
         const at_eq_band band = p->eq_bands[i];
-        unit.frequency = clamped(band.frequency_hz, low, high);
+        unit.frequency = clamped(band.frequency_hz, band.type == AT_EQ_HIGH_PASS ? std::min(1.0f, high) : low, high);
         unit.bandwidth = clamped(band.bandwidth_octaves, 0.05f, 5.0f);
         unit.gain = clamped(band.gain_db, -24.0f, 24.0f);
         switch (band.type) {
             case AT_EQ_LOW_SHELF: unit.filterType = AVAudioUnitEQFilterTypeLowShelf; break;
             case AT_EQ_HIGH_SHELF: unit.filterType = AVAudioUnitEQFilterTypeHighShelf; break;
+            case AT_EQ_HIGH_PASS: unit.filterType = AVAudioUnitEQFilterTypeHighPass; break;
             default: unit.filterType = AVAudioUnitEQFilterTypeParametric; break;
         }
         unit.bypass = !p->eq_enabled;

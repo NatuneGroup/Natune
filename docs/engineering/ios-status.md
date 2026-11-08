@@ -1,7 +1,8 @@
 # iOS source status
 
-**Apple SDK compilation, framework/cinterop linkage, Xcode project loading, simulator,
-device audio and live authentication are UNVERIFIED — `unverified-on-linux-host`.**
+**Baseline Apple SDK compilation and simulator framework linkage passed CI at `b80260cf`
+(run 42472418620). Changes in this parity lane, full native app linkage, simulator launch,
+device audio and live authentication remain UNVERIFIED — `unverified-on-linux-host`.**
 Kotlin metadata can check the bundled platform declarations and caught binding mistakes
 during preparation. It does not establish compilation against an actual Apple SDK or
 build/link Swift and Objective-C++. No Apple SDK/Xcode installation or simulator
@@ -380,3 +381,184 @@ Recognition capture (`IosRecognitionCapture`) is wired by the integrator, not by
 - Code-only settings/UI residuals increment on `feat/w14-ios-residuals` (verification `deferred_by_user`; nothing compiled, linked, tested or run on this box): the iOS lane-B residuals of the parity audit are bound, and the blocked-song list gained its feed consumer on both shared hosts. `settings/qqmusic` mounts `IosQqMusicLoginOwner` (`shared-ui/src/iosMain/.../ios/IosQqMusicLogin.kt`), a port of the desktop QR chain over the graph's Darwin engine — `ptqrshow` for the code image and `qrsig`, `ptqrlogin` polled every 2 s inside a 120 s code lifetime (waiting/scanned/confirmed codes map to the shared card states, 65 refreshes the code without a failure, 68 declines, everything else fails closed), `check_sig` for `p_skey`, the authorize POST for the one-shot code and the `musicu.fcg` `QQConnectLogin.LoginServer/QQLogin` exchange; a finished chain commits `accounts.commitQqMusic` under a `ProviderAccountLifecycle.QQ` generation exactly as the desktop owner does. `settings/storage` reports the canvas store's bytes and clears it through `graph.canvasStore`, and the saved canvas limit trims oldest-first at open and on commit; SONG and LYRICS stay the honest unavailable kinds. The Last.fm dashboard's add-to-playlist opens the shared `PlaylistPickerDialog` on both shared hosts: each host resolves the track's YouTube match, publishes it on a `playlistPick` flow the page collects, and a missing match or a missing picker context reports unavailable. The custom-font row is supported on iOS: `IosCustomFont.pick` copies the document-picked file into Application Support/fonts/ (the picker bookmark is not durable), refuses non-font bytes before they commit, and returns the file URI and the family name Skia read; `ArchiveTuneHostBindings.customFontLoader` loads that URI at the restart-scoped root, which now passes `fontPreference`/`customFontFamily` into `ArchiveTuneTheme` on both hosts (the desktop loader reads the picked file URI the same way). The item menu's custom-artwork dialog passes a SONG item's real song id, so the canvas rows apply a stored canvas. The `vnd.youtube` scheme is registered; its links open a YouTube watch through the shared classifier. The internet page's YouTube-region row is supported: `IosYouTubeBrowseTransport.refreshSession` applies a picked region as `gl` with `regionOverrideActive` dropping visitor data for the anonymous region reads, and `SYSTEM_DEFAULT` restores the device locale; proxy rotation, the stream bypass and DNS-over-HTTPS stayed unsupported honestly at that time — the Darwin session's proxy is bound at creation, playback audio never took the proxy, and the engine has no resolver hook. [Superseded in the w15 internet-privacy increment: every playback transfer now opens its ephemeral session through the process stream route — the saved proxy unless the bypass switch is on, or the next member of a validated rotating pool while IP rotation runs, with the proxy credential answered per authentication challenge and a broken connection cooling its pool member; rotation, the bypass switch and the region are offered while DNS-over-HTTPS keeps its honest refusal, since NSURLSession has no DNS hook and the NetworkExtension resolver is entitlement-bound and device-wide.] The `blockedSongIds` list now filters the recommendation feeds: shared `filterBlockedSongs` drops a blocked YouTube song from shelf lists (empty shelves leave the feed) at render in the iOS home/suggestions pages and the desktop home/suggestions pages, over the raw shelves the feeds keep, so blocking a visible song hides it and an unblock restores it without a re-read, and `PortableQueueOwner.blockedSongRefs` extends `filterPlaybackContent` so finite loads, radio seeding and watch-next tails drop blocked refs on both hosts; `BlockedSongFilterTest` covers the shelf filter, an emptied shelf, the queue reads and a live unblock. The desktop host's half of the dashboard picker, the catalogue-owner blocked supplier and its font loader are additive. Nothing here is compiled, linked or run on an Apple host.
 
 - Code-only compose-first increment on `refactor/ios-swiftui-minimal` (verification `deferred_by_user`; nothing compiled, linked, tested or run on this box; no Apple SDK and no device): the duplicate UIKit renderer is gone. Deleted `iosApp/ArchiveTune/NativeChrome.swift`, `SystemLyrics.swift`, `SystemLyricsRendering.swift`, `shared-ui` iosMain `IosNativeChrome.kt`, `IosNativeLyrics.kt`, `ios/IosNativeLyricsSurface.kt` and commonMain `navigation/NativeShellChrome.kt` (with its desktop test). Every screen, the shell chrome, the player and both lyric surfaces are the shared Compose tree on iOS, desktop and Android; SwiftUI keeps only `ArchiveTuneApp.swift` (scene, `ComposeRoot` representable, URL and user-activity intake) and `ArchiveTuneSession.swift` holds the one `IosHost` plus `IosRootController`, the single UIKit job, which reports `view.safeAreaInsets` to `IosSafeArea`. Insets have one owner: commonMain `SafeAreaPadding` and `Modifier.safeAreaPadding` reserve the window's physical edges with `absolutePadding` (a landscape notch stays on its physical side under RTL) and consume `WindowInsets.systemBars`, so a screen that still reads `statusBars` or `navigationBars` cannot reserve them a second time; the padding is applied inside `ArchiveTuneTheme` after its full-bleed background, so the strips it leaves keep the app's own palette instead of a system window colour. `ArchiveTuneShell` measures its own bar and mini-player height and publishes only `LocalShellContentPadding`. The `native_ios_interface` preference stays stored but inert: its settings row and search anchor are removed, and the liquid-glass rows keep their stored values on the other hosts. Tests: the `iosApp/tests` source contracts (19 after the audio merge, passed here) pin the one-renderer wiring, the physical consuming owner and one Xcode owner per object ID, and `SafeAreaPaddingTest` (desktop) measures the reserved content against the same edges written with `absolutePadding` under LTR and RTL, an empty safe area, the no-padding gate and the `sanitized()` clamps; no JVM build is allowed in this mission, so it stays authored but UNRUN here; `:shared-ui:desktopTest` does run remotely — `Unit tests` (`tests.yml`) invokes it for a pull request into `dev`/`main` or a push to `dev`, and manual `Readiness` invokes it too — so the result is pending the exact-head remote run rather than unavailable. `Modifier.safeAreaPadding` is composed because reading `WindowInsets.systemBars` is a composition query, and it returns the receiver untouched when the host supplied no safe area, so Android and desktop keep their own bar insets and never gain this consumption. Consuming the platform bar insets still cannot be exercised on a desktop test host, which reports zero insets, so the no-double-padding guarantee rests on the `consumeWindowInsets` contract and needs simulator confirmation. Nothing here proves the status-bar or bottom-chrome overlap is fixed on a device.
+
+## R3 iOS parity implementation
+
+The iOS ordered audio chain now registers Spotify Echo. The retained desktop device/pair,
+metadata/storage and PlayPlay key pipeline and Android protobuf/key codecs are adapted into
+`shared-data/commonMain/provider/spotify`; existing desktop and Android call sites are untouched.
+The dedicated streaming account is verified and admitted through the vault; the catalog is read
+only for collision refusal. Streaming stays opt-in and excluded from downloads. Xcode must supply
+`ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID`, `ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID` (optional) and
+`ARCHIVETUNE_SPOTIFY_AUDIO_IV`. No credentials are bundled. Librespot and web-player methods
+remain unavailable and fall through without changing the selected engine or method. Live Spotify
+success, changed-source compilation and device playback have not been verified. Repository
+checks and the 28 existing iOS Python contract tests pass; no local Gradle/JVM work was run.
+
+Android archive restore now accepts `settings.xml` and legacy `settings.preferences_pb`, and
+validates schema 36–39 `song.db` archives with journal siblings before converting the library.
+The Android table mapper is shared with the retained desktop Path entry point. Accounts/settings
+retain the existing export policy, font payloads are bounded but not installed, and local audio
+paths from an Android backup do not acquire iOS file access. The existing journaled iOS restore
+stages the converted database and applies chosen sections on restart. Android-format export is
+still absent. Real archives, Apple compilation and restore/device recovery remain unverified.
+
+Podcast browse/search and show episode pages now use the existing InnerTubeX transport and
+shared Compose podcast screens. Local follows persist in vault-backed settings and are labelled
+as local subscriptions. Episodes keep their own content kind and use the normal finite queue and
+progress store. Header parsing shares the provider header parser; date/description extraction and
+remote subscription mutation are still incomplete. No live podcast/device evidence is claimed.
+
+The iOS download queue now admits episodes and prepares Deezer, TIDAL DASH, QQ/Amazon native
+recipes and supported clear/AES-128 HLS through the existing playback plaintext route. The
+optional `PreparedDownloadTransfer` contract is additive; the desktop progressive transfer
+keeps its behavior. iOS writes validated plaintext to task-owned staging, resumes by plaintext
+byte position, checks length/expiry, closes every preparation, and commits through the existing
+stored-song transaction. Protected Apple FairPlay remains refused and falls through. Telegram
+still belongs to TDLib's cache; streaming Spotify stays excluded. Native transfer, device offline
+playback and compilation remain unverified. No background download entitlement is claimed.
+
+The iOS graph now starts the existing `LyricsSurfaceRuntime` and both AI lyric coordinators,
+including automatic and manual romanization/translation. Manual edit and undo, guarded AI
+translation persistence, per-song ±30 s timing writes and actual PNG share sheets are mounted
+on the common song menu/player surfaces. A source-bound atomic iOS lyric store caches provider
+text (256 bounded entries) and preserves edits across restarts. `HostLyricsStorage` and guarded
+raw-document replacement are additive commonMain hooks; other hosts keep their default behavior.
+Direct/account-bound and module lyric providers remain incomplete. AI service configuration,
+Apple compilation, share sheets and offline/device behavior remain unverified.
+
+Spotify catalog search (tracks/albums/artists/playlists) and QQ track search are mounted in the
+shared search page. Spotify GraphQL Home and QQ Toplist GetAll/GetDetail charts use the existing
+shared Spotify/QQ Home variants and honour saved home-source choices. Spotify uses the catalog
+token only and reuses the existing track-to-YouTube queue mapping; QQ shelves use the ordinary
+source chain. The retained iOS REST client was extracted without changing desktop sources.
+Other provider searches and live feed/provider/account validation remain incomplete/unverified.
+The small additive QQ home RPC method is in shared-data/commonMain.
+
+AI top mixes now have a user-triggered generation action in the shared library header. The
+existing common plan parser/binder validates model output against actual listening-history songs;
+success creates durable local playlists and honours the saved hide preference and ten-minute
+refresh bound. It does not fabricate ids, generate on page visit or silently call AI. New-track
+recommendations are not resolved in this increment. AI/provider and device behavior is unverified.
+
+Scheduled folder backup and folder synchronization rows now use persisted, security-scoped Files
+bookmarks and coordinated atomic child writes. An installed Google Drive Files provider can be
+picked as a folder; this is Files-provider synchronization, not a new Drive HTTP folder client.
+The driver follows the selected daily/weekly/monthly/custom day at 02:00 local while the process
+runs, records successful writes, and cannot run while iOS suspends/terminates the app. The existing
+shared playlist CSV/M3U import and CSV export owners are also mounted in Backup settings.
+No BGTaskScheduler registration or background execution guarantee is claimed. File-provider
+access after restart, scheduling and Apple compilation remain unverified.
+
+Appearance now mounts an independent seed-color palette/theme editor and native alternate-icon
+selection using the retained Android launcher artwork in an iOS app-icon asset. The full Android
+IconPack remains absent. The shared Liquid Glass settings route is mounted and keeps refraction
+capability false, so unsupported optical controls remain disabled. Discord's shared experimental
+translator/button editor is mounted over the existing presence settings. Updates now offer an
+explicit release-page handoff while retaining channel/changelog preferences; iOS cannot install
+an arbitrary package in process. Asset-catalog alternate-icon merging, Apple compilation and all
+new controls remain unverified.
+
+Readable `.arch` API-v1 audio packages now have an iOS manager and bounded QuickJS execution,
+using the retained Android `module-host.js` API (fetch, URL, timers, base64 and typed settings).
+The installer verifies format/API/version, script checksum, bounds and safe paths; package updates
+rename atomically. Configuration stays in Keychain and modules remain opt-in in the ordinary
+playback/download source order. Progressive and ordinary HLS URL answers are consumed by the
+existing host. Inline DASH, signed/native extension APIs, raw legacy text modules, module lyric
+provider mounting and catalog update browsing remain incomplete. Native extension packages are
+refused, not treated as ordinary modules. Package/runtime/device/Apple compilation is unverified.
+The source settings now advertise the Echo transport while preserving engine/account readiness.
+
+The managed iOS song cache now prefetches complete files for the active song through the existing
+portable preparation/transfer and a distinct CACHE stored-song row. Byte-count checks gate offline
+reuse; source pins/rejections can bypass a cached source. Cache limits stop oversized transfers and
+evict oldest entries, and song-menu removal/storage clearing remove real files and rows. Prefetch
+is an additional request rather than reuse of the playback response; streaming Spotify and TDLib
+tracks are excluded. Lyrics cache usage/clearing is wired and clearing preserves durable edits.
+The stored-song writer now accepts episodes as well as songs, completing episode file commits.
+Device/offline behavior and new-source Apple compilation remain unverified.
+
+
+### API-v1 audio modules
+
+The iOS module page installs bounded readable `.arch` audio packages (4 MiB compressed,
+5 MiB stored, 32 installed modules), verifies script/icon checksums and API/host features,
+and validates settings before writing them exclusively to the personal Keychain scope.
+Providers receive API-v1 `{value: ...}` settings and run on a confined QuickJS worker
+with memory, stack, timer, request/body and execution limits. A separate HTTP client
+prevents the app's account cookies or default headers from entering module requests.
+Modules resolve in the existing configured audio-source order. Per-module errors stand
+down for the next candidate/source and appear as sanitized status in the manager.
+Signed/authentication callbacks, permission-bearing extensions, native Android binaries,
+lyrics/metadata modules, and inline DASH/DRM streams are explicitly unsupported in UI.
+Direct progressive and ordinary HLS URLs continue through the existing iOS preparation.
+Local Python checks are structural evidence; CI compilation and device playback remain
+separate gates.
+
+
+### WidgetKit controls and system surfaces
+
+The app now embeds a WidgetKit extension for small/medium home-screen playback controls.
+Links foreground the app and issue one bounded command after its authoritative session
+and persisted queue are ready; the extension does not own a player or account credentials.
+The simulator CI gate type-checks the extension separately. Full extension/app linkage,
+provisioning and home-screen interaction still require the existing Apple build/device gate.
+The widget deliberately shows controls, not fabricated current-song state: live artwork,
+listening insights and lock-screen/Dynamic Island lyrics need a shared snapshot/ActivityKit
+integration and are not implemented. No App Group entitlement is claimed or required here.
+CarPlay browsing remains unavailable: an audio-app entitlement approved by Apple and a
+CarPlay scene/device integration are absent. The iOS system integrations settings page
+states this boundary and describes the widget and existing AirPlay/Now Playing surfaces.
+Android custom always-on-display controls now explain the iOS lock-screen limitation.
+
+CI run 42483275829 reached Kotlin/Native compilation and found a missing retained PlayPlay
+transform plus an iOS-inapplicable QuickJS import. The transform is now generated for commonMain
+from the original Android pure-Kotlin pipeline/leaves, changing only the package and JVM rotate
+intrinsics. No duplicate generated algorithm is committed. The QuickJS import was removed; new
+code remains unverified until a subsequent CI compile succeeds.
+
+The song menu now mounts the shared provider-canvas source picker. A selected bounded download
+is saved through the existing versioned custom-canvas repository and its validation/commit path.
+Local imported audio now shares its real app-container file through the system activity sheet.
+Provider source/network preferences still gate canvas requests. No live canvas/share-sheet or
+new-source Apple compilation evidence is claimed.
+
+Direct Spotify color-lyrics is now an optional provider of the shared lyric runtime, using only the
+catalog account and conservative track matching. Its HTTP/metadata decoder reuses the portable
+Spotify clients, and missing lyrics/authentication remains a failed provider result. The common
+host accepts additive provider factories/names without changing other hosts. Remaining direct
+Musixmatch/QQ/Netease and module lyric providers are still incomplete; live Spotify access and
+new-source compilation are unverified.
+
+
+### AVAudioEngine DSP coverage
+
+Ordinary output and both blend decks now apply the selected shared clarity preset's six
+filter sections, a 5 Hz high-pass approximation when DC removal is enabled, independent
+pitch, user EQ/preamp and any supplied normalization gain. Twenty-four native EQ slots
+retain all sixteen user bands plus the additional contour/DC filters. EQ-off does not
+silently disable the separately selected contour. No Kotlin work runs in the realtime
+callback. This is partial clarity support: stereo width, bass-side processing, exciter,
+shared limiter/dither and exact shared DC-filter transfer are not implemented by these
+Audio Units. Track loudness measurement is not supplied, so its gain stays unity.
+The iOS playback page explains these limits and disables settings with no native reader:
+silence skip, normalization measurement, Android offload/PIP/wakelock/task handling,
+Bluetooth auto-start and source rejection based on unmeasured acoustic evidence. Saved
+preferences are retained. Optional Audio Units still have the existing route-refusal
+bypass; device sound, full-app linkage and parity with Android DSP remain unverified.
+
+CarPlay now has a CPTemplateApplicationScene delegate and registered scene configuration,
+with bounded library/queue lists and selection dispatched to the sole shared Kotlin player/queue.
+The project includes an audio-app entitlement declaration; Apple approval, a matching provisioning
+profile, full app linking and CarPlay device execution remain required/unverified. The shared
+host exports only credential-free snapshots and bounded queue commands. CPTemplate and WidgetKit
+are documented system-only renderer exceptions in AGENTS.md; ordinary app content stays Compose.
+This source increment supersedes the earlier statement that no CarPlay scene exists.
+
+The existing WidgetKit controls now read real title/artist/play state from a credential-free
+shared-host snapshot in an App Group. The app publishes only when the configured group container
+is actually available, and coalesces timeline reloads; the extension retains the controls-only
+fallback when no snapshot exists. App and widget entitlements declare the same configurable group.
+Provisioning, full extension/app linkage, timeline delivery and home-screen behavior are unverified.
+Listening-insight and ActivityKit/lock-screen lyric widgets remain incomplete. This supersedes
+the earlier controls-only/no-App-Group source description.

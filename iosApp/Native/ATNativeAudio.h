@@ -37,6 +37,7 @@ typedef enum at_eq_filter {
     AT_EQ_PEAKING = 0,
     AT_EQ_LOW_SHELF = 1,
     AT_EQ_HIGH_SHELF = 2,
+    AT_EQ_HIGH_PASS = 3,
 } at_eq_filter;
 typedef struct at_eq_band {
     uint32_t type;           /* One at_eq_filter value; unknown values are treated as peaking. */
@@ -44,7 +45,7 @@ typedef struct at_eq_band {
     float bandwidth_octaves; /* Filter width in octaves, clamped to a safe range. */
     float gain_db;           /* Boost or cut in decibels, clamped to the unit's range. */
 } at_eq_band;
-#define AT_AUDIO_EQ_MAX_BANDS 16
+#define AT_AUDIO_EQ_MAX_BANDS 24
 /* Applies up to AT_AUDIO_EQ_MAX_BANDS bands; the rest stay bypassed. enabled == 0 bypasses every band while keeping
  * the parameters, so a later enable is instant. A level that arrives before the first load still applies to every
  * later load. The manual pull carries decoder PCM before this stage, so a blend applies its own equalizer. */

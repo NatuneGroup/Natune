@@ -80,7 +80,7 @@ private fun iosFileHeader(path: String, maxBytes: Int): ByteArray? = memScoped {
  * directory, the document picker then offers a destination and copies the staged file there, and the
  * temp directory always goes away. True once the picker delivered, null when the user cancelled.
  */
-internal suspend fun iosExportStagedFile(host: IosHost, fileName: String, write: (String) -> Unit): Boolean? {
+internal suspend fun iosExportStagedFile(host: IosHost, fileName: String, write: suspend (String) -> Unit): Boolean? {
     val directory = NSTemporaryDirectory() + "natune-export-" + NSUUID().UUIDString + "/"
     val manager = NSFileManager.defaultManager
     manager.createDirectoryAtPath(directory, true, null, null)
