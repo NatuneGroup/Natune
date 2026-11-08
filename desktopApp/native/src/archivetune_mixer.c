@@ -241,6 +241,7 @@ static void mixer_pull(void *user, float *out, uint32_t frames) {
         mix_chunk_locked(m, out + (size_t)done * AE_MIXER_CHANNELS, chunk);
         done += chunk;
     }
+    if (!m->output_enabled) memset(out, 0, (size_t)frames * AE_MIXER_CHANNELS * sizeof(float));
     pthread_mutex_unlock(&m->mutex);
 }
 
