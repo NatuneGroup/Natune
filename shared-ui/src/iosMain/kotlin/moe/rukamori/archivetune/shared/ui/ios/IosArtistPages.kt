@@ -250,7 +250,7 @@ internal fun iosArtistItemsPage(
 }
 
 @Composable
-private fun iosNowPlaying(graph: IosSessionGraph): ArtistAlbumNowPlaying {
+internal fun iosNowPlaying(graph: IosSessionGraph): ArtistAlbumNowPlaying {
     val playing by graph.player.snapshot.collectAsState()
     return ArtistAlbumNowPlaying(playing?.mediaId, null, playing?.playWhenReady == true)
 }

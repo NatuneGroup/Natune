@@ -366,149 +366,6 @@ internal fun iosSpotifyPlaylistPage(
     )
 }
 
-@Composable
-internal fun iosSpotifyArtistPage(
-    graph: IosSessionGraph,
-    host: IosHost,
-    catalogue: IosCatalogueOwners,
-    route: ArchiveRoute,
-    menu: IosItemMenuState,
-    openRoute: (String) -> Unit,
-    back: () -> Unit,
-): ArchiveGraphPage {
-    val artistId = route.arguments.getValue("artistId")
-    var attempt by remember(artistId) { mutableStateOf(0) }
-    var resolvedRef by remember(artistId) { mutableStateOf<ContentRef?>(null) }
-    var loading by remember(artistId) { mutableStateOf(true) }
-    var failed by remember(artistId) { mutableStateOf(false) }
-    val spotifyRef = remember(artistId) { ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ARTIST, artistId) }
-    val spotifySubtitle = stringResource(Res.string.ios_library_source_spotify)
-    LaunchedEffect(artistId, attempt) {
-        loading = true
-        failed = false
-        try {
-            val ytRef = iosResolveSpotifyCatalogRef(graph, spotifyRef, null) ?: error("No YouTube artist match")
-            resolvedRef = ytRef
-            loading = false
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            graph.report("spotify artist not resolved: ${failure::class.simpleName}")
-            loading = false
-            failed = true
-        }
-    }
-    val resolved = resolvedRef
-    if (resolved != null) {
-        val ytRoute = remember(resolved) {
-            ArchiveRoute(
-                value = ArchiveRoutes.content(resolved),
-                destination = ArchiveDestination.ARTIST,
-                arguments = mapOf("artistId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
-            )
-        }
-        return iosArtistPage(graph, host, catalogue, ytRoute, menu, openRoute, back)
-    }
-    val request = ContentRequest(provider = ContentProvider.SPOTIFY_CATALOG, surface = ContentSurface.ARTIST, parent = spotifyRef)
-    return ArchiveGraphPage.Detail(
-        kind = DetailKind.Artist,
-        header = ContentItem(spotifyRef, artistId, spotifySubtitle),
-        page = PagedContentState(request = request, items = emptyList(), initialized = !loading || failed, loading = loading, failed = failed),
-        actions = DetailActions(
-            content = ContentActions(open = {}, more = null, loadMore = {}, retry = { attempt += 1 }),
-            back = back,
-            playAll = {},
-            shuffle = {},
-            toggleLibrary = null,
-            more = null,
-        ),
-    )
-}
-
-@Composable
-internal fun iosSpotifyAlbumPage(
-    graph: IosSessionGraph,
-    owners: IosCatalogOwners,
-    route: ArchiveRoute,
-    menu: IosItemMenuState,
-    back: () -> Unit,
-): ArchiveGraphPage {
-    val albumId = route.arguments.getValue("albumId")
-    var attempt by remember(albumId) { mutableStateOf(0) }
-    var resolvedRef by remember(albumId) { mutableStateOf<ContentRef?>(null) }
-    var fallbackHeader by remember(albumId) { mutableStateOf<ContentItem?>(null) }
-    var fallbackItems by remember(albumId) { mutableStateOf<List<ContentOccurrence>>(emptyList()) }
-    var loading by remember(albumId) { mutableStateOf(true) }
-    var failed by remember(albumId) { mutableStateOf(false) }
-    val spotifyRef = remember(albumId) { ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, albumId) }
-    val spotifySubtitle = stringResource(Res.string.ios_library_source_spotify)
-    val client = remember(graph) { IosSpotifyRestClient(graph) }
-    val request = ContentRequest(provider = ContentProvider.SPOTIFY_CATALOG, surface = ContentSurface.ALBUM, parent = spotifyRef)
-    LaunchedEffect(albumId, attempt) {
-        loading = true
-        failed = false
-        try {
-            val ytRef = iosResolveSpotifyCatalogRef(graph, spotifyRef, null)
-            if (ytRef != null) {
-                resolvedRef = ytRef
-            } else {
-                val detail = client.fetchAlbumDetail(albumId, spotifySubtitle)
-                fallbackHeader = detail.first
-                fallbackItems = detail.second
-                IosSpotifySongCache.record(request, detail.second)
-            }
-            loading = false
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            graph.report("spotify album not loaded: ${failure::class.simpleName}")
-            loading = false
-            failed = true
-        }
-    }
-    val resolved = resolvedRef
-    if (resolved != null) {
-        val ytRoute = remember(resolved) {
-            ArchiveRoute(
-                value = ArchiveRoutes.content(resolved),
-                destination = ArchiveDestination.ALBUM,
-                arguments = mapOf("albumId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
-            )
-        }
-        hostCatalogDetailPage(owners.pages, ytRoute) { menu.open(it) }?.let { return it }
-    }
-    return ArchiveGraphPage.Detail(
-        kind = DetailKind.Album,
-        header = fallbackHeader,
-        page = PagedContentState(request = request, items = fallbackItems, initialized = !loading || failed, loading = loading, failed = failed),
-        actions = DetailActions(
-            content = ContentActions(
-                open = { occ ->
-                    val idx = fallbackItems.indexOfFirst { it.occurrenceId == occ.occurrenceId }
-                    if (idx >= 0) {
-                        iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = idx, shuffled = false)
-                    }
-                },
-                more = null,
-                loadMore = {},
-                retry = { attempt += 1 },
-            ),
-            back = back,
-            playAll = {
-                if (fallbackItems.isNotEmpty()) {
-                    iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = 0, shuffled = false)
-                }
-            },
-            shuffle = {
-                if (fallbackItems.isNotEmpty()) {
-                    iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = 0, shuffled = true)
-                }
-            },
-            toggleLibrary = null,
-            more = null,
-        ),
-    )
-}
 
 internal fun iosPlaySpotifyOccurrence(
     graph: IosSessionGraph,
@@ -593,7 +450,9 @@ private suspend fun resolveOneSpotifySong(
         occurrence.item.title.takeIf { it.isNotBlank() },
     ).joinToString(" ").trim()
     if (query.isBlank()) return null
-    return runCatching { search.firstSong(query) }.getOrNull()
+    return try { search.firstSong(query) }
+    catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
 }
 
 internal data class SpotifyEntityLookup(
@@ -655,7 +514,9 @@ internal suspend fun iosResolveSpotifyCatalogRef(graph: IosSessionGraph, ref: Co
 private object IosSpotifySongCache {
     private val lists = mutableMapOf<ContentRequest, List<ContentOccurrence>>()
     fun record(request: ContentRequest, items: List<ContentOccurrence>) {
+        lists.remove(request)
         lists[request] = items
+        while (lists.size > 32) lists.remove(lists.keys.first())
     }
     fun itemsFor(request: ContentRequest): List<ContentOccurrence> = lists[request].orEmpty()
 }

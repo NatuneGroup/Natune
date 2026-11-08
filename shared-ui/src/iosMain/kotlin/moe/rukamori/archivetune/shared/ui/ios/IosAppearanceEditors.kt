@@ -15,20 +15,11 @@ import platform.UIKit.*
 /** Writes the same independent seed preference the shared theme consumes, without applying an interface preset. */
 @Composable
 internal fun IosPaletteEditor(controller: SettingsController, onFailure: () -> Unit) {
-    val prefs by controller.store.snapshots.collectAsState()
-    var color by remember(prefs?.get(CustomThemeColorKey)) { mutableStateOf(prefs?.get(CustomThemeColorKey).orEmpty()) }
-    val scope = rememberCoroutineScope()
-    val valid = color.matches(Regex("^#[0-9a-fA-F]{6}$"))
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(Res.string.ios_palette_title), style = MaterialTheme.typography.headlineSmall)
-        OutlinedTextField(color, { color = it }, singleLine = true, label = { Text(stringResource(Res.string.ios_palette_hex)) })
-        listOf("#6750A4", "#B3261E", "#006A6A", "#386A20", "#005AC1").forEach { seed ->
-            TextButton(onClick = { color = seed }) { Text(seed) }
-        }
-        Button(enabled = valid, onClick = { scope.launch {
-            try { controller.edit { setCustomThemeColor(color) } } catch (_: Exception) { onFailure() }
-        } }) { Text(stringResource(Res.string.ios_lyrics_save)) }
-    }
+    moe.rukamori.archivetune.shared.ui.settings.ColorPaletteSettings(
+        controller, androidx.compose.foundation.isSystemInDarkTheme().let { system ->
+            val prefs by controller.store.snapshots.collectAsState()
+            moe.rukamori.archivetune.shared.ui.darkThemeFor(prefs?.get(DarkModeKey), system)
+        }, onFailure)
 }
 
 @Composable

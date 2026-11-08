@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.ui.player.playerOccurrence
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.screens.AccountContentType
@@ -91,11 +92,13 @@ private const val ACCOUNT_PAGE_LIMIT = 25
  * stays null rather than a quality-tier guess, and the screen hides that section.
  */
 @Composable
-internal fun iosTrackInfoPage(graph: IosSessionGraph, trackId: String): ArchiveGraphPage {
-    var state by remember(trackId) { mutableStateOf<TrackInfoUi?>(null) }
-    LaunchedEffect(trackId) {
+internal fun iosTrackInfoPage(graph: IosSessionGraph, trackId: String, provider: String? = null): ArchiveGraphPage {
+    var state by remember(trackId, provider) { mutableStateOf<TrackInfoUi?>(null) }
+    LaunchedEffect(trackId, provider) {
         state = try {
-            graph.library.findSong(trackId, null)?.let { item ->
+            (graph.library.findSong(trackId, provider) ?: graph.queue.state.value.entries.firstOrNull {
+                it.item.ref.id == trackId && (provider == null || it.item.ref.provider == provider)
+            }?.item)?.let { item ->
                 TrackInfoUi(
                     trackId = trackId,
                     title = item.title,
@@ -123,13 +126,14 @@ internal fun iosTrackInfoPage(graph: IosSessionGraph, trackId: String): ArchiveG
  * sheet. No file is parsed and no provider video details load on this host, so those sections stay null.
  */
 @Composable
-internal fun iosMediaInfoPage(graph: IosSessionGraph, host: IosHost, mediaId: String): ArchiveGraphPage {
+internal fun iosMediaInfoPage(graph: IosSessionGraph, host: IosHost, mediaId: String, provider: String? = null): ArchiveGraphPage {
     val queueState by graph.queue.state.collectAsState()
-    val currentId = queueState.entries.firstOrNull { it.occurrenceId == queueState.currentOccurrenceId }?.item?.ref?.id
-    var item by remember(mediaId) { mutableStateOf<ContentItem?>(null) }
-    LaunchedEffect(mediaId) {
+    val playback by graph.player.snapshot.collectAsState()
+    val current = playerOccurrence(queueState, playback)?.item?.ref
+    var item by remember(mediaId, provider) { mutableStateOf<ContentItem?>(null) }
+    LaunchedEffect(mediaId, provider) {
         item = try {
-            graph.library.findSong(mediaId, null)
+            graph.library.findSong(mediaId, provider)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -137,7 +141,9 @@ internal fun iosMediaInfoPage(graph: IosSessionGraph, host: IosHost, mediaId: St
             null
         }
     }
-    val found = item
+    val found = item ?: queueState.entries.firstOrNull {
+        it.item.ref.id == mediaId && (provider == null || it.item.ref.provider == provider)
+    }?.item
     return ArchiveGraphPage.MediaInfo(
         state = MediaInfoUi(
             mediaId = mediaId,
@@ -150,7 +156,7 @@ internal fun iosMediaInfoPage(graph: IosSessionGraph, host: IosHost, mediaId: St
                 )
             },
             isLocal = found?.ref?.provider == ContentProvider.LOCAL.id,
-            isLiveTrack = currentId == mediaId,
+            isLiveTrack = current?.id == mediaId && (provider == null || current.provider == provider),
         ),
         actions = MediaInfoActions(
             onCopy = { text -> copyToIosClipboard(text) },

@@ -126,9 +126,12 @@ internal class IosQueueLocatorResolver(
                 ?: throw IllegalStateException("the imported file of this local song is gone")
             return PlaybackLocator.LocalFile(path)
         }
-        // A stored download plays from the app container before any provider is asked for it.
-        downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
-        cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
+        // An explicit source choice must reach the ordered resolver, rather than playing another source's stored bytes.
+        val explicitSource = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
+        if (explicitSource == null) {
+            downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
+            cachedFile(occurrence.item.ref, recovery.rejectedSources)?.let { return PlaybackLocator.LocalFile(it) }
+        }
         // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
         if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
@@ -656,7 +659,7 @@ private class IosQobuzSource(
 }
 
 /** The shared Apple Music developer bearer helper: the user's own bearer while usable, otherwise the scraped one. */
-private class IosAppleDevToken(http: HttpClient, preferences: () -> PreferenceSnapshot?) {
+internal class IosAppleDevToken(http: HttpClient, preferences: () -> PreferenceSnapshot?) {
     private val inner = PaxsenixAppleMusicToken(http, { preferences()?.get(AppleMusicDevTokenKey) })
 
     suspend fun bearer(): String? = inner.ensureFresh()
@@ -698,6 +701,42 @@ private class IosAppleStorefront(private val http: HttpClient, private val nowMs
     companion object {
         private const val STOREFRONT_TTL_MS = 24L * 60L * 60L * 1000L
     }
+}
+
+/**
+ * The Apple Music catalogue over the same account admission the playback source uses: the personal
+ * media-user-token when present, otherwise the first pooled entry. Search needs no second account owner, and no
+ * developer bearer is bundled. Null means this host has no usable Apple Music account.
+ */
+internal suspend fun iosAppleMusicSearchRepository(
+    http: HttpClient,
+    accounts: VaultProviderAccountStore,
+    preferences: () -> PreferenceSnapshot?,
+    pool: IosPlaybackPool?,
+): KtorAppleMusicRepository? {
+    val dev = IosAppleDevToken(http, preferences).bearer() ?: return null
+    val mediaUser = preferences()?.get(AppleMusicMediaUserTokenKey)?.takeIf { it.isNotBlank() }
+    if (mediaUser != null) {
+        val scope = providerAccountScope(ContentProvider.APPLE.id, CredentialScope.PERSONAL) ?: return null
+        return KtorAppleMusicRepository(
+            http,
+            AppleMusicAccess(scope, dev, mediaUser, null, CredentialScope.PERSONAL) {
+                preferences()?.get(AppleMusicMediaUserTokenKey) == mediaUser
+            },
+        )
+    }
+    val pooled = pool?.appleMusicAccounts()?.firstOrNull { it.id != null && it.mediaUserToken.isNotBlank() } ?: return null
+    val scope = accounts.admitPoolEntry(
+        ContentProvider.APPLE,
+        requireNotNull(pooled.id),
+        mapOf("token" to pooled.mediaUserToken, "premium" to pooled.premium.toString()),
+    ) ?: return null
+    return KtorAppleMusicRepository(
+        http,
+        AppleMusicAccess(scope, dev, pooled.mediaUserToken, null, CredentialScope.PLAYBACK_POOL) {
+            pool?.enabled() == true
+        },
+    )
 }
 
 /**

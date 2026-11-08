@@ -56,6 +56,8 @@ kotlin {
                 implementation(libs.material.kolor)
                 // The host owners take the host's HttpClient; each host supplies its own engine.
                 implementation(libs.ktor.client.core)
+                // Module detail settings read the module manifest's JSON preference schema.
+                implementation(libs.kotlinx.serialization.json)
             }
         }
         iosMain.dependencies {

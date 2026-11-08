@@ -1,0 +1,10 @@
+<resources>
+    <string name="shared_palette_title">Color palette</string>
+    <string name="shared_palette_description">Choose a color and preview the palette before saving. Saving selects a fixed palette for the app.</string>
+    <string name="shared_palette_hex">Color (#RRGGBB)</string>
+    <string name="shared_palette_preview">Palette preview</string>
+    <string name="shared_palette_preview_description">Text and surfaces follow your palette style and light or dark appearance.</string>
+    <string name="shared_palette_primary">Primary</string>
+    <string name="shared_palette_secondary">Secondary</string>
+    <string name="shared_palette_save">Save palette</string>
+</resources>

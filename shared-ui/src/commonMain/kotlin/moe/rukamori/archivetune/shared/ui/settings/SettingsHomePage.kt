@@ -32,6 +32,7 @@ fun SettingsHomePage(
     /** False on a host with no key path to the shortcut overlay, which then hides that group instead of a dead row. */
     keyboardShortcuts: Boolean = true,
     modifier: Modifier = Modifier,
+    hostIntegration: SettingsRow.Action? = null,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     var shortcutsVisible by remember { mutableStateOf(false) }
@@ -44,6 +45,7 @@ fun SettingsHomePage(
         openShortcuts = { shortcutsVisible = true },
         desktop = moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout.current,
         keyboardShortcuts = keyboardShortcuts,
+        hostIntegration = hostIntegration,
     )
     SettingsPage(
         rows = rows,

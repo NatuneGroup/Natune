@@ -60,8 +60,11 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_timing
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_edit
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_translate
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_romanize
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_refresh
+import moe.rukamori.archivetune.shared.ui.resources.m6_settings_home_lyrics_providers
 import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_undo
 import moe.rukamori.archivetune.shared.ui.resources.m6_save_canvas
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_play_from
 import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
@@ -215,7 +218,7 @@ private class IosSongMenuHost(
 
     override fun openTrackInfo(song: ContentRef) {
         state.dismiss()
-        openRoute(ArchiveRoutes.trackInfo(song.id))
+        openRoute(ArchiveRoutes.trackInfo(song.id, song.provider))
     }
 }
 
@@ -314,7 +317,11 @@ internal fun IosSongMenu(
         externalDownloaderEnabled = false,
         externalDownloaderConfigured = false,
     )
+    val lyricDocument by graph.lyrics.current.collectAsState()
     val actions = buildList {
+        if (ref.kind == ContentKind.SONG && !facts.isLocal && !facts.isTelegram) add(OverflowAction("play_from", Res.string.m5pq_play_from) {
+            menu.sourceTarget = occurrence; menu.dismiss()
+        })
         addAll(
             songOverflowActions(
                 selected = occurrence,
@@ -333,7 +340,7 @@ internal fun IosSongMenu(
         )
         addAll(songLibraryAndDownloadActions(facts, songHost))
         // The shared menu has no media-info row, so this host adds the Details row that opens the mounted route.
-        add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
+        add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id, ref.provider)) })
         // The shared tempo/pitch dialog is owned by the session graph, so the row opens it like the timer row.
         add(OverflowAction("tempo_pitch", Res.string.m5pq_tempo_and_pitch) { menu.dismiss(); tempoSheet.open = true })
         // The equalizer sheet and the acoustic audit dialog are owned by the session graph too.
@@ -354,9 +361,17 @@ internal fun IosSongMenu(
             menu.canvasSaveTarget = occurrence.item; menu.dismiss()
         })
         add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
-        val lyricDocument = graph.lyrics.current.value
-        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
-        if (playing?.item?.ref == ref && lyricDocument?.hasLines == true) {
+        val activeId = graph.player.snapshot.value?.occurrenceId
+        val activeRef = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == activeId }?.item?.ref
+        if (activeRef == ref) add(OverflowAction("refresh_lyrics", Res.string.ios_lyrics_refresh) {
+            graph.lyrics.retry(); menu.dismiss()
+        })
+        add(OverflowAction("lyrics_providers", Res.string.m6_settings_home_lyrics_providers) {
+            menu.dismiss(); openRoute("settings/lyrics/providers")
+        })
+        val document = lyricDocument
+        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }
+        if (document != null && playing?.item?.ref == ref && document.hasLines) {
             add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
             add(OverflowAction("translate_lyrics", Res.string.ios_lyrics_translate) {
                 check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.TRANSLATE)); menu.dismiss()
@@ -365,7 +380,7 @@ internal fun IosSongMenu(
                 check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.ROMANIZE)); menu.dismiss()
             })
             add(OverflowAction("undo_lyrics", Res.string.ios_lyrics_undo) {
-                val id = lyricDocument.occurrenceId
+                val id = document.occurrenceId
                 if (graph.lyricsTools.edits.undo { graph.lyrics.current.value?.occurrenceId == id })
                     graph.lyricsSurface.sessions.translationUndone(id)
                 menu.dismiss()
@@ -388,21 +403,14 @@ internal fun IosSongMenu(
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
 internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence, graph: IosSessionGraph) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val ref = occurrence.item.ref
-    val actions = buildList<OverflowAction> {
-        when (ref.kind) {
-            ContentKind.ARTIST -> if (ref.id.length > 2 && ref.id.startsWith("UC") && ref.id.none(Char::isWhitespace)) {
-                add(collectionShareAction { check(sharing.artist(ref.id)) { "Share target unavailable" } })
-            }
-            ContentKind.PLAYLIST -> if (ref.provider == ContentProvider.YOUTUBE.id) {
-                add(collectionShareAction { check(sharing.playlist(ref.id, null)) { "Share target unavailable" } })
-            }
-            else -> { }
-        }
+    val result by produceState<Pair<Boolean, String?>>(false to null, ref, host) {
+        value = true to iosNowPlayingShareLink(ref, host)
     }
+    val (loaded, link) = result
+    val actions = link?.let { url -> listOf(collectionShareAction { iosShareText(host, url) }) }.orEmpty()
     if (actions.isEmpty()) {
-        LaunchedEffect(occurrence) { menu.refuse() }
+        if (loaded) LaunchedEffect(occurrence) { menu.refuse() }
         return
     }
     SharedOverflowMenu(
@@ -417,7 +425,7 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
 /** The rows this host connects end to end, per the opened occurrence. */
 internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        addAll(listOf("play_from", "refresh_lyrics", "lyrics_providers", "lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
         add("share")
@@ -425,7 +433,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // Library add and remove both commit through the repository now.
         if (!facts.isLocal) add("library")
         // A speed-dial pin holds a YouTube song id; other providers keep the row's unavailable answer.
-        if (!facts.isLocal) add("speed_dial")
+        if (ref.iosYouTubeSong()) add("speed_dial")
         if (facts.fromHistory) add("remove_history")
         if (facts.fromCache) add("remove_cache")
         if (facts.albumId != null) add("view_album")
@@ -451,7 +459,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // The cover and the metadata refresh need a remote artwork or a provider song; local files have neither.
         if (!facts.isLocal) {
             add("download_cover")
-            add("refetch")
+            if (ref.iosYouTubeSong()) add("refetch")
         }
         // Watch-next radio is seeded only by a YouTube song.
         if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {
