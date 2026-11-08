@@ -134,7 +134,7 @@ tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepa
 
 // The public Discord application id, which DesktopDiscordPresence.APPLICATION_ID must also hold. macOS hands the
 // OAuth callback to a bundle only when its CFBundleURLSchemes names discord-<id>, so the macOS block below reads it.
-val desktopDiscordApplicationId = "1165706613961789445"
+val desktopDiscordApplicationId = "1569030685010821170"
 
 // Provider credentials for the desktop host are injected at build time and never committed (see
 // docs/build-credentials.md). The generated DesktopBuildCredentials object is read through DesktopCredentials,
