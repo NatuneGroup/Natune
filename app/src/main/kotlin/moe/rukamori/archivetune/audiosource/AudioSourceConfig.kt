@@ -335,6 +335,7 @@ object AudioSourceConfig {
             AudioSourceType.JIOSAAVN,
             AudioSourceType.AMAZON,
             AudioSourceType.QQ,
+            AudioSourceType.MODULES,
             AudioSourceType.SPOTIFY,
             AudioSourceType.YOUTUBE,
         )

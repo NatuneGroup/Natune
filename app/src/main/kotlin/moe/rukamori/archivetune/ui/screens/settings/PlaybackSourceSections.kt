@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -107,6 +108,7 @@ private fun AudioSourceType.displayName(context: android.content.Context): Strin
         AudioSourceType.DEEZER -> context.getString(R.string.source_deezer)
         AudioSourceType.APPLE -> context.getString(R.string.source_apple_music)
         AudioSourceType.AMAZON -> context.getString(R.string.source_amazon)
+        AudioSourceType.MODULES -> context.getString(R.string.modules_title)
         AudioSourceType.QQ -> context.getString(R.string.source_qq_music)
         AudioSourceType.SPOTIFY -> context.getString(R.string.source_spotify_stream)
         AudioSourceType.JIOSAAVN -> context.getString(R.string.source_jiosaavn)
@@ -124,6 +126,7 @@ private fun AudioSourceType.iconRes(): Int =
         // stand-in APPLE uses above for the same reason.
         AudioSourceType.AMAZON -> R.drawable.ic_music
         // Same stand-in for QQ Music.
+        AudioSourceType.MODULES -> R.drawable.extension
         AudioSourceType.QQ -> R.drawable.ic_music
         AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn
@@ -231,6 +234,14 @@ internal fun PlaybackSourceSections(
     val (qobuzBackupEnabled, onQobuzBackupEnabledChange) = rememberPreference(QobuzBackupEnabledKey, false)
     val (appleMusicQuality, onAppleMusicQualityChange) =
         rememberEnumPreference(AppleMusicQualityKey, AppleMusicQuality.LOSSLESS)
+    val moduleViewModel: moe.rukamori.archivetune.viewmodels.ModuleSettingsViewModel =
+        androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+    val moduleModel by moduleViewModel.state.collectAsState()
+    val modulesEnabled = when (val current = moduleModel) {
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Success -> current.model.enabled
+        is moe.rukamori.archivetune.viewmodels.ModuleSettingsState.Empty -> current.model.enabled
+        else -> false
+    }
     val sourceOrder =
         remember(sourceOrderRaw) {
             AudioSourceConfig.parseOrder(sourceOrderRaw.ifBlank { null })
@@ -244,6 +255,7 @@ internal fun PlaybackSourceSections(
             AudioSourceType.DEEZER -> deezerEnabled
             AudioSourceType.APPLE -> appleMusicEnabled
             AudioSourceType.AMAZON -> amazonEnabled
+            AudioSourceType.MODULES -> modulesEnabled
             AudioSourceType.QQ -> qqMusicEnabled
             AudioSourceType.SPOTIFY -> spotifyStreamEnabled
             AudioSourceType.JIOSAAVN -> jioSaavnEnabled
@@ -269,6 +281,7 @@ internal fun PlaybackSourceSections(
                     AudioSourceType.DEEZER -> onDeezerEnabledChange(true)
                     AudioSourceType.APPLE -> onAppleMusicEnabledChange(true)
                     AudioSourceType.AMAZON -> onAmazonEnabledChange(true)
+                    AudioSourceType.MODULES -> Unit // Modules are explicitly enabled in their own settings
                     AudioSourceType.QQ -> onQqMusicEnabledChange(true)
                     AudioSourceType.SPOTIFY -> Unit // gated on streaming sign-in; never auto-enabled here
                     AudioSourceType.JIOSAAVN -> onJioSaavnEnabledChange(true)

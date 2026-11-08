@@ -1,0 +1,83 @@
+{
+  "format": "archivetune.module",
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "entry": "provider.js",
+  "module": {
+    "id": "app.natune.provider.qq",
+    "name": "QQ Music",
+    "displayName": "QQ Music",
+    "version": "1.0.0",
+    "author": "Natune contributors",
+    "description": "Uses QQ desktop search and your personal entitled Vkey account. Accepts plaintext FLAC, MP3 and unencrypted HLS. Encrypted QMC/eKey resources are refused; native Natune supports them separately.",
+    "repository": "https://github.com/NatuneGroup/Natune",
+    "license": "GPL-3.0-or-later",
+    "type": [
+      "audio_provider"
+    ],
+    "requiredRuntimeFeatures": [
+      "fetch@1",
+      "settings@1",
+      "streamResolution@1"
+    ],
+    "capabilities": [
+      "searchTracks",
+      "getTrackStreamUrl"
+    ],
+    "settings": {
+      "uin": {
+        "type": "text",
+        "label": "Account UIN",
+        "description": "Your QQ numeric account ID.",
+        "defaultValue": null,
+        "required": true
+      },
+      "musicKey": {
+        "type": "password",
+        "label": "Music key",
+        "description": "Your own QQ Music session key.",
+        "defaultValue": null,
+        "required": true,
+        "secret": true
+      },
+      "loginType": {
+        "type": "select",
+        "label": "Login type",
+        "description": "",
+        "defaultValue": 1,
+        "required": false,
+        "options": [
+          {
+            "label": "QQ",
+            "value": 1
+          },
+          {
+            "label": "WeChat",
+            "value": 2
+          }
+        ]
+      },
+      "quality": {
+        "type": "select",
+        "label": "Audio quality",
+        "description": "",
+        "defaultValue": "LOSSLESS",
+        "required": false,
+        "options": [
+          {
+            "label": "FLAC",
+            "value": "LOSSLESS"
+          },
+          {
+            "label": "MP3 high",
+            "value": "HIGH"
+          },
+          {
+            "label": "MP3 standard",
+            "value": "STANDARD"
+          }
+        ]
+      }
+    }
+  }
+}

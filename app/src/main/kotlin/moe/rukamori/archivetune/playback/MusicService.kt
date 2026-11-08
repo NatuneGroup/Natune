@@ -414,6 +414,7 @@ import moe.rukamori.archivetune.utils.YTPlayerUtils
 import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPlaybackContext
 import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPcmProcessor
 import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityProcessorResult
+import moe.rukamori.archivetune.modules.*
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.enumPreference
 import moe.rukamori.archivetune.utils.preference
@@ -465,6 +466,12 @@ class MusicService :
     MediaLibraryService(),
     Player.Listener,
     PlaybackStatsListener.Callback {
+    @Inject lateinit var moduleAudio: ResolveModuleAudioUseCase
+    @Inject lateinit var moduleBindings: ModuleDownloadRepository
+    @Inject lateinit var moduleStorage: ModuleMediaStorage
+    @Inject lateinit var moduleDownloadUtil: DownloadUtil
+    private val activeModuleAudio = ConcurrentHashMap<String, ModuleAudioSelection>()
+
     @Inject
     lateinit var spotifyLibraryRepository: SpotifyLibraryRepository
     @Inject
@@ -8625,46 +8632,7 @@ class MusicService :
 
     private fun parseTidalInstances(): List<String> = parseInstances(TidalInstancesKey)
 
-    /** Metadata used to look a track up across the configured audio sources. */
-    private data class SourceQuery(
-        val mediaId: String,
-        val title: String,
-        val artists: List<String>,
-        val album: String?,
-        val durationMs: Long?,
-        /**
-         * ISRC of the wanted recording, when the queue item carried one (catalogue imports only).
-         * A source that can look up by ISRC uses it for an exact match and skips its text search.
-         */
-        val isrc: String? = null,
-        /**
-         * When non-null, the Qobuz resolver skips its title/artist search and
-         * downloads this exact trackId. Set when the user picks a specific
-         * Qobuz track from the "Play from" source-search popup — the mediaId
-         * encodes the trackId as "qobuz:{trackId}" and [resolveMultiSourceDataSpec]
-         * extracts it into this field.
-         */
-        val directQobuzTrackId: String? = null,
-        /**
-         * When non-null, the Qobuz-backup resolver asks the mirror for THIS video id
-         * instead of [mediaId]. Set when the user picks a specific row in the
-         * "Play from" search popup — the mirror is keyed by YouTube video id, and the
-         * row they chose is a different catalogue entry from the song that is playing.
-         * Keeping [mediaId] untouched is what makes the switch audio-only.
-         */
-        val directQobuzBackupVideoId: String? = null,
-        /**
-         * The Amazon row the user tapped in the "Play from" search popup. Amazon instances only
-         * resolve by metadata, so the Amazon resolver searches with this instead of the song's
-         * own title/artist and gates the result against it.
-         */
-        val amazonPick: AmazonTrackPick? = null,
-        /**
-         * The Spotify track id the queue item came from (catalogue imports only). The Spotify
-         * streaming source plays this exact track instead of searching for one.
-         */
-        val spotifyTrackId: String? = null,
-    )
+
 
     /**
      * One consistent read of every source preference the resolution paths consult: the stored
@@ -8701,6 +8669,7 @@ class MusicService :
                                 dataStore.get(SpotifyStreamEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.SPOTIFY)),
                             AudioSourceType.JIOSAAVN to
                                 dataStore.get(JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN)),
+                            AudioSourceType.MODULES to moduleAudio.enabled(),
                             AudioSourceType.YOUTUBE to
                                 dataStore.get(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
                         ),
@@ -9230,11 +9199,12 @@ class MusicService :
         lowDataModeActive: Boolean,
         isPrefetch: Boolean = false,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+        allowModules: Boolean = false,
     ): DataSpec? {
         if (!isPrefetch) mediaIdsResolvingSource.add(mediaId)
         return try {
             AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
-                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch, prefs)
+                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch, prefs, allowModules)
             }
         } finally {
             if (!isPrefetch) mediaIdsResolvingSource.remove(mediaId)
@@ -9247,6 +9217,7 @@ class MusicService :
         lowDataModeActive: Boolean,
         isPrefetch: Boolean,
         prefs: PlaybackSourceSnapshot,
+        allowModules: Boolean,
     ): DataSpec? {
         if (mediaId.isLocalMediaId() || mediaId.isTelegramMediaId()) {
             Timber.tag("MusicService").d("Multi-source skip: %s is a local/telegram media id", mediaId)
@@ -9307,8 +9278,9 @@ class MusicService :
         // set — the user just picked a specific Qobuz track, so we must
         // re-resolve through Qobuz even if a cached YouTube stream exists.
         val now = System.currentTimeMillis()
+        activeModuleAudio.remove(mediaId)
         val cached = directStreamCache[mediaId]
-        if (refreshSource == null && !isDirectPick && cached != null && cached.expiresAtMs > now &&
+        if (refreshSource == null && !isDirectPick && cached != null && cached.stream.source != AudioSourceType.MODULES && cached.expiresAtMs > now &&
             canUseCachedPlaybackSource(cached.stream.source, cached.stream.source in prefs.enabled, authenticityRejectedSources)
         ) {
             val override = SongSourceOverride.get(sourceOverrideRaw, mediaId)
@@ -9405,10 +9377,12 @@ class MusicService :
                 switchFallback.source !in baseChain
         val ordinaryChain = if (switchFallbackAppended) baseChain + switchFallback!!.source else baseChain
         // The failed source gets one fresh attempt, then the unchanged permitted order, including after a pin fails.
-        val chain = if (refreshSource != null) {
+        val unfilteredChain = if (refreshSource != null) {
             (listOf(refreshSource) + ordinaryChain + PlaybackSourceChain.baseChain(prefs))
                 .distinct().filterNot(authenticityRejectedSources::contains)
         } else ordinaryChain
+        val eligibleChain = unfilteredChain.filter { allowModules || it != AudioSourceType.MODULES }
+        val chain = if (lowDataModeActive && !isDirectPick) eligibleChain.filter { it == AudioSourceType.MODULES } else eligibleChain
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -9419,7 +9393,7 @@ class MusicService :
         // Qobuz track the user explicitly selected in the Play from popup. That choice carries
         // a concrete Qobuz track id and must not silently turn into a YouTube Opus stream on a
         // metered network.
-        if (lowDataModeActive && !isDirectPick) {
+        if (lowDataModeActive && !isDirectPick && AudioSourceType.MODULES !in chain) {
             tidalActiveMediaIds.remove(mediaId)
             Timber.tag("MusicService").i("Low-data mode active; skipping Tidal/Qobuz for %s", mediaId)
             return null
@@ -9491,6 +9465,10 @@ class MusicService :
                                     query,
                                     trusted = overrideIsSourceOverride && override == AudioSourceType.SPOTIFY,
                                 )
+                            AudioSourceType.MODULES -> runBlocking {
+                                moduleAudio.resolve(mediaId, ModuleMatchMetadata(query.title, query.artists, query.album,
+                                    (query.durationMs?.div(1000) ?: 0).toInt(), null, true))
+                            }?.also { activeModuleAudio[mediaId] = it }?.directStream()
                             AudioSourceType.YOUTUBE -> null
                         }
                     }
@@ -9577,10 +9555,12 @@ class MusicService :
         if (cacheGeneration !== directStreamCache.generation) return null
         val winningStream = best
         val winningSource = bestSource
+        if (winningSource != AudioSourceType.MODULES) activeModuleAudio.remove(mediaId)
         if (winningStream != null && winningSource != null) {
             Timber.tag("MusicService").i(
                 "Source WIN: %s resolved \"%s\" [%s] metadata match %.1f%% (%s)",
-                winningSource.name, query.title, winningStream.label, bestScore * 100, winningStream.uri.take(80),
+                winningSource.name, query.title, winningStream.label, bestScore * 100,
+                if (winningSource == AudioSourceType.MODULES) "module stream" else winningStream.uri.take(80),
             )
             if (switchFallback != null && !isPrefetch) {
                 if (switchFallbackAppended && winningSource == switchFallback.source) {
@@ -9609,7 +9589,10 @@ class MusicService :
                 }
             }
             externalStreamRecovery.resolved(mediaId)
-            return applyDirectStream(dataSpec, mediaId, winningStream, cacheGeneration)
+            val applied = applyDirectStream(dataSpec, mediaId, winningStream, cacheGeneration)
+            return if (winningSource == AudioSourceType.MODULES) activeModuleAudio[mediaId]?.let { selection ->
+                applied?.buildUpon()?.setKey(selection.cacheKey)?.setHttpRequestHeaders(dataSpec.httpRequestHeaders + selection.stream.headers)?.build()
+            } ?: applied else applied
         }
 
         // Empty resolvers and rejected metadata both continue to the existing YouTube fallback.
@@ -11218,6 +11201,7 @@ class MusicService :
         youtubeItag: Int? = null,
         formatContentLength: Long? = null,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+        allowModules: Boolean = false,
     ): DataSpec? {
         // Find the first key (enabled sources in the user's own preference order, then the
         // itag-scoped and legacy YouTube slots while it is enabled — cacheKeyOrder) that has the
@@ -11374,29 +11358,11 @@ class MusicService :
             normalizedScheme == "telegram"
     }
 
-    private fun createMediaSourceFactory(): DefaultMediaSourceFactory {
+    private fun createMediaSourceFactory(): androidx.media3.exoplayer.source.MediaSource.Factory {
         // One Spotify manager per factory, built on first need: a manager binds to the looper of
         // the first player that prepares it, and the crossfade player has its own factory.
         var spotifyDrmManager: DrmSessionManager? = null
-        return DefaultMediaSourceFactory(
-            createDataSourceFactory(),
-            DefaultExtractorsFactory()
-                // Enable constant-bitrate seeking for CBR streams (most MP3/AAC files) so
-                // the user can seek to any position without needing a seek table. Without
-                // this, ExoPlayer can only seek to keyframes, making seeking in .m4a/.mp3
-                // files imprecise or impossible.
-                .setConstantBitrateSeekingEnabled(true),
-        )
-            // Apple Music full-track streams are CENC-encrypted fMP4; the Widevine L3
-            // session (license exchanged against Apple's acquireWebPlaybackLicense) is
-            // attached only for media ids resolved through the Apple source — everything
-            // else stays DRM-free with the default behavior.
-            //
-            // Spotify's web-player method is also CENC fMP4, but the source is only known once
-            // the item's data source resolves, after this provider has run. The Spotify session
-            // is therefore attached to every item while that source is switched on and signed
-            // in; an unencrypted stream never asks it for a key.
-            .setDrmSessionManagerProvider { mediaItem ->
+        val drmProvider = androidx.media3.exoplayer.drm.DrmSessionManagerProvider { mediaItem ->
                 val appleTrack = mediaItem.mediaId?.let { appleDrmTrackInfo[it] }
                 when {
                     appleTrack != null -> buildAppleDrmSessionManager(appleTrack) ?: DrmSessionManager.DRM_UNSUPPORTED
@@ -11408,6 +11374,26 @@ class MusicService :
                     else -> DrmSessionManager.DRM_UNSUPPORTED
                 }
             }
+        return moduleMediaSourceFactory(
+            createDataSourceFactory(), drmProvider, moduleAudio, moduleBindings, moduleStorage,
+            completedDownload = { id -> moduleDownloadUtil.downloadManager.downloadIndex.getDownload(id)?.state ==
+                androidx.media3.exoplayer.offline.Download.STATE_COMPLETED },
+            selected = { id, selection ->
+                if (selection == null) activeModuleAudio.remove(id) else {
+                    activeModuleAudio[id] = selection
+                    selectedPlaybackSourceByMediaId[id] = AudioSourceType.MODULES
+                    audioNormalizationFactorCache[id] = 1f
+                }
+            },
+            selectAudio = { item ->
+                moduleAudio.resolveRegistry()
+                if (moduleAudio.enabled()) {
+                    resolveMultiSourceDataSpec(DataSpec.Builder().setUri(item.mediaId).setKey(item.mediaId).build(),
+                        item.mediaId, applicationContext.isLowDataModeActive(), allowModules = true)
+                    activeModuleAudio[item.mediaId]
+                } else null
+            },
+        )
     }
 
     /**

@@ -375,6 +375,7 @@ enum class DownloadSource {
      */
     JIOSAAVN,
 
+    MODULES,
     YOUTUBE_MUSIC,
 }
 
@@ -402,6 +403,7 @@ object DownloadSourceConfig {
             DownloadSource.TIDAL,
             DownloadSource.DEEZER,
             DownloadSource.JIOSAAVN,
+            DownloadSource.MODULES,
             DownloadSource.YOUTUBE_MUSIC,
         )
 
@@ -485,6 +487,7 @@ object DownloadSourceConfig {
             AudioSourceType.TIDAL -> DownloadSource.TIDAL
             AudioSourceType.DEEZER -> DownloadSource.DEEZER
             AudioSourceType.JIOSAAVN -> DownloadSource.JIOSAAVN
+            AudioSourceType.MODULES -> DownloadSource.MODULES
             AudioSourceType.YOUTUBE -> DownloadSource.YOUTUBE_MUSIC
             AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
         }
@@ -553,6 +556,7 @@ object DownloadSourceConfig {
             DownloadSource.TIDAL -> AudioSourceType.TIDAL
             DownloadSource.DEEZER -> AudioSourceType.DEEZER
             DownloadSource.JIOSAAVN -> AudioSourceType.JIOSAAVN
+            DownloadSource.MODULES -> AudioSourceType.MODULES
             DownloadSource.YOUTUBE_MUSIC -> AudioSourceType.YOUTUBE
             DownloadSource.AUTO -> null
         }
@@ -1853,18 +1857,7 @@ val TelegramBotForwardToChannelKey = booleanPreferencesKey("telegramBotForwardTo
 // terminal fallback and can be toggled off like any other source; disabling it turns "no other
 // source matched" into a hard playback failure rather than a silent YouTube stream.
 
-enum class AudioSourceType {
-    TIDAL,
-    QOBUZ,
-    QOBUZ_BACKUP,
-    DEEZER,
-    APPLE,
-    AMAZON,
-    QQ,
-    SPOTIFY,
-    JIOSAAVN,
-    YOUTUBE,
-}
+
 
 // ---------------------------------------------------------------------------
 // QQ Music source

@@ -31,7 +31,7 @@ import org.junit.Test
 class DownloadSourceChainTest {
     @Test
     fun youtubeMusicFirstLeavesNoLosslessSourceToTry() {
-        val order = "YOUTUBE_MUSIC,QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN"
+        val order = "YOUTUBE_MUSIC,QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,MODULES"
 
         assertTrue(DownloadSourceConfig.fetchChain(order).isEmpty())
         assertTrue(DownloadSourceConfig.resolutionChain(order, null).isEmpty())
@@ -41,7 +41,7 @@ class DownloadSourceChainTest {
     fun sourcesBelowYoutubeMusicAreNeverReached() {
         assertEquals(
             listOf(DownloadSource.QOBUZ),
-            DownloadSourceConfig.fetchChain("QOBUZ,YOUTUBE_MUSIC,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN"),
+            DownloadSourceConfig.fetchChain("QOBUZ,YOUTUBE_MUSIC,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,MODULES"),
         )
     }
 
@@ -49,7 +49,7 @@ class DownloadSourceChainTest {
     fun losslessPlacedAboveYoutubeMusicOverridesIt() {
         assertEquals(
             listOf(DownloadSource.QOBUZ, DownloadSource.TIDAL),
-            DownloadSourceConfig.fetchChain("QOBUZ,TIDAL,YOUTUBE_MUSIC,QOBUZ_BACKUP,DEEZER,JIOSAAVN"),
+            DownloadSourceConfig.fetchChain("QOBUZ,TIDAL,YOUTUBE_MUSIC,QOBUZ_BACKUP,DEEZER,JIOSAAVN,MODULES"),
         )
     }
 
@@ -62,6 +62,7 @@ class DownloadSourceChainTest {
                 DownloadSource.TIDAL,
                 DownloadSource.DEEZER,
                 DownloadSource.JIOSAAVN,
+                DownloadSource.MODULES,
             ),
             DownloadSourceConfig.fetchChain(""),
         )
@@ -72,7 +73,7 @@ class DownloadSourceChainTest {
         assertEquals(
             listOf(DownloadSource.TIDAL),
             DownloadSourceConfig.resolutionChain(
-                "QOBUZ,QOBUZ_BACKUP,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                "QOBUZ,QOBUZ_BACKUP,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                 AudioSourceType.TIDAL,
             ),
         )
@@ -83,7 +84,7 @@ class DownloadSourceChainTest {
         assertTrue(
             DownloadSourceConfig
                 .resolutionChain(
-                    "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                    "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                     AudioSourceType.YOUTUBE,
                 ).isEmpty(),
         )
@@ -94,9 +95,9 @@ class DownloadSourceChainTest {
         // Apple, Amazon, QQ and Spotify have no download resolver; pinning one must not pin the download to
         // a source it can never resolve.
         assertEquals(
-            DownloadSourceConfig.fetchChain("QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC"),
+            DownloadSourceConfig.fetchChain("QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES"),
             DownloadSourceConfig.resolutionChain(
-                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                 AudioSourceType.APPLE,
             ),
         )
@@ -115,7 +116,7 @@ class DownloadSourceChainTest {
         assertEquals(
             listOf(DownloadSource.TIDAL),
             DownloadSourceConfig.resolutionChain(
-                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                 pinnedSource = null,
                 playbackEnabled = enabled,
             ),
@@ -123,7 +124,7 @@ class DownloadSourceChainTest {
         assertEquals(
             listOf(DownloadSource.TIDAL),
             DownloadSourceConfig.resolutionChain(
-                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                 pinnedSource = AudioSourceType.QOBUZ,
                 playbackEnabled = enabled,
             ),
@@ -132,7 +133,7 @@ class DownloadSourceChainTest {
         assertEquals(
             listOf(DownloadSource.TIDAL),
             DownloadSourceConfig.resolutionChain(
-                "DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                "DEEZER,JIOSAAVN,YOUTUBE_MUSIC,MODULES",
                 pinnedSource = AudioSourceType.TIDAL,
                 playbackEnabled = enabled,
             ),
@@ -142,7 +143,7 @@ class DownloadSourceChainTest {
         assertEquals(
             emptyList<DownloadSource>(),
             DownloadSourceConfig.resolutionChain(
-                "TIDAL,YOUTUBE_MUSIC",
+                "TIDAL,YOUTUBE_MUSIC,MODULES",
                 pinnedSource = AudioSourceType.YOUTUBE,
                 playbackEnabled = enabled,
             ),
@@ -150,7 +151,7 @@ class DownloadSourceChainTest {
         assertEquals(
             listOf(DownloadSource.TIDAL),
             DownloadSourceConfig.resolutionChain(
-                "TIDAL,YOUTUBE_MUSIC",
+                "TIDAL,YOUTUBE_MUSIC,MODULES",
                 pinnedSource = AudioSourceType.YOUTUBE,
                 playbackEnabled = setOf(AudioSourceType.TIDAL),
             ),
@@ -165,7 +166,7 @@ class DownloadSourceChainTest {
 
         assertEquals(
             listOf("deezer:id1", "tidal:id1", "id1"),
-            DownloadSourceConfig.downloadCacheKeys("DEEZER,QOBUZ,TIDAL,YOUTUBE_MUSIC,JIOSAAVN", null, enabled, "id1"),
+            DownloadSourceConfig.downloadCacheKeys("DEEZER,QOBUZ,TIDAL,YOUTUBE_MUSIC,JIOSAAVN,MODULES", null, enabled, "id1"),
         )
     }
 
@@ -175,7 +176,7 @@ class DownloadSourceChainTest {
 
         assertEquals(
             listOf("id1"),
-            DownloadSourceConfig.downloadCacheKeys("YOUTUBE_MUSIC,TIDAL", null, enabled, "id1"),
+            DownloadSourceConfig.downloadCacheKeys("YOUTUBE_MUSIC,TIDAL,MODULES", null, enabled, "id1"),
         )
     }
 
@@ -188,9 +189,9 @@ class DownloadSourceChainTest {
         assertTrue(DownloadSourceConfig.youTubeFallbackAllowed(null))
         assertEquals(
             listOf("tidal:id1"),
-            DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC", null, enabled, "id1"),
+            DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC,MODULES", null, enabled, "id1"),
         )
-        assertTrue(DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC", null, emptySet(), "id1").isEmpty())
+        assertTrue(DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC,MODULES", null, emptySet(), "id1").isEmpty())
     }
 
     @Test
@@ -199,11 +200,11 @@ class DownloadSourceChainTest {
 
         assertEquals(
             listOf("tidal:id1", "id1"),
-            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC", AudioSourceType.TIDAL, enabled, "id1"),
+            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC,MODULES", AudioSourceType.TIDAL, enabled, "id1"),
         )
         assertEquals(
             listOf("id1"),
-            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC", AudioSourceType.YOUTUBE, enabled, "id1"),
+            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC,MODULES", AudioSourceType.YOUTUBE, enabled, "id1"),
         )
     }
 }

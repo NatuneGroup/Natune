@@ -847,6 +847,7 @@ dependencies {
     implementation(project(":spotifycore"))
     implementation(project(":deobfuscator"))
     implementation(project(":jiosaavn"))
+    implementation(project(":modules"))
     implementation("com.materialkolor:material-kolor:5.0.0-alpha07")
 
     implementation(libs.ktor.client.core)
@@ -983,4 +984,9 @@ configurations.configureEach {
         "androidx.compose.animation:animation-graphics:${libs.versions.compose.get()}",
         "org.jetbrains.kotlin:kotlin-metadata-jvm:${libs.versions.kotlinMetadata.get()}",
     )
+}
+
+// The app's module host contract tests run with its existing CI unit-test gate.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(":modules:testDebugUnitTest")
 }

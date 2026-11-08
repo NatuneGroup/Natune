@@ -23,9 +23,22 @@ must preserve the invariants below.
 - **Protected files**: `applicationId` (`moe.rukamori.archivetune`) is fork identity — never adopt upstream changes to it. `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`, `DataServer.txt` were removed and must never be restored.
 - **Enhanced lyrics**: Android's Enhanced renderer follows `rukamori/ArchiveTune` `dev` at `8f25a9e21` (including `f71c0c086` frame-paced sync), with upstream Accompanist versions. Keep its scrolling, word timing and animation intact. `NatuneLyricsEnhanced` supplies existing providers, parser results, settings and romanization; unaligned AI readings remain line captions. `LyricsAlternate` preserves Spotify and compact TikTok behavior. Shared desktop/iOS lyrics retain their shared renderer. Do not restore custom sweeps, activation leads, scroll springs or draw-position projection to Android Enhanced.
 
+## Source modules
+
+- `:modules` is the Android-only ArchiveTune API-v1 host from upstream `8f25a9e21`;
+  preserve readable `.arch` compatibility, format/API versions and JS host APIs.
+  Modules are opt-in and sit in the existing playback/download source order;
+  YouTube's extractor tiers and native DRM/decryption routes remain unchanged.
+- Never restore `NetworkGatekeeper` or `8SM1.` hardcoded-key envelope decryption.
+  Minimum app compatibility uses the explicit upstream contract floor 15.1.0,
+  independently of Natune's release name. Advance it only with reviewed host changes.
+- `addons/modules` carries provider packages and both upstream/fork attribution.
+  No bundled credentials. Update branch-based catalog download URLs after merge.
+  Architecture, differences and validation limits: [modules](docs/modules.md).
+
 ## Modules & submodules
 
-- Gradle modules: `:app :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
+- Gradle modules: `:app :modules :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
 - Submodules: `core` → **vossgraves/core** (NewPipeExtractor-based InnerTube client; a fork of rukamori/core that deliberately carries no `NetworkGatekeeper`, pinned on `feat/podcast-port` for the podcast models), `lyrics` → **4nx3b/lyrics**, `IconPack` → **NatuneGroup/IconPack** (fork of rukamori/IconPack; the icon-switcher pack), `deobfuscator` → **rukamori/morideobfuscator** (the media obfuscator; the upstream repository keeps its own name and the gitlink is unchanged). Commit + push inside a submodule first, then pin the gitlink; never leave a dirty or unpushed pointer. Never move `core` to a `rukamori/core` revision — its `NetworkGatekeeper` defaults to `connectionBlocked = true` and throws on every request.
 
 ## Build & test
