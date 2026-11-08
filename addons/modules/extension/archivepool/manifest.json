@@ -7,7 +7,7 @@
     "id": "app.natune.provider.archivepool",
     "name": "ArchivePool",
     "displayName": "ArchivePool",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Natune contributors",
     "description": "Leases TIDAL/Qobuz accounts from your ArchivePool via GET /api/accounts with your read key and X-Pool-Client v2. Decrypts authenticated enc:1 fields using SHA-256-derived AES-256-GCM. Reuses Natune TIDAL/Qobuz forks, respects refusal cooldown and ETag; no bundled credentials, reports or account contribution.",
     "repository": "https://github.com/NatuneGroup/Natune",

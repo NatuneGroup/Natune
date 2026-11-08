@@ -275,14 +275,60 @@ private fun ModuleDetailHero(detail: ModuleDetailUi, model: ModuleSettingsUiMode
 @Composable
 private fun ModulePlaybackSourcePanel(detail: ModuleDetailUi, connection: ModuleFieldUi?, model: ModuleSettingsUiModel,
     onAction: (ModuleSettingsAction) -> Unit) {
-    if (connection != null) ModuleField(connection, model, onAction, Modifier)
-    else Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(detail.row.name, style = MaterialTheme.typography.titleMediumEmphasized)
-            detail.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
-            if (detail.authentication) FilledTonalButton(onClick = { onAction(ModuleSettingsAction.Authorize(detail.row.id)) },
-                enabled = model.busy == null) { Text(stringResource(R.string.modules_authorize)) }
+    Column(verticalArrangement = Arrangement.spacedBy(ModuleSettingsLayout.CardGap)) {
+        if (connection != null) ModuleField(connection, model, onAction, Modifier)
+        if (detail.supportsPool) {
+            val ownEnabled = detail.accountSettings.useOwnAccount && !detail.publicInstance
+            val poolEnabled = detail.accountSettings.poolEnabled(detail.poolInstalled)
+            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    ModuleAccountToggleRow(R.string.modules_use_own_account,
+                        if (detail.publicInstance) R.string.modules_public_instance_active else if (detail.ownAccountConfigured)
+                            R.string.modules_account_configured else R.string.modules_account_sign_in_required,
+                        ownEnabled, model.busy == null && !detail.publicInstance) {
+                        onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+                            moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_OWN_ACCOUNT, it))
+                    }
+                    if (detail.poolInstalled) {
+                        HorizontalDivider()
+                        ModuleAccountToggleRow(R.string.modules_use_archivepool,
+                            if (detail.poolReady) R.string.modules_pool_fallback_description else R.string.modules_pool_configuration_required,
+                            poolEnabled, model.busy == null) {
+                            onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+                                moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.USE_POOL, it))
+                        }
+                        HorizontalDivider()
+                        ModuleAccountToggleRow(R.string.modules_own_account_first, R.string.modules_own_account_first_description,
+                            detail.accountSettings.ownAccountFirst, model.busy == null && ownEnabled && poolEnabled) {
+                            onAction(ModuleSettingsAction.AccountSetting(detail.row.id,
+                                moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle.OWN_ACCOUNT_FIRST, it))
+                        }
+                    }
+                }
+            }
+        } else if (connection == null) Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.largeIncreased,
+            color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Column(Modifier.padding(ModuleSettingsLayout.CardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(detail.row.name, style = MaterialTheme.typography.titleMediumEmphasized)
+                detail.capabilities.forEach { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+                if (detail.authentication) FilledTonalButton(onClick = { onAction(ModuleSettingsAction.Authorize(detail.row.id)) },
+                    enabled = model.busy == null) { Text(stringResource(R.string.modules_authorize)) }
+            }
         }
+    }
+}
+
+@Composable
+private fun ModuleAccountToggleRow(@StringRes title: Int, @StringRes description: Int, checked: Boolean,
+    enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+        .padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(title), style = MaterialTheme.typography.titleSmallEmphasized)
+            Text(stringResource(description), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
@@ -490,12 +536,18 @@ private fun ModuleField(field: ModuleFieldUi, model: ModuleSettingsUiModel, onAc
             when (field.type) {
                 ModuleSettingType.SELECT -> if (field.options.size in 2..4) {
                     Text(field.label, style = MaterialTheme.typography.titleSmallEmphasized)
+                    val choices = remember(field.key, field.options) {
+                        val qualityOrder = listOf("LOW", "HIGH", "LOSSLESS", "HI_RES_LOSSLESS", "5", "6", "7", "27")
+                        if (field.key == "quality") field.options.sortedBy { option ->
+                            qualityOrder.indexOf(option.json.trim('"')).takeIf { it >= 0 } ?: Int.MAX_VALUE
+                        } else field.options
+                    }
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        field.options.forEachIndexed { index, option ->
+                        choices.forEachIndexed { index, option ->
                             SegmentedButton(selected = option.json == field.json, enabled = interactive,
                                 onClick = { change(option.json) }, shape = SegmentedButtonDefaults.itemShape(index, field.options.size),
                                 icon = {}) {
-                                Text(option.label.substringBefore("·").trim(), style = MaterialTheme.typography.labelMedium,
+                                Text(moduleOptionLabel(field, option), style = MaterialTheme.typography.labelMedium,
                                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -554,6 +606,22 @@ private fun ModuleField(field: ModuleFieldUi, model: ModuleSettingsUiModel, onAc
             ModuleFieldSupportingText(field)
         }
     }
+}
+
+@Composable
+private fun moduleOptionLabel(field: ModuleFieldUi, option: moe.rukamori.archivetune.viewmodels.ModuleOptionUi): String {
+    if (field.key != "quality") return option.label
+    val label = when (option.json.trim('"')) {
+        "LOW" -> R.string.modules_quality_low
+        "HIGH" -> R.string.modules_quality_high
+        "LOSSLESS", "6" -> R.string.modules_quality_lossless
+        "HI_RES_LOSSLESS", "HI_RES" -> R.string.modules_quality_hires
+        "5" -> R.string.modules_quality_mp3
+        "7" -> R.string.modules_quality_96khz
+        "27" -> R.string.modules_quality_192khz
+        else -> null
+    }
+    return label?.let { stringResource(it) } ?: option.label
 }
 
 @Composable

@@ -32,4 +32,13 @@ class UnifiedProviderConfigurationTest {
         assertEquals("\"account\"", values["mode"])
         assertEquals(installed.configuration["accessToken"], values["accessToken"])
     }
+    @Test fun laterUnifiedUpgradeKeepsTheExplicitPublicInstanceMode() {
+        val old = manifest("app.natune.provider.tidal")
+        val installed = InstalledModule("installation", old, "", "", true,
+            mapOf("mode" to "\"instance\"", "instanceUrl" to "\"https://instance.example\""), "revision")
+        val values = unifiedProviderConfiguration(installed, old)
+        assertEquals("\"instance\"", values["mode"])
+        assertEquals(installed.configuration["instanceUrl"], values["instanceUrl"])
+    }
+
 }

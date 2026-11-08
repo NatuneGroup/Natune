@@ -78,7 +78,7 @@ def main():
     # Only upgrade existing installations; these assets never install providers by default.
     migrations = ROOT.parents[1] / 'app/src/main/assets/module-migrations'
     migrations.mkdir(parents=True, exist_ok=True)
-    for name in ('tidal', 'qobuz'):
+    for name in ('tidal', 'qobuz', 'archivepool'):
         (migrations / f'{name}.arch').write_bytes((dist / f'{name}.arch').read_bytes())
 
 
