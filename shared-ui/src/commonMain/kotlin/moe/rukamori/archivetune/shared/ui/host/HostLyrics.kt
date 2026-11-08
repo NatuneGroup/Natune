@@ -114,13 +114,15 @@ class HostLyrics(
     bundledBuildBaseUrl: String = "",
     bundledBuildHmacKey: String = "",
     private val storage: HostLyricsStorage? = null,
+    additionalProviderNames: List<String> = emptyList(),
+    additionalProviders: (PreferenceSnapshot) -> List<LyricsProvider> = { emptyList() },
 ) {
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
-        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES),
+        availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES + additionalProviderNames),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, bundledBuildBaseUrl, bundledBuildHmacKey) },
+        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, bundledBuildBaseUrl, bundledBuildHmacKey) + additionalProviders(preferences) },
         networkAvailable = networkAvailable,
         // The provider's own message is what says whether the read failed or simply found nothing; the class name
         // alone made every ordinary miss look like a broken provider.
