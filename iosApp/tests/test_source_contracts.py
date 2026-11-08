@@ -405,14 +405,15 @@ class IosSourceContractsTest(unittest.TestCase):
     def test_audio_graph_canonical_source_and_hardware_boundary(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()
         self.assertNotIn("interleaved:YES", audio)
-        self.assertIn("initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2", audio)
+        self.assertIn("initStandardFormatWithSampleRate:p->pcm_rate channels:2", audio)
         self.assertIn("at_audio_canonical_format(hardware.sampleRate, hardware.channelCount", audio)
         self.assertIn("buffers->mNumberBuffers != 2", audio)
         self.assertIn("at_audio_deinterleave(p->scratch", audio)
         self.assertIn("connect:p->source to:p->converter format:pcm", audio)
         self.assertIn("connect:p->converter to:p->time_pitch format:canonical", audio)
         create = audio.split("static at_audio_output *create_output(", 1)[1].split("at_audio_output *at_audio_create(", 1)[0]
-        self.assertIn("configure_playback_locked() && build_graph(p, plain)", create)
+        self.assertLess(create.index("configure_playback_locked()"), create.index("accepted_pcm_rate()"))
+        self.assertLess(create.index("accepted_pcm_rate()"), create.index("ae_engine_create("))
         self.assertIn("at_audio_destroy(p)", create)
 
     def test_apple_exception_boundary_and_fallback_are_shared_by_both_consumers(self):

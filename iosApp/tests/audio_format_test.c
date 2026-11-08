@@ -47,4 +47,14 @@ static void planar_conversion(void) {
     puts("PASS interleaved-to-planar conversion, channel separation, silent tail, bounded chunk offsets");
 }
 
-int main(void) { format_validation(); planar_conversion(); return 0; }
+static void usb_rate_validation(void) {
+    CHECK(at_audio_usb_pcm_rate(192000, 1, 192000) == 192000);
+    CHECK(at_audio_usb_pcm_rate(192000, 1, 96000) == 96000);
+    CHECK(at_audio_usb_pcm_rate(192000, 1, 48000) == 48000);
+    CHECK(at_audio_usb_pcm_rate(192000, 0, 192000) == AT_AUDIO_PCM_RATE);
+    CHECK(at_audio_usb_pcm_rate(0, 1, 192000) == AT_AUDIO_PCM_RATE);
+    CHECK(at_audio_usb_pcm_rate(12345, 1, 192000) == AT_AUDIO_PCM_RATE);
+    CHECK(at_audio_usb_pcm_rate(192000, 1, NAN) == AT_AUDIO_PCM_RATE);
+    CHECK(at_audio_usb_pcm_rate(192000, 1, 384000) == 192000);
+}
+int main(void) { format_validation(); planar_conversion(); usb_rate_validation(); return 0; }
