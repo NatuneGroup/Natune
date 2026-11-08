@@ -13,7 +13,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.download.DownloadQueueOwner
 import moe.rukamori.archivetune.shared.data.download.IosDownloadFiles
-import moe.rukamori.archivetune.shared.data.download.IosDownloadTransfer
+import moe.rukamori.archivetune.shared.data.download.IosPreparedDownloadTransfer
+import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.data.download.IosDownloadedFileLocator
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.RoomDownloadTaskStore
@@ -74,6 +75,7 @@ internal class IosDownloadsOwner(
     root: String,
     client: HttpClient,
     scope: CoroutineScope,
+    accounts: VaultProviderAccountStore,
     private val nowMs: () -> Long,
     private val report: (String) -> Unit,
 ) : DownloadActions {
@@ -87,13 +89,16 @@ internal class IosDownloadsOwner(
     /** The songs started from a catalog row this session, so an in-flight transfer shows its real metadata. */
     private val started = MutableStateFlow<List<ContentItem>>(emptyList())
 
+    private val transfer = IosPreparedDownloadTransfer(client, files, index, nowMs, accounts, accounts)
+
     private val queue = DownloadQueueOwner(
         store = RoomDownloadTaskStore(tasks),
-        transfer = IosDownloadTransfer(client, files, index, nowMs),
+        transfer = transfer,
         resolver = IosDownloadResolver(
             audio = resolver,
             preferences = { settings.snapshots.value },
             itemOf = { ref -> metadataOf(ref) },
+            prepare = transfer::prepare,
         ),
         itemOf = { ref -> metadataOf(ref) },
         removeCommitted = { task -> deleteCommitted(task) },
@@ -308,12 +313,8 @@ internal enum class DownloadRefusal {
 
 /** The refusal [ref] earns on this host, or null when its provider can be stored. */
 internal fun iosDownloadRefusal(ref: ContentRef): DownloadRefusal? = when {
-    ref.kind != ContentKind.SONG -> DownloadRefusal.NOT_A_SONG
+    ref.kind != ContentKind.SONG && ref.kind != ContentKind.EPISODE -> DownloadRefusal.NOT_A_SONG
     ref.provider == ContentProvider.SPOTIFY_STREAMING.id -> DownloadRefusal.STREAMING_ONLY
-    // Deezer answers only with its encrypted stream and Apple only with a FairPlay HLS manifest. Both need the
-    // Android native preparers, so this host cannot write a playable file for either.
-    ref.provider == ContentProvider.DEEZER.id || ref.provider == ContentProvider.APPLE.id ->
-        DownloadRefusal.ENCRYPTED_ON_DEVICE
     // A local file is already on this device and Telegram audio stays in TDLib's own cache.
     ref.provider == ContentProvider.LOCAL.id || ref.provider == ContentProvider.TELEGRAM.id ->
         DownloadRefusal.NOT_A_SONG
@@ -335,6 +336,7 @@ private class IosDownloadResolver(
     private val audio: OrderedAudioResolver,
     private val preferences: () -> PreferenceSnapshot?,
     private val itemOf: suspend (ContentRef) -> ContentItem?,
+    private val prepare: suspend (DownloadTask, PreparedAudio) -> Boolean,
 ) : DownloadSourceResolver {
     override suspend fun resolve(task: DownloadTask): PreparedAudio? {
         val item = itemOf(task.ref) ?: error("The song metadata is not available")
@@ -348,7 +350,7 @@ private class IosDownloadResolver(
                     error("no connected source stored a file for ${task.mediaId} (${resolution.attempts.size} attempts)")
                 is AudioResolution.NativeRoute -> error("A native route cannot be stored as a download file")
             }
-            if (prepared is PreparedAudio.Progressive) return prepared
+            if (prepare(task, prepared)) return prepared
             skipped += prepared.source
         }
     }

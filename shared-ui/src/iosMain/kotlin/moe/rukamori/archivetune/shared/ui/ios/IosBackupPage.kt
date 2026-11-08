@@ -69,8 +69,10 @@ internal fun IosBackupRestorePage(
         onFailure = onFailure,
         scrollTo = scrollTo,
         driveAppDataHost = graph.driveBackup.drive,
+        backupSyncHost = graph.backupSync,
         modifier = Modifier.fillMaxSize(),
     )
+    graph.backupSync?.let { IosBackupSyncDateDialog(it) }
     IosBackupRestartDialog(graph)
     IosBackupRestoreFailedDialog(graph)
     IosRestoreBlockedDialog(graph)

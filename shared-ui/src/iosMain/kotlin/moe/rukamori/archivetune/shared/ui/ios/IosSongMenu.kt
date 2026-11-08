@@ -1,4 +1,8 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
+
+import platform.UIKit.popoverPresentationController
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -52,6 +56,12 @@ import moe.rukamori.archivetune.shared.ui.menu.songLibraryAndDownloadActions
 import moe.rukamori.archivetune.shared.ui.menu.songOverflowActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_timing
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_edit
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_translate
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_romanize
+import moe.rukamori.archivetune.shared.ui.resources.ios_lyrics_undo
+import moe.rukamori.archivetune.shared.ui.resources.m6_save_canvas
 import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
@@ -62,6 +72,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_acoustic_quality_title
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_equalizer
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiLyricsOperation
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -118,7 +129,7 @@ private class IosSongMenuHost(
         graph.pageOwners.history.remove(HistoryOrigin.LOCAL, setOf(id))
     }
 
-    override suspend fun removeFromCache(song: ContentRef) = state.unavailable()
+    override suspend fun removeFromCache(song: ContentRef) = graph.songCache.remove(song)
 
     /**
      * A download resolves under the user's download source order and is stored in the app container. A provider this
@@ -225,7 +236,7 @@ internal fun IosSongMenu(
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
 ) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val songHost = remember { IosSongMenuHost(menu, graph, host, openRoute, sleepSheet) }
     val editablePlaylists by remember {
         graph.libraryContent.playlistRows().map { rows -> rows.filter { it.editable }.map { it.item } }
@@ -253,6 +264,7 @@ internal fun IosSongMenu(
             false
         }
     }
+    val cached by produceState(false, ref) { value = graph.songCache.file(ref) != null }
     val isTelegram = ref.id.startsWith("telegram://")
     val isLocal = ref.provider == ContentProvider.LOCAL.id
     val artistRef = occurrence.item.artists.firstNotNullOfOrNull { it.ref(ref.provider) }
@@ -293,7 +305,7 @@ internal fun IosSongMenu(
         download = download,
         downloadExtension = downloadExtension,
         fromHistory = occurrence.occurrenceId.startsWith("history:"),
-        fromCache = false,
+        fromCache = cached,
         albumId = occurrence.item.albumId,
         artworkUrl = occurrence.item.artworkUri,
         recommendationBlocked = ref.iosYouTubeSong() &&
@@ -338,6 +350,27 @@ internal fun IosSongMenu(
         })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
+        if (ref.kind == ContentKind.SONG) add(OverflowAction("save_canvas", Res.string.m6_save_canvas) {
+            menu.canvasSaveTarget = occurrence.item; menu.dismiss()
+        })
+        add(OverflowAction("lyrics_timing", Res.string.ios_lyrics_timing) { graph.lyricsTools.timingTarget = ref; menu.dismiss() })
+        val lyricDocument = graph.lyrics.current.value
+        val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == lyricDocument?.occurrenceId }
+        if (playing?.item?.ref == ref && lyricDocument?.hasLines == true) {
+            add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
+            add(OverflowAction("translate_lyrics", Res.string.ios_lyrics_translate) {
+                check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.TRANSLATE)); menu.dismiss()
+            })
+            add(OverflowAction("romanize_lyrics", Res.string.ios_lyrics_romanize) {
+                check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.ROMANIZE)); menu.dismiss()
+            })
+            add(OverflowAction("undo_lyrics", Res.string.ios_lyrics_undo) {
+                val id = lyricDocument.occurrenceId
+                if (graph.lyricsTools.edits.undo { graph.lyrics.current.value?.occurrenceId == id })
+                    graph.lyricsSurface.sessions.translationUndone(id)
+                menu.dismiss()
+            })
+        }
     }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
     SongOverflowMenu(
         identity = "ios-song:${occurrence.occurrenceId}",
@@ -354,8 +387,8 @@ internal fun IosSongMenu(
 
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
-internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
+internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence, graph: IosSessionGraph) {
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
     val ref = occurrence.item.ref
     val actions = buildList<OverflowAction> {
         when (ref.kind) {
@@ -384,15 +417,17 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
 /** The rows this host connects end to end, per the opened occurrence. */
 internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        addAll(listOf("lyrics_timing", "edit_lyrics", "translate_lyrics", "romanize_lyrics", "undo_lyrics", "play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
-        if (!facts.isLocal) add("share")
+        add("share")
+        if (ref.kind == ContentKind.SONG) add("save_canvas")
         // Library add and remove both commit through the repository now.
         if (!facts.isLocal) add("library")
         // A speed-dial pin holds a YouTube song id; other providers keep the row's unavailable answer.
         if (!facts.isLocal) add("speed_dial")
         if (facts.fromHistory) add("remove_history")
+        if (facts.fromCache) add("remove_cache")
         if (facts.albumId != null) add("view_album")
         // The shared sleep timer sheet is owned by the session graph, so the row is always connected.
         add("sleep_timer")
@@ -427,10 +462,15 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         add("remove_playlist")
     }
 
-internal fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
+internal fun iosMenuSharing(state: IosItemMenuState, host: IosHost, graph: IosSessionGraph? = null): MenuSharing = object : MenuSharing {
     override suspend fun shareLink(url: String) = withContext(Dispatchers.Main) { iosShareText(host, url) }
     override suspend fun copyLink(url: String) = withContext(Dispatchers.Main) { copyToIosClipboard(url) }
-    override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = state.unavailable()
+    override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = withContext(Dispatchers.Main) {
+        val path = graph?.localMedia?.pathOf(mediaId) ?: state.unavailable()
+        val sheet = platform.UIKit.UIActivityViewController(listOf(platform.Foundation.NSURL.fileURLWithPath(path)), null)
+        sheet.popoverPresentationController?.sourceView = host.viewController.view
+        host.viewController.presentViewController(sheet, true, null)
+    }
 
     /**
      * The t.me link of the channel message a Telegram track id names, resolved by the signed-in client the

@@ -31,11 +31,16 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSection
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.HomeSourceKey
 import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
+import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSources
+import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSource
+import moe.rukamori.archivetune.shared.domain.settings.ActiveHomeSourcesKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
@@ -258,6 +263,12 @@ internal fun iosHomePage(
     lists: IosCatalogueOwners,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage {
+    val saved by graph.settings.snapshots.collectAsState()
+    val available = resolvedHomeSources(saved?.get(ActiveHomeSourcesKey).orEmpty(),
+        spotifyAvailable = !saved?.get(SpotifySpDcKey).isNullOrBlank(), qqAvailable = true)
+    val selected = resolvedHomeSource(saved?.get(HomeSourceKey), available)
+    val sourceChange: (HomeSource) -> Unit = { source -> graph.scope.launch { graph.settings.edit { this[HomeSourceKey] = source.name } } }
+    if (selected != HomeSource.YOUTUBE) return iosProviderHomePage(graph, selected, available, sourceChange, openRoute)
     val scope = rememberCoroutineScope()
     val catalogue = graph.youtubeCatalogue
     val feed =
@@ -283,8 +294,8 @@ internal fun iosHomePage(
     return ArchiveGraphPage.Home(
         source = HomeSource.YOUTUBE,
         // The Spotify catalog home and the QQ source have no owner on this host, so the switcher stays hidden.
-        availableSources = listOf(HomeSource.YOUTUBE),
-        sourceChange = {},
+        availableSources = available,
+        sourceChange = sourceChange,
         design = HomeFeedDesign.Classic,
         shelves = shelves,
         page =
