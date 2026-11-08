@@ -674,16 +674,6 @@ class App :
                     // it. Deliberately no UI and no network work in the dying process.
                     moe.rukamori.archivetune.feedback.CrashFeedback.capture(this@App, stack)
 
-                    val intent =
-                        Intent(this@App, DebugActivity::class.java).apply {
-                            putExtra(DebugActivity.EXTRA_STACK_TRACE, stack)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        }
-                    startActivity(intent)
-                    try {
-                        Thread.sleep(100)
-                    } catch (_: InterruptedException) {
-                    }
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {

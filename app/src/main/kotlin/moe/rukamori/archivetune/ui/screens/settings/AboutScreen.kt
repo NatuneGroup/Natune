@@ -867,12 +867,9 @@ private fun AboutHeaderCard(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
-                val iconTint = MaterialTheme.colorScheme.onPrimaryContainer
-                val iconColorFilter = remember(iconTint) { ColorFilter.tint(iconTint) }
                 Image(
                     painter = painterResource(R.drawable.about_splash),
                     contentDescription = null,
-                    colorFilter = iconColorFilter,
                     // The splash drawable already insets its glyph to about half of the canvas, so it
                     // fills the circle without extra padding and stays clear of the clipped edge.
                     modifier = Modifier.fillMaxSize(),

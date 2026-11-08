@@ -7,6 +7,7 @@
 
 package moe.rukamori.archivetune.viewmodels
 
+import moe.rukamori.archivetune.modules.availableForPlayback
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
@@ -30,6 +31,7 @@ import java.text.DateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import javax.inject.Inject
+
 
 @Immutable
 sealed interface ModuleSettingsState {
@@ -73,13 +75,17 @@ data class ModuleInfoUi(@param:StringRes val label: Int, val value: String, val 
 @Immutable
 data class ModuleFieldUi(val key: String, val label: String, val description: String, val type: ModuleSettingType,
     val text: String, val json: String, val checked: Boolean, val sensitive: Boolean, val revealed: Boolean, @param:StringRes val error: Int?,
-    val options: ImmutableList<ModuleOptionUi>, val selectedLabel: String)
+    val options: ImmutableList<ModuleOptionUi>, val selectedLabel: String,
+    val required: Boolean = false, val minimum: Double? = null, val maximum: Double? = null, val integerOnly: Boolean = false)
 
 @Immutable
 data class ModuleDetailUi(val row: ModuleRowUi, val description: String, val origin: String,
     val capabilities: ImmutableList<Int>, val fields: ImmutableList<ModuleFieldUi>, val qualityDeclared: Boolean,
     val dirty: Boolean, val initialization: ModuleDiagnosticUi?, val playback: ModuleDiagnosticUi?, val information: ImmutableList<ModuleInfoUi>,
-    val authentication: Boolean)
+    val authentication: Boolean,
+    val accountSettings: moe.rukamori.archivetune.shared.domain.settings.ModuleAccountSettings = moe.rukamori.archivetune.shared.domain.settings.ModuleAccountSettings(),
+    val supportsPool: Boolean = false, val poolInstalled: Boolean = false, val poolReady: Boolean = false,
+    val ownAccountConfigured: Boolean = false, val publicInstance: Boolean = false)
 
 @Immutable
 data class ModuleDiagnosticUi(@param:StringRes val status: Int, val time: String, val elapsedMs: Long,
@@ -119,6 +125,7 @@ sealed interface ModuleSettingsAction {
     data object Dismiss : ModuleSettingsAction
     data object Confirm : ModuleSettingsAction
     data class SetEnabled(val value: Boolean) : ModuleSettingsAction
+    data class AccountSetting(val id: String, val toggle: moe.rukamori.archivetune.shared.domain.settings.ModuleAccountToggle, val value: Boolean) : ModuleSettingsAction
     data class Enable(val id: String, val value: Boolean) : ModuleSettingsAction
     data class OpenModule(val id: String) : ModuleSettingsAction
     data class OpenCatalog(val id: String) : ModuleSettingsAction
@@ -320,6 +327,7 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                         if (pending == null) message = R.string.modules_no_updates
                     }
                     is ModuleSettingsAction.SetEnabled -> useCases.setEnabled(action.value)
+                    is ModuleSettingsAction.AccountSetting -> useCases.accountSetting(action.id, action.toggle, action.value)
                     is ModuleSettingsAction.Enable -> useCases.enable(action.id, action.value)
                     ModuleSettingsAction.CommitOrder -> draftOrder?.let { useCases.reorder(it) }
                     ModuleSettingsAction.Save -> {
@@ -427,9 +435,13 @@ class ModuleSettingsViewModel @Inject constructor(private val useCases: ModuleSe
                         parsed == true, field.secret, field.key in revealed,
                         if (valid) null else if (field.required && (parsed == "" || parsed == JSONObject.NULL)) R.string.modules_field_required else R.string.modules_field_invalid,
                         ImmutableList.copyOf(field.options.map { ModuleOptionUi(it.label, it.valueJson, it.description) }),
-                        selectedOption?.label.orEmpty())
+                        selectedOption?.label.orEmpty(), field.required, field.minimum, field.maximum, field.integerOnly)
                 }), item.manifest.settings.any { it.key.contains("quality", true) }, draft != item.configuration,
-                diagnostic.check?.let(::diagnosticUi), diagnostic.playback?.let(::diagnosticUi), information(item.manifest), item.manifest.authentication)
+                diagnostic.check?.let(::diagnosticUi), diagnostic.playback?.let(::diagnosticUi), information(item.manifest), item.manifest.authentication,
+                item.accountSettings, moe.rukamori.archivetune.modules.modulePoolService(item) != null,
+                registry.modules.any { it.manifest.id == moe.rukamori.archivetune.modules.ARCHIVE_POOL_MODULE_ID },
+                registry.modules.any { it.manifest.id == moe.rukamori.archivetune.modules.ARCHIVE_POOL_MODULE_ID && it.availableForPlayback() },
+                moe.rukamori.archivetune.modules.moduleOwnAccountConfigured(item), moe.rukamori.archivetune.modules.moduleUsesPublicInstance(item))
         }
         val catalog = registry.catalogs.firstOrNull { it.id == selectedId }?.let { item ->
             ModuleCatalogDetailUi(catalogs.first { it.id == item.id }, ImmutableList.copyOf(item.entries.map { entry ->

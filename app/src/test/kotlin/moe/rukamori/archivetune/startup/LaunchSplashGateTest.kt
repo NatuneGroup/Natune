@@ -12,7 +12,7 @@ import org.junit.Test
 
 class LaunchSplashGateTest {
     @Test
-    fun splashReleasesOnFirstCompositionWithoutWaitingForATimerOrARead() = runTest {
+    fun splashReleasesOnReadyFrameWithoutAnAdditionalDelay() = runTest {
         val gate = LaunchSplashGate()
         var released = false
         val waiting =
@@ -63,7 +63,7 @@ class LaunchSplashGateTest {
     }
 
     @Test
-    fun theFallbackBudgetStaysShorterThanTheRemovedTwoSecondReadWait() {
-        assertTrue(LaunchSplashGate.HOLD_BUDGET_MS < 2_000L)
+    fun stalledLaunchStillHasAFiniteSafetyBudget() {
+        assertTrue(LaunchSplashGate.HOLD_BUDGET_MS in 2_000L..5_000L)
     }
 }

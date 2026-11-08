@@ -224,7 +224,6 @@ fun LyricsScreen(
         }
     val currentLyrics by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
-    val currentSongLiked = currentSong?.song?.liked == true
 
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val storedPlayerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
@@ -825,8 +824,6 @@ fun LyricsScreen(
                     onOverflowClick = openLyricsMenuFromControls,
                     onOverflowPositioned = { controlsMoreBounds = it },
                     onCloseClick = onBackClick,
-                    isLiked = currentSongLiked,
-                    onToggleLike = playerConnection::toggleLike,
                     modifier =
                         Modifier
                             .fillMaxWidth()

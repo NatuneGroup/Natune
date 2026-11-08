@@ -13,6 +13,12 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <style name="Theme.ArchiveTune.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_window_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.ArchiveTune</item>
+    </style>
+
     <style name="Theme.ArchiveTune.Transparent" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
