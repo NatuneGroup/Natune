@@ -101,8 +101,12 @@ replace the same installation through the owner API; packages start disabled.
 Progressive module audio joins the existing source order and download path through
 revocable admissions; compatible script lyric extensions join HostLyrics.
 
-Module manifest audio and metadata-surface mounting, signed-session browser/callback
-UI, complete catalog update UI and binary native-extension loading remain incomplete.
+The concurrent module follow-up mounts manifest-driven settings, signed-session
+browser/callback controls and metadata browse pages. Module HLS now reuses the
+player's bounded clear/AES-128 preparation for playback and downloads; native child
+URLs retain the module's declared domain policy, and explicit stream headers stay
+on their original origin. Generic module DASH and binary native-extension loading
+remain incomplete.
 Android DEX/ABI extensions cannot be loaded as desktop JNI. This is Partial module
 parity, not a claim that every Android extension works. The shared settings list adds
 one desktop-only Modules row/resource; existing hosts keep their defaults. QuickJS
@@ -208,3 +212,8 @@ Android codec. Its default is absent, so other hosts keep their existing behavio
 The codec/generator are extracted from the retained Android Theme.kt at build time
 with its original notice, and MaterialKolor uses the existing version pin. This
 source extraction and four-seed UI still need CI/runtime validation.
+
+The only retained Android module change for native HLS is an additive permission
+snapshot accessor on ModuleRuntime; its JS API and Android behavior are unchanged.
+Theme source extraction normalizes line endings for the Windows build, and the
+four-seed editor scrolls in smaller windows.

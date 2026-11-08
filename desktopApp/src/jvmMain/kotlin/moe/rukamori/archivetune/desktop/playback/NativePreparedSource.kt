@@ -75,6 +75,12 @@ internal suspend fun prepareHostPlaintext(
             account = admission?.toByteSourceAccount() ?: ByteSourceAccount(provider = provider, accountId = null),
             // Only an admitted personal account reads cookies. Anonymous access names no account, so it sends none.
             cookies = if (admission == null) null else cookies,
+            headers = (prepared as? PreparedAudio.Native)?.stream?.headers
+                ?: moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders.NONE,
+            headerOrigin = (prepared as? PreparedAudio.Native)?.stream?.uri
+                ?.let(moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin::parse),
+            urlAllowed = { url -> (accounts as? moe.rukamori.archivetune.desktop.provider.DesktopSourceAdmissions)
+                ?.permitsUrl(scope, url) ?: true },
         )
     val routeAccounts: AcceptedAccountReader =
         if (admission == null) store else PinnedAdmissionReader(store, admission)
