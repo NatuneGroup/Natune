@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.playback
 
+import kotlinx.coroutines.CompletableDeferred
+
 /**
  * Keeps the full child list of each Android Auto browse folder between page requests.
  *
@@ -11,24 +13,69 @@ package moe.rukamori.archivetune.playback
 internal class AutoBrowseChildrenCache<T>(
     private val maxEntries: Int = 16,
 ) {
+    private val lock = Any()
     private val entries =
         object : LinkedHashMap<String, List<T>>(maxEntries, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<T>>?): Boolean = size > maxEntries
         }
+    // One in-flight load per folder. Concurrent callers await the same Deferred instead of each
+    // rebuilding the (possibly shuffled or network-backed) list and overwriting the snapshot.
+    private val inFlight = HashMap<String, CompletableDeferred<List<T>>>()
 
     suspend fun children(
         parentId: String,
         page: Int,
         load: suspend () -> List<T>,
     ): List<T> {
-        if (page > 0) synchronized(entries) { entries[parentId] }?.let { return it }
-        val loaded = load()
-        synchronized(entries) { entries[parentId] = loaded }
+        var owner = false
+        var snapshot: List<T>? = null
+        var deferred: CompletableDeferred<List<T>>? = null
+        synchronized(lock) {
+            // An active load wins over a possibly-stale committed snapshot, so a page 1+ request
+            // that races a page 0 reload awaits the new list rather than serving the old one.
+            val active = inFlight[parentId]?.takeIf { it.isActive }
+            val committed = if (page > 0) entries[parentId] else null
+            when {
+                active != null -> deferred = active
+                committed != null -> snapshot = committed
+                else -> {
+                    val pending = CompletableDeferred<List<T>>()
+                    inFlight[parentId] = pending
+                    deferred = pending
+                    owner = true
+                }
+            }
+        }
+        snapshot?.let { return it }
+        val pending = deferred ?: error("no in-flight load and no snapshot")
+        if (!owner) return pending.await()
+
+        // Only the owner runs load(), once. A failure is shared with every awaiter, then the folder
+        // is dropped from inFlight so the next request can retry.
+        val loaded =
+            try {
+                load()
+            } catch (t: Throwable) {
+                synchronized(lock) {
+                    if (inFlight[parentId] === pending) inFlight.remove(parentId)
+                }
+                pending.completeExceptionally(t)
+                throw t
+            }
+        synchronized(lock) {
+            entries[parentId] = loaded
+            if (inFlight[parentId] === pending) inFlight.remove(parentId)
+        }
+        // Complete outside the lock: an awaiter may resume immediately and re-enter children().
+        pending.complete(loaded)
         return loaded
     }
 
     fun clear() {
-        synchronized(entries) { entries.clear() }
+        synchronized(lock) {
+            entries.clear()
+            inFlight.clear()
+        }
     }
 }
 
