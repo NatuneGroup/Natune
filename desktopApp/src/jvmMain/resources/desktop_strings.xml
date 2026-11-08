@@ -315,6 +315,6 @@
     <string name="desktop_output_shared">Shared output mode</string>
     <string name="desktop_output_source_pcm">Decoded PCM</string>
     <string name="desktop_output_sink_pcm">Sink PCM transport</string>
-    <string name="desktop_output_mode_scope">Exclusive modes request the decoded rate and PCM format. Fades, DSP, normalization, tempo/pitch and silence skipping are suspended. Linux hardware may be busy while PipeWire or PulseAudio holds it.</string>
+    <string name="desktop_output_mode_scope">Exclusive modes request the decoded rate and PCM format. While a direct sink is active, fades, DSP, normalization, tempo/pitch and silence skipping are suspended; a refused request resumes the stored processing on shared output. Linux hardware may be busy while PipeWire or PulseAudio holds it.</string>
     <string name="desktop_output_volume_scope">Use the DAC or system hardware volume for direct playback. App volume is retained for shared playback; app mute still silences output.</string>
 </resources>

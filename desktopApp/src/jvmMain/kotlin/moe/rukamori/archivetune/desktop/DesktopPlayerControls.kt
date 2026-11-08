@@ -53,6 +53,7 @@ internal class DesktopPlayerControls(
     private val graph: DesktopSessionGraph,
     private val sleepSheet: DesktopSleepTimerSheetState,
     private val playerMenu: DesktopPlayerMenuState,
+    private val outputSheet: DesktopOutputSheetState,
     /** The installed SpatialFlow typeface. The shared player draws its title in it while that style is selected. */
     private val spatialFont: StateFlow<FontFamily?> = MutableStateFlow(null),
     private val onTitle: (moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence) -> Unit,
@@ -172,6 +173,7 @@ internal class DesktopPlayerControls(
             share = ::share,
             more = ::openMenu,
             sleep = { sleepSheet.open = true },
+            output = { outputSheet.open = true },
             title = { id -> graph.queue.state.value.entries.firstOrNull { it.occurrenceId == id }?.let(onTitle) },
             artist = { id -> graph.queue.state.value.entries.firstOrNull { it.occurrenceId == id }?.let(onArtists) },
         )
@@ -227,6 +229,7 @@ internal fun desktopPlayerAction(
     share: (String?) -> Unit,
     more: (String?) -> Unit,
     sleep: () -> Unit,
+    output: () -> Unit = {},
     title: (String?) -> Unit = {},
     artist: (String?) -> Unit = {},
 ): Boolean = when (action) {
@@ -235,6 +238,7 @@ internal fun desktopPlayerAction(
     PlayerAction.SHARE -> { share(occurrenceId); true }
     PlayerAction.MORE -> { more(occurrenceId); true }
     PlayerAction.SLEEP -> { sleep(); true }
+    PlayerAction.OUTPUT -> { output(); true }
     PlayerAction.TITLE -> { title(occurrenceId); true }
     PlayerAction.ARTIST -> { artist(occurrenceId); true }
     else -> false
@@ -250,7 +254,7 @@ internal val DESKTOP_PLAYER_TRANSPORT_ACTIONS: Set<PlayerAction> = setOf(
     PlayerAction.SEEK_FORWARD,
 )
 
-/** Player actions with live desktop owners; output routing remains an OS/device boundary. */
+/** Player actions with live desktop owners, including the in-app output sheet. */
 internal val DESKTOP_PLAYER_ACTIONS: Set<PlayerAction> = PlayerAction.entries
     .filter { it in DESKTOP_PLAYER_TRANSPORT_ACTIONS || desktopPlayerAction(it, null, {}, {}, {}, {}) }
     .toSet()
