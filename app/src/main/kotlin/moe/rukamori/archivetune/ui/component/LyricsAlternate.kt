@@ -210,7 +210,7 @@ private fun Map<Int, LyricsPhonetics>.renderedRomanization(): Map<Int, LyricsPho
     filterValues { value -> !value.line.isNullOrBlank() || value.words.orEmpty().any { !it.isNullOrBlank() } }
 
 /**
- * Enhanced karaoke lyrics renderer.
+ * The existing Spotify and compact TikTok lyrics renderer.
  *
  * @param singleActiveLine when true, renders ONLY the active line cluster — the
  *   main karaoke line (word-timed sweep), its per-word phonetic (romanisation)
@@ -219,7 +219,7 @@ private fun Map<Int, LyricsPhonetics>.renderedRomanization(): Map<Int, LyricsPho
  *   and upcoming lines must not be visible and no line-list scrolling applies.
  */
 @Composable
-fun LyricsEnhanced(
+fun LyricsAlternate(
     sliderPositionProvider: () -> Long?,
     lyricsSyncOffset: Int,
     modifier: Modifier = Modifier,
