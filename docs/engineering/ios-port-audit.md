@@ -172,3 +172,17 @@ check is not simulator compilation or device evidence.
   artwork loader, observes cover overrides, cancels obsolete work and rejects stale covers.
 - Added common parser-policy and actual shelf-fixture tests. Verify artist/Lock Screen
   refresh and artwork-tinted styles on device, including custom cover replacement.
+
+## Implementation: player and mini-player geometry
+
+- `NumberedPlayers.NumberedArtwork` now fits one square pager to the smaller available
+  dimension; it no longer paints a stretched blurred copy behind the square. This removes
+  the rectangular bars visible in `natune-ios-player.jpg`, retains double-tap/swipe/canvas
+  behaviour, and keeps all existing style selections and background preferences.
+- `ArchiveMiniPlayer` now uses an artwork/title/artist row and a Solar play/pause pill,
+  with a real buffering indicator and replay state. Below 300 dp (the optional one-row
+  shell), smaller insets/artwork and omission of the secondary Next button leave room for
+  metadata. Main play/pause and normal-width Next keep 48 dp touch targets.
+- This reuses the shared player and shell, as the Android reference requires. Remaining
+  on-device visual acceptance includes short/landscape screens, large text, all style
+  selections and liquid-glass/compact navigation; no screenshot parity claim is made.
