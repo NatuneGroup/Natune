@@ -172,6 +172,9 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
+      - name: Prefetch the Gradle distribution
+        uses: ./.github/actions/prefetch-gradle
+
       # Pull requests restore only: GitHub's cache is scoped so a PR cannot publish into the branch-scoped
       # keys the trusted dev/main runs use. The explicit save below is skipped for pull_request events.
       - name: Restore the Kotlin/Native cache
