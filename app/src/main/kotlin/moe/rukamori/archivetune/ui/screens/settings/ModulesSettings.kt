@@ -286,6 +286,19 @@ private fun ModuleHome(model: ModuleSettingsUiModel, listState: LazyListState, o
                     }
                 }
             } else {
+                item(key = "suggested_catalogs") {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text(stringResource(R.string.modules_suggested_catalogs), style = MaterialTheme.typography.titleMedium)
+                        TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
+                            "https://raw.githubusercontent.com/NatuneGroup/Natune/feat/r3-modules/addons/modules/registry.json")) }) {
+                            Text(stringResource(R.string.modules_natune_catalog))
+                        }
+                        TextButton(enabled = model.busy == null, onClick = { onAction(ModuleSettingsAction.SuggestedCatalog(
+                            "https://raw.githubusercontent.com/rukamori/ArchiveTuneModules/main/registry.json")) }) {
+                            Text(stringResource(R.string.modules_upstream_catalog))
+                        }
+                    }
+                }
                 if (model.catalogs.isEmpty()) item(key = "catalogs_empty", contentType = "empty") {
                     ModuleEmpty(R.drawable.language, MaterialShapes.Clover8Leaf, R.string.modules_catalogs_empty, R.string.modules_catalogs_empty_description,
                         R.string.modules_add_catalog, onAction, ModuleSettingsAction.Url(true), moduleItemMotion())

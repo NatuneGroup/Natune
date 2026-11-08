@@ -375,6 +375,7 @@ enum class DownloadSource {
      */
     JIOSAAVN,
 
+    MODULES,
     YOUTUBE_MUSIC,
 }
 
@@ -402,6 +403,7 @@ object DownloadSourceConfig {
             DownloadSource.TIDAL,
             DownloadSource.DEEZER,
             DownloadSource.JIOSAAVN,
+            DownloadSource.MODULES,
             DownloadSource.YOUTUBE_MUSIC,
         )
 
@@ -485,6 +487,7 @@ object DownloadSourceConfig {
             AudioSourceType.TIDAL -> DownloadSource.TIDAL
             AudioSourceType.DEEZER -> DownloadSource.DEEZER
             AudioSourceType.JIOSAAVN -> DownloadSource.JIOSAAVN
+            AudioSourceType.MODULES -> DownloadSource.MODULES
             AudioSourceType.YOUTUBE -> DownloadSource.YOUTUBE_MUSIC
             AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
         }
@@ -553,6 +556,7 @@ object DownloadSourceConfig {
             DownloadSource.TIDAL -> AudioSourceType.TIDAL
             DownloadSource.DEEZER -> AudioSourceType.DEEZER
             DownloadSource.JIOSAAVN -> AudioSourceType.JIOSAAVN
+            DownloadSource.MODULES -> AudioSourceType.MODULES
             DownloadSource.YOUTUBE_MUSIC -> AudioSourceType.YOUTUBE
             DownloadSource.AUTO -> null
         }
@@ -1863,6 +1867,7 @@ enum class AudioSourceType {
     QQ,
     SPOTIFY,
     JIOSAAVN,
+    MODULES,
     YOUTUBE,
 }
 
@@ -2349,3 +2354,5 @@ val LastwaveAudioProcessingKey = booleanPreferencesKey("lastwaveAudioProcessing"
 val EnableBiniLyricsKey = booleanPreferencesKey("enableBiniLyrics")
 val EnableGeniusLyricsKey = booleanPreferencesKey("enableGeniusLyrics")
 val EnableLrcRedKey = booleanPreferencesKey("enableLrcRed")
+
+val ModulesEnabledKey = booleanPreferencesKey("modulesEnabled")

@@ -21,6 +21,7 @@ object AudioSourceConfig {
             AudioSourceType.AMAZON,
             AudioSourceType.QQ,
             AudioSourceType.SPOTIFY,
+            AudioSourceType.MODULES,
             AudioSourceType.YOUTUBE,
         )
 

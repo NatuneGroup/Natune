@@ -7,6 +7,8 @@
 
 package moe.rukamori.archivetune.modules
 
+import androidx.datastore.preferences.core.edit
+import moe.rukamori.archivetune.utils.dataStore
 import android.content.Context
 import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
@@ -84,7 +86,10 @@ class ModuleRepository @Inject constructor(@ApplicationContext private val conte
         }
     }
 
-    suspend fun setEnabled(value: Boolean) = change { it.copy(enabled = value) }
+    suspend fun setEnabled(value: Boolean) {
+        change { it.copy(enabled = value) }
+        context.dataStore.edit { it[moe.rukamori.archivetune.constants.ModulesEnabledKey] = value }
+    }
 
     suspend fun setModuleEnabled(id: String, value: Boolean) = change { registry ->
         registry.copy(modules = registry.modules.map { if (it.id == id) it.copy(enabled = value) else it })
