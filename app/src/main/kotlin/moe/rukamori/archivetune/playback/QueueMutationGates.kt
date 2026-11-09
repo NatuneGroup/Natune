@@ -37,6 +37,7 @@ fun MusicService.removeQueueItemAt(mediaItemIndex: Int): Boolean {
     }
     if (mediaItemIndex !in 0 until player.mediaItemCount) return false
     player.removeMediaItem(mediaItemIndex)
+    acceptUserQueueRemoval()
     return true
 }
 

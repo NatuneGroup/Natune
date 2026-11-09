@@ -7,7 +7,6 @@ import androidx.media3.common.Timeline
 import java.lang.reflect.Proxy
 import java.util.IdentityHashMap
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -225,7 +224,7 @@ class AndroidInfiniteQueueRecommendationTest {
     }
 
     @Test
-    fun anEmptyPlanPreservesTheRadioSourceAndBacksOffWithoutRefilling() = runTest {
+    fun anEmptyPlanKeepsThePreviousIdentityAndBacksOffWithoutRefilling() = runTest {
         val fixture = Fixture()
         val h = Harness(backgroundScope, testScheduler, fixture)
         h.initialPage = listOf(fixture.item("rejected", artistId = "seed-artist"))
@@ -235,7 +234,7 @@ class AndroidInfiniteQueueRecommendationTest {
         assertEquals(listOf("seed"), h.player.items.map { it.mediaId })
         assertEquals(1, h.fetchInitialCalls)
         assertEquals(1, h.signals.calls)
-        assertNotNull(h.attached)
+        assertNull(h.attached)
         assertTrue(h.marked.isEmpty())
 
         h.owner.consider("seed")
@@ -260,7 +259,7 @@ class AndroidInfiniteQueueRecommendationTest {
         assertEquals(listOf("seed"), h.player.items.map { it.mediaId })
         assertEquals(1, h.fetchInitialCalls)
         assertEquals(0, h.signals.calls)
-        assertNotNull(h.attached)
+        assertNull(h.attached)
 
         h.now = 30_000L
         h.owner.consider("seed")
@@ -283,6 +282,25 @@ class AndroidInfiniteQueueRecommendationTest {
         assertEquals(listOf("seed", "p1", "p2"), h.player.items.map { it.mediaId })
         assertTrue(h.marked.isEmpty())
         assertNull(h.attached)
+    }
+
+    @Test
+    fun aContinuationForAnUninstalledSource_acceptsIdentityOnlyAfterAppendingItsItems() = runTest {
+        val fixture = Fixture()
+        val h = Harness(backgroundScope, testScheduler, fixture)
+        val pendingSource = FakeQueue(pageAvailable = true)
+        h.persistenceIdentity = h.currentQueue
+        h.currentQueue = pendingSource
+        h.nextPage = listOf(fixture.item("next-page", artistId = "next-artist"))
+
+        h.owner.consider("seed")
+        runCurrent()
+
+        assertEquals(listOf("seed", "next-page"), h.player.items.map { it.mediaId })
+        assertEquals(1, h.fetchNextCalls)
+        assertEquals(0, h.fetchInitialCalls)
+        assertEquals(pendingSource, h.attached)
+        assertEquals(pendingSource, h.persistenceIdentity)
     }
 
     @Test
@@ -310,6 +328,7 @@ class AndroidInfiniteQueueRecommendationTest {
     ) {
         val player = FakePlayer()
         var currentQueue: Queue = FakeQueue()
+        var persistenceIdentity: Queue? = null
         var enabled = true
         var mayLoad = true
         var now = 0L
@@ -354,7 +373,9 @@ class AndroidInfiniteQueueRecommendationTest {
                 attachRadio = { queue ->
                     attached = queue
                     currentQueue = queue
+                    persistenceIdentity = queue
                 },
+                timelineIdentity = { persistenceIdentity ?: currentQueue },
                 markAutomatic = { marked.addAll(it) },
                 setShuffleOrder = {},
                 save = { saves++ },

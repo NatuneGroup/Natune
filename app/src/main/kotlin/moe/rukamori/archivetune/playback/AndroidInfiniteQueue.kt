@@ -35,6 +35,7 @@ internal class AndroidInfiniteQueue(
     private val isLocal: () -> Boolean,
     private val filter: suspend (List<MediaItem>) -> List<MediaItem>,
     private val attachRadio: (Queue) -> Unit,
+    private val timelineIdentity: () -> Queue = queue,
     private val markAutomatic: (List<MediaItem>) -> Unit,
     private val setShuffleOrder: (IntArray) -> Unit,
     private val save: suspend () -> Unit,
@@ -119,11 +120,11 @@ internal class AndroidInfiniteQueue(
                     val append = if (recommendations) fresh(target, selected) else items
                     val ended = target.playbackState == Player.STATE_ENDED
                     val resume = target.playWhenReady
-                    if (!continuation) attachRadio(source)
                     if (append.isNotEmpty()) {
                         val previousCount = target.mediaItemCount
                         val order = if (target.shuffleModeEnabled) target.getQueueWindows().map { it.firstPeriodIndex } else null
                         target.addMediaItems(append)
+                        if (source !== timelineIdentity()) attachRadio(source)
                         if (order != null) setShuffleOrder((order + (previousCount until target.mediaItemCount)).toIntArray())
                         if (recommendations) markAutomatic(append)
                         added = append.size

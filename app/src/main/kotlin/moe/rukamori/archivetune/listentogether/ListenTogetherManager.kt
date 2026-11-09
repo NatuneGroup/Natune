@@ -1267,9 +1267,9 @@ class ListenTogetherManager @Inject constructor(
                             val wasPlaying = player.isPlaying
 
                             if (newIndex != -1) {
-                                player.setMediaItems(mediaItems, newIndex, currentPos)
+                                connection.service.installExternalTimeline(title = queueTitle, target = player) { player.setMediaItems(mediaItems, newIndex, currentPos) }
                             } else {
-                                player.setMediaItems(mediaItems)
+                                connection.service.installExternalTimeline(title = queueTitle, target = player) { player.setMediaItems(mediaItems) }
                             }
 
                             // Restore playing state if needed
@@ -1353,9 +1353,9 @@ class ListenTogetherManager @Inject constructor(
                 isSyncing = true
                 if (queue != null && queue.isNotEmpty()) {
                     val mediaItems = queue.map { it.toMediaMetadata().toMediaItem() }
-                    player.setMediaItems(mediaItems)
+                    connection.service.installExternalTimeline(title = queueTitle, target = player) { player.setMediaItems(mediaItems) }
                 } else if (queue != null) {
-                    player.clearMediaItems()
+                    connection.service.installExternalTimeline(target = player) { player.clearMediaItems() }
                 }
                 player.pause()
                 try {
@@ -1398,9 +1398,9 @@ class ListenTogetherManager @Inject constructor(
                         Timber.tag(TAG).w("Current track ${currentTrack.id} not found in queue, defaulting to 0")
                         val singleItem = currentTrack.toMediaMetadata().toMediaItem()
                         // Prepend or fallback? Let's just play the track alone if not in queue
-                        player.setMediaItems(listOf(singleItem), 0, position)
+                        connection.service.installExternalTimeline(title = queueTitle ?: "Listen Together", target = player) { player.setMediaItems(listOf(singleItem), 0, position) }
                     } else {
-                        player.setMediaItems(mediaItems, startIndex, position)
+                        connection.service.installExternalTimeline(title = queueTitle ?: "Listen Together", target = player) { player.setMediaItems(mediaItems, startIndex, position) }
                     }
                 } else {
                     // No queue provided, fallback to loading just the track (or radio) via syncToTrack logic
@@ -1410,7 +1410,7 @@ class ListenTogetherManager @Inject constructor(
                     Timber.tag(TAG).d("No queue in state, loading single track")
                     // Construct single item
                     val item = currentTrack.toMediaMetadata().toMediaItem()
-                    player.setMediaItems(listOf(item), 0, position)
+                    connection.service.installExternalTimeline(title = queueTitle ?: "Listen Together", target = player) { player.setMediaItems(listOf(item), 0, position) }
                 }
 
                 player.seekTo(position)  // Always seek immediately to target pos

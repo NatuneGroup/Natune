@@ -326,7 +326,6 @@ import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.extensions.toMediaItem
-import moe.rukamori.archivetune.extensions.toPersistQueue
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
@@ -674,9 +673,12 @@ class MusicService :
     private val mutablePlaylistLoadState = MutableStateFlow(PlaylistLoadState())
     val playlistLoadState = mutablePlaylistLoadState.asStateFlow()
     private var finitePlaylistState = PlaylistLoadState()
+    private val finitePlaylistPublisher = PlaylistLoadStatePublisher()
+    private val wholePlaylistPublisher = PlaylistLoadStatePublisher()
     private var wholePlaylistState = PlaylistLoadState()
     private var retryFinitePlaylistLoad: (() -> Unit)? = null
     private var retryWholePlaylistLoad: (() -> Unit)? = null
+    @Volatile
     private var finiteMutationInProgress = false
     private var currentQueue: Queue = EmptyQueue
     var queueTitle: String? = null
@@ -689,19 +691,15 @@ class MusicService :
             player = { player },
             queue = { currentQueue },
             enabled = { infiniteQueuePreferenceEnabled && dataStore.get(AutoLoadMoreKey, true) },
-            mayLoad = { !suppressAutoPlayback && !initialQueueLoadInProgress && !isHydratingRestoredQueue && !finiteMutationInProgress },
+            mayLoad = { !suppressAutoPlayback && !initialQueueLoadInProgress && !isHydratingRestoredQueue && !finiteMutationInProgress && !queueCheckpointGate.timelineMutationInProgress },
             maySeed = { it.shouldBootstrapInfiniteQueue() },
             isLocal = { player.resolvedCurrentMetadata?.let { isCurrentPlaybackItemLocal(it) } == true },
             filter = { it.filterPlaybackContent(dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false)) },
-            attachRadio = {
-                invalidatePlaylistWork()
-                initialQueueLoadGeneration++
-                initialQueueLoadInProgress = false
-                currentQueue = it
-            },
+            attachRadio = { installExternalTimeline(it, queueTitle, cancelRecommendations = false) },
+            timelineIdentity = { queueCheckpointGate.persistenceQueue },
             markAutomatic = { items -> items.forEach { autoAddedMediaIds.add(it.mediaId) } },
             setShuffleOrder = { localPlayer.setShuffleOrder(DefaultShuffleOrder(it, System.currentTimeMillis())) },
-            save = { if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk() },
+            save = { saveQueueToDisk() },
             loading = infiniteQueueLoading,
             recommendation = androidQueueTailRecommendation(database, autoAddedMediaIds),
         )
@@ -716,8 +714,24 @@ class MusicService :
     // then invalidated by the settling transitions.
     @Volatile
     private var initialQueueLoadInProgress = false
-    private val persistentStateLock = Any()
-    private val persistentSaveGeneration = AtomicLong(0L)
+    private val queuePersistence = QueuePersistenceState.shared
+    internal var hasQueueTimelineChanges = false
+        private set
+    internal val hasAcceptedEmptyCheckpoint get() = queueCheckpointGate.hasAcceptedEmptyCheckpoint
+    private val queueCheckpointGate = QueueCheckpointGate(
+        queue = { currentQueue },
+        transientMutation = { isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress },
+        mediaItemCount = { player.mediaItemCount },
+        title = { queueTitle },
+    )
+    private val queueCheckpoints = QueueCheckpointScheduler(
+        scope = { CoroutineScope(scope.coroutineContext + SilentHandler) },
+        generation = { queuePersistence.generation.get() },
+        enabled = { withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) } },
+        blocked = { queueCheckpointGate.blocked() },
+        snapshot = { snapshotQueue() },
+        write = { writeQueueSnapshot(it) },
+    )
 
     // Persistent files whose contents this process could not read, reported once each. A file
     // written by an older build stays unreadable after a model change, and the next save replaces
@@ -921,7 +935,11 @@ class MusicService :
      * setPlayWhenReady() calls, so [OutputFadingPlayer] applies the click-free fade with the
      * true intent. Rebuilt with the metadata projection after player promotion.
      */
-    private fun recoveringPlayer(): Player = ErrorRecoveringPlayer(player, mediaLibrarySessionCallback.autoOfflineSongs) {
+    private fun recoveringPlayer(): Player = ErrorRecoveringPlayer(
+        queueSessionTimelinePlayer(player, queueCheckpointGate,
+            { target, queue, title, replay, install -> installExternalTimeline(queue, title, target = target, retainsInstalledOccurrences = replay, install = install) }, ::saveQueueToDisk, { player }),
+        mediaLibrarySessionCallback.autoOfflineSongs,
+    ) {
         waitingForNetworkConnection.value = false; recoveryRetry.cancelPending()
     }
     private fun sessionFacingPlayer(): Player = NowPlayingMetadataPlayer(OutputFadingPlayer(recoveringPlayer(), outputFades), queueMetadataUpdates::sessionMetadata)
@@ -2001,13 +2019,17 @@ class MusicService :
             runCatching {
                 if (dataStore.get(PersistentQueueKey, true)) {
                     playerInitialized.first { it }
+                    queuePersistence.teardownWrites.awaitPendingWrites()
                     val restoreGeneration = withContext(Dispatchers.Main.immediate) { initialQueueLoadGeneration }
                     if (restoreGeneration != 0L) return@runCatching
                     val persistedQueue = readPersistentObject<PersistQueue>(PERSISTENT_QUEUE_FILE)
                     val persistedPlayerState = readPersistentObject<PersistPlayerState>(PERSISTENT_PLAYER_STATE_FILE)
 
                     if (persistedQueue != null || persistedPlayerState != null) {
-                        isRestoringPersistentState = true
+                        withContext(Dispatchers.Main.immediate) {
+                            isRestoringPersistentState = true
+                            synchronized(queuePersistence.lock) { queuePersistence.generation.incrementAndGet() }
+                        }
                     }
 
                     var restoredQueue = false
@@ -2037,21 +2059,28 @@ class MusicService :
             }
             withContext(Dispatchers.Main) {
                 queueRestoreCompleted.value = true
+                saveQueueToDisk()
                 (currentQueue as? YouTubePlaylistQueue)?.takeIf { initialQueueLoadGeneration == 0L }?.let { finite ->
                     if (finite.snapshot.phase == FinitePlaylistPhase.UNKNOWN ||
                         finite.snapshot.phase == FinitePlaylistPhase.FAILED ||
                         finite.snapshot.phase == FinitePlaylistPhase.INITIALIZING
                     ) {
                         startFinitePlaylistLoad(finite, initial = false, playWhenReady = false, recovering = true)
-                    } else if (finite.hasNextPage() && finiteQueueNeedsMoreItems()) {
+                    } else if (finite.hasNextPage() && player.finiteQueueNeedsMoreItems()) {
                         startFinitePlaylistLoad(finite, initial = false, playWhenReady = false)
                     }
                 }
             }
         }
 
-        // Periodic save keeps the resume position roughly current. Queue and paused changes are saved by
-        // their handlers; a full-queue snapshot here would have to map every media item on the main thread.
+        observeQueuePersistence(
+            scope = scope,
+            enabled = dataStore.data.map { it[PersistentQueueKey] ?: true },
+            restoreCompleted = { queueRestoreCompleted.value },
+            checkpoint = ::saveQueueToDisk,
+        )
+
+        // Periodic saves keep the resume position current; coalesced checkpoints save queue changes.
         scope.launch {
             while (isActive) {
                 pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, PERSISTENT_POSITION_SAVE_INTERVAL.inWholeMilliseconds)
@@ -2550,6 +2579,7 @@ class MusicService :
         restoredQueueBackfillJob?.cancel()
         restoredQueueBackfillJob = null
         isHydratingRestoredQueue = false
+        saveQueueToDisk()
     }
 
     private suspend fun Queue.Status.filterPlaybackContent(
@@ -2609,10 +2639,8 @@ class MusicService :
             }
             invalidatePlaylistWork()
             initialQueueLoadGeneration++
-            initialQueueLoadInProgress = false
             cancelInfiniteQueueBootstrap()
-            currentQueue = EmptyQueue
-            queueTitle = null
+            detachQueueSource()
         }
     }
 
@@ -2648,8 +2676,10 @@ class MusicService :
 
             val items = initialStatus.items
             if (items.isEmpty()) {
+                queueCheckpointGate.onReplacementInstalled(continuationQueue)
                 if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                     isHydratingRestoredQueue = false
+                    saveQueueToDisk()
                 }
                 return@withContext
             }
@@ -2686,6 +2716,7 @@ class MusicService :
                 relativeIndex,
                 restoredPositionMs,
             )
+            queueCheckpointGate.onReplacementInstalled(continuationQueue)
             player.prepare()
             player.playWhenReady = false
             currentMediaMetadata.value = player.resolvedCurrentMetadata
@@ -2710,9 +2741,7 @@ class MusicService :
                             if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                                 isHydratingRestoredQueue = false
                                 restoredQueueBackfillJob = null
-                                if (isActive && dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                                    saveQueueToDisk()
-                                }
+                                saveQueueToDisk()
                             }
                         }
                     }
@@ -2720,6 +2749,7 @@ class MusicService :
                 restoreShuffleOrder()
                 if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                     isHydratingRestoredQueue = false
+                    saveQueueToDisk()
                 }
             }
         }
@@ -5541,6 +5571,7 @@ class MusicService :
     }
 
     private fun invalidatePlaylistWork() {
+        queueCheckpointGate.onReplacementFinished(currentQueue)
         finiteLoadOwner.cancel()
         finiteQueueJob?.cancel()
         finiteQueueJob = null
@@ -5558,12 +5589,14 @@ class MusicService :
             if (wholePlaylistState.loading || wholePlaylistState.incomplete) wholePlaylistState else finitePlaylistState
     }
 
-    private fun setFinitePlaylistState(state: PlaylistLoadState) {
+    private fun setFinitePlaylistState(state: PlaylistLoadState, publisher: Any? = null) {
+        finitePlaylistPublisher.publish(publisher)
         finitePlaylistState = state
         publishPlaylistLoadState()
     }
 
-    private fun setWholePlaylistState(state: PlaylistLoadState) {
+    private fun setWholePlaylistState(state: PlaylistLoadState, publisher: Any? = null) {
+        wholePlaylistPublisher.publish(publisher)
         wholePlaylistState = state
         publishPlaylistLoadState()
     }
@@ -5581,7 +5614,9 @@ class MusicService :
             initialQueueLoadGeneration++
             initialQueueLoadInProgress = false
             (currentQueue as? YouTubePlaylistQueue)?.fail()
+            queueCheckpointGate.onReplacementFinished(currentQueue)
             setFinitePlaylistState(PlaylistLoadState(incomplete = true))
+            saveQueueToDisk()
         }
     }
 
@@ -5590,8 +5625,8 @@ class MusicService :
     }
 
     fun dismissPlaylistLoadError() {
-        if (playlistLoadState.value.wholeAction) setWholePlaylistState(wholePlaylistState.copy(showDialog = false))
-        else setFinitePlaylistState(finitePlaylistState.copy(showDialog = false))
+        if (playlistLoadState.value.wholeAction) setWholePlaylistState(wholePlaylistState.copy(showDialog = false), wholePlaylistPublisher.owner)
+        else setFinitePlaylistState(finitePlaylistState.copy(showDialog = false), finitePlaylistPublisher.owner)
     }
 
     fun reloadFinitePlaylist() {
@@ -5606,7 +5641,7 @@ class MusicService :
         val queueGeneration = initialQueueLoadGeneration
         val ownership = PlaylistActionTicket(operation, queueGeneration)
         retryWholePlaylistLoad = { wholeYouTubePlaylist(playlistId, shuffle, playNext) }
-        setWholePlaylistState(PlaylistLoadState(loading = true, wholeAction = true, showDialog = true))
+        setWholePlaylistState(PlaylistLoadState(loading = true, wholeAction = true, showDialog = true), ownership)
         playlistActionJob = scope.launch {
             try {
                 withCompleteYouTubePlaylist(playlistId,
@@ -5646,38 +5681,35 @@ class MusicService :
                 }
             } catch (error: CancellationException) {
                 if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
-                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true))
+                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true), ownership)
                 }
                 throw error
             } catch (_: Exception) {
                 if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
-                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true, showDialog = true))
+                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true, showDialog = true), ownership)
                 }
             } finally {
                 if (operation == playlistActionGeneration) playlistActionJob = null
+                if (!ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration) && wholePlaylistPublisher.release(ownership)) {
+                    retryWholePlaylistLoad = null
+                    setWholePlaylistState(PlaylistLoadState())
+                }
             }
         }
     }
 
-    private fun finiteQueueNeedsMoreItems(): Boolean {
-        if (player.mediaItemCount == 0 || player.currentTimeline.isEmpty) return true
-        val timeline = player.currentTimeline
-        var index = player.currentMediaItemIndex
-        repeat(5) {
-            index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, player.shuffleModeEnabled)
-            if (index == C.INDEX_UNSET) return true
-        }
-        return false
-    }
+    private fun queueLoadingAllowed(): Boolean = mayStartQueueLoading(
+        suppressAutoPlayback, isHydratingRestoredQueue, finiteMutationInProgress, queueCheckpointGate.timelineMutationInProgress,
+    )
 
-    private fun currentShuffleIndices(): List<Int> = buildList {
-        val timeline = player.currentTimeline
-        var index = timeline.getFirstWindowIndex(true)
-        while (index != C.INDEX_UNSET && size < player.mediaItemCount) {
-            add(index)
-            index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, true)
-        }
-    }
+    private fun evaluateQueueLoading(allowRecommendations: Boolean = true) = evaluateAcceptedQueueLoading(
+        queue = currentQueue,
+        allowed = queueLoadingAllowed() && player.mediaItemCount > 0 && !player.currentTimeline.isEmpty && player.currentMediaItem != null,
+        needsFiniteItems = { player.finiteQueueNeedsMoreItems() },
+        startFinite = { startFinitePlaylistLoad(it, initial = false) },
+        considerRecommendations = { onInfiniteQueueEnabled(it.infiniteQueueSeedMediaId()) },
+        allowRecommendations = allowRecommendations,
+    )
 
     private fun setFiniteShuffleIndices(indices: List<Int>) {
         localPlayer.setShuffleOrder(DefaultShuffleOrder(indices.toIntArray(), System.currentTimeMillis()))
@@ -5686,7 +5718,7 @@ class MusicService :
     private fun appendFiniteItems(items: List<MediaItem>) {
         if (items.isEmpty()) return
         val oldCount = player.mediaItemCount
-        val order = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+        val order = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
         player.addMediaItems(items)
         // Never randomly insert a new page into already-played shuffle history.
         order?.let { setFiniteShuffleIndices(appendFiniteShuffleOrder(it, oldCount, player.mediaItemCount)) }
@@ -5699,7 +5731,7 @@ class MusicService :
         playWhenReady: Boolean = player.playWhenReady,
         recovering: Boolean = false,
     ) {
-        if (finiteQueueJob?.isActive == true || currentQueue !== queue || isHydratingRestoredQueue) return
+        if (finiteQueueJob?.isActive == true || currentQueue !== queue || !queueLoadingAllowed()) return
         val generation = initialQueueLoadGeneration
         val ticket = finiteLoadOwner.begin(generation, queue) ?: return
         val needsInitial = initial || queue.snapshot.continuation == null && !queue.confirmedExhausted ||
@@ -5709,7 +5741,7 @@ class MusicService :
                 playWhenReady = if (queue.timelineInstalled) player.playWhenReady else playWhenReady,
                 recovering = needsInitial && queue.timelineInstalled && player.mediaItemCount > 0)
         }
-        setFinitePlaylistState(PlaylistLoadState(loading = true, showDialog = needsInitial))
+        setFinitePlaylistState(PlaylistLoadState(loading = true, showDialog = needsInitial), ticket)
         finiteQueueJob = scope.launch {
             try {
                 val hideExplicit = dataStore.get(HideExplicitKey, false)
@@ -5720,13 +5752,14 @@ class MusicService :
                 if (!ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) return@launch
                 if (initial && !recovering && !queue.initialTimelineCleared) {
                     queue.initialTimelineCleared = true
-                    player.clearMediaItems()
+                    queueCheckpointGate.mutateTimeline { player.clearMediaItems() }
                     player.playWhenReady = playWhenReady
                 }
                 if (preload != null) {
                     queue.preloadedItem = preload
                     queue.timelineInstalled = true
-                    player.setMediaItem(preload)
+                    queueCheckpointGate.mutateTimeline { player.setMediaItem(preload) }
+                    queueCheckpointGate.onReplacementInstalled(queue)
                     player.prepare()
                     player.playWhenReady = playWhenReady
                 }
@@ -5761,7 +5794,7 @@ class MusicService :
                                     val suffix = alignment.entries.drop(alignment.savedIndices.last() + 1)
                                         .map { it.finiteEntryToMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
                                         .filterBlockedArtists(blockedArtistIds)
-                                    val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                    val oldShuffle = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
                                     queue.accept(proposal)
                                     savedItems.forEachIndexed { index, item ->
                                         if (item.userQueuedKind() == null) {
@@ -5790,7 +5823,7 @@ class MusicService :
                                         insertPrefix = { prefix ->
                                             queue.accept(proposal)
                                             queue.preloadedKey = selectedKey
-                                            val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                            val oldShuffle = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
                                             player.addMediaItems(anchor, prefix)
                                             oldShuffle?.let { order ->
                                                 val adjusted = order.map { if (it >= anchor) it + prefix.size else it }
@@ -5818,14 +5851,16 @@ class MusicService :
                                 }
                                 queue.timelineInstalled = true
                                 queueTitle = proposal.snapshot.title
+                                queueCheckpointGate.onReplacementInstalled(queue)
                             } finally {
                                 finiteMutationInProgress = false
+                                saveQueueToDisk()
                             }
                         }) return@bounded
                         first = false
                     } while (
                         queue.hasNextPage() &&
-                        finiteQueueNeedsMoreItems()
+                        player.finiteQueueNeedsMoreItems()
                     )
                 }
                 if (!ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) return@launch
@@ -5843,22 +5878,27 @@ class MusicService :
                 ) {
                     onInfiniteQueueEnabled()
                 }
-                if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk()
             } catch (error: CancellationException) {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
-                    setFinitePlaylistState(PlaylistLoadState(incomplete = true))
+                    setFinitePlaylistState(PlaylistLoadState(incomplete = true), ticket)
                 }
                 throw error
             } catch (_: Exception) {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
-                    setFinitePlaylistState(PlaylistLoadState(incomplete = true, showDialog = true))
+                    setFinitePlaylistState(PlaylistLoadState(incomplete = true, showDialog = true), ticket)
                 }
             } finally {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     initialQueueLoadInProgress = false
                     finiteQueueJob = null
+                    queueCheckpointGate.onReplacementFinished(queue)
+                    saveQueueToDisk()
+                } else if (finitePlaylistPublisher.release(ticket)) {
+                    finiteQueueJob = null
+                    retryFinitePlaylistLoad = null
+                    setFinitePlaylistState(PlaylistLoadState())
                 }
                 ticket.finish()
             }
@@ -5888,17 +5928,17 @@ class MusicService :
         suppressAutoPlayback = false
         val initialLoadGeneration = ++initialQueueLoadGeneration
         initialQueueLoadInProgress = true
+        queueCheckpointGate.beginReplacement(queue)
+        if (queue is YouTubePlaylistQueue) queue.beginPlayback()
         currentQueue = queue
         queueTitle = null
-        val permanentShuffle = dataStore.get(PermanentShuffleKey, false)
-        if (!permanentShuffle) {
+        if (!dataStore.get(PermanentShuffleKey, false)) {
             player.shuffleModeEnabled = false
         }
 
         clearAutomix()
         autoAddedMediaIds.clear()
         if (queue is YouTubePlaylistQueue) {
-            queue.beginPlayback()
             startFinitePlaylistLoad(queue, initial = true, playWhenReady = playWhenReady)
             return
         }
@@ -5908,15 +5948,15 @@ class MusicService :
                 autoLoadMoreEnabled = dataStore.getAsync(AutoLoadMoreKey, true)
                 val hideExplicit = dataStore.get(HideExplicitKey, false)
                 val hideVideo = dataStore.get(HideVideoKey, false)
+                val preloadItem = queue.preloadItem?.toMediaItem()
+                    ?.takeUnless { item ->
+                        item.hasBlockedArtist(loadBlockedArtistIds())
+                    }
                 if (initialLoadGeneration != initialQueueLoadGeneration || currentQueue !== queue) return@launch
-                val preloadItem =
-                    queue.preloadItem
-                        ?.toMediaItem()
-                        ?.takeUnless { item ->
-                            item.hasBlockedArtist(loadBlockedArtistIds())
-                        }
                 if (preloadItem != null) {
-                    player.setMediaItem(preloadItem)
+                    queueCheckpointGate.mutateTimeline { player.setMediaItem(preloadItem) }
+                    queueCheckpointGate.onReplacementInstalled(queue)
+                    saveQueueToDisk()
                     player.prepare()
                     player.playWhenReady = playWhenReady
                 }
@@ -5943,34 +5983,30 @@ class MusicService :
                     }
                     initialStatus = initialStatus.copy(items = expandedItems)
                 }
-                if (initialLoadGeneration != initialQueueLoadGeneration) return@launch
-                if (initialStatus.title != null) {
-                    queueTitle = initialStatus.title
-                }
+                if (initialLoadGeneration != initialQueueLoadGeneration || currentQueue !== queue) return@launch
+                initialStatus.title?.let { queueTitle = it }
                 if (initialStatus.items.isEmpty()) return@launch
                 if (preloadItem != null) {
                     val preloadMediaId = preloadItem.mediaId.trim()
                     val insertionIndex =
                         initialStatus.mediaItemIndex.coerceIn(0, initialStatus.items.size)
-                    val itemsBeforeCurrent =
-                        initialStatus.items
-                            .subList(0, insertionIndex)
-                            .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
-                    val itemsAfterCurrent =
-                        initialStatus.items
-                            .subList(insertionIndex, initialStatus.items.size)
-                            .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
+                    val itemsBeforeCurrent = initialStatus.items
+                        .subList(0, insertionIndex)
+                        .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
+                    val itemsAfterCurrent = initialStatus.items
+                        .subList(insertionIndex, initialStatus.items.size)
+                        .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
 
-                    player.addMediaItems(0, itemsBeforeCurrent)
-                    player.addMediaItems(itemsAfterCurrent)
+                    queueCheckpointGate.mutateTimeline {
+                        player.addMediaItems(0, itemsBeforeCurrent)
+                        player.addMediaItems(itemsAfterCurrent)
+                    }
                     if (player.shuffleModeEnabled) {
                         applyCurrentFirstShuffleOrder()
                     }
                 } else {
-                    val items = initialStatus.items
-                    val index = initialStatus.mediaItemIndex
-
-                    player.setMediaItems(items, index, initialStatus.position)
+                    queueCheckpointGate.mutateTimeline { player.setMediaItems(initialStatus.items, initialStatus.mediaItemIndex, initialStatus.position) }
+                    queueCheckpointGate.onReplacementInstalled(queue)
                     player.prepare()
                     player.playWhenReady = playWhenReady
                     if (player.shuffleModeEnabled) {
@@ -5981,6 +6017,8 @@ class MusicService :
                 // A superseded load must not clear the guard belonging to the newer queue.
                 if (initialLoadGeneration == initialQueueLoadGeneration) {
                     initialQueueLoadInProgress = false
+                    queueCheckpointGate.onReplacementFinished(queue)
+                    saveQueueToDisk()
                 }
             }
 
@@ -6007,59 +6045,6 @@ class MusicService :
         }
         shuffledIndices[0] = currentIndex
         localPlayer.setShuffleOrder(DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis()))
-    }
-
-    private fun buildPlayNextShuffleOrder(
-        currentIndex: Int,
-        insertionIndex: Int,
-        insertionCount: Int,
-        // How many of the upcoming (shuffled) items the insertion goes after. 0 = straight after the
-        // current song ("Play next"); >0 keeps earlier user-added songs ahead of it (#172).
-        skipUpcoming: Int = 0,
-    ): DefaultShuffleOrder? {
-        if (insertionCount <= 0 || player.currentTimeline.isEmpty) return null
-
-        fun adjustedIndex(index: Int): Int =
-            if (index >= insertionIndex) {
-                index + insertionCount
-            } else {
-                index
-            }
-
-        val timeline = player.currentTimeline
-        val previousIndices = ArrayDeque<Int>()
-        var traversalIndex = currentIndex
-        while (true) {
-            traversalIndex = timeline.getPreviousWindowIndex(traversalIndex, REPEAT_MODE_OFF, true)
-            if (traversalIndex == C.INDEX_UNSET) {
-                break
-            }
-            previousIndices.addFirst(adjustedIndex(traversalIndex))
-        }
-
-        val nextIndices = mutableListOf<Int>()
-        traversalIndex = currentIndex
-        while (true) {
-            traversalIndex = timeline.getNextWindowIndex(traversalIndex, REPEAT_MODE_OFF, true)
-            if (traversalIndex == C.INDEX_UNSET) {
-                break
-            }
-            nextIndices += adjustedIndex(traversalIndex)
-        }
-
-        val skip = skipUpcoming.coerceIn(0, nextIndices.size)
-        val shuffledIndices =
-            buildList(player.mediaItemCount + insertionCount) {
-                addAll(previousIndices)
-                add(adjustedIndex(currentIndex).takeIf { currentIndex >= insertionIndex } ?: currentIndex)
-                addAll(nextIndices.subList(0, skip))
-                repeat(insertionCount) { offset ->
-                    add(insertionIndex + offset)
-                }
-                addAll(nextIndices.subList(skip, nextIndices.size))
-            }.toIntArray()
-
-        return DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis())
     }
 
     fun startRadioSeamlessly() {
@@ -6098,37 +6083,66 @@ class MusicService :
                 }
 
             if (radioGeneration != initialQueueLoadGeneration) return@launch
-            if (initialStatus.title != null) {
-                queueTitle = initialStatus.title
-            }
-
             val radioItems =
                 initialStatus.items.filter { item ->
                     item.mediaId != currentMediaId
                 }
 
             if (radioItems.isNotEmpty()) {
-                val itemCount = player.mediaItemCount
-
-                if (itemCount > currentIndex + 1) {
-                    player.removeMediaItems(currentIndex + 1, itemCount)
+                installExternalTimeline(radioQueue, initialStatus.title) {
+                    val itemCount = player.mediaItemCount
+                    if (itemCount > currentIndex + 1) player.removeMediaItems(currentIndex + 1, itemCount)
+                    player.addMediaItems(currentIndex + 1, radioItems)
                 }
-
-                player.addMediaItems(currentIndex + 1, radioItems)
             }
-
-            currentQueue = radioQueue
         }
     }
 
-    fun clearAutomix() {
-        autoAddedMediaIds.clear()
+    /** External replacements accept identity after successful installation on the active service player. */
+    internal fun installExternalTimeline(
+        queue: Queue? = null,
+        title: String? = null,
+        cancelRecommendations: Boolean = true,
+        target: Player = player,
+        retainsInstalledOccurrences: Boolean = false,
+        install: () -> Unit = {},
+    ) {
+        if (target !== player) return
+        installServiceQueueTimeline(queueCheckpointGate, queue, retainsInstalledOccurrences,
+            cancelObsoleteWork = {
+                cancelRestoredQueueHydration()
+                invalidatePlaylistWork()
+                if (cancelRecommendations) cancelInfiniteQueueBootstrap()
+                initialQueueLoadGeneration++
+                initialQueueLoadInProgress = false
+                if (queue == null || (cancelRecommendations && queue !== queueCheckpointGate.persistenceQueue)) queueRemovals.reset()
+            },
+            install = install,
+            acceptIdentity = {
+                currentQueue = queue ?: EmptyQueue
+                queueTitle = title
+                currentQueue
+            },
+            save = ::saveQueueToDisk,
+            evaluateLoading = { evaluateQueueLoading() },
+        )
     }
 
+    private fun detachQueueSource(acceptEmptyTimeline: Boolean = false) {
+        currentQueue = EmptyQueue
+        queueTitle = null
+        initialQueueLoadInProgress = false
+        queueCheckpointGate.onSourceDetached(acceptEmptyTimeline)
+        saveQueueToDisk()
+    }
+
+    fun clearAutomix() = autoAddedMediaIds.clear()
+
+    internal fun acceptUserQueueRemoval() = queueCheckpointGate.onUserRemoval()
+
     fun removeQueueItemsWithUndo(windows: List<Timeline.Window>): QueueRemoval? {
-        // QueueLocked gates user removes, moves and clears only; undo stays unaffected.
         if (dataStore.get(QueueLockedKey, false)) { showQueueLockedToast(); return null }
-        return queueRemovals.remove(windows.map { it.uid }.toSet())
+        return queueRemovals.remove(windows.map { it.uid }.toSet()).also { if (it != null) acceptUserQueueRemoval() }
     }
 
     fun undoQueueRemoval(ticket: Long): Boolean = queueRemovals.undo(ticket)
@@ -6139,12 +6153,13 @@ class MusicService :
         infiniteQueuePreferenceEnabled = false
         cancelInfiniteQueueBootstrap(newQueue = false)
         invalidatePlaylistWork()
-        currentQueue = EmptyQueue
+        detachQueueSource(acceptEmptyTimeline = true)
         val windows = player.getQueueWindows()
         val currentUid = windows.firstOrNull { it.firstPeriodIndex == player.currentMediaItemIndex }?.uid
         val removal = queueRemovals.remove(windows.filterNot { it.uid == currentUid }.map { it.uid }.toSet())
         autoAddedMediaIds.clear()
         scope.launch { dataStore.edit { it[AutoLoadMoreKey] = false } }
+        saveQueueToDisk()
         return removal
     }
 
@@ -6167,7 +6182,7 @@ class MusicService :
         if (currentQueue !is YouTubePlaylistQueue) {
             invalidatePlaylistWork()
             initialQueueLoadGeneration++
-            currentQueue = EmptyQueue
+            detachQueueSource()
         }
     }
 
@@ -6185,8 +6200,7 @@ class MusicService :
         suppressAutoPlayback = true
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "playback_cleared")
         clearAutomix()
-        currentQueue = EmptyQueue
-        queueTitle = null
+        detachQueueSource(acceptEmptyTimeline = true)
         waitingForNetworkConnection.value = false
         currentMediaMetadata.value = null
         player.playWhenReady = false
@@ -6301,7 +6315,7 @@ class MusicService :
             append = { player.addMediaItems(it) },
             insert = { insertionIndex, queuedItems, skip, shuffled ->
                 val shuffleOrder = if (shuffled) {
-                    buildPlayNextShuffleOrder(
+                    player.buildPlayNextShuffleOrder(
                         currentIndex = currentIndex,
                         insertionIndex = insertionIndex,
                         insertionCount = queuedItems.size,
@@ -6313,6 +6327,8 @@ class MusicService :
             },
             prepare = { player.prepare() },
         )
+        queueCheckpointGate.onUserAddition()
+        saveQueueToDisk()
     }
 
     /**
@@ -7135,8 +7151,13 @@ class MusicService :
         reason: Int,
     ) {
         super.onTimelineChanged(timeline, reason)
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            queueCheckpointGate.onTimelineChanged(timeline.isEmpty)
+            hasQueueTimelineChanges = true
+            saveQueueToDisk()
+        }
         cacheQueuedMetadata()
-        onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
+        evaluateQueueLoading()
     }
 
     override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
@@ -7228,28 +7249,13 @@ class MusicService :
 
         scrobbleManager?.onSongStop()
 
-        // Finite membership is independent of the recommendations toggle and repeat policy.
-        if (!suppressAutoPlayback && !timelineEmpty && !isHydratingRestoredQueue &&
-            currentQueue is YouTubePlaylistQueue && finiteQueueNeedsMoreItems()
-        ) {
-            val finite = currentQueue as YouTubePlaylistQueue
-            if (finite.hasNextPage()) startFinitePlaylistLoad(finite, initial = false)
-        }
-
-        if (!timelineEmpty && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
-            onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
-        }
+        evaluateQueueLoading(allowRecommendations = reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
 
         if (player.playWhenReady && player.playbackState == Player.STATE_READY) {
             scrobbleManager?.onSongStart(player.resolvedCurrentMetadata, duration = player.duration)
         }
 
-        scope.launch {
-            val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-            if (shouldSave) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         ensurePresenceManager()
         if (!isCrossfading) {
             scheduleCrossfade()
@@ -7480,12 +7486,6 @@ class MusicService :
             }
     }
 
-    private fun Queue.shouldBootstrapInfiniteQueue(): Boolean =
-        if (this is ListQueue && finite) false else if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
-
-    private fun Queue.infiniteQueueSeedMediaId(): String? =
-        if (this is YouTubePlaylistQueue) null else preloadItem?.id?.trim()?.takeIf { it.isNotBlank() }
-
     override fun onPlaybackStateChanged(
         @Player.State playbackState: Int,
     ) {
@@ -7637,12 +7637,7 @@ class MusicService :
         widgetUpdater.update()
         widgetUpdater.updateProgressTracking()
 
-        scope.launch {
-            val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-            if (shouldSave) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
     }
 
     override fun onPlayWhenReadyChanged(
@@ -7955,11 +7950,7 @@ class MusicService :
 
         // Persist queue on play/pause so a force-stop right after pausing still restores the correct position
         if (events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) && player.mediaItemCount > 0) {
-            scope.launch(SilentHandler) {
-                if (withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) {
-                    saveQueueToDisk()
-                }
-            }
+            saveQueueToDisk()
         }
     }
 
@@ -8029,12 +8020,7 @@ class MusicService :
         }
         onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
 
-        // Save state when shuffle mode changes - must be on Main thread to access player
-        scope.launch {
-            if (dataStore.get(PersistentQueueKey, true)) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         if (!isCrossfading) {
             scheduleCrossfade()
         }
@@ -8050,12 +8036,7 @@ class MusicService :
             }
         }
 
-        // Save state when repeat mode changes - must be on Main thread to access player
-        scope.launch {
-            if (dataStore.get(PersistentQueueKey, true)) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         if (!isCrossfading) {
             scheduleCrossfade()
         }
@@ -9062,11 +9043,9 @@ class MusicService :
             } else {
                 allItems.add(item)
             }
-            player.setMediaItems(
-                allItems,
-                currentIndex.coerceIn(0, allItems.lastIndex),
-                capturedPositionMs,
-            )
+            installExternalTimeline(queueCheckpointGate.persistenceQueue, queueCheckpointGate.persistenceTitle) {
+                player.setMediaItems(allItems, currentIndex.coerceIn(0, allItems.lastIndex), capturedPositionMs)
+            }
             player.prepare()
             player.playWhenReady = wasPlaying
             // Restore the effective volume immediately (bypass the smooth ramp) so the new source
@@ -12000,7 +11979,7 @@ class MusicService :
         val persistentFile = filesDir.resolve(fileName)
         if (!persistentFile.exists() || !persistentFile.isFile) return null
 
-        return synchronized(persistentStateLock) {
+        return synchronized(queuePersistence.lock) {
             runCatching {
                 persistentFile.inputStream().use { fis ->
                     val payload = PlaybackPersistenceCodec.read(fis)
@@ -12020,10 +11999,10 @@ class MusicService :
         // for their check-write-record step, so no save can record a snapshot as persisted
         // whose file this is about to delete, nor skip as "unchanged" against a cache that
         // describes files already gone.
-        synchronized(persistentStateLock) {
-            persistentSaveGeneration.incrementAndGet()
-            lastPersistedQueue = null
-            lastPersistedPlayerState = null
+        synchronized(queuePersistence.lock) {
+            queuePersistence.generation.incrementAndGet()
+            queuePersistence.lastQueue = null
+            queuePersistence.lastPlayerState = null
             listOf(
                 PERSISTENT_QUEUE_FILE,
                 PERSISTENT_PLAYER_STATE_FILE,
@@ -12052,7 +12031,7 @@ class MusicService :
         val persistentFile = filesDir.resolve(fileName)
         val tempFile = filesDir.resolve("$fileName.tmp")
 
-        return synchronized(persistentStateLock) {
+        return synchronized(queuePersistence.lock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
                     PlaybackPersistenceCodec.write(fos, payload)
@@ -12141,37 +12120,25 @@ class MusicService :
     }
 
     /**
-     * Last player state actually written, compared ignoring [PersistPlayerState.timestamp] so a
-     * paused player — whose position does not move — stops rewriting an identical file every tick.
-     */
-    @Volatile
-    private var lastPersistedPlayerState: PersistPlayerState? = null
-
-    @Volatile
-    private var lastPersistedQueue: PersistQueue? = null
-
-    /**
      * Writes just the resume position and transport flags, skipping the queue snapshot, and only
      * while [PersistentQueueKey] is on. The periodic save and paused changes from onEvents both use it.
      *
-     * Deliberately not [saveQueueToDisk]: that maps every media item to persistable metadata on
-     * the main thread and writes two files. None of that changes here — only the position does —
-     * and the queue file is already written by every handler that can change it.
+     * Structural timeline changes and transport callbacks request separate coalesced queue
+     * checkpoints via [saveQueueToDisk]; this position tick never maps every item on Main.
      */
     private suspend fun savePlayerStateToDisk() {
         if (!withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) return
-        val saveGeneration = persistentSaveGeneration.get()
-        val state =
+        val saveGeneration = queuePersistence.generation.get()
+        val (checkpoint, state) =
             withContext(Dispatchers.Main.immediate) {
                 if (
-                    saveGeneration != persistentSaveGeneration.get() ||
-                    isRestoringPersistentState ||
-                    isHydratingRestoredQueue ||
+                    saveGeneration != queuePersistence.generation.get() ||
+                    queueCheckpointGate.blocked() ||
                     player.mediaItemCount == 0
                 ) {
                     return@withContext null
                 }
-                PersistPlayerState(
+                queuePersistence.checkpointOrder.nextSnapshot() to PersistPlayerState(
                     playWhenReady = player.playWhenReady,
                     repeatMode = player.repeatMode,
                     shuffleModeEnabled = player.shuffleModeEnabled,
@@ -12183,62 +12150,38 @@ class MusicService :
             } ?: return
 
         withContext(Dispatchers.IO) {
-            synchronized(persistentStateLock) {
-                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
-                persistPlayerStateIfChangedLocked(state)
+            synchronized(queuePersistence.lock) {
+                if (saveGeneration != queuePersistence.generation.get()) return@synchronized
+                queuePersistence.checkpointOrder.writePlayerStateIfCurrent(checkpoint) {
+                    persistPlayerStateIfChangedLocked(state)
+                }
             }
         }
     }
 
-    // Caller holds persistentStateLock. The cache only advances after a write that succeeded,
+    // Caller holds queuePersistence.lock. The cache only advances after a write that succeeded,
     // so a failed write is retried by the next identical snapshot instead of being skipped.
     private fun persistPlayerStateIfChangedLocked(state: PersistPlayerState) {
         // timestamp defaults to now, so it always differs — compare everything else.
-        val previous = lastPersistedPlayerState
+        val previous = queuePersistence.lastPlayerState
         if (previous != null && previous.copy(timestamp = 0L) == state.copy(timestamp = 0L)) return
         if (writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)) {
-            lastPersistedPlayerState = state
+            queuePersistence.lastPlayerState = state
         }
     }
 
-    private suspend fun saveQueueToDisk() {
-        val snapshot = withContext(Dispatchers.Main.immediate) { snapshotQueue() } ?: return
-        writeQueueSnapshot(snapshot)
-    }
+    private fun saveQueueToDisk() = queueCheckpoints.request()
 
     /** Main thread only: the player is thread-confined; teardown runs this before release. */
     internal fun snapshotQueue(): PersistedQueueSnapshot? {
-        if (isRestoringPersistentState || isHydratingRestoredQueue) return null
-        if (finiteMutationInProgress) return null
-        val saveGeneration = persistentSaveGeneration.get()
-
+        if (queueCheckpointGate.blocked()) return null
+        val checkpoint = queuePersistence.checkpointOrder.nextSnapshot()
         val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
-        if (mediaItemsSnapshot.isEmpty()) return null
-
+        // Startup's empty player must not replace an unreadable saved queue or race restoration.
+        if (mediaItemsSnapshot.isEmpty() && !queueCheckpointGate.canSnapshotEmpty(hasQueueTimelineChanges, queueRestoreCompleted.value)) return null
         val currentMediaItemIndex = player.currentMediaItemIndex
         val currentPosition = player.currentPosition
-        val persistQueue =
-            currentQueue.toPersistQueue(
-                title = queueTitle,
-                items = mediaItemsSnapshot,
-                mediaItemIndex = currentMediaItemIndex,
-                position = currentPosition,
-                timelineOccurrences = player.mediaItems.map { item ->
-                    val playlistQueue = currentQueue as? YouTubePlaylistQueue
-                    playlistQueue?.occurrenceOf(item) ?: item.finiteOccurrence()
-                },
-            ).copy(
-                savedAtEpochMs = System.currentTimeMillis(),
-                manualQueueKinds = player.mediaItems.map { it.userQueuedKind()?.ordinal },
-                shuffleOrder = buildList {
-                    val timeline = player.currentTimeline
-                    var index = timeline.getFirstWindowIndex(true)
-                    while (index != C.INDEX_UNSET && size < player.mediaItemCount) {
-                        add(index)
-                        index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, true)
-                    }
-                },
-            )
+        val persistQueue = queueCheckpointGate.persistQueue(player, mediaItemsSnapshot, currentMediaItemIndex, currentPosition)
         val persistPlayerState =
             PersistPlayerState(
                 playWhenReady = player.playWhenReady,
@@ -12249,22 +12192,22 @@ class MusicService :
                 currentMediaItemIndex = currentMediaItemIndex,
                 playbackState = player.playbackState,
             )
-
-        return PersistedQueueSnapshot(saveGeneration, persistQueue, persistPlayerState)
+        return PersistedQueueSnapshot(checkpoint, persistQueue, persistPlayerState)
     }
 
     internal suspend fun writeQueueSnapshot(snapshot: PersistedQueueSnapshot) {
         withContext(Dispatchers.IO) {
-            synchronized(persistentStateLock) {
-                if (snapshot.saveGeneration != persistentSaveGeneration.get()) return@synchronized
-                // Transition, play/pause and state-change callbacks fire in bursts for one user action,
-                // each snapshotting the same queue; only the first needs to hit the disk.
-                if (snapshot.queue != lastPersistedQueue &&
-                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)
-                ) {
-                    lastPersistedQueue = snapshot.queue
+            if (!dataStore.get(PersistentQueueKey, true)) return@withContext
+            synchronized(queuePersistence.lock) {
+                if (isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress) return@synchronized
+                queuePersistence.checkpointOrder.writeIfCurrent(snapshot.checkpoint) {
+                    if (snapshot.queue != queuePersistence.lastQueue && writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)) {
+                        queuePersistence.lastQueue = snapshot.queue
+                    }
+                    queuePersistence.checkpointOrder.writePlayerStateIfCurrent(snapshot.checkpoint) {
+                        persistPlayerStateIfChangedLocked(snapshot.playerState)
+                    }
                 }
-                persistPlayerStateIfChangedLocked(snapshot.playerState)
             }
         }
     }
