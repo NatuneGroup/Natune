@@ -304,8 +304,24 @@ class ReleaseWorkflowTest(unittest.TestCase):
                     sys.exit("HTTP 503")
                 sha = os.environ.get("EXISTING_RELEASE_SHA")
                 if not sha:
+                    # gh prints this for a failed REST lookup of a published release as well.
                     sys.exit("release not found")
                 print(json.dumps({"targetCommitish": sha, "body": os.environ.get("EXISTING_RELEASE_BODY", "")}))
+            elif args[0] == "api" and args[1].endswith("/releases/tags/update-feed"):
+                if os.environ.get("FEED_RELEASE_ERROR"):
+                    sys.exit("gh: Service Unavailable (HTTP 503)")
+                names = ["stable.json"]
+                if "FEED_MANIFEST" in os.environ or os.environ.get("FEED_READ_ERROR"):
+                    names.append("nightly.json")
+                elif not os.environ.get("FEED_WITHOUT_NIGHTLY"):
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"tag_name": "update-feed", "assets": [{"name": name} for name in names]}))
+            elif args[0] == "api" and "/releases/tags/" in args[1]:
+                if os.environ.get("RELEASE_LOOKUP_ERROR"):
+                    sys.exit("gh: Service Unavailable (HTTP 503)")
+                if not os.environ.get("EXISTING_RELEASE_SHA"):
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"tag_name": args[1].rsplit("/", 1)[-1]}))
             elif args[0] == "api" and "/git/ref/tags/" in args[1]:
                 if os.environ.get("TAG_READ_ERROR"):
                     sys.exit("HTTP 503")
@@ -321,6 +337,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 if os.environ.get("FEED_READ_ERROR"):
                     sys.exit("HTTP 503")
                 if "FEED_MANIFEST" not in os.environ:
+                    # gh prints this for a failed REST lookup of the feed release as well.
                     sys.exit("release not found")
                 print(os.environ["FEED_MANIFEST"])
             else:
@@ -351,6 +368,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
             {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": "not json"},
             {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": '{"tag":null}'},
             {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_READ_ERROR": "1"},
+            # gh reports "release not found" when its REST lookup fails, so that message proves no absence.
+            {"RELEASE_LOOKUP_ERROR": "1", "EXISTING_TAG_SHA": "a" * 40, "FEED_MANIFEST": '{"tag":"N20300101"}'},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_RELEASE_ERROR": "1"},
         ):
             with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -362,7 +382,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                                      "DELETE" in args for args in calls))
 
     def test_nightly_same_build_rerun_and_its_bare_tag_can_be_replaced(self):
-        for kind in ("release", "release-without-feed", "bare", "annotated"):
+        for kind in ("release", "release-without-feed", "release-without-nightly-manifest", "bare", "annotated"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 flags = {"EXISTING_TAG_SHA": "a" * 40}
@@ -372,10 +392,14 @@ class ReleaseWorkflowTest(unittest.TestCase):
                     flags.update(EXISTING_RELEASE_SHA="a" * 40, EXISTING_RELEASE_BODY="<!-- at-build:9001 -->")
                 if kind == "release":
                     flags.update(FEED_MANIFEST='{"tag":"N20291231"}')
+                if kind == "release-without-nightly-manifest":
+                    flags.update(FEED_WITHOUT_NIGHTLY="1")
                 result, _ = self.publish_fixture(root, "nightly", flags=flags)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
-                self.assertTrue(any(args[:3] == ["release", "download", "update-feed"] for args in calls))
+                self.assertIn(["api", "repos/NatuneGroup/Natune/releases/tags/update-feed"], calls)
+                self.assertEqual(kind == "release",
+                                 any(args[:3] == ["release", "download", "update-feed"] for args in calls))
                 self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
                 self.assertEqual(1, sum(args[:2] == ["release", "delete"] or "DELETE" in args for args in calls))
                 self.assertTrue((root / "nightly.json").is_file())

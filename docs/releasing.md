@@ -37,7 +37,8 @@ bumped forward until unused. Only a rerun of the same commit and build code may
 replace its own release. If the published `nightly.json` already offers that
 release, the rerun leaves the release and the feed unchanged and publishes
 nothing; if the manifest cannot be read or parsed, the rerun refuses to replace
-the release. When `dev` advances while a release is being published, that
+the release. Only a REST 404 for `update-feed`, or its asset list without
+`nightly.json`, counts as a missing manifest. When `dev` advances while a release is being published, that
 release is removed again unless `nightly.json` offers it. After each successful
 nightly publish, the newest five
 `N<digits>` releases are kept, ordered by publish time, along with this run's tag

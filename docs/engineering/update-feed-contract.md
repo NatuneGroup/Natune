@@ -98,8 +98,11 @@ tag is never replaced. CI never deletes the release that the published
 `nightly.json` offers: a rerun of that build keeps the release and the feed
 unchanged, a rerun refuses to replace its release while that manifest cannot be
 read or parsed, and the stale-head check after publishing keeps the offered
-release. Nightly pruning protects the release referenced by the published
-`nightly.json` and skips deletion when that manifest cannot be read.
+release. Only a REST 404 for the `update-feed` release, or its asset list
+without `nightly.json`, counts as no published manifest: `gh` also reports
+"release not found" when its lookup fails. Nightly pruning protects the release
+referenced by the published `nightly.json` and skips deletion when that
+manifest cannot be read.
 
 ## What the client does with it
 
