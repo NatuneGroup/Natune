@@ -22,4 +22,11 @@ class PlayerOccurrenceTest {
         assertNull(playerOccurrence(queue, snapshot("removed")))
         assertEquals(second, playerOccurrence(queue, null))
     }
+    @Test fun sheetShowsTheQueuedSuccessorWithoutTheRemovedTracksSnapshot() {
+        val state = queuePlayerState(queue, snapshot("removed"), active = true)
+        assertEquals("Second occurrence", state.title)
+        assertNull(state.playback)
+        assertEquals(0L, state.positionMs)
+        assertEquals(snapshot("first"), queuePlayerState(queue, snapshot("first"), active = true).playback)
+    }
 }

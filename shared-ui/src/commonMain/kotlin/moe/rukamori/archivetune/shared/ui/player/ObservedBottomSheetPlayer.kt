@@ -10,12 +10,16 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import androidx.compose.runtime.getValue
 
-/** Projection of M7's sole queue facade; no copied queue state or second persistence owner. */
+/**
+ * Projection of M7's sole queue facade; no copied queue state or second persistence owner. Until the engine reports
+ * a removed track's successor, the queue's current item is shown without the removed track's snapshot.
+ */
 fun queuePlayerState(queue: QueueState,playback: PlaybackSnapshot?,active: Boolean): PlayerState {
-    val occurrenceId=playback?.occurrenceId ?: queue.currentOccurrenceId
-    val item=queue.entries.firstOrNull { it.occurrenceId==occurrenceId }?.item
-    val index=queue.playOrder.indexOf(occurrenceId)
-    return PlayerState(playback,item?.title.orEmpty(),item?.subtitle.orEmpty(),queue.playOrder,
+    val playing=queue.entries.firstOrNull { it.occurrenceId==playback?.occurrenceId }
+    val entry=playing ?: queue.entries.firstOrNull { it.occurrenceId==queue.currentOccurrenceId }
+    val item=entry?.item
+    val index=entry?.let { queue.playOrder.indexOf(it.occurrenceId) } ?: -1
+    return PlayerState(playback.takeIf { playing!=null },item?.title.orEmpty(),item?.subtitle.orEmpty(),queue.playOrder,
         canPrevious=index>0,canNext=index>=0 && index<queue.playOrder.lastIndex,active=active,
         albumTitle=item?.album,explicit=item?.explicit ?: false)
 }
