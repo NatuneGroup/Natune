@@ -56,6 +56,11 @@ class IosCompileWorkflowTest(unittest.TestCase):
         self.assertNotIn("xcodebuild", step)
         self.assertNotIn("at_audio_create", step)
 
+    def test_simulator_app_link_hides_the_script_environment_like_the_release_build(self) -> None:
+        text = WORKFLOW.read_text()
+        step = text.split("name: Link the unsigned simulator app target", 1)[1].split("- name:", 1)[0]
+        self.assertIn("xcodebuild \\\n            -hideShellScriptEnvironment \\\n", step)
+
 
 if __name__ == "__main__":
     unittest.main()

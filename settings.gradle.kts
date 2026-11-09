@@ -135,16 +135,20 @@ include(":modules")
 // Android modules apply AGP plugins, which need an Android SDK while their projects configure. Without
 // one (such as this Linux workspace) those projects keep their place in the graph but load no build
 // script, so the JVM and Kotlin Multiplatform modules still configure and compile. Hosts with an SDK
-// configure every module as before.
+// configure every module as before, unless the Gradle property natune.androidSdk=false turns the SDK
+// off. The release IPA job relies on that property: the Gradle run started by Xcode's script phase
+// still finds the runner's SDK although the job blanks ANDROID_HOME and ANDROID_SDK_ROOT.
+val androidSdkDisabled = providers.gradleProperty("natune.androidSdk").orNull?.toBooleanStrictOrNull() == false
 val androidSdkDir: String? = listOf(System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT"))
     .firstOrNull { !it.isNullOrBlank() }
     ?: rootDir.resolve("local.properties").takeIf { it.isFile }?.let { file ->
         java.util.Properties().also { props -> file.inputStream().use { props.load(it) } }.getProperty("sdk.dir")
     }
-val hasAndroidSdk = androidSdkDir?.let { File(it).isDirectory } == true
+val hasAndroidSdk = !androidSdkDisabled && androidSdkDir?.let { File(it).isDirectory } == true
 gradle.extra["hasAndroidSdk"] = hasAndroidSdk
 if (!hasAndroidSdk) {
-    logger.lifecycle("No Android SDK configured: Android KMP targets and the :app, :jiosaavn and :deobfuscator build scripts are skipped.")
+    val reason = if (androidSdkDisabled) "Android SDK turned off by natune.androidSdk=false" else "No Android SDK configured"
+    logger.lifecycle("$reason: Android KMP targets and the :app, :jiosaavn and :deobfuscator build scripts are skipped.")
     listOf(":app", ":jiosaavn", ":deobfuscator", ":modules").forEach { path ->
         project(path).buildFileName = "android-sdk-required.gradle.kts"
     }
