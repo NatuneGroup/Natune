@@ -352,6 +352,34 @@ class SharedUpdateCheckerTest {
     }
 
     @Test
+    fun openUrlHostOffersTheReleasePageOnlyWhenItsArtifactIsPublished() = runTest {
+        val profile = stableProfile().copy(
+            installMode = UpdateInstallMode.OPEN_URL,
+            artifactMatcher = { it.startsWith("natune-ios-") && it.endsWith(".ipa") },
+        )
+        for ((assetName, offered) in listOf("natune-ios-2.0.0.ipa" to true, "natune-linux-x64-2.0.0.deb" to false)) {
+            val (checker, client) = checker(FakeSettingsStore(), { request ->
+                when {
+                    request.url.encodedPath.endsWith("update-feed/stable.json") -> respond(stableManifest())
+                    request.url.host == "api.github.com" -> respond(apiReleasesJson("v2.0.0", "at-build:11", assetName))
+                    else -> respond("[]")
+                }
+            }, profile = profile)
+            try {
+                val release = checker.latestRelease(UpdateChannel.STABLE, forceRefresh = true)
+                assertEquals("v2.0.0", release?.tagName)
+                val offer = checker.cachedOffer(UpdateChannel.STABLE)
+                if (offered) {
+                    assertEquals("https://example/tag/v2.0.0", offer?.downloadUrl)
+                    assertNull(offer?.sha256)
+                } else {
+                    assertNull(offer)
+                }
+            } finally { client.close() }
+        }
+    }
+
+    @Test
     fun nightlyManifestFeedsPrereleaseChannel() = runTest {
         val store = FakeSettingsStore()
         val (checker, client) = checker(
