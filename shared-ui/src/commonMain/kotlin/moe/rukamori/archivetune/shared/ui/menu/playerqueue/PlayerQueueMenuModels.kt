@@ -230,6 +230,10 @@ data class PlayerQueueMenuState(
     val tempoPitchRemembered: Boolean = false,
     /** Apple Music keeps the icon grid of actions; MD3 lists the same actions as rows with their icons. */
     val menuStyle: PlayerMenuStyle = PlayerMenuStyle.Default,
+    val externalDownloaderSupported: Boolean = true,
+    val speedDialSupported: Boolean = true,
+    /** False when the host always plays this track from one fixed origin, so a chosen source would never be used. */
+    val sourceSelectionSupported: Boolean = true,
 ) : PlayerSongSourceState
 
 /**

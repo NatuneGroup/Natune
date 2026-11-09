@@ -27,7 +27,12 @@ import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoScreen
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoActions
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoAndSpecs
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.painterResource
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.domain.settings.DefaultSearchSourceKey
 
 /**
  * Mount inside ArchiveTuneShell's page-only content slot. Root/player/menu/service owners stay outside.
@@ -52,11 +57,14 @@ fun ArchiveNavigationHost(
     /** A search shortcut asked for the field; the Search screen takes focus once and reports it consumed. */
     searchFocusRequested: Boolean = false,
     onSearchFocusConsumed: () -> Unit = {},
+    settings: moe.rukamori.archivetune.shared.domain.settings.SettingsStore? = null,
+    onFailure: () -> Unit = {},
 ) {
     NavigationEntryContent(navigation, modifier) {
         val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
         val binding = page(route)
         val back = { navigation.back(); Unit }
+        val settingsScope = rememberCoroutineScope()
         fun open(row: ContentOccurrence, collection: ContentRequest?, index: Int? = null) {
             if (row.item.ref.kind == ContentKind.SONG || row.item.ref.kind == ContentKind.EPISODE) {
                 actions.playOccurrence(collection, QueueStart(row.item.ref, row.occurrenceId, row.setVideoId, index))
@@ -100,9 +108,10 @@ fun ArchiveNavigationHost(
             is ArchiveGraphPage.HomeBitChord -> {
                 require(route.destination == ArchiveDestination.HOME)
                 HomeVariantFrame(navigation, newsEntry, binding.source, atmosphere = binding.blurEffects,
-                    greeting = { HomeWelcomeHeader(binding.accountName) }) { contentPadding ->
+                    greeting = if (LocalAndroidPhonePresentation.current) null else { { HomeWelcomeHeader(binding.accountName) } }) { contentPadding ->
                     BitChordHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying,
-                        contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
+                        contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio,
+                        greeting = if (LocalAndroidPhonePresentation.current) { { HomeWelcomeHeader(binding.accountName) } } else null)
                 }
             }
             is ArchiveGraphPage.HomeQq -> {
@@ -121,13 +130,27 @@ fun ArchiveNavigationHost(
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
                     preferences = preferences,
                     focusRequested = searchFocusRequested, onFocusConsumed = onSearchFocusConsumed,
-                    onBack = back.takeIf { navigation.canGoBack })
+                    onBack = back.takeIf { navigation.canGoBack }, provider = binding.provider,
+                    onProvider = settings?.let { store -> { provider -> settingsScope.launch {
+                        try {
+                            store.edit { this[DefaultSearchSourceKey] = when (provider) {
+                                ContentProvider.SPOTIFY_CATALOG -> "SPOTIFY"
+                                ContentProvider.APPLE -> "APPLE_MUSIC"
+                                else -> "YOUTUBE"
+                            } }
+                            if (binding.query.isNotBlank()) navigation.open(ArchiveRoutes.search(binding.query, provider, binding.filter))
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { onFailure() }
+                    }; Unit } },
+                    discovery = binding.discovery?.state,
+                    discoveryActions = binding.discovery?.let { discovery(it.tab, it.refresh, it.retry) })
             }
             is ArchiveGraphPage.Library -> {
                 require(route.destination == ArchiveDestination.LIBRARY)
                 LibraryScreen(binding.filter, binding.order, binding.filterChange, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    librarySourceSelector, { ArchiveEntryLinks(navigation, newsEntry, binding.myTopSize) }, mixHeader = binding.mixHeader)
+                    librarySourceSelector, { ArchiveEntryLinks(navigation, newsEntry, binding.myTopSize) }, mixHeader = binding.mixHeader,
+                    settings = settings, preferences = preferences, onFailure = onFailure)
             }
             is ArchiveGraphPage.Discovery -> {
                 require(route.destination == ArchiveDestination.DISCOVERY)
@@ -367,7 +390,10 @@ private fun HomeVariantFrame(
     val shell = LocalShellContentPadding.current
     val direction = LocalLayoutDirection.current
     Box(Modifier.fillMaxSize()) {
-        if (atmosphere) HomeClassicAtmosphereBackground()
+        if (atmosphere) {
+            if (LocalAndroidPhonePresentation.current) moe.rukamori.archivetune.shared.ui.home.HomeAtmosphereBackground()
+            else HomeClassicAtmosphereBackground()
+        }
         Column(Modifier.fillMaxSize()) {
             HomePageHeader(home.source, home.available, home.change, headerActions = { ArchiveEntryLinks(navigation, newsEntry) },
                 modifier = Modifier.fillMaxWidth().padding(top = shell.calculateTopPadding()))
@@ -393,7 +419,16 @@ private fun ArchiveEntryLinks(navigation: ShellNavigation, newsEntry: NewsEntry,
     var expanded by remember { mutableStateOf(false) }
     val desktop = LocalDesktopLayout.current
     Box {
-        TextButton({ expanded = true }, Modifier.testTag("archive-destinations")) { Text(stringResource(Res.string.m4_more)) }
+        if (LocalAndroidPhonePresentation.current) {
+            Row {
+                IconButton(onClick = { navigation.open("settings") }, modifier = Modifier.testTag("archive-settings")) {
+                    Icon(painterResource(Res.drawable.m4_icon_settings), stringResource(Res.string.m4_settings))
+                }
+                IconButton(onClick = { expanded = true }, modifier = Modifier.testTag("archive-destinations")) {
+                    Icon(painterResource(Res.drawable.m6_icon_account), stringResource(Res.string.m4_account))
+                }
+            }
+        } else TextButton({ expanded = true }, Modifier.testTag("archive-destinations")) { Text(stringResource(Res.string.m4_more)) }
         DropdownMenu(expanded, { expanded = false }, properties = PopupProperties(focusable = !desktop)) {
             // The My top entry opens the list the baseline card opens. The caller passes null when that card is hidden.
             val myTop = myTopSize?.let { "top_playlist/$it" to Res.string.m4_my_top }

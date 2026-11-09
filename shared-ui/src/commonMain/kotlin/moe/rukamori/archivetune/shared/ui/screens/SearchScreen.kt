@@ -51,6 +51,8 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
 import moe.rukamori.archivetune.shared.ui.theme.desktopPageTitle
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 
 enum class SearchScope { Online, Local }
 
@@ -82,7 +84,12 @@ fun SearchScreen(
     focusRequested: Boolean = false,
     onFocusConsumed: () -> Unit = {},
     onBack: (() -> Unit)? = null,
+    provider: ContentProvider = ContentProvider.YOUTUBE,
+    onProvider: ((ContentProvider) -> Unit)? = null,
+    discovery: DiscoveryUi? = null,
+    discoveryActions: DiscoveryActions? = null,
 ) {
+    val phone = LocalAndroidPhonePresentation.current
     val fieldFocus = remember { FocusRequester() }
     // The editor survives moving the field between top/bottom chrome. Preserve selection and
     // marked text through playback/result recompositions; only publish text to the catalogue.
@@ -158,13 +165,14 @@ fun SearchScreen(
         Column(Modifier.fillMaxSize()) {
             // The desktop top bar owns the search field; this page keeps the scope filters and results only.
             if (!LocalDesktopLayout.current) {
-                if (onBack != null) ManagementHeader(stringResource(Res.string.m4_search), onBack)
+                if (phone) Spacer(Modifier.height(12.dp))
+                else if (onBack != null) ManagementHeader(stringResource(Res.string.m4_search), onBack)
                 else Text(stringResource(Res.string.m4_search), style = desktopPageTitle(false),
                     modifier = Modifier.padding(16.dp))
                 if (!searchBarAtBottom) SearchField(fieldValue, edit, submit, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    focusRequester = fieldFocus)
+                    focusRequester = fieldFocus, scope = scope, provider = provider, onScope = onScope, onProvider = onProvider, onVoice = onVoice, onRecognition = onRecognition)
             }
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!phone) Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(scope == SearchScope.Online, { onScope(SearchScope.Online) },
                     label = { Text(stringResource(Res.string.m4_online)) })
                 FilterChip(scope == SearchScope.Local, { onScope(SearchScope.Local) },
@@ -173,11 +181,14 @@ fun SearchScreen(
                     Text(stringResource(Res.string.m4_search))
                 }
             }
-            Row(Modifier.padding(horizontal = 16.dp)) {
+            if (!phone) Row(Modifier.padding(horizontal = 16.dp)) {
                 onVoice?.let { TextButton(it) { Text(stringResource(Res.string.m4_voice_search)) } }
                 onRecognition?.let { TextButton(it) { Text(stringResource(Res.string.m4_recognize)) } }
             }
-            LazyColumn(
+            if (phone && query.isBlank() && scope == SearchScope.Online && discovery != null && discoveryActions != null) {
+                DiscoveryScreen(discovery, discoveryActions, artwork, modifier = Modifier.weight(1f), embedded = true,
+                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + if (searchBarAtBottom) bottomSearchChromeSpace else 0.dp))
+            } else LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
@@ -235,7 +246,8 @@ fun SearchScreen(
                         onSubmit = submit,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = SearchHorizontalPadding / 2, vertical = 4.dp)
                             .testTag("search-query-bottom"),
-                        focusRequester = fieldFocus,
+                        focusRequester = fieldFocus, scope = scope, provider = provider, onScope = onScope,
+                        onProvider = onProvider, onVoice = onVoice, onRecognition = onRecognition,
                     )
                 }
             }
@@ -250,7 +262,18 @@ private fun SearchField(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester,
+    scope: SearchScope,
+    provider: ContentProvider,
+    onScope: (SearchScope) -> Unit,
+    onProvider: ((ContentProvider) -> Unit)?,
+    onVoice: (() -> Unit)?,
+    onRecognition: (() -> Unit)?,
 ) {
+    if (LocalAndroidPhonePresentation.current) {
+        PhoneSearchField(value, onValue, onSubmit, scope, provider, onScope, onProvider, onVoice, onRecognition,
+            modifier.shortcutTextInput().testTag("search-query").focusRequester(focusRequester))
+        return
+    }
     // Typing here must never reach the transport keys, so the field reports its focus to the root's counter.
     OutlinedTextField(value, onValue,
         modifier = modifier.shortcutTextInput().testTag("search-query").focusRequester(focusRequester), singleLine = true,

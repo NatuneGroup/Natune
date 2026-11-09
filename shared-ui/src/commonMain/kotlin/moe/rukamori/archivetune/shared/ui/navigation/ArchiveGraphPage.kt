@@ -85,6 +85,7 @@ sealed interface ArchiveGraphPage {
         val queryChange: (String) -> Unit, val scopeChange: (SearchScope) -> Unit,
         val voice: (() -> Unit)?, val recognition: (() -> Unit)?, val loadMore: () -> Unit, val retry: () -> Unit,
         val filter: ContentSearchFilter = ContentSearchFilter.ALL,
+        val discovery: Discovery? = null,
     ) : ArchiveGraphPage
     data class Library(
         val filter: LibraryFilter, val order: List<LibraryFilter>, val filterChange: (LibraryFilter) -> Unit,

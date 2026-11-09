@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="phone_search_library">Search library</string>
+  <string name="phone_search_online">Search YouTube Music</string>
+  <string name="phone_search_source">Search source</string>
+</resources>

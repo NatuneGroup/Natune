@@ -36,40 +36,14 @@ internal fun IosHiddenPlaylistsPage(
 ) {
     val hidden by remember { graph.library.observeHiddenPlaylists() }.collectAsState(null)
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            stringResource(Res.string.m6_account_hidden_playlists),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(16.dp),
-        )
-        val rows = hidden
-        when {
-            rows == null -> CircularProgressIndicator(Modifier.padding(16.dp))
-            rows.isEmpty() ->
-                Text(stringResource(Res.string.m6_account_no_hidden_playlists), Modifier.padding(16.dp))
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                items(rows, key = { it.id }) { playlist ->
-                    ListItem(
-                        headlineContent = { Text(playlist.title) },
-                        trailingContent = {
-                            TextButton(onClick = {
-                                scope.launch {
-                                    try {
-                                        graph.library.setPlaylistHidden(playlist.id, false)
-                                        onNotice(
-                                            SettingsNotice.Message(Res.string.m6_account_hidden_playlist_unhidden),
-                                        )
-                                    } catch (cancelled: CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) {
-                                        onFailure()
-                                    }
-                                }
-                            }) { Text(stringResource(Res.string.m6_account_hidden_playlists_unhide)) }
-                        },
-                    )
-                }
-            }
-        }
-    }
+    moe.rukamori.archivetune.shared.ui.settings.HiddenPlaylistsSettings(
+        hidden?.map { moe.rukamori.archivetune.shared.ui.settings.HiddenSettingsPlaylist(it.id, it.title) },
+        onUnhide = { id -> scope.launch {
+            try {
+                graph.library.setPlaylistHidden(id, false)
+                onNotice(SettingsNotice.Message(Res.string.m6_account_hidden_playlist_unhidden))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { onFailure() }
+        } },
+    )
 }

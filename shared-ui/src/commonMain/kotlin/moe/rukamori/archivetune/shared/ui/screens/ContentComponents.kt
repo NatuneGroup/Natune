@@ -37,6 +37,10 @@ fun ContentRow(
     trailingControls: (@Composable () -> Unit)? = null,
     showDuration: Boolean = false,
 ) {
+    if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) {
+        PhoneContentRow(occurrence, actions, artwork, modifier, ordinal, trailingControls, showDuration)
+        return
+    }
     val display = effectiveSong(occurrence.item)
     val duration = contentTrackDuration(occurrence.item.durationMs).takeIf { showDuration }
     ListItem(

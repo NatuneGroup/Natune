@@ -145,16 +145,8 @@ internal class IosBackupSync(private val graph: IosSessionGraph, private val hos
         .stringFromDate(NSDate.dateWithTimeIntervalSince1970(epochMillis / 1000.0))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun IosBackupSyncDateDialog(sync: IosBackupSync) {
-    sync.dateRequest?.let { request ->
-        val state = rememberDatePickerState(initialSelectedDateMillis = sync.initialDay?.times(86_400_000L))
-        DatePickerDialog(onDismissRequest = { sync.selectDay(null) },
-            confirmButton = { TextButton(enabled = state.selectedDateMillis?.div(86_400_000L)?.let { it >= iosNowMillis() / 86_400_000L } == true, onClick = { sync.selectDay(state.selectedDateMillis?.div(86_400_000L)) }) {
-                Text(stringResource(Res.string.ios_lyrics_save))
-            } }, dismissButton = { TextButton(onClick = { sync.selectDay(null) }) { Text(stringResource(Res.string.m6_cancel)) } }) {
-            DatePicker(state)
-        }
-    }
+    if (sync.dateRequest != null) moe.rukamori.archivetune.shared.ui.settings.BackupDatePickerDialog(
+        sync.initialDay, iosNowMillis() / 86_400_000L, sync::selectDay)
 }

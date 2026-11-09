@@ -47,6 +47,8 @@ kotlin {
                 implementation(libs.compose.multiplatform.ui)
                 api(libs.compose.multiplatform.components.resources)
                 implementation(libs.compose.multiplatform.runtime.saveable)
+                // Android arrange dialogs use the same portable drag handles on iOS.
+                implementation(libs.compose.reorderable)
                 api(libs.liquid.glass)
                 api(libs.haze)
                 api(libs.kotlinx.coroutines.core)

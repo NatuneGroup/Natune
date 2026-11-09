@@ -198,7 +198,8 @@ private fun TopActionBox(
     selected: Boolean? = null,
 ) {
     // Only an action the host answers gets a control; an unsupported one would be a tap with no effect.
-    if (action !in c.state.actionSupport) return
+    val supported = action in c.state.actionSupport
+    if (!supported && !moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) return
     PlayerIcon(
         symbol = action.symbol2(),
         label = stringResource(actionLabel(action)),
@@ -206,6 +207,7 @@ private fun TopActionBox(
         size = size, iconSize = iconSize,
         container = container, contentColor = iconColor, shape = shape,
         selected = selected,
+        enabled = supported,
     )
 }
 
