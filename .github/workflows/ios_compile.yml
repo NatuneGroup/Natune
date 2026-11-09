@@ -315,6 +315,7 @@ jobs:
           set -euo pipefail
           DERIVED_DATA="$RUNNER_TEMP/NatuneSimulatorDerivedData"
           xcodebuild \
+            -hideShellScriptEnvironment \
             -project iosApp/ArchiveTune.xcodeproj \
             -scheme ArchiveTune \
             -configuration Debug \

@@ -1450,12 +1450,11 @@ jobs:
   ios:
     name: Unsigned iOS IPA
     # Blacksmith's 12 vCPU macOS 26 image is Apple silicon and follows the macOS 26 runner image.
-    # setup-xcode must resolve the pinned 26.4 to /Applications/Xcode_26.4.app; that selection is
-    # unverified on the Blacksmith image until a run passes.
+    # setup-xcode resolves the pinned 26.4 to /Applications/Xcode_26.4.1.app (build 17E202) there.
     # BUDGET: the GitHub-hosted macos-26 baseline for this leg measured 3 h 09 m (run 41735716057);
-    # at the provider's 40 equivalent minutes per 12 vCPU macOS minute, a same-duration run would
-    # consume about 7,600 equivalent minutes, above the reported 3,000-equivalent-minute allowance.
-    # Do not run this leg (build_ios=true) until the owner explicitly approves that spend.
+    # successful Blacksmith runs from 2026-11-07 to 2026-11-09 took 21 to 59 minutes (median 26.5,
+    # about 1,060 equivalent minutes at 40x). The owner approved this leg for every nightly on
+    # 2026-11-09, so workflow_call keeps build_ios on by default; manual dispatches opt in.
     runs-on: blacksmith-12vcpu-macos-26
     if: inputs.build_ios
     permissions:
@@ -1499,11 +1498,13 @@ jobs:
       ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID }}
       ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME: ${{ secrets.ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME }}
       # The job builds only the Kotlin/Native iOS framework through xcodebuild; it never needs the
-      # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
-      # :jiosaavn and :deobfuscator load no build script and the shared modules skip their Android
-      # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
-      # dl.google.com transfer whose corrupt downloads have failed this job, and one the iOS tasks
-      # never use.
+      # Android SDK. Blank values count as unset, so a Gradle run started by a step takes the
+      # settings.gradle.kts no-SDK path: :app, :jiosaavn and :deobfuscator load no build script and the
+      # shared modules skip their Android targets. The Gradle run that Xcode's script phase starts does
+      # not see these blank values (it configured :app and installed NDK 30 in run 42611650035), so the
+      # IPA build step also sets natune.androidSdk=false. Configuring :app lets AGP auto-install the
+      # pinned ~1 GB NDK — a slow dl.google.com transfer whose corrupt downloads have failed this job,
+      # and one the iOS tasks never use.
       ANDROID_HOME: ""
       ANDROID_SDK_ROOT: ""
       # dl.google.com flakes have terminated configuration downloads on this runner; retry with backoff.
@@ -1608,8 +1609,10 @@ jobs:
           key: ${{ steps.ios-downloads-key.outputs.key }}
 
       # Native.xcconfig includes Credentials.xcconfig last, so these values reach Info.plist as build settings without
-      # appearing on the xcodebuild command line. They pass through the environment and are never echoed. xcconfig
-      # reads // as a comment, so each // is written as /$()/, which expands to nothing.
+      # appearing on the xcodebuild command line. They pass through the environment and are never echoed: the IPA
+      # build step passes -hideShellScriptEnvironment, because Xcode otherwise logs every build setting of each
+      # script phase, escaped in ways GitHub's secret masking does not match. xcconfig reads // as a comment, so
+      # each // is written as /$()/, which expands to nothing.
       - name: Write iOS provider credentials
         shell: bash
         run: |
@@ -1654,11 +1657,21 @@ jobs:
         run: |
           set -euo pipefail
           # The Release framework link runs Kotlin/Native inside the Gradle JVM and exhausts the project's 4 GiB heap.
-          # The user-home file outranks gradle.properties, so only this job gets the larger heap.
+          # -Xmx10g was not enough either: ParallelGC caps the old generation at two thirds of the heap (the 6.6 GiB
+          # Gradle reports as max heap space) and the link's long-lived IR fills it. Run 42605499919 spent 25 minutes
+          # in the link while Gradle warned it was out of heap, and run 42611650035 failed with OutOfMemoryError. The
+          # 48 GB runner has room for 20 GiB (a 13.3 GiB old generation) beside LLVM, ld and Xcode.
+          # The user-home file outranks gradle.properties, so only this job gets the larger heap. It also reaches the
+          # Gradle run inside Xcode's script phase, which the job's blank ANDROID_HOME does not, so it carries
+          # natune.androidSdk=false as well.
           mkdir -p "$HOME/.gradle"
-          echo 'org.gradle.jvmargs=-Xmx10g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -XX:+UseParallelGC' >> "$HOME/.gradle/gradle.properties"
+          {
+            echo 'org.gradle.jvmargs=-Xmx20g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -XX:+UseParallelGC'
+            echo 'natune.androidSdk=false'
+          } >> "$HOME/.gradle/gradle.properties"
           DERIVED_DATA="$RUNNER_TEMP/NatuneDerivedData"
           xcodebuild \
+            -hideShellScriptEnvironment \
             -project iosApp/ArchiveTune.xcodeproj \
             -scheme ArchiveTune \
             -configuration Release \
