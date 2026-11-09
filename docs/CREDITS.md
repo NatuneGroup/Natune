@@ -239,3 +239,9 @@ terms. See [module compatibility and comparison](modules.md).
 The portable Spotify Echo pipeline in shared-data derives from ArchiveTune's retained Echo
 implementation and brahmkshatriya/echo-spotify-extension (GPL-3.0), including the extended
 metadata protobuf and PlayPlay key transform. Original Android attribution remains in place.
+
+The shared phone settings presentation and `phone_reference_*` vectors are
+ported from Natune's Android `Preference.kt`, `SettingsDimensions.kt`,
+`YumaTheme.kt` and settings screens at `abc37a26`, including the YumaPlayer
+work by MuwMix and ArchiveTune work by Rukamori and vossgraves, under the
+existing GPL-3.0 lineage. Android source notices remain in place.

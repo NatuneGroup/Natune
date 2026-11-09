@@ -84,6 +84,17 @@ sealed class SettingsRow(
      */
     class Custom(anchor: String, title: StringResource, val content: @Composable () -> Unit) : SettingsRow(anchor, title)
 
+    /** Runtime locale catalogs use host-provided labels; selection and the dialog remain shared. */
+    class RuntimeChoice(
+        anchor: String, title: StringResource, val key: StringPreferenceKey, val default: String,
+        val options: List<Pair<String, String>>, enabled: Boolean = true,
+        val write: PreferenceEditor.(String) -> Unit = { this[key] = it },
+    ) : SettingsRow(anchor, title, enabled = enabled)
+
+    /** Visible Android control with no host consumer; it has no callback and cannot edit saved settings. */
+    class Unavailable(anchor: String, title: StringResource, val kind: PhoneSettingKind) :
+        SettingsRow(anchor, title, enabled = false)
+
     class Number(
         anchor: String, title: StringResource, val key: IntPreferenceKey, val default: Int, val range: IntRange,
         enabled: Boolean = true,

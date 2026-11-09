@@ -54,7 +54,10 @@ fun SettingsPage(
     val listState = rememberLazyListState()
     // A host without a consumer for a row omits it; the stored preference and its anchor remain
     // untouched.
-    val pageRows = rows.withoutUnsupportedRows(LocalUnsupportedSettingsAnchors.current)
+    val reference = LocalPhoneSettingsReference.current
+    val unavailableAnchors = LocalUnavailableSettingsAnchors.current
+    val pageEntries = phoneSettingsEntries(rows.withoutUnsupportedRows(LocalUnsupportedSettingsAnchors.current), reference, unavailableAnchors)
+    val pageRows = pageEntries.map { it.row }
     var editing by remember { mutableStateOf<String?>(null) }
     fun commit(change: PreferenceEditor.() -> Unit) {
         scope.launch {
@@ -75,13 +78,16 @@ fun SettingsPage(
     Column(modifier.fillMaxSize()) {
         // A host with no system back gesture supplies the pop, so one pinned control heads the
         // list.
-        if (back != null) SettingsBackHeader(back)
+        if (back != null) SettingsBackHeader(back, reference?.title)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             val scrollbar = LocalDesktopListScrollbar.current
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                contentPadding = if (reference != null) PaddingValues(bottom = 24.dp) else PaddingValues()) {
                 leadingItems()
                 itemsIndexed(pageRows, key = { _, row -> row.anchor }) { index, row ->
-                    if (row is SettingsRow.Custom) {
+                    val entry = pageEntries[index]
+                    val unavailable = entry.unavailable(unavailableAnchors)
+                    if (row is SettingsRow.Custom && !unavailable) {
                         row.content()
                         return@itemsIndexed
                     }
@@ -96,9 +102,9 @@ fun SettingsPage(
                                 Modifier.testTag("setting:${row.anchor}")
                                     .padding(
                                         start = 16.dp,
-                                        top = 16.dp,
+                                        top = if (reference != null) 12.dp else 16.dp,
                                         end = 16.dp,
-                                        bottom = 4.dp,
+                                        bottom = if (reference != null) 6.dp else 4.dp,
                                     ),
                         )
                         return@itemsIndexed
@@ -109,13 +115,20 @@ fun SettingsPage(
                                 listState.layoutInfo.visibleItemsInfo.any { it.index == index }
                             }
                         }
-                    val enabled = row.enabled
-                    ListItem(
+                    val enabled = row.enabled && !unavailable
+                    val groupStart = pageRows.take(index).indexOfLast { it is SettingsRow.Header } + 1
+                    val groupEnd = pageRows.drop(index).indexOfFirst { it is SettingsRow.Header }.let { if (it < 0) pageRows.size else index + it }
+                    SettingsPresentationEntry(
+                        reference = entry.reference,
+                        phone = reference != null,
+                        index = index - groupStart,
+                        count = groupEnd - groupStart,
+                        enabled = enabled,
                         headlineContent = {
                             Text(
                                 stringResource(
                                     (row as? SettingsRow.Text)?.titleFor?.invoke(preferences)
-                                        ?: row.title,
+                                        ?: entry.reference?.title ?: row.title,
                                 ),
                             )
                         },
@@ -126,7 +139,12 @@ fun SettingsPage(
                                 (row as? SettingsRow.Toggle)?.let { toggle ->
                                     toggle.descriptionFor?.invoke(toggle.read(preferences))
                                 } ?: row.description
-                            if (row is SettingsRow.Status) {
+                            if (unavailable) {
+                                Text(stringResource(Res.string.phone_not_available_on_ios))
+                            } else if (row is SettingsRow.RuntimeChoice) {
+                                val current = preferences[row.key, row.default]
+                                Text(row.options.firstOrNull { it.first == current }?.second ?: current)
+                            } else if (row is SettingsRow.Status) {
                                 Text(row.value, maxLines = if (row.fullText) Int.MAX_VALUE else 2)
                             } else if (row is SettingsRow.Choice) {
                                 val stored = row.read(preferences)
@@ -171,7 +189,9 @@ fun SettingsPage(
                             }
                         },
                         trailingContent = {
-                            if (row is SettingsRow.Toggle)
+                            if (row is SettingsRow.Unavailable && row.kind == PhoneSettingKind.TOGGLE) {
+                                Switch(checked = false, onCheckedChange = null, enabled = false)
+                            } else if (row is SettingsRow.Toggle)
                                 Switch(
                                     checked = row.read(preferences),
                                     onCheckedChange = { checked ->
@@ -209,9 +229,20 @@ fun SettingsPage(
         }
     }
     // Re-resolve the active row so a style/capability change cannot leave a stale enabled dialog.
-    val row = pageRows.firstOrNull { it.anchor == editing && it.enabled }
+    val row = pageEntries.firstOrNull { it.row.anchor == editing && it.row.enabled && !it.unavailable(unavailableAnchors) }?.row
     LaunchedEffect(editing, row != null) { if (editing != null && row == null) editing = null }
-    if (row is SettingsRow.Choice) {
+    if (row is SettingsRow.RuntimeChoice) {
+        PhoneSettingsSelectionSheet(stringResource(row.title), row.options, preferences[row.key, row.default],
+            onDismiss = { editing = null }, onSelect = { selected -> editing = null; commit { row.write(this, selected) } })
+    }
+    if (row is SettingsRow.Choice && reference != null) {
+        val descriptions = row.options.associate { it.value to it.description?.let { label -> stringResource(label) } }
+        PhoneSettingsSelectionSheet(stringResource(row.title), row.options.map { it.value to stringResource(it.label) }, row.read(preferences),
+            onDismiss = { editing = null }, onSelect = { selected -> editing = null; commit { row.write(this, selected) } },
+            enabled = { value -> row.options.firstOrNull { it.value == value }?.enabled == true },
+            description = { value -> descriptions[value] })
+    }
+    if (row is SettingsRow.Choice && reference == null) {
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text(stringResource(row.title)) },
@@ -246,7 +277,11 @@ fun SettingsPage(
             },
         )
     }
-    if (row is SettingsRow.IntChoice) {
+    if (row is SettingsRow.IntChoice && reference != null) {
+        PhoneSettingsSelectionSheet(stringResource(row.title), row.options.map { it.value.toString() to stringResource(it.label) }, preferences[row.key, row.default].toString(),
+            onDismiss = { editing = null }, onSelect = { selected -> editing = null; commit { row.write(this, selected.toInt()) } })
+    }
+    if (row is SettingsRow.IntChoice && reference == null) {
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text(stringResource(row.title)) },
