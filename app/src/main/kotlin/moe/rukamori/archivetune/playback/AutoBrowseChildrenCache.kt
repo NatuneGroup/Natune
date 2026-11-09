@@ -7,8 +7,9 @@ import kotlinx.coroutines.CompletableDeferred
  *
  * A car loads a folder one page at a time. Several folders are built from a fresh shuffle or a
  * live network feed, so rebuilding them for page 1+ returned rows that disagreed with page 0 and
- * Android Auto reset the list, snapping the scroll back to the top. Page 0 is what a car asks for
- * when it opens a folder, so it reloads and replaces the snapshot; later pages slice that snapshot.
+ * Android Auto reset the list, snapping the scroll back to the top. A car can request page 0 again
+ * while the folder is still open; it is not a reliable signal that the user reopened the folder.
+ * Every page uses the same snapshot until an explicit library refresh or cache eviction.
  */
 internal class AutoBrowseChildrenCache<T>(
     private val maxEntries: Int = 16,
@@ -28,7 +29,6 @@ internal class AutoBrowseChildrenCache<T>(
 
     suspend fun children(
         parentId: String,
-        page: Int,
         load: suspend () -> List<T>,
     ): List<T> {
         var owner = false
@@ -36,10 +36,9 @@ internal class AutoBrowseChildrenCache<T>(
         var deferred: CompletableDeferred<List<T>>? = null
         var startedGeneration = 0L
         synchronized(lock) {
-            // An active load wins over a possibly-stale committed snapshot, so a page 1+ request
-            // that races a page 0 reload awaits the new list rather than serving the old one.
+            // Concurrent requests, including repeated page 0 requests, share one folder load.
             val active = inFlight[parentId]?.takeIf { it.isActive }
-            val committed = if (page > 0) entries[parentId] else null
+            val committed = entries[parentId]
             when {
                 active != null -> deferred = active
                 committed != null -> snapshot = committed
@@ -60,7 +59,7 @@ internal class AutoBrowseChildrenCache<T>(
         // is dropped from inFlight so the next request can retry.
         val loaded =
             try {
-                load()
+                load().toList()
             } catch (t: Throwable) {
                 synchronized(lock) {
                     if (inFlight[parentId] === pending) inFlight.remove(parentId)
