@@ -24,8 +24,8 @@ internal class QueueCheckpointGate(
     fun blocked(): Boolean {
         if (transientMutation()) return true
         val finite = queue() as? YouTubePlaylistQueue ?: return false
-        if (finiteReplacementHasUserChanges) return false
-        if (finite.hasUnacceptedFiniteReplacement()) return true
+        // User edits only override the loader's own unaccepted state, never the accepted continuation guard below.
+        if (finite.hasUnacceptedFiniteReplacement()) return !finiteReplacementHasUserChanges
         // Filtering can empty an accepted page while its next request is pending or has failed.
         // Preserve the previous checkpoint until more items arrive or the user clears the queue.
         return mediaItemCount() == 0 && (finite.hasNextPage() || finite.snapshot.continuation != null)

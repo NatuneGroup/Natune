@@ -457,6 +457,35 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
+    fun manualAdditionBeforeAcceptance_doesNotLetAFilteredEmptyPageEraseTheContinuation() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement(FinitePlaylistSnapshot(
+            continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
+        ))
+        fixture.changeTimeline(listOf("manual"))
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("manual")), fixture.written)
+
+        // The loader later accepts its first page while the earlier user edit is still remembered.
+        fixture.mutating = true
+        queue.timelineInstalled = true
+        fixture.changeTimeline(listOf("manual", "accepted-page"))
+        fixture.mutating = false
+        advanceUntilIdle()
+        assertEquals(listOf("manual", "accepted-page"), fixture.written.last())
+
+        fixture.mutating = true
+        fixture.changeTimeline(emptyList())
+        fixture.mutating = false
+        queue.fail()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertEquals(listOf("manual", "accepted-page"), fixture.written.last())
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
     fun teardownAfterInitialFailure_writesTheAcceptedManualQueue() = runTest {
         val fixture = Fixture(this)
         fixture.beginFiniteReplacement().fail()
