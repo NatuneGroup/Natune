@@ -30,7 +30,7 @@ import moe.rukamori.archivetune.shared.ui.player.*
 @OptIn(ExperimentalTestApi::class)
 class ExpandedPlayerRecoveryTest {
     @Test
-    fun removingTheFinalEntryWhileExpandedRestoresChromeAndBack() = runComposeUiTest {
+    fun replacedOrRemovedPlaybackWhileExpandedRestoresChromeAndBack() = runComposeUiTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val port = RootPlaybackPort(rootPlayback())
         val player = MusicPlayerController(port, scope)
@@ -75,6 +75,15 @@ class ExpandedPlayerRecoveryTest {
             onNodeWithTag("player-close").assertIsDisplayed()
             onNodeWithTag("shell-bottom-bar").assertDoesNotExist()
 
+            // Replacing playback may retain a queue current item briefly. The old occurrence must lose its modal.
+            runOnIdle { port.snapshots.value = rootPlayback().copy(occurrenceId = "track@1") }
+            onNodeWithTag("player-close").assertDoesNotExist()
+            onNodeWithTag("fixture-page").assertIsDisplayed()
+            onNodeWithTag("shell-bottom-bar").assertIsDisplayed()
+
+            runOnIdle { port.snapshots.value = rootPlayback() }
+            onNodeWithTag("compact-mini-player").assertIsDisplayed().performClick()
+            onNodeWithTag("player-close").assertIsDisplayed()
             runOnIdle { scope.launch { queue.remove(setOf(ROOT_OCCURRENCE)) } }
 
             onNodeWithTag("player-close").assertDoesNotExist()
