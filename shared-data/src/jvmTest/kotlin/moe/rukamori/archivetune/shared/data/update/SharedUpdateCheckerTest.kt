@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -104,6 +105,14 @@ class SharedUpdateCheckerTest {
         val client = HttpClient(MockEngine(respond))
         return SharedUpdateChecker(client, store, profile, nowMs) to client
     }
+
+    // runTest skips virtual time, so a timeout on its dispatcher would expire while the download still runs on IO.
+    private suspend fun awaitTerminal(installer: JvmUpdateInstaller): UpdateDownloadState =
+        withContext(Dispatchers.Default) {
+            withTimeout(10_000L) {
+                installer.state.first { it is UpdateDownloadState.ReadyToInstall || it is UpdateDownloadState.Failed }
+            }
+        }
 
     @Test
     fun manifestHitAnswersCheckAndCachesWithoutReleasesApi() = runTest {
@@ -275,9 +284,7 @@ class SharedUpdateCheckerTest {
                         publishNew = true
                         val installer = JvmUpdateInstaller(client, dir, 10, scope, { 1_000_000L }, checker, { "build removed" })
                         assertTrue(installer.startDownload(failedOffer))
-                        val terminal = withTimeout(10_000L) {
-                            installer.state.first { it is UpdateDownloadState.ReadyToInstall || it is UpdateDownloadState.Failed }
-                        }
+                        val terminal = awaitTerminal(installer)
                         val freshOffer = checker.cachedOffer(channel)!!
                         assertEquals(newTag, freshOffer.tag)
                         assertEquals(2, manifestRequests)
@@ -331,7 +338,7 @@ class SharedUpdateCheckerTest {
                 val failedOffer = checker.eligibleOffer(initial, UpdateChannel.STABLE)!!
                 val installer = JvmUpdateInstaller(client, dir, 10, scope, { 1_000_000L }, checker, { "build removed" })
                 assertTrue(installer.startDownload(failedOffer))
-                val terminal = withTimeout(10_000L) { installer.state.first { it is UpdateDownloadState.Failed } }
+                val terminal = awaitTerminal(installer)
                 assertIs<UpdateDownloadState.Failed>(terminal)
                 assertEquals(failedOffer, terminal.offer)
                 assertEquals(1, assetRequests)

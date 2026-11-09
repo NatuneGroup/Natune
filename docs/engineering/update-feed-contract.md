@@ -94,8 +94,12 @@ higher even if two preparations happen within the same second.
 Each Nightly build has an immutable `N<yyyyMMddHHmm>` tag. CI bumps occupied tags
 forward by one minute, with a bounded allocation loop. A rerun may replace only
 its own release (same commit and `at-build:` code); another build's release or
-tag is never replaced. Nightly pruning protects the release referenced by the
-published `nightly.json` and skips deletion when that manifest cannot be read.
+tag is never replaced. CI never deletes the release that the published
+`nightly.json` offers: a rerun of that build keeps the release and the feed
+unchanged, a rerun refuses to replace its release while that manifest cannot be
+read or parsed, and the stale-head check after publishing keeps the offered
+release. Nightly pruning protects the release referenced by the published
+`nightly.json` and skips deletion when that manifest cannot be read.
 
 ## What the client does with it
 

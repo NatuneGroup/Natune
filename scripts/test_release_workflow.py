@@ -293,7 +293,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
             with open(os.environ["GH_CALLS"], "a") as output:
                 output.write(json.dumps(args) + "\\n")
             if args[0] == "api" and "/commits/" in args[1]:
-                print(os.environ["REMOTE_SHA"])
+                created = '["release", "create"' in open(os.environ["GH_CALLS"]).read()
+                print("b" * 40 if created and os.environ.get("ADVANCE_AFTER_CREATE") else os.environ["REMOTE_SHA"])
             elif args[:2] == ["release", "create"]:
                 pass
             elif args[:2] == ["release", "view"] and "publishedAt" in args:
@@ -316,6 +317,12 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 print(json.dumps({"type": "commit", "sha": os.environ["ANNOTATED_COMMIT_SHA"]}))
             elif args[:2] == ["release", "delete"] or (args[0] == "api" and "DELETE" in args):
                 pass
+            elif args[:3] == ["release", "download", "update-feed"]:
+                if os.environ.get("FEED_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                if "FEED_MANIFEST" not in os.environ:
+                    sys.exit("release not found")
+                print(os.environ["FEED_MANIFEST"])
             else:
                 sys.exit("Unexpected GitHub command: " + repr(args))
         """)
@@ -340,6 +347,10 @@ class ReleaseWorkflowTest(unittest.TestCase):
             {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "EXISTING_TAG_SHA": "b" * 40},
             {"RELEASE_READ_ERROR": "1", "EXISTING_TAG_SHA": "a" * 40},
             {"TAG_READ_ERROR": "1", "EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001"},
+            # The same build's release cannot be checked against the published feed.
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": "not json"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": '{"tag":null}'},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_READ_ERROR": "1"},
         ):
             with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -351,20 +362,53 @@ class ReleaseWorkflowTest(unittest.TestCase):
                                      "DELETE" in args for args in calls))
 
     def test_nightly_same_build_rerun_and_its_bare_tag_can_be_replaced(self):
-        for kind in ("release", "bare", "annotated"):
+        for kind in ("release", "release-without-feed", "bare", "annotated"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 flags = {"EXISTING_TAG_SHA": "a" * 40}
                 if kind == "annotated":
                     flags.update(EXISTING_TAG_TYPE="tag", EXISTING_TAG_SHA="c" * 40, ANNOTATED_COMMIT_SHA="a" * 40)
-                if kind == "release":
+                if kind.startswith("release"):
                     flags.update(EXISTING_RELEASE_SHA="a" * 40, EXISTING_RELEASE_BODY="<!-- at-build:9001 -->")
+                if kind == "release":
+                    flags.update(FEED_MANIFEST='{"tag":"N20291231"}')
                 result, _ = self.publish_fixture(root, "nightly", flags=flags)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertTrue(any(args[:3] == ["release", "download", "update-feed"] for args in calls))
                 self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
                 self.assertEqual(1, sum(args[:2] == ["release", "delete"] or "DELETE" in args for args in calls))
                 self.assertTrue((root / "nightly.json").is_file())
+
+    def test_nightly_rerun_keeps_the_release_that_the_published_feed_offers(self):
+        # Replacing the offered release would 404 updaters until its assets were uploaded again.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, _ = self.publish_fixture(root, "nightly", flags={
+                "EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9001 -->",
+                "EXISTING_TAG_SHA": "a" * 40, "FEED_MANIFEST": '{"tag":"N20300101"}'})
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("::notice::Nightly release N20300101 is already published", result.stdout)
+            self.assertEqual("did_publish=false\n", (root / "output").read_text())
+            calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+            self.assertFalse(any(args[:2] in (["release", "delete"], ["release", "create"]) or
+                                 "DELETE" in args for args in calls))
+            self.assertFalse((root / "nightly.json").exists())
+
+    def test_branch_advancing_during_publish_removes_the_release_unless_the_feed_offers_it(self):
+        for channel, feed_tag, deletes in (("nightly", "N20300101", 0), ("nightly", "N20291231", 1),
+                                           ("stable", "v1.2.3", 1)):
+            with self.subTest(channel=channel, feed_tag=feed_tag), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, channel, flags={
+                    "ADVANCE_AFTER_CREATE": "1", "FEED_MANIFEST": json.dumps({"tag": feed_tag})})
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("did_publish=true\ndid_publish=false\n", (root / "output").read_text())
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
+                self.assertEqual(deletes, sum(args[:2] == ["release", "delete"] for args in calls))
+                self.assertEqual(deletes == 0, "::warning::" in result.stdout)
+                self.assertFalse((root / f"{channel}.json").exists())
 
     def prune_fixture(self, directory, manifest, *, unreadable=False):
         root = Path(directory)
