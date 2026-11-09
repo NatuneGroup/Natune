@@ -3,10 +3,14 @@ package moe.rukamori.archivetune.playback
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint
+import moe.rukamori.archivetune.playback.queues.EmptyQueue
+import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -250,12 +254,75 @@ class QueueCheckpointSchedulerTest {
         assertEquals(listOf(2, 3), states)
     }
 
+    @Test
+    fun temporaryFiniteClear_doesNotReplaceThePreviousCheckpoint() {
+        val queue = YouTubePlaylistQueue(WatchEndpoint(playlistId = "fixture"))
+        assertFalse(queue.hasUnacceptedFiniteReplacement())
+
+        queue.initialTimelineCleared = true
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
+
+        queue.timelineInstalled = true
+        assertFalse(queue.hasUnacceptedFiniteReplacement())
+        assertFalse(EmptyQueue.hasUnacceptedFiniteReplacement())
+    }
+
+    @Test
+    fun persistenceReenabled_requestsACheckpointForChangesMadeWhileDisabled() = runTest {
+        val enabled = MutableStateFlow(false)
+        var restoreCompleted = true
+        var checkpoints = 0
+        observeQueuePersistence(backgroundScope, enabled, { restoreCompleted }) { checkpoints++ }
+        runCurrent()
+        assertEquals(0, checkpoints)
+
+        enabled.value = true
+        runCurrent()
+        assertEquals(1, checkpoints)
+
+        enabled.value = false
+        runCurrent()
+        restoreCompleted = false
+        enabled.value = true
+        runCurrent()
+        assertEquals(1, checkpoints)
+
+        restoreCompleted = true
+        enabled.value = false
+        runCurrent()
+        enabled.value = true
+        runCurrent()
+        assertEquals(2, checkpoints)
+    }
+
+    @Test
+    fun previousServiceTeardown_cannotOverwriteANewerServiceCheckpoint() = runTest {
+        val persistence = QueuePersistenceState()
+        val previous = Fixture(this, persistence)
+        val current = Fixture(this, persistence)
+        val releasePreviousWrite = CompletableDeferred<Unit>()
+        previous.beforeWrite = { releasePreviousWrite.await() }
+        previous.scheduler.request()
+        advanceTimeBy(100L)
+        runCurrent()
+        assertEquals(1, previous.snapshots.size)
+
+        current.items = listOf("new-service")
+        assertTrue(current.commit(current.snapshot()))
+        releasePreviousWrite.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("new-service")), current.written)
+        assertTrue(previous.written.isEmpty())
+        assertFalse(previous.commit(previous.snapshots.first()))
+    }
+
     private data class Snapshot(val checkpoint: QueueCheckpointToken, val items: List<String>)
 
-    private class Fixture(scope: CoroutineScope) {
-        private val persistenceLock = Any()
-        private var generation = 0L
-        private val order = QueueCheckpointOrder { generation }
+    private class Fixture(
+        scope: CoroutineScope,
+        private val persistence: QueuePersistenceState = QueuePersistenceState(),
+    ) {
         var enabled = true
         var restoring = false
         var hydrating = false
@@ -267,7 +334,7 @@ class QueueCheckpointSchedulerTest {
         var beforeWrite: suspend (Snapshot) -> Unit = {}
         val scheduler = QueueCheckpointScheduler(
             scope = { scope },
-            generation = { generation },
+            generation = { persistence.generation.get() },
             enabled = { readEnabled() },
             blocked = { restoring || hydrating || mutating },
             snapshot = { snapshot() },
@@ -277,12 +344,12 @@ class QueueCheckpointSchedulerTest {
             },
         )
 
-        fun snapshot(): Snapshot = Snapshot(order.nextSnapshot(), items.toList()).also { snapshots += it }
+        fun snapshot(): Snapshot = Snapshot(persistence.checkpointOrder.nextSnapshot(), items.toList()).also { snapshots += it }
 
-        fun commit(snapshot: Snapshot): Boolean = synchronized(persistenceLock) {
-            order.writeIfCurrent(snapshot.checkpoint) { written += snapshot.items }
+        fun commit(snapshot: Snapshot): Boolean = synchronized(persistence.lock) {
+            persistence.checkpointOrder.writeIfCurrent(snapshot.checkpoint) { written += snapshot.items }
         }
 
-        fun invalidate() = synchronized(persistenceLock) { generation++ }
+        fun invalidate() = synchronized(persistence.lock) { persistence.generation.incrementAndGet() }
     }
 }
