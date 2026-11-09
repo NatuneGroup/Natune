@@ -61,10 +61,10 @@ internal class QueueCheckpointScheduler<Snapshot>(
     }
 }
 
-/** The loader's temporary clear is not an accepted empty queue; the previous checkpoint survives it. */
+/** Replacement preparation and its temporary clear must preserve the previous checkpoint until installation. */
 internal fun Queue.hasUnacceptedFiniteReplacement(): Boolean {
     val finite = this as? YouTubePlaylistQueue ?: return false
-    return finite.initialTimelineCleared && !finite.timelineInstalled
+    return !finite.timelineInstalled
 }
 
 internal data class QueueCheckpointToken(val saveGeneration: Long, val sequence: Long)

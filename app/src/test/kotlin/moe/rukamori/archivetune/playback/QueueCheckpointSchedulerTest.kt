@@ -262,9 +262,9 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
-    fun temporaryFiniteClear_doesNotReplaceThePreviousCheckpoint() {
+    fun finiteReplacement_isUnacceptedFromPreparationUntilTimelineInstallation() {
         val queue = YouTubePlaylistQueue(WatchEndpoint(playlistId = "fixture"))
-        assertFalse(queue.hasUnacceptedFiniteReplacement())
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
 
         queue.initialTimelineCleared = true
         assertTrue(queue.hasUnacceptedFiniteReplacement())
@@ -272,6 +272,55 @@ class QueueCheckpointSchedulerTest {
         queue.timelineInstalled = true
         assertFalse(queue.hasUnacceptedFiniteReplacement())
         assertFalse(EmptyQueue.hasUnacceptedFiniteReplacement())
+    }
+
+    @Test
+    fun slowFinitePreparation_preservesThePreviousCheckpointBeforeTheInitialClear() = runTest {
+        val fixture = Fixture(this)
+        fixture.items = listOf("seed", "old-upcoming")
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        // cancelRestoredQueueHydration requests before playQueue assigns the new identity.
+        fixture.scheduler.request()
+        val queue = fixture.beginFiniteReplacement(clearInitialTimeline = false)
+        val finishPreparation = CompletableDeferred<Unit>()
+        val load = launch {
+            finishPreparation.await()
+            queue.initialTimelineCleared = true
+            fixture.changeTimeline(emptyList())
+            queue.fail()
+        }
+        runCurrent()
+        advanceTimeBy(250L)
+        runCurrent()
+
+        assertFalse(queue.initialTimelineCleared)
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
+        assertEquals(listOf(listOf("seed", "old-upcoming")), fixture.written)
+        assertEquals(1, fixture.snapshots.size)
+        assertFalse(fixture.savePosition(100L))
+        assertNull(fixture.teardownSnapshot())
+
+        // A nonempty filtering event during preparation must not accept the old timeline either.
+        fixture.changeTimeline(listOf("seed"))
+        advanceTimeBy(250L)
+        runCurrent()
+        assertEquals(1, fixture.snapshots.size)
+        finishPreparation.complete(Unit)
+        load.join()
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("seed", "old-upcoming")), fixture.written)
+        assertNull(fixture.teardownSnapshot())
+
+        queue.accept(YouTubePlaylistQueue.Proposal(
+            FinitePlaylistSnapshot(phase = FinitePlaylistPhase.EXHAUSTED), emptyList(),
+        ))
+        queue.timelineInstalled = true
+        fixture.changeTimeline(listOf("replacement"))
+        advanceUntilIdle()
+        assertEquals(listOf("replacement"), fixture.written.last())
+        assertEquals(QueueType.YOUTUBE_PLAYLIST, fixture.snapshots.last().queueType)
     }
 
     @Test
@@ -440,6 +489,52 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
+    fun manualRemovalOfLastPreloadAfterFirstPageFailure_acceptsAnEmptyCheckpointAndTeardown() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFinitePreload()
+        advanceUntilIdle()
+        val preloadSnapshot = fixture.snapshots.single()
+        queue.fail()
+
+        fixture.removeItemsByUser(emptyList())
+        val teardown = requireNotNull(fixture.teardownSnapshot())
+        assertTrue(teardown.items.isEmpty())
+        assertEquals(QueueType.LIST, teardown.queueType)
+        advanceUntilIdle()
+
+        assertTrue(queue.timelineInstalled)
+        assertEquals(FinitePlaylistPhase.FAILED, queue.snapshot.phase)
+        assertNull(queue.snapshot.continuation)
+        assertEquals(listOf(listOf("preload"), emptyList<String>()), fixture.written)
+        assertFalse(fixture.commit(preloadSnapshot))
+        assertFalse(fixture.commit(teardown))
+
+        // A replacement must reset the explicit-removal acceptance too.
+        fixture.beginFiniteReplacement().fail()
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("preload"), emptyList<String>()), fixture.written)
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
+    fun nonemptyManualRemoval_doesNotAcceptALaterFilteredEmptyQueue() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFinitePreload()
+        fixture.changeTimeline(listOf("preload", "other"))
+        advanceUntilIdle()
+        queue.fail()
+
+        fixture.removeItemsByUser(listOf("preload"))
+        advanceUntilIdle()
+        assertEquals(listOf("preload"), fixture.written.last())
+
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+        assertEquals(listOf("preload"), fixture.written.last())
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
     fun preloadFilteredToEmpty_afterConfirmedFinalPage_allowsAnEmptyCheckpoint() = runTest {
         val fixture = Fixture(this)
         val queue = fixture.beginFinitePreload()
@@ -471,8 +566,7 @@ class QueueCheckpointSchedulerTest {
         assertEquals(listOf(listOf("preload")), fixture.written)
 
         // Explicit clear changes the queue identity, even when filtering already emptied it.
-        fixture.queue = EmptyQueue
-        fixture.changeTimeline(emptyList())
+        fixture.clearQueueIdentity()
         advanceUntilIdle()
 
         assertEquals(listOf(listOf("preload"), emptyList<String>()), fixture.written)
@@ -719,13 +813,18 @@ class QueueCheckpointSchedulerTest {
             },
         )
 
-        fun beginFiniteReplacement(snapshot: FinitePlaylistSnapshot = FinitePlaylistSnapshot()): YouTubePlaylistQueue {
+        fun beginFiniteReplacement(
+            snapshot: FinitePlaylistSnapshot = FinitePlaylistSnapshot(),
+            clearInitialTimeline: Boolean = true,
+        ): YouTubePlaylistQueue {
             val finite = YouTubePlaylistQueue(WatchEndpoint(playlistId = "fixture"), snapshot = snapshot)
+            finite.beginPlayback()
             queue = finite
             checkpointGate.reset()
-            finite.beginPlayback()
-            finite.initialTimelineCleared = true
-            changeTimeline(emptyList())
+            if (clearInitialTimeline) {
+                finite.initialTimelineCleared = true
+                changeTimeline(emptyList())
+            }
             return finite
         }
 
@@ -741,6 +840,16 @@ class QueueCheckpointSchedulerTest {
             items = next
             checkpointGate.onTimelineChanged(items.isEmpty())
             hasTimelineChanges = true
+            scheduler.request()
+        }
+
+        fun removeItemsByUser(next: List<String>) {
+            changeTimeline(next)
+            checkpointGate.onUserRemoval()
+        }
+
+        fun clearQueueIdentity() {
+            queue = EmptyQueue
             scheduler.request()
         }
 
