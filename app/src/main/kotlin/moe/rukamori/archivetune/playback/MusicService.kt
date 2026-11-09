@@ -5428,8 +5428,6 @@ class MusicService :
             }
     }
 
-
-
     private fun updateNotification() {
         try {
             mediaSession.setCustomLayout(
@@ -8585,8 +8583,6 @@ class MusicService :
 
     private fun parseTidalInstances(): List<String> = parseInstances(TidalInstancesKey)
 
-
-
     /**
      * One consistent read of every source preference the resolution paths consult: the stored
      * order and the per-source enabled set (Spotify only when its streaming account is signed
@@ -10314,7 +10310,6 @@ class MusicService :
         )
     }
 
-
     private fun parseQobuzInstances(): List<String> = parseInstances(QobuzInstancesKey)
 
     private fun parseQobuzAudioQuality(): QobuzAudioQuality =
@@ -10678,6 +10673,8 @@ class MusicService :
         storedFormat?.let { format ->
             audioNormalizationFactorCache[mediaId] = resolveAudioNormalizationFactor(mediaId, storedFormat, normalizeAudio = true)
         }
+        val knownContentLength = (contentLengthCache[mediaId] ?: storedFormat?.contentLength?.takeIf { it > 0L }
+            ?: recordedContentLength(downloadCache, mediaId) ?: recordedContentLength(playerCache, mediaId))?.also { contentLengthCache[mediaId] = it }
         // When any external source is enabled for this track, the ephemeral YouTube player cache
         // must not short-circuit playback (otherwise toggling a source on would keep replaying
         // the previously cached YouTube bytes). Persistent downloads of enabled sources still
@@ -10730,7 +10727,6 @@ class MusicService :
             ?: authenticitySampleRateByMediaId.remove(mediaId)
         refreshAudioAuthenticityContexts(mediaId)
         Timber.tag("PlaybackDiagnostics").i("Source selected provider=youtube route=terminal_fallback")
-
 
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
@@ -10966,8 +10962,6 @@ class MusicService :
             resolvedDataSpec.subrange(0L, nonNullLength)
         } ?: resolvedDataSpec
     }
-
-
 
     private fun resolveCachedDataSpec(
         dataSpec: DataSpec,
