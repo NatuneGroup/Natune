@@ -1940,7 +1940,11 @@ jobs:
           else
             if ! EXISTING_RELEASE="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
               --json targetCommitish,body 2> "$RUNNER_TEMP/nightly-release-error")"; then
-              if ! grep -qiE 'release not found|HTTP 404' "$RUNNER_TEMP/nightly-release-error"; then
+              # gh also reports "release not found" when its REST lookup failed, so only a REST 404 confirms it.
+              if ! grep -qiE 'release not found|HTTP 404' "$RUNNER_TEMP/nightly-release-error" ||
+                 gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG_NAME" \
+                   >/dev/null 2> "$RUNNER_TEMP/nightly-release-rest-error" ||
+                 ! grep -q 'HTTP 404' "$RUNNER_TEMP/nightly-release-rest-error"; then
                 echo "::error::Nightly release $TAG_NAME could not be verified; refusing to replace it."
                 exit 1
               fi
@@ -1975,14 +1979,27 @@ jobs:
               fi
             fi
             # Updaters download from the release the published nightly.json names, so deleting that release
-            # would 404 them until its assets are uploaded again.
+            # would 404 them until its assets are uploaded again. gh release download also reports "release
+            # not found" when its REST lookup failed, so only a REST 404 for update-feed or an asset list
+            # without nightly.json shows that no manifest is published.
             FEED_ERROR=""
-            if FEED_MANIFEST="$(gh release download update-feed --repo "$GITHUB_REPOSITORY" \
-              --pattern nightly.json --output - 2> "$RUNNER_TEMP/nightly-feed-error")"; then
-              FEED_TAG="$(jq -er '.tag | strings' <<< "$FEED_MANIFEST" 2>/dev/null)" ||
-                FEED_ERROR="Nightly feed nightly.json could not be parsed"
-            elif ! grep -qiE 'release not found|no assets' "$RUNNER_TEMP/nightly-feed-error"; then
-              FEED_ERROR="Nightly feed nightly.json could not be read"
+            if FEED_RELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/update-feed" \
+              2> "$RUNNER_TEMP/nightly-feed-error")"; then
+              if ! FEED_INVENTORY="$(jq -er '.assets | arrays |
+                  if any(.[]; .name == "nightly.json") then "present" else "absent" end' \
+                  <<< "$FEED_RELEASE" 2>/dev/null)"; then
+                FEED_ERROR="Nightly feed release update-feed could not be parsed"
+              elif [[ "$FEED_INVENTORY" == present ]]; then
+                if FEED_MANIFEST="$(gh release download update-feed --repo "$GITHUB_REPOSITORY" \
+                  --pattern nightly.json --output - 2> "$RUNNER_TEMP/nightly-feed-error")"; then
+                  FEED_TAG="$(jq -er '.tag | strings' <<< "$FEED_MANIFEST" 2>/dev/null)" ||
+                    FEED_ERROR="Nightly feed nightly.json could not be parsed"
+                else
+                  FEED_ERROR="Nightly feed nightly.json could not be read"
+                fi
+              fi
+            elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/nightly-feed-error"; then
+              FEED_ERROR="Nightly feed release update-feed could not be read"
             fi
             # Only a rerun with the same commit and build code may replace its own release.
             if [[ -n "$EXISTING_RELEASE" ]]; then
