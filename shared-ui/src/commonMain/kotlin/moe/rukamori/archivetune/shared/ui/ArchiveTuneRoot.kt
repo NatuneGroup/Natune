@@ -215,6 +215,11 @@ private fun ArchiveTuneLoadedRoot(
         val queue by host.queue.state.collectAsState()
         val playback by host.queue.player.snapshot.collectAsState()
         val current = queue.entries.firstOrNull { it.occurrenceId == (playback?.occurrenceId ?: queue.currentOccurrenceId) }
+        // A queue's current item can outlive a replaced playback occurrence. If either identity disappears, remove
+        // the expanded destination instead of leaving the old player swallowing Back without its close control.
+        LaunchedEffect(expanded, current == null, playback?.occurrenceId) {
+            if (expanded && (current == null || playback?.occurrenceId != current.occurrenceId)) expanded = false
+        }
         LaunchedEffect(host, navigation) {
             host.routes.collect { route ->
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()

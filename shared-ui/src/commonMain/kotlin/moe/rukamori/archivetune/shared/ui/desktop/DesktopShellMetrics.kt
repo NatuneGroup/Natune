@@ -46,7 +46,9 @@ object DesktopShellMetrics {
      * window buttons inline ([LocalDesktopWindowControls]) and the reference app's top bar is a single 56 dp row.
      */
     val titleBarHeight = 56.dp
-    val titleBarPadding = 8.dp
+    // Four dp per side leaves exactly enough trailing-column room for Settings, Account and the
+    // three caption buttons at the app's 1080 dp default width.
+    val titleBarPadding = 4.dp
     val titleBarSearchGap = 4.dp
     val searchFieldHeight = 36.dp
     /** Below this window width the search field takes its narrow size instead of the wide one. */
