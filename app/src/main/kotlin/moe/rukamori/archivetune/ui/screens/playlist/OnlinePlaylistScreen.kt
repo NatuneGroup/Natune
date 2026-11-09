@@ -104,8 +104,6 @@ import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.extensions.togglePlayPause
-import moe.rukamori.archivetune.innertube.models.SongItem
-import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.ui.component.DraggableScrollbar
@@ -160,6 +158,7 @@ fun OnlinePlaylistScreen(
 
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val songs by viewModel.playlistSongs.collectAsStateWithLifecycle()
+    val showingOfflineCopy by viewModel.showingOfflineCopy.collectAsStateWithLifecycle()
     val viewCounts by viewModel.viewCounts.collectAsStateWithLifecycle()
     val dbPlaylist by viewModel.dbPlaylist.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -489,7 +488,9 @@ fun OnlinePlaylistScreen(
                                 canvasIsPlaying = true,
                                 canvasVisible = !lyricsFullScreen,
                                 onShuffle =
-                                    playlist.shuffleEndpoint?.let { shuffleEndpoint ->
+                                    offlineCopyAction(showingOfflineCopy) {
+                                        playerConnection.playQueue(songs.offlineCopyQueue(playlist.title, shuffle = true))
+                                    } ?: playlist.shuffleEndpoint?.let { shuffleEndpoint ->
                                         {
                                             if (isFiniteYouTubePlaylist(playlist.id)) {
                                                 playerConnection.service.wholeYouTubePlaylist(playlist.id, shuffle = true)
@@ -499,7 +500,9 @@ fun OnlinePlaylistScreen(
                                         }
                                     },
                                 onPlay =
-                                    playlist.playEndpoint?.let { playEndpoint ->
+                                    offlineCopyAction(showingOfflineCopy) {
+                                        playerConnection.playQueue(songs.offlineCopyQueue(playlist.title))
+                                    } ?: playlist.playEndpoint?.let { playEndpoint ->
                                         {
                                             playerConnection.playQueue(
                                                 YouTubeQueue.playlist(
@@ -673,6 +676,10 @@ fun OnlinePlaylistScreen(
                                                     song.item.second.setVideoId == mediaMetadata?.setVideoId
                                                 ) {
                                                     playerConnection.player.togglePlayPause()
+                                                } else if (showingOfflineCopy) {
+                                                    playerConnection.playQueue(
+                                                        songs.offlineCopyQueue(playlist.title, startIndex = song.item.first),
+                                                    )
                                                 } else {
                                                     playerConnection.playQueue(
                                                         YouTubeQueue.playlist(
@@ -837,6 +844,7 @@ fun OnlinePlaylistScreen(
                                 selectAction = { selection = true },
                                 canSelect = true,
                                 snackbarHostState = snackbarHostState,
+                                offlineCopy = showingOfflineCopy,
                             )
                         }
                     }) {
@@ -1024,6 +1032,7 @@ fun OnlinePlaylistScreen(
                                             selectAction = { selection = true },
                                             canSelect = true,
                                             snackbarHostState = snackbarHostState,
+                                            offlineCopy = showingOfflineCopy,
                                         )
                                     }
                                 },
@@ -1050,20 +1059,4 @@ fun OnlinePlaylistScreen(
                     ).align(Alignment.BottomCenter),
         )
     }
-}
-
-private fun SongItem.toPlaylistPlaybackEndpoint(
-    playlistId: String,
-    playlistPlayParams: String?,
-): WatchEndpoint {
-    val baseEndpoint = endpoint ?: WatchEndpoint(videoId = id)
-    return baseEndpoint.copy(
-        videoId = baseEndpoint.videoId ?: id,
-        playlistId = playlistId,
-        index = baseEndpoint.index.takeIf {
-            baseEndpoint.playlistId?.removePrefix("VL") == playlistId.removePrefix("VL")
-        },
-        playlistSetVideoId = baseEndpoint.playlistSetVideoId ?: setVideoId,
-        params = baseEndpoint.params ?: playlistPlayParams,
-    )
 }

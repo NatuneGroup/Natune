@@ -5,11 +5,15 @@ import moe.rukamori.archivetune.db.playlistBrowseIdForms
 import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.pages.PlaylistPage
+import moe.rukamori.archivetune.ui.screens.playlist.offlineCopyAction
+import moe.rukamori.archivetune.ui.screens.playlist.offlineCopyQueueOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 class OnlinePlaylistOfflineCopyTest {
     @Test
@@ -77,6 +81,30 @@ class OnlinePlaylistOfflineCopyTest {
         assertFalse(page(songs = emptyList(), count = null).isConfirmedEmpty())
         assertFalse(page(songs = emptyList(), count = "0 songs", continuation = "next").isConfirmedEmpty())
         assertFalse(page(songs = listOf(song()), count = "0 songs").isConfirmedEmpty())
+    }
+
+    @Test
+    fun aRowTapStartsTheSavedCopyAtTheTappedSong() {
+        val order = offlineCopyQueueOrder(listOf("a", "b", "c"), startIndex = 2)
+        assertEquals(listOf("a", "b", "c"), order.items)
+        assertEquals(2, order.startIndex)
+        assertEquals(1, offlineCopyQueueOrder(listOf("a", "b"), startIndex = 9).startIndex)
+        assertEquals(0, offlineCopyQueueOrder(emptyList<String>(), startIndex = 3).startIndex)
+    }
+
+    @Test
+    fun shufflingTheSavedCopyKeepsEverySongAndStartsAtTheTop() {
+        val songs = (1..40).map { "song$it" }
+        val order = offlineCopyQueueOrder(songs, startIndex = 7, shuffle = true, random = Random(1))
+        assertEquals(songs.sorted(), order.items.sorted())
+        assertEquals(0, order.startIndex)
+    }
+
+    @Test
+    fun onlyTheSavedCopyReplacesTheYouTubeQueueActions() {
+        val action = {}
+        assertSame(action, offlineCopyAction(showingOfflineCopy = true, action = action))
+        assertNull(offlineCopyAction(showingOfflineCopy = false, action = action))
     }
 
     private fun song() = SongItem(id = "v1", title = "Track", artists = emptyList(), thumbnail = "")
