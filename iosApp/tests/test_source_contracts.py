@@ -43,6 +43,31 @@ class IosSourceContractsTest(unittest.TestCase):
         session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
         self.assertIn("host.close()", session)
 
+    def test_launcher_previews_stay_in_ios_packaging_with_attribution(self):
+        catalog = (UI_ROOT / "settings/SharedLauncherIconCatalog.kt").read_text()
+        previews = set(re.findall(r"Res\.drawable\.(phone_launcher_[a-z0-9]+)", catalog))
+        self.assertEqual(21, len(previews))
+        ios_resources = ROOT / "shared-ui/src/iosMain/composeResources"
+        for name in previews:
+            self.assertTrue((ios_resources / "drawable" / (name + ".png")).is_file(), name)
+        self.assertTrue((ios_resources / "values/phone_launcher_catalog_strings.xml").is_file())
+        common_resources = ROOT / "shared-ui/src/commonMain/composeResources"
+        self.assertFalse(list((common_resources / "drawable").glob("phone_launcher_*.png")))
+        self.assertFalse((common_resources / "values/phone_launcher_catalog_strings.xml").exists())
+        self.assertTrue((common_resources / "files/notices/IconPack-CC-BY-SA-4.0.txt").is_file())
+        self.assertFalse((UI_COMMON / "settings/SharedLauncherIconCatalog.kt").exists())
+        self.assertFalse((UI_COMMON / "settings/LauncherIconSettings.kt").exists())
+        self.assertFalse((UI_COMMON / "settings/LauncherIconScreen.kt").exists())
+        renderer = (UI_ROOT / "settings/LauncherIconScreen.kt").read_text()
+        self.assertIn("state: LauncherIconScreenState", renderer)
+        self.assertIn("painterResource(icon.previewDrawableResId)", renderer)
+        self.assertIn("onOpenAuthorProfile: (String) -> Unit", renderer)
+        self.assertIn("fun IosIconEditor(onFailure: () -> Unit)", (UI_IOS / "IosAppearanceEditors.kt").read_text())
+        generator = (ROOT / "scripts/sync_launcher_icon_resources.py").read_text()
+        self.assertIn("shared-ui/src/iosMain/composeResources", generator)
+        self.assertIn("shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings", generator)
+        self.assertIn("COMMON_RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt'", generator)
+
     def test_release_selects_the_native_producers_exact_xcode(self):
         script = (ROOT / "scripts/build_ios_native_core.sh").read_text()
         expected = re.search(r'XCODE_EXPECTED="\$\{ARCHIVETUNE_XCODE_VERSION:-([\d.]+)\}"', script)
