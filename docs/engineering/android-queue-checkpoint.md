@@ -2,7 +2,8 @@
 
 PR [#99](https://github.com/NatuneGroup/Natune/pull/99) separates the requested
 `MusicService.currentQueue` from the identity used to serialize the playing queue.
-The object-stream persistence format and YouTube resolution order are unchanged.
+The object-stream persistence format is unchanged. YouTube still resolves through
+`YTPlayerUtils` → InnerTubeX → NewPipe → Echo.
 
 ## Installation and acceptance
 
@@ -37,9 +38,15 @@ transient guards and explicitly bind the restored identity.
 
 ## External installation routes
 
-All external replacements use `MusicService.installExternalTimeline`, which
-cancels obsolete playlist/hydration work, invalidates initial-load generations,
-and runs the shared gate transaction. The new identity is accepted after the
+All external installations use `MusicService.installExternalTimeline` and the
+small `installServiceQueueTimeline` helper. Its pure `externalTimelineReplacesQueue`
+decision requires both the installed identity and proof of the same occurrence
+objects to recognize a replay. Replays preserve hydration/backfill jobs, finite
+requests, retry/UI state, generations, pending replacement state and currentQueue;
+their scoped mutation skips identity acceptance. A pending replacement can still
+finish after a tap on the retained queue. A new occurrence list or source refresh
+without that proof cancels obsolete work and invalidates initial-load generations.
+The new identity is accepted after the
 mutation succeeds; a thrown mutation retains the previous identity and requests
 a checkpoint. Installers targeting a replaced player are ignored before queue
 ownership changes; stale session edits cannot accept the active player's emptiness.
@@ -47,7 +54,7 @@ ownership changes; stale session edits cannot accept the active player's emptine
 | Entry point | Route |
 | --- | --- |
 | Android Auto `onSetMediaItems`, voice and browse results | `sessionFacingPlayer` wraps the actual player in `SessionTimelinePlayer`; all six `setMediaItem(s)` overloads run the shared installer after resolution |
-| Auto existing-queue tap and add-current-to-playlist replay | The same occurrence objects preserve the installed identity and title |
+| Auto existing-queue tap and add-current-to-playlist replay | The same occurrence objects preserve the installed identity/title, current request, hydration, finite load and retry state |
 | MediaSession add/remove/replace/move and clear | Adds/removes/reorders use explicit edit acceptance; clear uses the shared external installer |
 | Listen Together `SYNC_QUEUE`, preserving current song/position | Both direct setters use the shared installer |
 | Listen Together state with no current track | Queue setter and explicit clear use the shared installer |
@@ -63,6 +70,98 @@ Hydration's prefix/suffix additions and prepared secondary/crossfade timeline
 copies preserve the same logical queue. User insertion and removal/undo retain
 their explicit acceptance/timeline callbacks. Automatic filtering remains
 separate and never invokes external installation or user-removal acceptance.
+
+## Round 6 regressions
+
+The service decision, rather than only the session wrapper, now owns the replay
+exception. `ExternalQueueTimelineInstallationTest` drives the actual installation
+helper with a two-second startup backfill and a suspended first-page request. A
+same-occurrence seek leaves those jobs live and the checkpoint includes their
+later items. Equal media IDs on new MediaItems still replace the queue.
+
+Every runtime source reset goes through `QueueCheckpointGate.onSourceDetached`.
+The service's `detachQueueSource` clears the source/title and obsolete initial-load
+guard, then requests a checkpoint. Automatic filtering of a non-finite source,
+disabling its automatic loading, clear-with-undo and stop/clear all use it. The
+gate routes external empty/list acceptance, user clear and empty removal through
+the same method. Generic preparation assigns a requested queue, rather than
+resetting an installed source; its identity still advances only on installation.
+
+Detachment keeps an unresolved finite checkpoint while automatic filtering leaves
+the timeline empty. The finite filtering path also keeps its actual source and
+continuation loader. If an obsolete non-finite request drops a previous finite
+source, the gate remembers that the source was detached: an unrelated manual
+addition then becomes an ordinary list. Explicit empty acceptance and confirmed
+exhaustion can detach immediately. A restored list cannot inherit the old album
+identity or continuation; `QueueSourceDetachmentTest` checks actual serialization
+and `toContinuationQueue`, as well as checkpoint/position/teardown eligibility.
+
+`queueLoadingAllowed` suppresses finite starts during hydration, finite insertion,
+playback suppression and the gate's synchronous timeline mutation. Both timeline
+and media-item transition callbacks use `evaluateAcceptedQueueLoading`; they
+cannot start an old finite loader or trigger automatic loading inside that scope.
+`installServiceQueueTimeline` evaluates again after successful identity acceptance
+and scope exit. The accepted queue decides whether more finite items are needed;
+finite membership still ignores the recommendations toggle and repeat policy.
+
+Finite and whole-action loaders publish UI state with their ownership ticket.
+On every stale exit, the last publisher alone may clear its loading/dialog state
+and retry action. An older coroutine cannot clear a newer loader's state or job.
+Dismissal changes dialog visibility while preserving its publisher. Existing
+infinite-queue generation cleanup is unchanged. Queue loading/traversal/shuffle
+helpers live in small files; the moved shuffle and recommendation policies retain
+their previous behavior and allow MusicService to shrink.
+
+## Preserved protections and regression coverage
+
+These are the earlier checkpoint protections, with the tests that retain them.
+Kotlin tests below are source fixtures awaiting the orchestrator's compilation and
+execution; the Python contracts validate wiring only.
+
+| Protection | Covering test |
+| --- | --- |
+| Retained nonempty items, position and teardown keep the installed identity while radio or finite replacement prepares | `QueueCheckpointIdentityTest.pendingReplacement_writesCurrentItemsPositionAndTeardownWithThePreviousIdentity` |
+| A pending finite replacement cannot borrow its own title or occurrence map for the retained queue | `QueueCheckpointIdentityTest.pendingFiniteReplacement_usesThePreviousOccurrenceMappingAndTitle` |
+| Radio preload metadata alone cannot accept its identity | `QueueCheckpointReplacementTest.radioPreloadPresence_doesNotAcceptTheReplacementUntilItIsInstalled` |
+| Failed/empty uninstalled radio keeps the previous checkpoint, including later external installation | `QueueCheckpointIdentityTest.failedOrEmptyRadioThenExternalInstallation_acceptsTheExternalIdentityAndKeepsSaving` |
+| Slow finite preparation and the loader's temporary empty clear cannot erase the last checkpoint | `QueueCheckpointSchedulerTest.slowFinitePreparation_preservesThePreviousCheckpointBeforeTheInitialClear` |
+| Initial failure without installation keeps the previous timeline and teardown checkpoint | `QueueCheckpointSchedulerTest.untouchedInitialFailure_preservesThePreviousCheckpointIncludingAtTeardown` |
+| Cancellation during suspended preload filtering leaves before-clear edits under the retained identity | `QueueCheckpointIdentityTest.cancellationDuringSuspendedPreloadPreparation_keepsAddRemoveAndEmptyRemovalSaveable` |
+| Manual additions after the owned clear can accept a finite identity without resetting retry state | `QueueCheckpointSchedulerTest.manualAdditionAfterInitialFailure_checkpointsWithoutChangingLoaderRetryState`; `manualAdditionDuringInitialRequest_remainsAcceptedAfterTheRequestFails` |
+| An accepted manual finite timeline survives failure and is saved at teardown | `QueueCheckpointSchedulerTest.teardownAfterInitialFailure_writesTheAcceptedManualQueue` |
+| Filtered preloads, pending/failed first pages and pending/failed continuations cannot accept unresolved emptiness | `QueueCheckpointSchedulerTest.preloadFilteredToEmpty_whileFirstPagePending_preservesThePlaylistCheckpoint`; `preloadFilteredToEmpty_afterFirstPageFailure_preservesThePlaylistCheckpoint`; `emptyFilteredFinitePage_preservesThePreviousCheckpointThroughNextPageFailure` |
+| Automatic removal of a finite manual addition still preserves the unresolved saved checkpoint | `QueueCheckpointReplacementTest.automaticFilteringAfterFailedFirstPageAndManualAdd_preservesThePlaylistCheckpoint` |
+| Empty acceptance never leaks from a manual removal through later loader insertion and filtering | `QueueCheckpointIdentityTest.loaderInsertionAfterAcceptedEmptyRemoval_doesNotAcceptLaterFilteringToEmpty` |
+| A nonempty manual removal cannot accept a later automatically filtered empty queue | `QueueCheckpointSchedulerTest.nonemptyManualRemoval_doesNotAcceptALaterFilteredEmptyQueue` |
+| Explicit last-item removal, clear and confirmed exhaustion can save emptiness | `QueueCheckpointSchedulerTest.manualRemovalOfLastPreloadAfterFirstPageFailure_acceptsAnEmptyCheckpointAndTeardown`; `preloadFilteredToEmpty_explicitClear_allowsAnEmptyCheckpoint`; `preloadFilteredToEmpty_afterConfirmedFinalPage_allowsAnEmptyCheckpoint` |
+| A new finite replacement resets prior manual-queue acceptance | `QueueCheckpointSchedulerTest.newFiniteReplacement_resetsAcceptanceOfThePreviousManualQueue` |
+| An exhausted but uninstalled replacement cannot override the previous unresolved finite source's phase | `QueueCheckpointIdentityTest.filteringThePreviousUnresolvedFiniteQueue_cannotUseAnUninstalledExhaustedReplacementsPhase` |
+| Filtering every loaded finite item preserves the continuation; later accepted loading still checkpoints | `QueueCheckpointSchedulerTest.filteringAllLoadedFiniteItems_doesNotEraseTheContinuation`; `manualAdditionBeforeAcceptance_doesNotLetAFilteredEmptyPageEraseTheContinuation` |
+| Nonempty retained queues allow position writes even before replacement acceptance | `QueueCheckpointSchedulerTest.retainedTimelineDuringFailedReplacement_savesPositionWithThePreviousIdentity` |
+| Every MediaSession setter accepts only after the actual resolved timeline mutation | `SessionTimelinePlayerTest.everySessionSetter_acceptsTheExternalIdentityAfterItsActualMutation`; Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` |
+| Session replay keeps the previous identity/title; session edits and clear retain explicit acceptance | `SessionTimelinePlayerTest.queueTapReplayingTheSameOccurrences_keepsThePreviousQueueIdentityAndTitle`; `sessionAddAndRemoveAfterCancelledPreparation_keepsTheRetainedIdentityAndAcceptsEmptyRemoval`; `sessionClear_acceptsAnEmptyTimelineEvenWithAnUnresolvedFiniteReplacement` |
+| Stale player setters and edits cannot accept the active player's unresolved emptiness | `SessionTimelinePlayerTest.staleSessionAfterPlayerReplacement_cannotAcceptAnUnresolvedEmptyTimeline` |
+| Listen Together's six direct setters and clear all use the shared active-player installer | Python `test_all_listen_together_direct_setters_and_clears_use_the_shared_installer` |
+| Thrown external mutations retain identity, unwind the scope and request a save | `QueueCheckpointIdentityTest.thrownExternalMutation_retainsIdentityAndReleasesItsTransientGuard` |
+| Superseded loader installation cannot accept a newer pending identity | `QueueCheckpointReplacementTest.supersededInstallation_doesNotAcceptTheNewerReplacement` |
+| Recommendation identity attaches only after nonempty insertion, and scoped installation suppresses nested recommendation work | Python `test_radio_acceptance_follows_insertion_and_blocks_nested_recommendation_work`; `AndroidInfiniteQueueRecommendationTest.anEmptyPlanKeepsThePreviousIdentityAndBacksOffWithoutRefilling`; `aContinuationForAnUninstalledSource_acceptsIdentityOnlyAfterAppendingItsItems` |
+| Restore and chunked hydration defer snapshots and bind the restored identity | `QueueCheckpointSchedulerTest.restoreAndHydration_deferRequestsAndCheckpointThePostRestoreState`; `QueueCheckpointReplacementTest.startupRadioHydration_doesNotRequireAReplacementInstallation` |
+| Finite mutation callbacks cannot snapshot a partially accepted page | `QueueCheckpointSchedulerTest.finiteMutation_defersSnapshottingUntilTheAcceptedStateIsComplete` |
+| Debouncing/coalescing still writes the final queue, including changes while preference reads or writes suspend | `QueueCheckpointSchedulerTest.burstRequests_snapshotOnceAndWriteTheFinalQueue`; `requestsDuringPreferenceRead_coalesceBeforeMappingTheQueue`; `requestsDuringWrite_checkpointTheFinalQueueAfterTheInFlightWrite` |
+| Disabled persistence never writes; reenabling saves accepted changes after restoration | `QueueCheckpointSchedulerTest.disabledSetting_neverSnapshotsOrWritesIncludingWhenDisabledDuringDebounce`; `persistenceReenabled_requestsACheckpointForChangesMadeWhileDisabled` |
+| Queue generations/checkpoint ordering reject stale writes without losing a newer resume state | `QueueCheckpointSchedulerTest.generationBump_discardsAnInFlightOlderSave`; `generationBump_discardsADebouncedRequestUntilANewRequestArrives`; `newerTeardownSnapshot_rejectsAnOlderCheckpointThatArrivesLater`; `newerResumeState_doesNotDropAPendingQueueOrAllowOlderStateToOverwriteIt` |
+| Previous-service teardown cannot overwrite newer user/service checkpoints; restoration waits before reading and advancing generation | `QueueCheckpointSchedulerTest.previousServiceTeardown_cannotOverwriteANewerServiceCheckpoint`; `replacementService_waitsForPendingTeardownBeforeReadingAndAdvancingGeneration`; `pendingTeardown_doesNotOverwriteANewerUserCheckpointWhileRestorationWaits` |
+| Finite occurrence/manual/shuffle/position data and legacy object-stream readers remain compatible | `YouTubeFinitePlaylistRestoreTest.snapshotsAfterPageOneAndTwoResumeTo135WithoutLosingManualPositionOrShuffleOrder`; `priorRecordShapeDecodesThroughPlaybackCodecWithCompatibleDefaults`; `existingNonfiniteRecordShapesDecodeAndRadioRetainsItsQueueKind` |
+| YouTube keeps the shipped primary → InnerTubeX → NewPipe → Echo order and terminal login/cancellation behavior | `YouTubeFailsafeChainContractTest.innerTubeXSuccessSkipsNewPipeEchoAndExternalPlugin`; `networkFailureFallsThroughToNewPipeWithoutEcho`; `echoIsLastAfterNetworkAndUnavailableFailures`; `invalidLoginContextIsTerminalWithOriginalErrorAndZeroFallbackCalls`; `primaryCancellationIsTerminalBeforeAnyFallback` |
+
+Round 6 adds `ExternalQueueTimelineInstallationTest` (backfill, first-page/retry
+retention, new-occurrence replacement and proof requirements),
+`QueueSourceDetachmentTest` (album continuation, retained nonempty source reset,
+every unresolved phase, retained finite membership and explicit/confirmed empty
+detachment) and `QueueLoadingPolicyTest` (synchronous Auto/Listen Together callbacks,
+accepted-queue evaluation, all stale ownership exits, newer publishers, whole
+actions and loading guards). Python contracts also cover the service cancellation
+decision, all reset hooks, post-mutation loading and publisher cleanup.
 
 ## Regression expectations updated
 
@@ -81,8 +180,11 @@ or the fixture needed to express the real installation/clear hook:
 | `pendingRadioReplacement_clearIdentitySavesEvenWithoutATimelineEvent` | Both the pending retained timeline and the explicit identity clear can request checkpoints |
 | `startupRadioHydration_doesNotRequireAReplacementInstallation` | The fixture explicitly binds the restored identity at hydration completion, matching the service; no replacement request is required |
 | `supersededInstallation_doesNotAcceptTheNewerReplacement` | A stale install hook cannot advance identity; the retained timeline remains saveable until the newer timeline installs |
-| `anEmptyPlanPreservesTheRadioSourceAndBacksOffWithoutRefilling` (renamed) | A rejected recommendation plan backs off and retains the previous source identity because no radio items installed |
+| `anEmptyPlanKeepsThePreviousIdentityAndBacksOffWithoutRefilling` (renamed) | A rejected recommendation plan backs off and retains the previous source identity because no radio items installed |
 | `aTrulyExhaustedPageAppendsNothingAndDoesNotKeepAStalePage` | An empty recommendation page cannot attach a new radio identity; the existing retry/backoff behavior remains |
+| `queueTapReplayingTheSameOccurrences_keepsThePreviousQueueIdentityAndTitle` | Its service fixture now uses `installServiceQueueTimeline`; a replay keeps the pending requested source while preserving the previous installed identity/title. Replacing currentQueue with the previous identity would invalidate the unfinished loader |
+| Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` | The adapter now passes explicit occurrence proof to the installer; the source contract checks that routing |
+| Python `test_automatic_filtering_stays_separate_from_explicit_empty_acceptance` | Empty user removal calls the shared detachment method; assertions now follow that method rather than require duplicated field writes in the removal hook |
 
 New Kotlin fixtures cover pending identity/title/occurrences, failed and empty
 radio followed by external installation, suspended-preload cancellation followed
@@ -96,4 +198,7 @@ The runnable Python source contracts verify installer wiring, scoped acceptance,
 loader cleanup and the separation of filtering from explicit removal. The allowed
 repository/Python checks are structural feedback. Kotlin tests and Android
 compilation/runtime behavior require the orchestrator's separate validation;
-no Gradle, JVM, Kotlin build, lint or Kotlin tests run locally.
+no Gradle, JVM, Kotlin build, lint or Kotlin tests run locally. The round-6 base is
+`12ce05f3e2258b9778123512c255ad6fe3afc8c1`. Allowed validation consists of
+`python3 scripts/check_repository.py --worktree`,
+`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'` and Git diff checks.

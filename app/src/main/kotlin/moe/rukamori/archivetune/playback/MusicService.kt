@@ -670,6 +670,8 @@ class MusicService :
     private val mutablePlaylistLoadState = MutableStateFlow(PlaylistLoadState())
     val playlistLoadState = mutablePlaylistLoadState.asStateFlow()
     private var finitePlaylistState = PlaylistLoadState()
+    private val finitePlaylistPublisher = PlaylistLoadStatePublisher()
+    private val wholePlaylistPublisher = PlaylistLoadStatePublisher()
     private var wholePlaylistState = PlaylistLoadState()
     private var retryFinitePlaylistLoad: (() -> Unit)? = null
     private var retryWholePlaylistLoad: (() -> Unit)? = null
@@ -931,7 +933,7 @@ class MusicService :
      */
     private fun sessionFacingPlayer(): Player = NowPlayingMetadataPlayer(
         OutputFadingPlayer(queueSessionTimelinePlayer(player, queueCheckpointGate,
-            { target, queue, title, install -> installExternalTimeline(queue, title, target = target, install = install) }, ::saveQueueToDisk, { player }), outputFades),
+            { target, queue, title, replay, install -> installExternalTimeline(queue, title, target = target, retainsInstalledOccurrences = replay, install = install) }, ::saveQueueToDisk, { player }), outputFades),
         queueMetadataUpdates::sessionMetadata,
     )
     private var secondaryCrossfadePlayer: ExoPlayer? = null
@@ -2048,7 +2050,7 @@ class MusicService :
                         finite.snapshot.phase == FinitePlaylistPhase.INITIALIZING
                     ) {
                         startFinitePlaylistLoad(finite, initial = false, playWhenReady = false, recovering = true)
-                    } else if (finite.hasNextPage() && finiteQueueNeedsMoreItems()) {
+                    } else if (finite.hasNextPage() && player.finiteQueueNeedsMoreItems()) {
                         startFinitePlaylistLoad(finite, initial = false, playWhenReady = false)
                     }
                 }
@@ -2621,10 +2623,8 @@ class MusicService :
             }
             invalidatePlaylistWork()
             initialQueueLoadGeneration++
-            initialQueueLoadInProgress = false
             cancelInfiniteQueueBootstrap()
-            currentQueue = EmptyQueue
-            queueTitle = null
+            detachQueueSource()
         }
     }
 
@@ -5575,12 +5575,14 @@ class MusicService :
             if (wholePlaylistState.loading || wholePlaylistState.incomplete) wholePlaylistState else finitePlaylistState
     }
 
-    private fun setFinitePlaylistState(state: PlaylistLoadState) {
+    private fun setFinitePlaylistState(state: PlaylistLoadState, publisher: Any? = null) {
+        finitePlaylistPublisher.publish(publisher)
         finitePlaylistState = state
         publishPlaylistLoadState()
     }
 
-    private fun setWholePlaylistState(state: PlaylistLoadState) {
+    private fun setWholePlaylistState(state: PlaylistLoadState, publisher: Any? = null) {
+        wholePlaylistPublisher.publish(publisher)
         wholePlaylistState = state
         publishPlaylistLoadState()
     }
@@ -5609,8 +5611,8 @@ class MusicService :
     }
 
     fun dismissPlaylistLoadError() {
-        if (playlistLoadState.value.wholeAction) setWholePlaylistState(wholePlaylistState.copy(showDialog = false))
-        else setFinitePlaylistState(finitePlaylistState.copy(showDialog = false))
+        if (playlistLoadState.value.wholeAction) setWholePlaylistState(wholePlaylistState.copy(showDialog = false), wholePlaylistPublisher.owner)
+        else setFinitePlaylistState(finitePlaylistState.copy(showDialog = false), finitePlaylistPublisher.owner)
     }
 
     fun reloadFinitePlaylist() {
@@ -5625,7 +5627,7 @@ class MusicService :
         val queueGeneration = initialQueueLoadGeneration
         val ownership = PlaylistActionTicket(operation, queueGeneration)
         retryWholePlaylistLoad = { wholeYouTubePlaylist(playlistId, shuffle, playNext) }
-        setWholePlaylistState(PlaylistLoadState(loading = true, wholeAction = true, showDialog = true))
+        setWholePlaylistState(PlaylistLoadState(loading = true, wholeAction = true, showDialog = true), ownership)
         playlistActionJob = scope.launch {
             try {
                 withCompleteYouTubePlaylist(playlistId,
@@ -5665,38 +5667,35 @@ class MusicService :
                 }
             } catch (error: CancellationException) {
                 if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
-                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true))
+                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true), ownership)
                 }
                 throw error
             } catch (_: Exception) {
                 if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
-                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true, showDialog = true))
+                    setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true, showDialog = true), ownership)
                 }
             } finally {
                 if (operation == playlistActionGeneration) playlistActionJob = null
+                if (!ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration) && wholePlaylistPublisher.release(ownership)) {
+                    retryWholePlaylistLoad = null
+                    setWholePlaylistState(PlaylistLoadState())
+                }
             }
         }
     }
 
-    private fun finiteQueueNeedsMoreItems(): Boolean {
-        if (player.mediaItemCount == 0 || player.currentTimeline.isEmpty) return true
-        val timeline = player.currentTimeline
-        var index = player.currentMediaItemIndex
-        repeat(5) {
-            index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, player.shuffleModeEnabled)
-            if (index == C.INDEX_UNSET) return true
-        }
-        return false
-    }
+    private fun queueLoadingAllowed(): Boolean = mayStartQueueLoading(
+        suppressAutoPlayback, isHydratingRestoredQueue, finiteMutationInProgress, queueCheckpointGate.timelineMutationInProgress,
+    )
 
-    private fun currentShuffleIndices(): List<Int> = buildList {
-        val timeline = player.currentTimeline
-        var index = timeline.getFirstWindowIndex(true)
-        while (index != C.INDEX_UNSET && size < player.mediaItemCount) {
-            add(index)
-            index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, true)
-        }
-    }
+    private fun evaluateQueueLoading(allowRecommendations: Boolean = true) = evaluateAcceptedQueueLoading(
+        queue = currentQueue,
+        allowed = queueLoadingAllowed() && player.mediaItemCount > 0 && !player.currentTimeline.isEmpty && player.currentMediaItem != null,
+        needsFiniteItems = { player.finiteQueueNeedsMoreItems() },
+        startFinite = { startFinitePlaylistLoad(it, initial = false) },
+        considerRecommendations = { onInfiniteQueueEnabled(it.infiniteQueueSeedMediaId()) },
+        allowRecommendations = allowRecommendations,
+    )
 
     private fun setFiniteShuffleIndices(indices: List<Int>) {
         localPlayer.setShuffleOrder(DefaultShuffleOrder(indices.toIntArray(), System.currentTimeMillis()))
@@ -5705,7 +5704,7 @@ class MusicService :
     private fun appendFiniteItems(items: List<MediaItem>) {
         if (items.isEmpty()) return
         val oldCount = player.mediaItemCount
-        val order = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+        val order = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
         player.addMediaItems(items)
         // Never randomly insert a new page into already-played shuffle history.
         order?.let { setFiniteShuffleIndices(appendFiniteShuffleOrder(it, oldCount, player.mediaItemCount)) }
@@ -5718,7 +5717,7 @@ class MusicService :
         playWhenReady: Boolean = player.playWhenReady,
         recovering: Boolean = false,
     ) {
-        if (finiteQueueJob?.isActive == true || currentQueue !== queue || isHydratingRestoredQueue) return
+        if (finiteQueueJob?.isActive == true || currentQueue !== queue || !queueLoadingAllowed()) return
         val generation = initialQueueLoadGeneration
         val ticket = finiteLoadOwner.begin(generation, queue) ?: return
         val needsInitial = initial || queue.snapshot.continuation == null && !queue.confirmedExhausted ||
@@ -5728,7 +5727,7 @@ class MusicService :
                 playWhenReady = if (queue.timelineInstalled) player.playWhenReady else playWhenReady,
                 recovering = needsInitial && queue.timelineInstalled && player.mediaItemCount > 0)
         }
-        setFinitePlaylistState(PlaylistLoadState(loading = true, showDialog = needsInitial))
+        setFinitePlaylistState(PlaylistLoadState(loading = true, showDialog = needsInitial), ticket)
         finiteQueueJob = scope.launch {
             try {
                 val hideExplicit = dataStore.get(HideExplicitKey, false)
@@ -5781,7 +5780,7 @@ class MusicService :
                                     val suffix = alignment.entries.drop(alignment.savedIndices.last() + 1)
                                         .map { it.finiteEntryToMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
                                         .filterBlockedArtists(blockedArtistIds)
-                                    val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                    val oldShuffle = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
                                     queue.accept(proposal)
                                     savedItems.forEachIndexed { index, item ->
                                         if (item.userQueuedKind() == null) {
@@ -5810,7 +5809,7 @@ class MusicService :
                                         insertPrefix = { prefix ->
                                             queue.accept(proposal)
                                             queue.preloadedKey = selectedKey
-                                            val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                            val oldShuffle = if (player.shuffleModeEnabled) player.currentShuffleIndices() else null
                                             player.addMediaItems(anchor, prefix)
                                             oldShuffle?.let { order ->
                                                 val adjusted = order.map { if (it >= anchor) it + prefix.size else it }
@@ -5847,7 +5846,7 @@ class MusicService :
                         first = false
                     } while (
                         queue.hasNextPage() &&
-                        finiteQueueNeedsMoreItems()
+                        player.finiteQueueNeedsMoreItems()
                     )
                 }
                 if (!ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) return@launch
@@ -5868,13 +5867,13 @@ class MusicService :
             } catch (error: CancellationException) {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
-                    setFinitePlaylistState(PlaylistLoadState(incomplete = true))
+                    setFinitePlaylistState(PlaylistLoadState(incomplete = true), ticket)
                 }
                 throw error
             } catch (_: Exception) {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
-                    setFinitePlaylistState(PlaylistLoadState(incomplete = true, showDialog = true))
+                    setFinitePlaylistState(PlaylistLoadState(incomplete = true, showDialog = true), ticket)
                 }
             } finally {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
@@ -5882,6 +5881,10 @@ class MusicService :
                     finiteQueueJob = null
                     queueCheckpointGate.onReplacementFinished(queue)
                     saveQueueToDisk()
+                } else if (finitePlaylistPublisher.release(ticket)) {
+                    finiteQueueJob = null
+                    retryFinitePlaylistLoad = null
+                    setFinitePlaylistState(PlaylistLoadState())
                 }
                 ticket.finish()
             }
@@ -6030,59 +6033,6 @@ class MusicService :
         localPlayer.setShuffleOrder(DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis()))
     }
 
-    private fun buildPlayNextShuffleOrder(
-        currentIndex: Int,
-        insertionIndex: Int,
-        insertionCount: Int,
-        // How many of the upcoming (shuffled) items the insertion goes after. 0 = straight after the
-        // current song ("Play next"); >0 keeps earlier user-added songs ahead of it (#172).
-        skipUpcoming: Int = 0,
-    ): DefaultShuffleOrder? {
-        if (insertionCount <= 0 || player.currentTimeline.isEmpty) return null
-
-        fun adjustedIndex(index: Int): Int =
-            if (index >= insertionIndex) {
-                index + insertionCount
-            } else {
-                index
-            }
-
-        val timeline = player.currentTimeline
-        val previousIndices = ArrayDeque<Int>()
-        var traversalIndex = currentIndex
-        while (true) {
-            traversalIndex = timeline.getPreviousWindowIndex(traversalIndex, REPEAT_MODE_OFF, true)
-            if (traversalIndex == C.INDEX_UNSET) {
-                break
-            }
-            previousIndices.addFirst(adjustedIndex(traversalIndex))
-        }
-
-        val nextIndices = mutableListOf<Int>()
-        traversalIndex = currentIndex
-        while (true) {
-            traversalIndex = timeline.getNextWindowIndex(traversalIndex, REPEAT_MODE_OFF, true)
-            if (traversalIndex == C.INDEX_UNSET) {
-                break
-            }
-            nextIndices += adjustedIndex(traversalIndex)
-        }
-
-        val skip = skipUpcoming.coerceIn(0, nextIndices.size)
-        val shuffledIndices =
-            buildList(player.mediaItemCount + insertionCount) {
-                addAll(previousIndices)
-                add(adjustedIndex(currentIndex).takeIf { currentIndex >= insertionIndex } ?: currentIndex)
-                addAll(nextIndices.subList(0, skip))
-                repeat(insertionCount) { offset ->
-                    add(insertionIndex + offset)
-                }
-                addAll(nextIndices.subList(skip, nextIndices.size))
-            }.toIntArray()
-
-        return DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis())
-    }
-
     fun startRadioSeamlessly() {
         queueRemovals.reset()
         invalidatePlaylistWork()
@@ -6140,20 +6090,36 @@ class MusicService :
         title: String? = null,
         cancelRecommendations: Boolean = true,
         target: Player = player,
+        retainsInstalledOccurrences: Boolean = false,
         install: () -> Unit = {},
     ) {
         if (target !== player) return
-        cancelRestoredQueueHydration()
-        invalidatePlaylistWork()
-        if (cancelRecommendations) cancelInfiniteQueueBootstrap()
-        initialQueueLoadGeneration++
+        installServiceQueueTimeline(queueCheckpointGate, queue, retainsInstalledOccurrences,
+            cancelObsoleteWork = {
+                cancelRestoredQueueHydration()
+                invalidatePlaylistWork()
+                if (cancelRecommendations) cancelInfiniteQueueBootstrap()
+                initialQueueLoadGeneration++
+                initialQueueLoadInProgress = false
+                if (queue == null || (cancelRecommendations && queue !== queueCheckpointGate.persistenceQueue)) queueRemovals.reset()
+            },
+            install = install,
+            acceptIdentity = {
+                currentQueue = queue ?: EmptyQueue
+                queueTitle = title
+                currentQueue
+            },
+            save = ::saveQueueToDisk,
+            evaluateLoading = { evaluateQueueLoading() },
+        )
+    }
+
+    private fun detachQueueSource(acceptEmptyTimeline: Boolean = false) {
+        currentQueue = EmptyQueue
+        queueTitle = null
         initialQueueLoadInProgress = false
-        if (queue == null || (cancelRecommendations && queue !== queueCheckpointGate.persistenceQueue)) queueRemovals.reset()
-        queueCheckpointGate.installExternalTimeline(install, {
-            currentQueue = queue ?: EmptyQueue
-            queueTitle = title
-            currentQueue
-        }, ::saveQueueToDisk)
+        queueCheckpointGate.onSourceDetached(acceptEmptyTimeline)
+        saveQueueToDisk()
     }
 
     fun clearAutomix() = autoAddedMediaIds.clear()
@@ -6173,8 +6139,7 @@ class MusicService :
         infiniteQueuePreferenceEnabled = false
         cancelInfiniteQueueBootstrap(newQueue = false)
         invalidatePlaylistWork()
-        currentQueue = EmptyQueue
-        queueCheckpointGate.onUserClear()
+        detachQueueSource(acceptEmptyTimeline = true)
         val windows = player.getQueueWindows()
         val currentUid = windows.firstOrNull { it.firstPeriodIndex == player.currentMediaItemIndex }?.uid
         val removal = queueRemovals.remove(windows.filterNot { it.uid == currentUid }.map { it.uid }.toSet())
@@ -6203,7 +6168,7 @@ class MusicService :
         if (currentQueue !is YouTubePlaylistQueue) {
             invalidatePlaylistWork()
             initialQueueLoadGeneration++
-            currentQueue = EmptyQueue
+            detachQueueSource()
         }
     }
 
@@ -6221,9 +6186,7 @@ class MusicService :
         suppressAutoPlayback = true
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "playback_cleared")
         clearAutomix()
-        currentQueue = EmptyQueue
-        queueCheckpointGate.onUserClear()
-        queueTitle = null
+        detachQueueSource(acceptEmptyTimeline = true)
         waitingForNetworkConnection.value = false
         currentMediaMetadata.value = null
         player.playWhenReady = false
@@ -6338,7 +6301,7 @@ class MusicService :
             append = { player.addMediaItems(it) },
             insert = { insertionIndex, queuedItems, skip, shuffled ->
                 val shuffleOrder = if (shuffled) {
-                    buildPlayNextShuffleOrder(
+                    player.buildPlayNextShuffleOrder(
                         currentIndex = currentIndex,
                         insertionIndex = insertionIndex,
                         insertionCount = queuedItems.size,
@@ -7180,7 +7143,7 @@ class MusicService :
             saveQueueToDisk()
         }
         cacheQueuedMetadata()
-        onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
+        evaluateQueueLoading()
     }
 
     override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
@@ -7271,17 +7234,7 @@ class MusicService :
 
         scrobbleManager?.onSongStop()
 
-        // Finite membership is independent of the recommendations toggle and repeat policy.
-        if (!suppressAutoPlayback && !timelineEmpty && !isHydratingRestoredQueue &&
-            currentQueue is YouTubePlaylistQueue && finiteQueueNeedsMoreItems()
-        ) {
-            val finite = currentQueue as YouTubePlaylistQueue
-            if (finite.hasNextPage()) startFinitePlaylistLoad(finite, initial = false)
-        }
-
-        if (!timelineEmpty && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
-            onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
-        }
+        evaluateQueueLoading(allowRecommendations = reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
 
         if (player.playWhenReady && player.playbackState == Player.STATE_READY) {
             scrobbleManager?.onSongStart(player.resolvedCurrentMetadata, duration = player.duration)
@@ -7517,12 +7470,6 @@ class MusicService :
                 }
             }
     }
-
-    private fun Queue.shouldBootstrapInfiniteQueue(): Boolean =
-        if (this is ListQueue && finite) false else if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
-
-    private fun Queue.infiniteQueueSeedMediaId(): String? =
-        if (this is YouTubePlaylistQueue) null else preloadItem?.id?.trim()?.takeIf { it.isNotBlank() }
 
     override fun onPlaybackStateChanged(
         @Player.State playbackState: Int,

@@ -47,7 +47,7 @@ internal class SessionTimelinePlayer(
 internal fun queueSessionTimelinePlayer(
     target: Player,
     gate: QueueCheckpointGate,
-    install: (Player, Queue?, String?, () -> Unit) -> Unit,
+    install: (Player, Queue?, String?, Boolean, () -> Unit) -> Unit,
     save: () -> Unit,
     currentPlayer: () -> Player = { target },
 ): Player = SessionTimelinePlayer(
@@ -57,7 +57,7 @@ internal fun queueSessionTimelinePlayer(
             // Queue taps and "add current to playlist" replay the same occurrences, keeping their identity.
             val retained = items.isNotEmpty() && items.size == target.mediaItemCount &&
                 items.indices.all { target.getMediaItemAt(it) === items[it] }
-            install(target, gate.persistenceQueue.takeIf { retained }, gate.persistenceTitle.takeIf { retained }, mutation)
+            install(target, gate.persistenceQueue.takeIf { retained }, gate.persistenceTitle.takeIf { retained }, retained, mutation)
         }
     },
     acceptEdit = { removal ->

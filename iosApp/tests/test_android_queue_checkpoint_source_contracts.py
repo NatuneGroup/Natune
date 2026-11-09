@@ -14,6 +14,8 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         cls.service = (PLAYBACK / "MusicService.kt").read_text()
         cls.gate = (PLAYBACK / "QueueCheckpointGate.kt").read_text()
         cls.session = (PLAYBACK / "SessionTimelinePlayer.kt").read_text()
+        cls.installer = (PLAYBACK / "ExternalQueueTimelineInstallation.kt").read_text()
+        cls.loading = (PLAYBACK / "QueueLoadingPolicy.kt").read_text()
 
     def test_checkpoint_items_and_occurrences_use_the_installed_identity(self):
         blocked = self.gate.split("fun blocked(): Boolean", 1)[1]
@@ -43,7 +45,8 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
             "private var secondaryCrossfadePlayer", 1
         )[0]
         self.assertIn("queueSessionTimelinePlayer", session_factory)
-        self.assertIn("installExternalTimeline(queue, title, target = target, install = install)", session_factory)
+        self.assertIn("installExternalTimeline(queue, title, target = target", session_factory)
+        self.assertIn("retainsInstalledOccurrences = replay", session_factory)
         self.assertIn("target === currentPlayer()", self.session)
         installer = self.service.split("internal fun installExternalTimeline", 1)[1].split("fun clearAutomix", 1)[0]
         self.assertLess(installer.index("if (target !== player) return"), installer.index("invalidatePlaylistWork()"))
@@ -109,11 +112,79 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         self.assertNotIn("initialTimelineCleared", removal)
         self.assertIn("emptyTimelineAccepted = mediaItemCount() == 0", removal)
         self.assertIn("if (emptyTimelineAccepted)", removal)
-        self.assertIn("persistenceQueue = EmptyQueue", removal)
-        self.assertIn("savedTitle = null", removal)
+        self.assertIn("onSourceDetached(acceptEmptyTimeline = true)", removal)
         blocked = self.gate.split("fun blocked(): Boolean", 1)[1]
         self.assertIn("unresolvedFinite(queue()) || unresolvedFinite(persistenceQueue)", blocked)
         self.assertIn("!finite.confirmedExhausted || finite.snapshot.continuation != null", blocked)
+
+    def test_service_replay_decision_guards_all_cancellation_and_preserves_identity(self):
+        installer = self.service.split("internal fun installExternalTimeline", 1)[1].split(
+            "private fun detachQueueSource", 1
+        )[0]
+        self.assertIn("installServiceQueueTimeline(queueCheckpointGate, queue, retainsInstalledOccurrences", installer)
+        obsolete = installer.split("cancelObsoleteWork = {", 1)[1].split("install = install", 1)[0]
+        for action in ("cancelRestoredQueueHydration()", "invalidatePlaylistWork()",
+                       "cancelInfiniteQueueBootstrap()", "initialQueueLoadGeneration++", "queueRemovals.reset()"):
+            self.assertIn(action, obsolete)
+        self.assertIn("!retainsInstalledOccurrences || requestedQueue == null || requestedQueue !== installedQueue", self.installer)
+        self.assertIn("if (replacement) cancelObsoleteWork()", self.installer)
+        self.assertIn("retainIdentity = !replacement", self.installer)
+        self.assertIn("if (!retainIdentity) onExternalTimelineInstalled(acceptIdentity())", self.gate)
+        self.assertIn("retained, mutation", self.session)
+
+    def test_all_empty_source_resets_detach_through_one_gate_method(self):
+        reset = self.service.split("private fun detachQueueSource", 1)[1].split("fun clearAutomix", 1)[0]
+        self.assertEqual(1, len(re.findall(r"currentQueue\s*=\s*EmptyQueue", self.service)))
+        for statement in ("currentQueue = EmptyQueue", "queueTitle = null", "initialQueueLoadInProgress = false",
+                          "queueCheckpointGate.onSourceDetached(acceptEmptyTimeline)", "saveQueueToDisk()"):
+            self.assertIn(statement, reset)
+        filtering = self.service.split("private inline fun removeQueueItems", 1)[1].split(
+            "private suspend fun restorePersistentQueue", 1
+        )[0]
+        self.assertLess(filtering.index("currentQueue as? YouTubePlaylistQueue"), filtering.index("detachQueueSource()"))
+        disabled = self.service.split("fun onInfiniteQueueDisabled()", 1)[1].split("fun onInfiniteQueueEnabled", 1)[0]
+        self.assertIn("currentQueue !is YouTubePlaylistQueue", disabled)
+        self.assertIn("detachQueueSource()", disabled)
+        for start, end in (("fun clearQueueWithUndo", "fun onInfiniteQueueDisabled"),
+                           ("fun stopAndClearPlayback", "private fun trimResolutionCaches")):
+            self.assertIn("detachQueueSource(acceptEmptyTimeline = true)", self.service.split(start, 1)[1].split(end, 1)[0])
+        detached = self.gate.split("fun onSourceDetached", 1)[1].split("fun onUserClear", 1)[0]
+        self.assertIn("mediaItemCount() == 0 && unresolvedFinite(persistenceQueue)", detached)
+        self.assertIn("persistenceQueue = EmptyQueue", detached)
+        self.assertIn("savedTitle = null", detached)
+        self.assertIn("sourceDetached && queue() === EmptyQueue", self.gate)
+
+    def test_transition_loading_waits_for_the_accepted_queue_and_scoped_mutation_exit(self):
+        finite = self.service.split("private fun startFinitePlaylistLoad", 1)[1].split("fun playQueue(", 1)[0]
+        self.assertIn("!queueLoadingAllowed()", finite)
+        allowed = self.service.split("private fun queueLoadingAllowed", 1)[1].split("private fun setFiniteShuffleIndices", 1)[0]
+        self.assertIn("queueCheckpointGate.timelineMutationInProgress", allowed)
+        self.assertIn("evaluateAcceptedQueueLoading", allowed)
+        self.assertIn("!suppressed && !hydrating && !finiteMutation && !timelineMutation", self.loading)
+        evaluation = self.loading.split("internal fun evaluateAcceptedQueueLoading", 1)[1].split("internal fun Player", 1)[0]
+        self.assertLess(evaluation.index("if (!allowed) return"), evaluation.index("let(startFinite)"))
+        self.assertLess(evaluation.index("if (!allowed) return"), evaluation.index("considerRecommendations(queue)"))
+        transition = self.service.split("override fun onMediaItemTransition", 1)[1].split("private fun armNextTrackPrefetchWatcher", 1)[0]
+        timeline = self.service.split("override fun onTimelineChanged", 1)[1].split("override fun onDeviceInfoChanged", 1)[0]
+        self.assertIn("evaluateQueueLoading", transition)
+        self.assertNotIn("startFinitePlaylistLoad", transition)
+        self.assertIn("evaluateQueueLoading()", timeline)
+        self.assertLess(self.installer.index("gate.installExternalTimeline"), self.installer.index("evaluateLoading()"))
+
+    def test_stale_loading_cleanup_belongs_to_the_last_publisher(self):
+        publisher = (PLAYBACK / "PlaylistLoadStatePublisher.kt").read_text()
+        self.assertIn("if (publisher !== owner) return false", publisher)
+        finite = self.service.split("private fun startFinitePlaylistLoad", 1)[1].split("fun playQueue(", 1)[0]
+        self.assertIn("PlaylistLoadState(loading = true, showDialog = needsInitial), ticket", finite)
+        cleanup = finite.split("else if (finitePlaylistPublisher.release(ticket))", 1)[1]
+        self.assertIn("retryFinitePlaylistLoad = null", cleanup)
+        self.assertIn("setFinitePlaylistState(PlaylistLoadState())", cleanup)
+        whole = self.service.split("fun wholeYouTubePlaylist", 1)[1].split("private fun queueLoadingAllowed", 1)[0]
+        self.assertIn("wholePlaylistPublisher.release(ownership)", whole)
+        self.assertIn("!ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)", whole)
+        dismiss = self.service.split("fun dismissPlaylistLoadError", 1)[1].split("fun reloadFinitePlaylist", 1)[0]
+        self.assertIn("finitePlaylistPublisher.owner", dismiss)
+        self.assertIn("wholePlaylistPublisher.owner", dismiss)
 
 
 if __name__ == "__main__":
