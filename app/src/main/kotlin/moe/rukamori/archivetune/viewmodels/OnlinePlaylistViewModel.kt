@@ -229,10 +229,9 @@ class OnlinePlaylistViewModel
                             }
 
                             OnlinePlaylistSongsSource.OFFLINE_COPY -> {
-                                // A failed refresh keeps whatever list is already on screen, as before.
-                                if (playlistPage != null || _playlistSongs.value.isEmpty()) {
-                                    showOfflineCopy(requireNotNull(offlineCopy))
-                                }
+                                // Even when an online list is already shown, a failed refresh switches to
+                                // the saved copy: the online list's play actions need the network.
+                                showOfflineCopy(requireNotNull(offlineCopy))
                                 playlistPage?.let { page -> _playlist.value = page.playlist }
                                 result.exceptionOrNull()?.let(::reportException)
                             }
