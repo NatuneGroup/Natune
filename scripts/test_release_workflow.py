@@ -293,13 +293,53 @@ class ReleaseWorkflowTest(unittest.TestCase):
             with open(os.environ["GH_CALLS"], "a") as output:
                 output.write(json.dumps(args) + "\\n")
             if args[0] == "api" and "/commits/" in args[1]:
-                print(os.environ["REMOTE_SHA"])
+                created = '["release", "create"' in open(os.environ["GH_CALLS"]).read()
+                print("b" * 40 if created and os.environ.get("ADVANCE_AFTER_CREATE") else os.environ["REMOTE_SHA"])
             elif args[:2] == ["release", "create"]:
                 pass
             elif args[:2] == ["release", "view"] and "publishedAt" in args:
                 print("2030-01-01T00:00:00Z")
-            elif args[:2] == ["release", "view"] or (args[0] == "api" and "/git/ref/tags/" in args[1]):
-                sys.exit(1)
+            elif args[:2] == ["release", "view"]:
+                if os.environ.get("RELEASE_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                sha = os.environ.get("EXISTING_RELEASE_SHA")
+                if not sha:
+                    # gh prints this for a failed REST lookup of a published release as well.
+                    sys.exit("release not found")
+                print(json.dumps({"targetCommitish": sha, "body": os.environ.get("EXISTING_RELEASE_BODY", "")}))
+            elif args[0] == "api" and args[1].endswith("/releases/tags/update-feed"):
+                if os.environ.get("FEED_RELEASE_ERROR"):
+                    sys.exit("gh: Service Unavailable (HTTP 503)")
+                names = ["stable.json"]
+                if "FEED_MANIFEST" in os.environ or os.environ.get("FEED_READ_ERROR"):
+                    names.append("nightly.json")
+                elif not os.environ.get("FEED_WITHOUT_NIGHTLY"):
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"tag_name": "update-feed", "assets": [{"name": name} for name in names]}))
+            elif args[0] == "api" and "/releases/tags/" in args[1]:
+                if os.environ.get("RELEASE_LOOKUP_ERROR"):
+                    sys.exit("gh: Service Unavailable (HTTP 503)")
+                if not os.environ.get("EXISTING_RELEASE_SHA"):
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"tag_name": args[1].rsplit("/", 1)[-1]}))
+            elif args[0] == "api" and "/git/ref/tags/" in args[1]:
+                if os.environ.get("TAG_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                sha = os.environ.get("EXISTING_TAG_SHA")
+                if not sha:
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"object": {"type": os.environ.get("EXISTING_TAG_TYPE", "commit"), "sha": sha}}))
+            elif args[0] == "api" and "/git/tags/" in args[1]:
+                print(json.dumps({"type": "commit", "sha": os.environ["ANNOTATED_COMMIT_SHA"]}))
+            elif args[:2] == ["release", "delete"] or (args[0] == "api" and "DELETE" in args):
+                pass
+            elif args[:3] == ["release", "download", "update-feed"]:
+                if os.environ.get("FEED_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                if "FEED_MANIFEST" not in os.environ:
+                    # gh prints this for a failed REST lookup of the feed release as well.
+                    sys.exit("release not found")
+                print(os.environ["FEED_MANIFEST"])
             else:
                 sys.exit("Unexpected GitHub command: " + repr(args))
         """)
@@ -314,6 +354,189 @@ class ReleaseWorkflowTest(unittest.TestCase):
                            RUNNER_TEMP=str(temporary), GH_CALLS=str(root / "gh-calls"), GH_TOKEN="",
                            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], **(flags or {}))
         return result, names
+
+    def test_nightly_refuses_another_build_without_deleting_or_creating(self):
+        for flags in (
+            {"EXISTING_RELEASE_SHA": "b" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9001 -->"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9002 -->"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:90010 -->"},
+            {"EXISTING_TAG_SHA": "b" * 40},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "EXISTING_TAG_SHA": "b" * 40},
+            {"RELEASE_READ_ERROR": "1", "EXISTING_TAG_SHA": "a" * 40},
+            {"TAG_READ_ERROR": "1", "EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001"},
+            # The same build's release cannot be checked against the published feed.
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": "not json"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_MANIFEST": '{"tag":null}'},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_READ_ERROR": "1"},
+            # gh reports "release not found" when its REST lookup fails, so that message proves no absence.
+            {"RELEASE_LOOKUP_ERROR": "1", "EXISTING_TAG_SHA": "a" * 40, "FEED_MANIFEST": '{"tag":"N20300101"}'},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "FEED_RELEASE_ERROR": "1"},
+        ):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("::error::Nightly", result.stdout)
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertFalse(any(args[:2] in (["release", "delete"], ["release", "create"]) or
+                                     "DELETE" in args for args in calls))
+
+    def test_nightly_same_build_rerun_and_its_bare_tag_can_be_replaced(self):
+        for kind in ("release", "release-without-feed", "release-without-nightly-manifest", "bare", "annotated"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                flags = {"EXISTING_TAG_SHA": "a" * 40}
+                if kind == "annotated":
+                    flags.update(EXISTING_TAG_TYPE="tag", EXISTING_TAG_SHA="c" * 40, ANNOTATED_COMMIT_SHA="a" * 40)
+                if kind.startswith("release"):
+                    flags.update(EXISTING_RELEASE_SHA="a" * 40, EXISTING_RELEASE_BODY="<!-- at-build:9001 -->")
+                if kind == "release":
+                    flags.update(FEED_MANIFEST='{"tag":"N20291231"}')
+                if kind == "release-without-nightly-manifest":
+                    flags.update(FEED_WITHOUT_NIGHTLY="1")
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertIn(["api", "repos/NatuneGroup/Natune/releases/tags/update-feed"], calls)
+                self.assertEqual(kind == "release",
+                                 any(args[:3] == ["release", "download", "update-feed"] for args in calls))
+                self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
+                self.assertEqual(1, sum(args[:2] == ["release", "delete"] or "DELETE" in args for args in calls))
+                self.assertTrue((root / "nightly.json").is_file())
+
+    def test_nightly_rerun_keeps_the_release_that_the_published_feed_offers(self):
+        # Replacing the offered release would 404 updaters until its assets were uploaded again.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, _ = self.publish_fixture(root, "nightly", flags={
+                "EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9001 -->",
+                "EXISTING_TAG_SHA": "a" * 40, "FEED_MANIFEST": '{"tag":"N20300101"}'})
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("::notice::Nightly release N20300101 is already published", result.stdout)
+            self.assertEqual("did_publish=false\n", (root / "output").read_text())
+            calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+            self.assertFalse(any(args[:2] in (["release", "delete"], ["release", "create"]) or
+                                 "DELETE" in args for args in calls))
+            self.assertFalse((root / "nightly.json").exists())
+
+    def test_branch_advancing_during_publish_removes_the_release_unless_the_feed_offers_it(self):
+        for channel, feed_tag, deletes in (("nightly", "N20300101", 0), ("nightly", "N20291231", 1),
+                                           ("stable", "v1.2.3", 1)):
+            with self.subTest(channel=channel, feed_tag=feed_tag), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, channel, flags={
+                    "ADVANCE_AFTER_CREATE": "1", "FEED_MANIFEST": json.dumps({"tag": feed_tag})})
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("did_publish=true\ndid_publish=false\n", (root / "output").read_text())
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
+                self.assertEqual(deletes, sum(args[:2] == ["release", "delete"] for args in calls))
+                self.assertEqual(deletes == 0, "::warning::" in result.stdout)
+                self.assertFalse((root / f"{channel}.json").exists())
+
+    def prune_fixture(self, directory, manifest, *, unreadable=False):
+        root = Path(directory)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        tool(bin_dir, "gh", """
+            #!/usr/bin/env python3
+            import json, os, sys
+            args = sys.argv[1:]
+            with open(os.environ["GH_CALLS"], "a") as calls:
+                calls.write(json.dumps(args) + "\\n")
+            if args[:2] == ["release", "download"]:
+                if os.environ["UNREADABLE"] == "1":
+                    sys.exit(1)
+                print(os.environ["MANIFEST"])
+            elif args[0] == "api":
+                for minute in range(8):
+                    print(f"N20300101000{minute}\\t2030-01-01T00:0{minute}:00Z")
+            elif args[:2] != ["release", "delete"]:
+                sys.exit("Unexpected GitHub command: " + repr(args))
+        """)
+        result = bash_step("Keep only the newest five nightly releases", root,
+                           TAG_NAME="N203001010007", GITHUB_REPOSITORY="NatuneGroup/Natune",
+                           GH_CALLS=str(root / "gh-calls"), MANIFEST=manifest,
+                           UNREADABLE="1" if unreadable else "0",
+                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+        calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+        return result, calls
+
+    def test_prune_preserves_the_published_feed_tag_even_outside_the_newest_five(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, calls = self.prune_fixture(directory, '{"tag":"N203001010001"}')
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(["N203001010002", "N203001010000"],
+                             [args[2] for args in calls if args[:2] == ["release", "delete"]])
+
+    def test_prune_deletes_nothing_when_the_manifest_cannot_be_read_or_parsed(self):
+        for manifest, unreadable in (("", True), ("not json", False), ('{"tag":null}', False),
+                                     ('{"tag":"v1.2.3"}', False)):
+            with self.subTest(manifest=manifest, unreadable=unreadable), tempfile.TemporaryDirectory() as directory:
+                result, calls = self.prune_fixture(directory, manifest, unreadable=unreadable)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("::warning::", result.stdout)
+                self.assertFalse(any(args[:2] == ["release", "delete"] for args in calls))
+                self.assertFalse(any(args[0] == "api" for args in calls))
+
+    def test_prepare_allocates_minute_tags_and_bumps_release_and_bare_tag_collisions(self):
+        for occupied in ("free", "collisions", "exhausted"):
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "app").mkdir()
+                shutil.copyfile(ROOT / "app/build.gradle.kts", root / "app/build.gradle.kts")
+                (root / ".github/scripts").mkdir(parents=True)
+                shutil.copyfile(ROOT / ".github/scripts/next-version.py", root / ".github/scripts/next-version.py")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                tool(bin_dir, "git", "#!/bin/sh\nexit 0\n")
+                tool(bin_dir, "date", """
+                    #!/usr/bin/env python3
+                    from datetime import datetime, timedelta, timezone
+                    import sys
+                    args = sys.argv[1:]
+                    moment = datetime(2030, 1, 1, 23, 59, tzinfo=timezone.utc)
+                    if "-d" in args:
+                        text = args[args.index("-d") + 1]
+                        moment = datetime.strptime(text, "%Y-%m-%d %H:%M:%S UTC +1 minute").replace(tzinfo=timezone.utc) + timedelta(minutes=1)
+                    print(int(moment.timestamp()) if args[-1] == "+%s" else moment.strftime(args[-1][1:]))
+                """)
+                tool(bin_dir, "gh", """
+                    #!/usr/bin/env python3
+                    import json, os, sys
+                    args = sys.argv[1:]
+                    with open(os.environ["GH_CALLS"], "a") as calls:
+                        calls.write(json.dumps(args) + "\\n")
+                    if os.environ["OCCUPIED"] == "exhausted":
+                        sys.exit(0)
+                    if os.environ["OCCUPIED"] == "collisions":
+                        if args[:3] == ["release", "view", "N203001012359"]:
+                            sys.exit(0)
+                        if args[:2] == ["api", "repos/NatuneGroup/Natune/git/ref/tags/N203001020000"]:
+                            sys.exit(0)
+                    sys.exit(1)
+                """)
+                environment = os.environ.copy()
+                environment.update(FORCE="true", GITHUB_REPOSITORY="NatuneGroup/Natune", GITHUB_SHA="a" * 40,
+                                   GITHUB_OUTPUT=str(root / "output"), GH_CALLS=str(root / "gh-calls"),
+                                   OCCUPIED=occupied, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+                result = subprocess.run(["bash", "-c", step_script("Decide whether to build", ROOT / ".github/workflows/nightly.yml")],
+                                        cwd=root, env=environment, capture_output=True, text=True, timeout=30)
+                if occupied == "exhausted":
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn("after 20 tries", result.stdout)
+                    self.assertFalse((root / "output").exists())
+                    self.assertEqual(20, len((root / "gh-calls").read_text().splitlines()))
+                    continue
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                outputs = dict(line.split("=", 1) for line in (root / "output").read_text().splitlines())
+                expected = "N203001020001" if occupied == "collisions" else "N203001012359"
+                self.assertEqual(expected, outputs["tag_name"])
+                self.assertEqual(expected, outputs["version_name"])
+                self.assertRegex(outputs["tag_name"], r"^N[0-9]{12}$")
+                self.assertEqual("true", outputs["should_build"])
+                self.assertEqual("15.1.0", outputs["package_version"])
+                self.assertEqual(str(1893542340 + 6833), outputs["version_code"])
 
     def test_unsigned_nightly_and_stable_publish_the_channel_inventory_and_private_manifest(self):
         for channel, count in (("nightly", 16), ("stable", 17)):
