@@ -9,6 +9,12 @@ import kotlin.test.assertTrue
 
 /** The window-size decisions of the desktop shell, without a composition: they are what keeps 800 x 500 usable. */
 class DesktopShellLayoutTest {
+    @Test
+    fun defaultWidthFitsActionsButNarrowCustomCaptionWindowStillDropsThem() {
+        assertTrue(desktopTitleBarActionsFit(1080.dp, hasWindowControls = true))
+        assertFalse(desktopTitleBarActionsFit(800.dp, hasWindowControls = true))
+    }
+
     /** The slots the shell would draw for [open], with the rail the shell would give that window. */
     private fun slots(windowWidth: Dp, windowHeight: Dp, vararg open: DesktopPane): List<DesktopPaneSlot> {
         val railWidth = desktopRailWidth(desktopRailExpanded(windowWidth, windowHeight, userExpanded = true))

@@ -206,11 +206,17 @@ jobs:
         with:
           variant: ${{ matrix.variant }}
 
+      - name: Fetch the Discord Social SDK for Rich Presence
+        uses: ./.github/actions/fetch-discord-sdk
+        with:
+          token: ${{ secrets.DISCORD_SDK_TOKEN }}
+
       - name: Assemble Android APK
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2
+          ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2 \
+            -Pnatune.discordSdk=true
 
       - name: Verify Librespot in the shipping APK
         shell: bash
@@ -218,6 +224,13 @@ jobs:
           LIBRESPOT_VARIANT: ${{ matrix.variant }}
           LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
         run: python3 native/librespot/android-artifact.py apk "$LIBRESPOT_VARIANT" --available "$LIBRESPOT_AVAILABLE"
+
+      - name: Verify Discord Rich Presence in the shipping APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          for apk in "${APKS[@]}"; do python3 scripts/check_discord_sdk_apk.py "$apk"; done
 
       - name: Stage APK
         shell: bash
@@ -1465,6 +1478,7 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       PACKAGE_VERSION: ${{ inputs.package_version }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      ARCHIVETUNE_UPDATE_CHANNEL: ${{ inputs.channel }}
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
       ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
@@ -1680,6 +1694,7 @@ jobs:
             -derivedDataPath "$DERIVED_DATA" \
             "ARCHIVETUNE_VERSION_NAME=$PACKAGE_VERSION" \
             "ARCHIVETUNE_VERSION_CODE=$VERSION_CODE_OVERRIDE" \
+            "ARCHIVETUNE_UPDATE_CHANNEL=$ARCHIVETUNE_UPDATE_CHANNEL" \
             "ARCHIVETUNE_TELEGRAM_API_ID=$ARCHIVETUNE_TELEGRAM_API_ID" \
             "ARCHIVETUNE_TELEGRAM_API_HASH=$ARCHIVETUNE_TELEGRAM_API_HASH" \
             "ARCHIVETUNE_LISTENER_PRESENCE_URL=$ARCHIVETUNE_LISTENER_PRESENCE_URL" \

@@ -808,7 +808,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATE_VERSION_CODE: ${{ inputs.candidate_version_code }}
-          BASELINE_VERSION_CODE: '1793753723'
+          BASELINE_VERSION_CODE: '1794231625'
         run: |
           set -euo pipefail
           if [[ ! "$CANDIDATE_VERSION_CODE" =~ ^[1-9][0-9]*$ || ${#CANDIDATE_VERSION_CODE} -gt 10 ]]; then
@@ -896,10 +896,10 @@ jobs:
       - name: Verify the trusted public baseline before trusting its signer
         shell: bash
         env:
-          BASELINE_URL: https://github.com/NatuneGroup/Natune/releases/download/N20261103/app-gms-mobile-arm64-nightly.apk
-          BASELINE_SHA256: 287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc
-          BASELINE_BYTES: '20306627'
-          BASELINE_VERSION_CODE: '1793753723'
+          BASELINE_URL: https://github.com/NatuneGroup/Natune/releases/download/N20261109/app-gms-mobile-arm64-nightly.apk
+          BASELINE_SHA256: 2cb8bd3fbed1ce396d9b85bd9cf1b1e6e7235a2663d2ff848943780c2d6ff034
+          BASELINE_BYTES: '23617037'
+          BASELINE_VERSION_CODE: '1794231625'
           # Public certificate SHA-256 derived read-only from that pinned APK's legacy v2/v3 signing
           # block. The local parse is not a signature verification; apksigner below verifies the pinned
           # bytes before this pin is trusted, and the signed candidate must present the same certificate.
@@ -950,6 +950,11 @@ jobs:
         with:
           variant: arm64
 
+      - name: Fetch the Discord Social SDK for Rich Presence
+        uses: ./.github/actions/fetch-discord-sdk
+        with:
+          token: ${{ secrets.DISCORD_SDK_TOKEN }}
+
       - name: Assemble only the GMS mobile ARM64 release APK
         shell: bash
         env:
@@ -994,13 +999,20 @@ jobs:
           # Standard slim Nightly shape: no optional ONNX models/runtime, TDLib stays the
           # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
           ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
-            -Pautomix=false -PslimTdlib=true
+            -Pautomix=false -PslimTdlib=true -Pnatune.discordSdk=true
 
       - name: Verify Librespot in the candidate APK
         shell: bash
         env:
           LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
         run: python3 native/librespot/android-artifact.py apk arm64 --available "$LIBRESPOT_AVAILABLE"
+
+      - name: Verify Discord Rich Presence in the candidate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          for apk in "${APKS[@]}"; do python3 scripts/check_discord_sdk_apk.py "$apk"; done
 
       - name: Stage and validate the assembled release APK
         shell: bash
@@ -1127,11 +1139,13 @@ jobs:
           APK="${CANDIDATE_APK:?}"
           KEYSTORE_FILE="$(mktemp "$RUNNER_TEMP/candidate-keystore.XXXXXX")"
           ALIGNED_APK="$(mktemp "$RUNNER_TEMP/candidate-aligned.XXXXXX")"
+          COMPRESSED_APK="$(mktemp "$RUNNER_TEMP/candidate-compressed.XXXXXX")"
           VERIFY_LOG="$(mktemp "$RUNNER_TEMP/candidate-verify.XXXXXX")"
           CERTS_LOG="$(mktemp "$RUNNER_TEMP/candidate-certs.XXXXXX")"
-          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK" "$VERIFY_LOG" "$CERTS_LOG"' EXIT
+          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK" "$COMPRESSED_APK" "$VERIFY_LOG" "$CERTS_LOG"' EXIT
           printf '%s' "$KEYSTORE" | base64 --decode > "$KEYSTORE_FILE"
-          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$ALIGNED_APK"
+          python3 scripts/recompress_apk.py "$APK" "$COMPRESSED_APK"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$COMPRESSED_APK" "$ALIGNED_APK"
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KEYSTORE_FILE" \
             --ks-key-alias "$KEY_ALIAS" \
@@ -1166,9 +1180,9 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
           DISPATCH_REF: ${{ github.ref }}
           SIGNER_SHA256: 6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9
-          BASELINE_SHA256: 287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc
-          BASELINE_BYTES: '20306627'
-          BASELINE_VERSION_CODE: '1793753723'
+          BASELINE_SHA256: 2cb8bd3fbed1ce396d9b85bd9cf1b1e6e7235a2663d2ff848943780c2d6ff034
+          BASELINE_BYTES: '23617037'
+          BASELINE_VERSION_CODE: '1794231625'
         run: |
           set -euo pipefail
           APK="${CANDIDATE_APK:?}"
@@ -1193,9 +1207,22 @@ jobs:
             echo "::error::The final signed APK is debuggable."
             exit 1
           fi
+          # Discord Social SDK builds keep c++_shared (see app/build.gradle.kts); SDK-free ones are static.
+          if python3 -c 'import sys, zipfile; sys.exit(0 if any(n.endswith("/libdiscord_partner_sdk.so") for n in zipfile.ZipFile(sys.argv[1]).namelist()) else 1)' "$APK"; then
+            python3 scripts/check_android_native_stl.py "$APK"
+          else
+            python3 scripts/check_android_native_stl.py "$APK" --expect-static
+          fi
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
           APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
+          # Includes the bundled Discord Social SDK (~3.7 MB on arm64) on top of the app.
+          MAX_APK_BYTES=28000000
+          if (( APK_BYTES >= MAX_APK_BYTES )); then
+            echo "::error::Final signed APK is $APK_BYTES bytes; the release-candidate limit is under $MAX_APK_BYTES bytes."
+            exit 1
+          fi
+          echo "Final signed APK is $APK_BYTES bytes (under $MAX_APK_BYTES)."
           printf '%s  %s\n' "$APK_SHA256" "$(basename "$APK")" > "$STAGE/SHA256SUMS"
           JAVA_VERSION_LINE="$(java -version 2>&1 | sed -n '1p')"
           export JAVA_VERSION_LINE APK_SHA256 APK_BYTES
@@ -1243,7 +1270,7 @@ jobs:
                   "sha256": os.environ["APK_SHA256"],
               },
               "trusted_baseline": {
-                  "release": "N20261103",
+                  "release": "N20261109",
                   "version_code": int(os.environ["BASELINE_VERSION_CODE"]),
                   "bytes": int(os.environ["BASELINE_BYTES"]),
                   "sha256": os.environ["BASELINE_SHA256"],

@@ -43,6 +43,31 @@ class IosSourceContractsTest(unittest.TestCase):
         session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
         self.assertIn("host.close()", session)
 
+    def test_launcher_previews_stay_in_ios_packaging_with_attribution(self):
+        catalog = (UI_ROOT / "settings/SharedLauncherIconCatalog.kt").read_text()
+        previews = set(re.findall(r"Res\.drawable\.(phone_launcher_[a-z0-9]+)", catalog))
+        self.assertEqual(21, len(previews))
+        ios_resources = ROOT / "shared-ui/src/iosMain/composeResources"
+        for name in previews:
+            self.assertTrue((ios_resources / "drawable" / (name + ".png")).is_file(), name)
+        self.assertTrue((ios_resources / "values/phone_launcher_catalog_strings.xml").is_file())
+        common_resources = ROOT / "shared-ui/src/commonMain/composeResources"
+        self.assertFalse(list((common_resources / "drawable").glob("phone_launcher_*.png")))
+        self.assertFalse((common_resources / "values/phone_launcher_catalog_strings.xml").exists())
+        self.assertTrue((common_resources / "files/notices/IconPack-CC-BY-SA-4.0.txt").is_file())
+        self.assertFalse((UI_COMMON / "settings/SharedLauncherIconCatalog.kt").exists())
+        self.assertFalse((UI_COMMON / "settings/LauncherIconSettings.kt").exists())
+        self.assertFalse((UI_COMMON / "settings/LauncherIconScreen.kt").exists())
+        renderer = (UI_ROOT / "settings/LauncherIconScreen.kt").read_text()
+        self.assertIn("state: LauncherIconScreenState", renderer)
+        self.assertIn("painterResource(icon.previewDrawableResId)", renderer)
+        self.assertIn("onOpenAuthorProfile: (String) -> Unit", renderer)
+        self.assertIn("fun IosIconEditor(onFailure: () -> Unit)", (UI_IOS / "IosAppearanceEditors.kt").read_text())
+        generator = (ROOT / "scripts/sync_launcher_icon_resources.py").read_text()
+        self.assertIn("shared-ui/src/iosMain/composeResources", generator)
+        self.assertIn("shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings", generator)
+        self.assertIn("COMMON_RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt'", generator)
+
     def test_release_selects_the_native_producers_exact_xcode(self):
         script = (ROOT / "scripts/build_ios_native_core.sh").read_text()
         expected = re.search(r'XCODE_EXPECTED="\$\{ARCHIVETUNE_XCODE_VERSION:-([\d.]+)\}"', script)
@@ -55,6 +80,45 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertEqual(1, ios_job.count("ARCHIVETUNE_XCODE_VERSION:"))
         self.assertIn("xcode-version: ${{ env.ARCHIVETUNE_XCODE_VERSION }}", ios_job)
         self.assertLess(ios_job.index("setup-xcode@v1"), ios_job.index("bash scripts/build_ios_native_core.sh"))
+        self.assertIn("ARCHIVETUNE_UPDATE_CHANNEL: ${{ inputs.channel }}", ios_job)
+        self.assertIn('"ARCHIVETUNE_UPDATE_CHANNEL=$ARCHIVETUNE_UPDATE_CHANNEL"', ios_job)
+
+    def test_ios_updates_use_real_bundle_identity_and_public_feed(self):
+        info = plistlib.loads((IOS / "ArchiveTune/Info.plist").read_bytes())
+        self.assertEqual("$(ARCHIVETUNE_UPDATE_CHANNEL)", info["ArchiveTuneUpdateChannel"])
+        config = (IOS / "Configuration/Native.xcconfig").read_text()
+        self.assertRegex(config, r"(?m)^ARCHIVETUNE_UPDATE_CHANNEL\s*=\s*stable$")
+        owner = (UI_IOS / "IosUpdateOwner.kt").read_text()
+        for symbol in ("CFBundleShortVersionString", "CFBundleVersion", "ArchiveTuneUpdateChannel",
+                       "UpdateInstallMode.OPEN_URL", "latestRelease", "branchForChannel(channel)"):
+            self.assertIn(symbol, owner)
+        settings = (UI_IOS / "IosSettings.kt").read_text()
+        self.assertIn("updaterAvailable = owners.update.updaterAvailable", settings)
+        self.assertIn("onNotificationChanged = null", settings)
+        self.assertIn("installOffer = { offer -> openIosUri(offer.downloadUrl, host::report) }", settings)
+        self.assertIn("checker.eligibleOffer(release, channel)?.let { return UpdateFeedResult.Offer(it) }", owner)
+        checker = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/update/SharedUpdateChecker.kt").read_text()
+        offer_policy = checker.split("fun eligibleOffer(", 1)[1].split("private fun rememberOffer(", 1)[0]
+        destination = re.search(r"UpdateInstallMode\.OPEN_URL\s*->\s*release\.(\w+)", offer_policy)
+        self.assertIsNotNone(destination)
+        release = {
+            "htmlUrl": "https://github.com/NatuneGroup/Natune/releases/tag/v2.0.0",
+            "downloadUrl": "https://github.com/NatuneGroup/Natune/releases/download/v2.0.0/app-gms-mobile-arm64-release.apk",
+        }
+        self.assertEqual("https://github.com/NatuneGroup/Natune/releases/tag/v2.0.0",
+                         release[destination.group(1)])
+        self.assertNotEqual(release["downloadUrl"], release[destination.group(1)])
+        self.assertIn("release.body, url,", offer_policy)
+        self.assertRegex(offer_policy, r"OPEN_URL\s*->\s*release\.htmlUrl\.takeIf \{ !release\.downloadUrl\.isNullOrBlank\(\) \}")
+        self.assertIn('IPA_PREFIX = "natune-ios-"', owner)
+        self.assertIn('IPA_SUFFIX = ".ipa"', owner)
+        self.assertIn("artifactMatcher = { it.startsWith(IPA_PREFIX) && it.endsWith(IPA_SUFFIX) }", owner)
+        workflow = (ROOT / ".github/workflows/_release-artifacts.yml").read_text()
+        self.assertIn('OPTIONAL_NAMES+=("natune-ios-${VERSION_NAME}.ipa")', workflow)
+        common = (UI_COMMON / "settings/UpdateSettings.kt").read_text()
+        self.assertIn("onNotificationChanged: (suspend (Boolean) -> Unit)?", common)
+        self.assertIn("onNotificationChanged?.invoke", common)
+        self.assertNotRegex(common, r"(?<![?.\w])onNotificationChanged\(")
 
     def test_only_portable_pcm_core_drives_audio_and_native_callback(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()

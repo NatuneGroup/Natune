@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -24,12 +25,12 @@ RELEASE_WORKFLOW = ROOT / ".github/workflows/_release-artifacts.yml"
 CANDIDATE_JOB = "android-release-candidate"
 SIGNING_NAMES = ("KEYSTORE", "KEY_ALIAS", "KEYSTORE_PASSWORD", "KEY_PASSWORD")
 BASELINE_URL = (
-    "https://github.com/NatuneGroup/Natune/releases/download/N20261103/"
+    "https://github.com/NatuneGroup/Natune/releases/download/N20261109/"
     "app-gms-mobile-arm64-nightly.apk"
 )
-BASELINE_SHA256 = "287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc"
-BASELINE_BYTES = "20306627"
-BASELINE_VERSION_CODE = "1793753723"
+BASELINE_SHA256 = "2cb8bd3fbed1ce396d9b85bd9cf1b1e6e7235a2663d2ff848943780c2d6ff034"
+BASELINE_BYTES = "23617037"
+BASELINE_VERSION_CODE = "1794231625"
 BASELINE_SIGNER_SHA256 = "6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9"
 SOURCE_SHA = "a" * 40
 VERSION_NAME = "candidate-" + SOURCE_SHA[:12]
@@ -151,7 +152,8 @@ def write_zip(path, extra=()):
         archive.writestr("AndroidManifest.xml", b"binary-manifest")
         archive.writestr("classes.dex", b"dex")
         archive.writestr("resources.arsc", b"arsc")
-        archive.writestr("lib/arm64-v8a/libc++_shared.so", b"native")
+        from scripts.test_apk_shrink import elf_fixture
+        archive.writestr("lib/arm64-v8a/libarchivetune_analysis.so", elf_fixture())
         for name in extra:
             archive.writestr(name, b"optional")
     return path
@@ -371,7 +373,7 @@ class WorkflowStructureTest(unittest.TestCase):
         self.assertIn("NIGHTLY_BUILD_HASH: ${{ github.sha }}", assemble)
         self.assertIn("PULL_REQUEST: 'false'", assemble)
         self.assertIn('VERSION_NAME_OVERRIDE="candidate-${SOURCE_SHA:0:12}"', script)
-        self.assertNotIn("1793753723", script)
+        self.assertNotIn("1794231625", script)
         self.assertNotIn("VERSION_CODE_OVERRIDE: 1793", assemble)
 
     def test_provider_environment_matches_the_release_android_leg(self):
@@ -459,7 +461,7 @@ class CandidatePreflightTest(unittest.TestCase):
                 result = self.preflight(CANDIDATE_VERSION_CODE=value)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("candidate_version_code", result.stdout + result.stderr)
-        for value in ("6834", "1793753724", "2147483647"):
+        for value in ("6834", "1794231626", "2147483647"):
             with self.subTest(value=value):
                 self.assertEqual(0, self.preflight(CANDIDATE_VERSION_CODE=value).returncode)
 
@@ -604,15 +606,15 @@ class VersionGateTest(unittest.TestCase):
         )
 
     def test_version_above_all_floors_passes(self):
-        result = self.gate(1793753724, ["<!-- at-build:1793753723 -->"])
+        result = self.gate(1794231626, ["<!-- at-build:1794231625 -->"])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("newest_published_version_code=1793753723", result.stdout)
+        self.assertIn("newest_published_version_code=1794231625", result.stdout)
 
     def test_equal_or_lower_source_baseline_and_published_codes_fail(self):
         cases = [
-            (6833, ["<!-- at-build:1793753723 -->"], "source floor"),
-            (1793753723, ["<!-- at-build:1793753723 -->"], "measured baseline"),
-            (1793753724, ["<!-- at-build:1800000000 -->"], "newest published build"),
+            (6833, ["<!-- at-build:1794231625 -->"], "source floor"),
+            (1794231625, ["<!-- at-build:1794231625 -->"], "measured baseline"),
+            (1794231626, ["<!-- at-build:1800000000 -->"], "newest published build"),
         ]
         for version, bodies, message in cases:
             with self.subTest(version=version):
@@ -621,20 +623,20 @@ class VersionGateTest(unittest.TestCase):
                 self.assertIn(message, result.stdout + result.stderr)
 
     def test_partial_api_output_then_failure_never_parses(self):
-        result = self.gate(1793753724, ["<!-- at-build:1793753723 -->"], gh_fail=True)
+        result = self.gate(1794231626, ["<!-- at-build:1794231625 -->"], gh_fail=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("API read did not complete", result.stdout + result.stderr)
         self.assertNotIn("newest_published_version_code", result.stdout)
 
     def test_api_failure_without_output_fails_closed(self):
-        result = self.gate(1793753724, [], gh_fail=True)
+        result = self.gate(1794231626, [], gh_fail=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("API read did not complete", result.stdout + result.stderr)
 
     def test_empty_or_no_usable_published_marker_fails_closed(self):
         for bodies in ([], [""], ["no marker"], ["null"]):
             with self.subTest(bodies=bodies):
-                result = self.gate(1793753724, bodies)
+                result = self.gate(1794231626, bodies)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("no usable build declaration", result.stdout + result.stderr)
 
@@ -643,7 +645,7 @@ class VersionGateTest(unittest.TestCase):
             1900000000,
             [
                 "stable notes\n<!-- at-build:1700000000 -->\nmore notes",
-                "nightly notes\n<!-- at-build:1793753723 -->",
+                "nightly notes\n<!-- at-build:1794231625 -->",
                 "<!-- at-build:1800000000 -->",
             ],
         )
@@ -653,11 +655,11 @@ class VersionGateTest(unittest.TestCase):
     def test_malformed_marker_next_to_a_valid_marker_fails_closed(self):
         for malformed in (
             "<!-- at-build:+1800000000 -->",
-            "<!-- at-build:1793753723garbage -->",
-            "<!-- at-build:1793753723 --> trailing",
+            "<!-- at-build:1794231625garbage -->",
+            "<!-- at-build:1794231625 --> trailing",
         ):
             with self.subTest(malformed=malformed):
-                result = self.gate(1793753724, ["<!-- at-build:1793753723 -->", malformed])
+                result = self.gate(1794231626, ["<!-- at-build:1794231625 -->", malformed])
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("malformed at-build declaration", result.stdout + result.stderr)
                 self.assertNotIn("newest_published_version_code", result.stdout)
@@ -668,12 +670,12 @@ class VersionGateTest(unittest.TestCase):
             "<!-- at-build:-1 -->",
             "<!-- at-build:1.5 -->",
             "<!-- at-build:abc -->",
-            "<!-- at-build:01793753723 -->",
-            "<!-- at-build: 1793753723 -->",
-            "at-build:1793753723",
-            "prefix <!-- at-build:1793753723 -->",
-            "<!-- at-build:1793753723",
-            "<!-- at-build:1793753723 ->",
+            "<!-- at-build:01794231625 -->",
+            "<!-- at-build: 1794231625 -->",
+            "at-build:1794231625",
+            "prefix <!-- at-build:1794231625 -->",
+            "<!-- at-build:1794231625",
+            "<!-- at-build:1794231625 ->",
         ):
             with self.subTest(marker=marker):
                 result = self.gate(2147483647, [marker])
@@ -691,7 +693,7 @@ class VersionGateTest(unittest.TestCase):
                 self.assertIn("positive Int range", result.stdout + result.stderr)
 
     def test_source_floor_is_read_from_the_current_build_script(self):
-        result = self.gate(6999, ["<!-- at-build:1793753723 -->"], floor=7000)
+        result = self.gate(6999, ["<!-- at-build:1794231625 -->"], floor=7000)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("source floor 7000", result.stdout + result.stderr)
 
@@ -974,7 +976,10 @@ class SigningTest(unittest.TestCase):
         stage = runner_temp / "natune-candidate"
         stage.mkdir()
         apk = stage / "natune-android-arm64-release-candidate.apk"
-        apk.write_bytes(b"unsigned-apk-bytes")
+        write_zip(apk)
+        script_directory = directory / "scripts"
+        script_directory.mkdir()
+        shutil.copyfile(ROOT / "scripts/recompress_apk.py", script_directory / "recompress_apk.py")
         tools = directory / "build-tools"
         tools.mkdir()
         calls = directory / "calls.jsonl"
@@ -1047,7 +1052,10 @@ class SigningTest(unittest.TestCase):
     def test_sign_aligns_with_historical_keystore_and_verifies_the_pin(self):
         result, apk, keystore_copy, calls, values = self.sign()
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(b"unsigned-apk-bytes-signed", apk.read_bytes())
+        self.assertTrue(apk.read_bytes().endswith(b"-signed"))
+        with zipfile.ZipFile(apk) as archive:
+            self.assertEqual(b"arsc", archive.read("resources.arsc"))
+            self.assertEqual(zipfile.ZIP_STORED, archive.getinfo("resources.arsc").compress_type)
         self.assertEqual(
             b"fixture-keystore-bytes", base64.b64decode(values["KEYSTORE"]))
         self.assertEqual(base64.b64decode(values["KEYSTORE"]), keystore_copy.read_bytes())
@@ -1095,7 +1103,7 @@ class FinalMetadataTest(unittest.TestCase):
     def setUpClass(cls):
         cls.script = run_script("Record the final signed APK metadata, checksum and size report")
 
-    def record(self, *, badging_text=None, extra_entries=(), extra_stage_file=False):
+    def record(self, *, badging_text=None, extra_entries=(), extra_stage_file=False, apk_bytes=0):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         runner_temp = directory / "runner"
         runner_temp.mkdir()
@@ -1103,6 +1111,14 @@ class FinalMetadataTest(unittest.TestCase):
         stage.mkdir()
         apk = write_zip(
             stage / "natune-android-arm64-release-candidate.apk", extra_entries)
+        if apk_bytes:
+            # The fixed-size stored entry grows the real ZIP. ZipFile append accounts for
+            # 90 bytes of local/central metadata and both end records for this closed fixture.
+            padding = apk_bytes - apk.stat().st_size - 90
+            self.assertGreater(padding, 0)
+            with zipfile.ZipFile(apk, "a", compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr("padding", b"\0" * padding)
+            self.assertEqual(apk_bytes, apk.stat().st_size)
         if extra_stage_file:
             (stage / "unexpected-baseline.apk").write_bytes(b"must not upload")
         tools = directory / "build-tools"
@@ -1181,6 +1197,16 @@ class FinalMetadataTest(unittest.TestCase):
     def test_legacy_sdk_version_label_still_records(self):
         result, _, _ = self.record(badging_text=badging(legacy_min_sdk=True))
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_final_signed_apk_must_remain_under_twenty_eight_million_bytes(self):
+        result, apk, stage = self.record(apk_bytes=27_999_999)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        for size in (28_000_000, 28_000_001):
+            with self.subTest(size=size):
+                result, apk, stage = self.record(apk_bytes=size)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("release-candidate limit is under 28000000 bytes", result.stdout + result.stderr)
+                self.assertFalse((stage / "candidate-metadata.json").exists())
 
     def test_unexpected_staged_file_blocks_the_hand_off(self):
         result, _, _ = self.record(extra_stage_file=True)

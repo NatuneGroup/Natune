@@ -214,7 +214,19 @@ private fun ArchiveTuneLoadedRoot(
         val active = visible && resumed
         val queue by host.queue.state.collectAsState()
         val playback by host.queue.player.snapshot.collectAsState()
-        val current = queue.entries.firstOrNull { it.occurrenceId == (playback?.occurrenceId ?: queue.currentOccurrenceId) }
+        // Queue owners publish a removal or replacement before the engine reports the successor's occurrence, so
+        // the queue's own current item stands in until playback catches up instead of collapsing the player. The
+        // stale snapshot belongs to another track, so the stand-in is drawn without its progress or playback intent.
+        val playing = queue.entries.firstOrNull { it.occurrenceId == playback?.occurrenceId }
+        val current = playing ?: queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }
+        val currentPlayback = playback.takeIf { playing != null }
+        // With nothing left to show, drop the expanded destinations so neither swallows Back without its close control.
+        LaunchedEffect(expanded, desktopShellState.expandedPlayer, current == null) {
+            if (current == null) {
+                expanded = false
+                desktopShellState.expandedPlayer = false
+            }
+        }
         LaunchedEffect(host, navigation) {
             host.routes.collect { route ->
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
@@ -290,8 +302,8 @@ private fun ArchiveTuneLoadedRoot(
             val snapshot = player.snapshot.value
             when (action) {
                 KeymapAction.TogglePlayback -> {
-                    if (snapshot == null) return false
-                    if (snapshot.playWhenReady) player.pause() else player.play()
+                    if (current == null) return false
+                    player.togglePlayPause(currentPlayback)
                 }
                 KeymapAction.SeekBack -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SEEK_BACKWARD)
                 KeymapAction.SeekForward -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SEEK_FORWARD)
@@ -399,7 +411,7 @@ private fun ArchiveTuneLoadedRoot(
                             modifier = pageModifier)
                     }
                 }
-                fun playPause() = host.queue.player.togglePlayPause()
+                fun playPause() = host.queue.player.togglePlayPause(currentPlayback)
                 fun desktopPlayerAction(action: PlayerAction) =
                     dispatchNativePlayerAction(host.queue.player, host.playerControls, action)
                 fun seekTo(targetMs: Long) = host.queue.player.seekTo(targetMs)
@@ -457,7 +469,7 @@ private fun ArchiveTuneLoadedRoot(
                                     if (current != null) {
                                         DesktopPlayerBar(
                                             current = current,
-                                            playback = playback,
+                                            playback = currentPlayback,
                                             nativeState = nativeState,
                                             artwork = host.artwork,
                                             motion = policy.motion,
@@ -479,7 +491,7 @@ private fun ArchiveTuneLoadedRoot(
                             )
                             if (desktopShellState.expandedPlayer && current != null) {
                                 DesktopExpandedPlayer(
-                                    state = desktopPlayerState(current, playback, nativeState, policy.motion),
+                                    state = desktopPlayerState(current, currentPlayback, nativeState, policy.motion),
                                     slots = slots,
                                     onClose = { desktopShellState.expandedPlayer = false },
                                     onPlayPause = ::playPause,
@@ -498,7 +510,7 @@ private fun ArchiveTuneLoadedRoot(
                                 miniPlayer = {
                                     if (current != null) ArchiveMiniPlayer(
                                         current = current,
-                                        playback = playback,
+                                        playback = currentPlayback,
                                         nativeState = nativeState,
                                         artwork = host.artwork,
                                         motion = policy.motion,

@@ -41,7 +41,11 @@ data class PlayerState(
     val sleepTimerMs: Long? = null,
     /** What this host can actually perform; a surface renders no control for an action outside it. */
     val actionSupport: PlayerActionSupport = PlayerActionSupport.ALL,
-)
+    /** Queue occurrence shown while its matching playback snapshot is unavailable. */
+    val standInOccurrenceId: String? = null,
+) {
+    val displayedOccurrenceId: String? get() = playback?.occurrenceId ?: standInOccurrenceId
+}
 
 /**
  * An armed transition from the playing occurrence to its successor. The blend starts at [fadeStartPositionMs] of the
@@ -92,8 +96,9 @@ fun controllerPlayerActions(
     setVolume: (Float) -> Unit,
     onAction: (PlayerAction) -> Unit,
     onLyricsVisibility: (Boolean) -> Unit,
+    displayedPlayback: () -> PlaybackSnapshot?,
 ): PlayerActions = PlayerActions(
-    playPause = { controller.togglePlayPause() },
+    playPause = { controller.togglePlayPause(displayedPlayback()) },
     seekTo = controller::seekTo,
     selectOccurrence = selectOccurrence,
     setVolume = setVolume,
@@ -101,13 +106,12 @@ fun controllerPlayerActions(
     onLyricsVisibility = onLyricsVisibility,
 )
 
-/** The full player and mini player use the same replay behaviour. */
-internal fun MusicPlayerController.togglePlayPause() {
-    val current = snapshot.value
-    if (current?.isEnded == true) {
+/** Toggle the displayed intent: a stand-in sends Play, and an ended track replays. */
+internal fun MusicPlayerController.togglePlayPause(displayedPlayback: PlaybackSnapshot?) {
+    if (displayedPlayback?.isEnded == true) {
         seekTo(0L)
         play()
-    } else if (current?.playWhenReady == true) pause() else play()
+    } else if (displayedPlayback?.playWhenReady == true) pause() else play()
 }
 
 /**

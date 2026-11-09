@@ -148,11 +148,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 "Build unsigned device app and create IPA", root,
                 PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], HOME=str(root / "home"), RUNNER_TEMP=str(root),
                 XCODEBUILD_ARGUMENTS=str(root / "arguments"), XCODEBUILD_PROPERTIES=str(root / "properties"),
-                PACKAGE_VERSION="1.2.3", VERSION_CODE_OVERRIDE="1", ARCHIVETUNE_TELEGRAM_API_ID="",
+                PACKAGE_VERSION="1.2.3", VERSION_CODE_OVERRIDE="1", ARCHIVETUNE_UPDATE_CHANNEL="nightly",
+                ARCHIVETUNE_TELEGRAM_API_ID="",
                 ARCHIVETUNE_TELEGRAM_API_HASH="", ARCHIVETUNE_LISTENER_PRESENCE_URL="",
             )
             self.assertEqual(3, result.returncode, result.stderr)
             self.assertEqual("-hideShellScriptEnvironment", (root / "arguments").read_text().splitlines()[0])
+            self.assertIn("ARCHIVETUNE_UPDATE_CHANNEL=nightly", (root / "arguments").read_text().splitlines())
             self.assertEqual([
                 "org.gradle.jvmargs=-Xmx20g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -XX:+UseParallelGC",
                 "natune.androidSdk=false",
