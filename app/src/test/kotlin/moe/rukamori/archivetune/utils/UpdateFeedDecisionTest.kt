@@ -56,7 +56,7 @@ class UpdateFeedDecisionTest {
         val release = releaseFor(newerCode.toLong())
         val versionName = Updater.getPreReleaseVersionName(release)
 
-        assertEquals("${BuildConfig.VERSION_NAME} (build $newerCode)", versionName)
+        assertEquals("N202610131530 (build $newerCode)", versionName)
         assertTrue(Updater.isUpdateAvailable(versionName, BuildConfig.VERSION_NAME))
     }
 
@@ -65,7 +65,7 @@ class UpdateFeedDecisionTest {
         val release = releaseFor(BuildConfig.VERSION_CODE.toLong())
         val versionName = Updater.getPreReleaseVersionName(release)
 
-        assertEquals("${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", versionName)
+        assertEquals("N202610131530 (build ${BuildConfig.VERSION_CODE})", versionName)
         assertFalse(Updater.isUpdateAvailable(versionName, BuildConfig.VERSION_NAME))
     }
 
@@ -74,6 +74,12 @@ class UpdateFeedDecisionTest {
         val release = releaseFor((BuildConfig.VERSION_CODE - 1).toLong())
 
         assertFalse(Updater.isUpdateAvailable(Updater.getPreReleaseVersionName(release), BuildConfig.VERSION_NAME))
+    }
+
+    @Test
+    fun nightlyDisplayFallsBackToReleaseNameWhenTagIsBlank() {
+        val release = releaseFor(101).copy(tagName = "", name = "Nightly offered")
+        assertEquals("Nightly offered (build 101)", Updater.getPreReleaseVersionName(release))
     }
 
     private fun stableReleaseFor(

@@ -8,4 +8,6 @@
     <string name="update_archive_not_newer">The downloaded APK does not match the selected update or is not newer than the installed app.</string>
     <string name="update_download_complete_offer">%1$s %2$s downloaded</string>
     <string name="update_offer_failure">%1$s %2$s: %3$s</string>
+    <string name="update_error_title">Update failed</string>
+    <string name="update_build_removed">This build is no longer on GitHub. It was replaced by a newer build or removed. Check for updates again.</string>
 </resources>

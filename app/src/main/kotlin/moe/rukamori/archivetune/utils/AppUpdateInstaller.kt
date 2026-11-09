@@ -117,11 +117,9 @@ object AppUpdateInstaller {
     ): Boolean {
         if (updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER) return false
         val appContext = context.applicationContext
+        val revision = Updater.selectionRevision
         return attempts.start(DownloadState.Downloading(null, offer)) {
-            download(appContext, offer).fold(
-                onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
-                onFailure = { DownloadState.Failed(it.message, offer) },
-            )
+            downloadWithRecovery(appContext, offer, revision)
         }
     }
 
@@ -171,6 +169,40 @@ object AppUpdateInstaller {
 
         apkFile.delete()
         sourceFile.delete()
+    }
+
+    private suspend fun downloadWithRecovery(
+        context: Context,
+        offer: UpdateOffer,
+        revision: Long,
+    ): DownloadState {
+        var activeOffer = offer
+        var retried = false
+        while (true) {
+            val result = download(context, activeOffer)
+            if (result.isSuccess) return DownloadState.ReadyToInstall(result.getOrThrow(), activeOffer)
+            val failure = result.exceptionOrNull()
+            val status = (failure as? UpdateDownloadHttpException)?.statusCode
+                ?: return DownloadState.Failed(failure?.message, activeOffer)
+            if (status != 404 && status != 410) return DownloadState.Failed(failure?.message, activeOffer)
+            val refreshed = if (retried) null else try {
+                Updater.getLatestRelease(offer.channel, forceRefresh = true).getOrNull()
+                    ?.let { Updater.eligibleOffer(it, offer.channel) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            currentCoroutineContext().ensureActive()
+            val replacement = replacementDownloadOffer(
+                status, activeOffer, refreshed, Updater.isCurrentSelection(offer.channel, revision), retried,
+            ) ?: return DownloadState.Failed(
+                context.getString(moe.rukamori.archivetune.R.string.update_build_removed), activeOffer,
+            )
+            activeOffer = replacement
+            retried = true
+            attempts.update { DownloadState.Downloading(null, activeOffer) }
+        }
     }
 
     private suspend fun download(
@@ -260,7 +292,7 @@ object AppUpdateInstaller {
         client.prepareGet(url).execute { response ->
             val responseCode = response.status.value
             if (responseCode !in 200..299) {
-                throw IOException("Update download failed: HTTP $responseCode")
+                throw UpdateDownloadHttpException(responseCode)
             }
 
             expectedBytes = response.contentLength() ?: -1L

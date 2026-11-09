@@ -66,13 +66,7 @@ fun branchForChannel(channel: UpdateChannel): String = when (channel) {
     UpdateChannel.NIGHTLY -> PreChannel.NIGHTLY.branch
 }
 
-/**
- * Version-code tie-break for the FLOOR+epoch_minutes allocation: two builds packaged inside the same
- * minute carry the same code. Eligibility stays strictly greater, so a client already on the first
- * build is never re-offered the second — equal code is never a downgrade and never a re-prompt. Feed
- * ordering prefers the later tag/publishedAt so the newest build is what a manual check surfaces.
- * See docs/engineering/update-feed-contract.md.
- */
+/** Extracts the verified build code from a display label; equal codes are never re-offered. */
 fun buildNumberOrNull(releaseName: String?): Int? =
     releaseName?.let { buildNumberRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
 
@@ -97,8 +91,10 @@ fun getReleaseVersionName(release: ReleaseInfo): String {
     return if (code != null) "$base (build $code)" else base
 }
 
-fun getPreReleaseVersionName(release: ReleaseInfo, installedVersionName: String): String =
-    nightlyBuildNumber(release)?.let { "$installedVersionName (build $it)" } ?: release.tagName
+fun getPreReleaseVersionName(release: ReleaseInfo): String {
+    val base = release.tagName.ifBlank { release.name.orEmpty() }
+    return nightlyBuildNumber(release)?.let { "$base (build $it)" } ?: base
+}
 
 /**
  * Newest stable release: `N…`/`C…`/`update-feed` tags excluded; semver taken from tag first, then name;

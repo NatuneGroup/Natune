@@ -40,13 +40,9 @@ class UpdatePolicyTest {
         assertEquals(UpdateEligibility.UNKNOWN_BUILD_CODE, updateEligibility(candidateCode = 0, installedCode = 10))
     }
 
-    /**
-     * The FLOOR+epoch-minutes edge: two builds in the same minute share a code. Eligibility is strict `>`, so the
-     * second build is NOT offered to a client already on the first — the tie-break is "same code means same offer",
-     * and the feed ordering (newer tag/publishedAt first) decides which candidate a fresh client sees.
-     */
+    /** Equal codes are never offered again, including historical builds sharing one code. */
     @Test
-    fun sameMinuteBuildsShareTheOfferDecision() {
+    fun equalBuildCodesShareTheOfferDecision() {
         val offer = eligibleUpdateOffer(
             UpdateChannel.NIGHTLY, "N202610270002", 42, "N202610270002", null, "https://x/a.apk", installedCode = 42,
         )
@@ -55,6 +51,17 @@ class UpdatePolicyTest {
             UpdateChannel.NIGHTLY, "N202610270003", 43, "N202610270003", null, "https://x/a.apk", installedCode = 42,
         )
         assertEquals("NIGHTLY|N202610270003|43", newer?.identity)
+    }
+
+    @Test
+    fun nightlyDisplayUsesTheOfferedReleaseIdentity() {
+        val release = ReleaseInfo(
+            tagName = "N202611091123", name = "Nightly release", htmlUrl = "https://example.test/release", versionCode = 101L,
+        )
+        assertEquals("N202611091123 (build 101)", getPreReleaseVersionName(release))
+        assertEquals("Nightly release (build 101)", getPreReleaseVersionName(release.copy(tagName = "")))
+        assertEquals("N202611091123", getPreReleaseVersionName(release.copy(versionCode = null)))
+        assertEquals(101, buildNumberOrNull(getPreReleaseVersionName(release)))
     }
 
     @Test
