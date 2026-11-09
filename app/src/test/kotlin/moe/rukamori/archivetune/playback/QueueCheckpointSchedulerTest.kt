@@ -4,15 +4,22 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.rukamori.archivetune.extensions.toPersistQueue
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
+import moe.rukamori.archivetune.models.QueueType
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistPhase
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
+import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -268,6 +275,202 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
+    fun untouchedInitialFailure_preservesThePreviousCheckpointIncludingAtTeardown() = runTest {
+        val fixture = Fixture(this)
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        val queue = fixture.beginFiniteReplacement()
+        queue.fail()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
+        assertEquals(listOf(listOf("seed")), fixture.written)
+        assertFalse(fixture.savePosition(200L))
+        assertNull(fixture.teardownSnapshot())
+        assertEquals(1, fixture.snapshots.size)
+    }
+
+    @Test
+    fun manualAdditionAfterInitialFailure_checkpointsWithoutChangingLoaderRetryState() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement()
+        queue.fail()
+        fixture.changeTimeline(listOf("manual"))
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("manual")), fixture.written)
+        assertTrue(queue.initialTimelineCleared)
+        assertFalse(queue.timelineInstalled)
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
+        assertTrue(fixture.savePosition(300L))
+        assertEquals(listOf(300L), fixture.positions)
+    }
+
+    @Test
+    fun manualAdditionDuringInitialRequest_remainsAcceptedAfterTheRequestFails() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement()
+        val finishInitialRequest = CompletableDeferred<Unit>()
+        val load = launch {
+            finishInitialRequest.await()
+            queue.fail()
+        }
+        fixture.changeTimeline(listOf("manual-during-request"))
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("manual-during-request")), fixture.written)
+
+        finishInitialRequest.complete(Unit)
+        load.join()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertEquals(FinitePlaylistPhase.FAILED, queue.snapshot.phase)
+        assertEquals(listOf("manual-during-request"), fixture.written.last())
+        assertFalse(queue.timelineInstalled)
+        assertTrue(fixture.savePosition(400L))
+    }
+
+    @Test
+    fun removingManualAdditionAfterInitialFailure_persistsAnAcceptedEmptyList() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement()
+        queue.fail()
+        fixture.changeTimeline(listOf("manual"))
+        advanceUntilIdle()
+        val manualSnapshot = fixture.snapshots.single()
+
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("manual"), emptyList<String>()), fixture.written)
+        assertEquals(QueueType.LIST, fixture.snapshots.last().queueType)
+        assertFalse(fixture.commit(manualSnapshot))
+        assertTrue(queue.hasUnacceptedFiniteReplacement())
+        assertTrue(fixture.commit(requireNotNull(fixture.teardownSnapshot())))
+        assertTrue(fixture.written.last().isEmpty())
+    }
+
+    @Test
+    fun newFiniteReplacement_resetsAcceptanceOfThePreviousManualQueue() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginFiniteReplacement().fail()
+        fixture.changeTimeline(listOf("manual"))
+        advanceUntilIdle()
+
+        fixture.beginFiniteReplacement().fail()
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("manual")), fixture.written)
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
+    fun unacceptedReplacement_blocksPositionOnlyWritesWithANonemptyTimeline() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement()
+        // A retained item is not accepted until the playlist-changed callback observes a user edit.
+        fixture.items = listOf("retained")
+        queue.fail()
+        assertFalse(fixture.savePosition(500L))
+        assertTrue(fixture.positions.isEmpty())
+        assertNull(fixture.snapshotIfAccepted())
+
+        fixture.changeTimeline(listOf("manual"))
+        advanceUntilIdle()
+        assertTrue(fixture.savePosition(600L))
+        assertEquals(listOf(600L), fixture.positions)
+    }
+
+    @Test
+    fun nextPageFailure_keepsTheAcceptedNonemptyTimelineCheckpointable() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement(FinitePlaylistSnapshot(
+            continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
+        ))
+        fixture.mutating = true
+        queue.timelineInstalled = true
+        fixture.changeTimeline(listOf("accepted-page"))
+        fixture.mutating = false
+        queue.fail()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("accepted-page")), fixture.written)
+        assertEquals(QueueType.YOUTUBE_PLAYLIST, fixture.snapshots.single().queueType)
+        assertTrue(fixture.savePosition(700L))
+        assertFalse(queue.hasUnacceptedFiniteReplacement())
+    }
+
+    @Test
+    fun emptyFilteredFinitePage_preservesThePreviousCheckpointThroughNextPageFailure() = runTest {
+        val fixture = Fixture(this)
+        fixture.scheduler.request()
+        advanceUntilIdle()
+        val queue = fixture.beginFiniteReplacement(FinitePlaylistSnapshot(
+            continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
+        ))
+        // The loader accepts a fully filtered first page and starts its continuation request.
+        queue.timelineInstalled = true
+        fixture.scheduler.request()
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("seed")), fixture.written)
+        assertNull(fixture.teardownSnapshot())
+
+        queue.fail()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+        assertEquals("next-page", queue.snapshot.continuation)
+        assertEquals(listOf(listOf("seed")), fixture.written)
+        assertNull(fixture.snapshotIfAccepted())
+
+        // stopAndClearPlayback switches the queue identity before clearing the player.
+        fixture.queue = EmptyQueue
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), fixture.written.last())
+        assertEquals(QueueType.LIST, fixture.snapshots.last().queueType)
+    }
+
+    @Test
+    fun filteringAllLoadedFiniteItems_doesNotEraseTheContinuation() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFiniteReplacement(FinitePlaylistSnapshot(
+            continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
+        ))
+        fixture.mutating = true
+        queue.timelineInstalled = true
+        fixture.changeTimeline(listOf("accepted-page"))
+        fixture.mutating = false
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+        queue.fail()
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("accepted-page")), fixture.written)
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
+    fun teardownAfterInitialFailure_writesTheAcceptedManualQueue() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginFiniteReplacement().fail()
+        fixture.changeTimeline(listOf("manual-at-teardown"))
+        // Teardown snapshots directly, before the scheduler's debounce has elapsed.
+        val teardown = requireNotNull(fixture.teardownSnapshot())
+        assertTrue(fixture.commit(teardown))
+        advanceUntilIdle()
+
+        assertEquals(listOf("manual-at-teardown"), fixture.written.first())
+        assertEquals(QueueType.YOUTUBE_PLAYLIST, teardown.queueType)
+    }
+
+    @Test
     fun persistenceReenabled_requestsACheckpointForChangesMadeWhileDisabled() = runTest {
         val enabled = MutableStateFlow(false)
         var restoreCompleted = true
@@ -317,7 +520,65 @@ class QueueCheckpointSchedulerTest {
         assertFalse(previous.commit(previous.snapshots.first()))
     }
 
-    private data class Snapshot(val checkpoint: QueueCheckpointToken, val items: List<String>)
+    @Test
+    fun replacementService_waitsForPendingTeardownBeforeReadingAndAdvancingGeneration() = runTest {
+        val persistence = QueuePersistenceState()
+        val previous = Fixture(this, persistence)
+        previous.items = listOf("newer-B")
+        val teardown = requireNotNull(previous.teardownSnapshot())
+        val releaseWrite = CompletableDeferred<Unit>()
+        var disk = listOf("older-A")
+        persistence.teardownWrites.launch(this) {
+            releaseWrite.await()
+            if (previous.commit(teardown)) disk = teardown.items
+        }
+        var restored: List<String>? = null
+        val restoration = launch {
+            persistence.teardownWrites.awaitPendingWrites()
+            restored = disk.toList()
+            previous.invalidate()
+        }
+        runCurrent()
+
+        assertNull(restored)
+        assertEquals(0L, persistence.generation.get())
+        releaseWrite.complete(Unit)
+        restoration.join()
+
+        assertEquals(listOf("newer-B"), restored)
+        assertEquals(1L, persistence.generation.get())
+        assertEquals(listOf(listOf("newer-B")), previous.written)
+    }
+
+    @Test
+    fun pendingTeardown_doesNotOverwriteANewerUserCheckpointWhileRestorationWaits() = runTest {
+        val persistence = QueuePersistenceState()
+        val previous = Fixture(this, persistence)
+        val current = Fixture(this, persistence)
+        val teardown = requireNotNull(previous.teardownSnapshot())
+        val releaseWrite = CompletableDeferred<Unit>()
+        var accepted = true
+        persistence.teardownWrites.launch(this) {
+            releaseWrite.await()
+            accepted = previous.commit(teardown)
+        }
+        val restoration = launch { persistence.teardownWrites.awaitPendingWrites() }
+        runCurrent()
+        current.items = listOf("newer-user-queue")
+        assertTrue(current.commit(current.snapshot()))
+        releaseWrite.complete(Unit)
+        restoration.join()
+
+        assertFalse(accepted)
+        assertTrue(previous.written.isEmpty())
+        assertEquals(listOf(listOf("newer-user-queue")), current.written)
+    }
+
+    private data class Snapshot(
+        val checkpoint: QueueCheckpointToken,
+        val items: List<String>,
+        val queueType: QueueType,
+    )
 
     private class Fixture(
         scope: CoroutineScope,
@@ -328,23 +589,66 @@ class QueueCheckpointSchedulerTest {
         var hydrating = false
         var mutating = false
         var items = listOf("seed")
+        var queue: Queue = EmptyQueue
+        var hasTimelineChanges = false
         val snapshots = mutableListOf<Snapshot>()
         val written = mutableListOf<List<String>>()
+        val positions = mutableListOf<Long>()
         var readEnabled: suspend () -> Boolean = { enabled }
         var beforeWrite: suspend (Snapshot) -> Unit = {}
+        val checkpointGate = QueueCheckpointGate(
+            queue = { queue },
+            transientMutation = { restoring || hydrating || mutating },
+            mediaItemCount = { items.size },
+        )
         val scheduler = QueueCheckpointScheduler(
             scope = { scope },
             generation = { persistence.generation.get() },
             enabled = { readEnabled() },
-            blocked = { restoring || hydrating || mutating },
-            snapshot = { snapshot() },
+            blocked = { checkpointGate.blocked() },
+            snapshot = { snapshotIfAccepted() },
             write = {
                 beforeWrite(it)
                 commit(it)
             },
         )
 
-        fun snapshot(): Snapshot = Snapshot(persistence.checkpointOrder.nextSnapshot(), items.toList()).also { snapshots += it }
+        fun beginFiniteReplacement(snapshot: FinitePlaylistSnapshot = FinitePlaylistSnapshot()): YouTubePlaylistQueue {
+            val finite = YouTubePlaylistQueue(WatchEndpoint(playlistId = "fixture"), snapshot = snapshot)
+            queue = finite
+            checkpointGate.reset()
+            finite.beginPlayback()
+            finite.initialTimelineCleared = true
+            changeTimeline(emptyList())
+            return finite
+        }
+
+        fun changeTimeline(next: List<String>) {
+            items = next
+            checkpointGate.onTimelineChanged(items.isEmpty())
+            hasTimelineChanges = true
+            scheduler.request()
+        }
+
+        fun snapshotIfAccepted(): Snapshot? = if (checkpointGate.blocked()) null else snapshot()
+
+        fun teardownSnapshot(): Snapshot? =
+            if (TeardownQueuePersistence.shouldSave(enabled, items.size, hasTimelineChanges)) snapshotIfAccepted() else null
+
+        fun snapshot(): Snapshot = Snapshot(
+            persistence.checkpointOrder.nextSnapshot(),
+            items.toList(),
+            (if (items.isEmpty()) EmptyQueue else queue).toPersistQueue(null, emptyList(), 0, 0L).queueType,
+        ).also { snapshots += it }
+
+        fun savePosition(position: Long): Boolean {
+            if (!enabled || checkpointGate.blocked() || items.isEmpty()) return false
+            return synchronized(persistence.lock) {
+                persistence.checkpointOrder.writePlayerStateIfCurrent(persistence.checkpointOrder.nextSnapshot()) {
+                    positions += position
+                }
+            }
+        }
 
         fun commit(snapshot: Snapshot): Boolean = synchronized(persistence.lock) {
             persistence.checkpointOrder.writeIfCurrent(snapshot.checkpoint) { written += snapshot.items }

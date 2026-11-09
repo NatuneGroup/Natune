@@ -717,14 +717,16 @@ class MusicService :
     private val queuePersistence = QueuePersistenceState.shared
     internal var hasQueueTimelineChanges = false
         private set
+    private val queueCheckpointGate = QueueCheckpointGate(
+        queue = { currentQueue },
+        transientMutation = { isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress },
+        mediaItemCount = { player.mediaItemCount },
+    )
     private val queueCheckpoints = QueueCheckpointScheduler(
         scope = { CoroutineScope(scope.coroutineContext + SilentHandler) },
         generation = { queuePersistence.generation.get() },
         enabled = { withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) } },
-        blocked = {
-            isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress ||
-                currentQueue.hasUnacceptedFiniteReplacement()
-        },
+        blocked = { queueCheckpointGate.blocked() },
         snapshot = { snapshotQueue() },
         write = { writeQueueSnapshot(it) },
     )
@@ -1999,6 +2001,7 @@ class MusicService :
             runCatching {
                 if (dataStore.get(PersistentQueueKey, true)) {
                     playerInitialized.first { it }
+                    queuePersistence.teardownWrites.awaitPendingWrites()
                     val restoreGeneration = withContext(Dispatchers.Main.immediate) { initialQueueLoadGeneration }
                     if (restoreGeneration != 0L) return@runCatching
                     val persistedQueue = readPersistentObject<PersistQueue>(PERSISTENT_QUEUE_FILE)
@@ -5901,6 +5904,7 @@ class MusicService :
         val initialLoadGeneration = ++initialQueueLoadGeneration
         initialQueueLoadInProgress = true
         currentQueue = queue
+        queueCheckpointGate.reset()
         queueTitle = null
         val permanentShuffle = dataStore.get(PermanentShuffleKey, false)
         if (!permanentShuffle) {
@@ -7148,6 +7152,7 @@ class MusicService :
     ) {
         super.onTimelineChanged(timeline, reason)
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            queueCheckpointGate.onTimelineChanged(timeline.isEmpty)
             hasQueueTimelineChanges = true
             saveQueueToDisk()
         }
@@ -12275,9 +12280,7 @@ class MusicService :
             withContext(Dispatchers.Main.immediate) {
                 if (
                     saveGeneration != queuePersistence.generation.get() ||
-                    isRestoringPersistentState ||
-                    isHydratingRestoredQueue ||
-                    finiteMutationInProgress ||
+                    queueCheckpointGate.blocked() ||
                     player.mediaItemCount == 0
                 ) {
                     return@withContext null
@@ -12318,14 +12321,11 @@ class MusicService :
 
     /** Main thread only: the player is thread-confined; teardown runs this before release. */
     internal fun snapshotQueue(): PersistedQueueSnapshot? {
-        if (isRestoringPersistentState || isHydratingRestoredQueue) return null
-        if (finiteMutationInProgress || currentQueue.hasUnacceptedFiniteReplacement()) return null
+        if (queueCheckpointGate.blocked()) return null
         val checkpoint = queuePersistence.checkpointOrder.nextSnapshot()
-
         val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
         // Startup's empty player must not replace an unreadable saved queue or race restoration.
         if (mediaItemsSnapshot.isEmpty() && (!hasQueueTimelineChanges || !queueRestoreCompleted.value || player.mediaItemCount > 0)) return null
-
         val currentMediaItemIndex = player.currentMediaItemIndex
         val currentPosition = player.currentPosition
         val persistQueue =

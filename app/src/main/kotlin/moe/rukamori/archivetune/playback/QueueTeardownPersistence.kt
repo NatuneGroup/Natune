@@ -4,7 +4,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.constants.PersistentQueueKey
@@ -53,7 +52,7 @@ internal fun MusicService.saveQueueForTeardown(): TeardownQueueSave? {
         Timber.tag(TAG).w(it, "Could not snapshot the queue during teardown")
     }.getOrNull() ?: return null
 
-    val write = teardownPersistenceScope.launch {
+    val write = QueuePersistenceState.shared.teardownWrites.launch(teardownPersistenceScope) {
         runCatching { writeQueueSnapshot(snapshot) }
             .onFailure { Timber.tag(TAG).w(it, "Queue save failed during teardown") }
     }
