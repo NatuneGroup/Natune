@@ -1190,14 +1190,14 @@ class FinalMetadataTest(unittest.TestCase):
         result, _, _ = self.record(badging_text=badging(legacy_min_sdk=True))
         self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_final_signed_apk_must_remain_under_twenty_million_bytes(self):
-        result, apk, stage = self.record(apk_bytes=19_999_999)
+    def test_final_signed_apk_must_remain_under_twenty_eight_million_bytes(self):
+        result, apk, stage = self.record(apk_bytes=27_999_999)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        for size in (20_000_000, 20_000_001):
+        for size in (28_000_000, 28_000_001):
             with self.subTest(size=size):
                 result, apk, stage = self.record(apk_bytes=size)
                 self.assertNotEqual(0, result.returncode)
-                self.assertIn("release-candidate limit is under 20000000 bytes", result.stdout + result.stderr)
+                self.assertIn("release-candidate limit is under 28000000 bytes", result.stdout + result.stderr)
                 self.assertFalse((stage / "candidate-metadata.json").exists())
 
     def test_unexpected_staged_file_blocks_the_hand_off(self):
