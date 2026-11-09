@@ -368,7 +368,8 @@ void ae_mixer_cancel(ae_mixer *m) {
         return;
     }
     pthread_mutex_lock(&m->mutex);
-    if (m->exclusive_requested || m->raw_output) { pthread_mutex_unlock(&m->mutex); return AE_MIXER_REJECTED; }
+    // Exclusive/raw output keeps its own arming; cancel is a no-op there.
+    if (m->exclusive_requested || m->raw_output) { pthread_mutex_unlock(&m->mutex); return; }
     m->armed = 0;
     pthread_mutex_unlock(&m->mutex);
 }
