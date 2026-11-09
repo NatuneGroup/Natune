@@ -71,8 +71,6 @@ import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
-import moe.rukamori.archivetune.telegram.isTelegramMediaId
-import moe.rukamori.archivetune.utils.isLocalMediaId
 import timber.log.Timber
 import java.text.Collator
 import java.time.LocalDateTime
@@ -91,10 +89,13 @@ class MediaLibrarySessionCallback
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main) // a failed callback cancels only itself
         private var pendingSearchJob: Job? = null
         private val onlineSearchItemCache = LruCache<String, MediaItem>(256) // a long Auto session runs many searches
-        private val spotifyPlaylistItemCache = LruCache<String, List<MediaItem>>(8) // one entry can hold a whole playlist
-        private val browseChildrenCache = AutoBrowseChildrenCache<MediaItem>()
+        internal val spotifyPlaylistItemCache = AutoBrowseChildrenCache<MediaItem>(maxEntries = 8)
+        internal val browseFolderUpdates = AutoBrowseFolderUpdates<MediaItem>()
 
-        fun invalidateBrowseChildren() = browseChildrenCache.clear()
+        fun invalidateBrowseChildren() {
+            browseFolderUpdates.clear()
+            spotifyPlaylistItemCache.clear()
+        }
 
         var toggleLike: () -> Unit = {}
         var toggleStartRadio: () -> Unit = {}
@@ -519,7 +520,7 @@ class MediaLibrarySessionCallback
 
                         MusicService.PLAYLIST -> {
                             val likedSongCount = database.likedSongsCount().first()
-                            val downloadedSongCount = downloadUtil.downloads.value.size
+                            val downloadedSongCount = downloadUtil.downloads.value.count { it.value.state == Download.STATE_COMPLETED }
                             // Read once — the folder lookups below each default to this same dataStore read.
                             val showSpotifyPlaylists = context.dataStore.get(ShowSpotifyPlaylistsKey, false)
                             listOf(
@@ -646,7 +647,7 @@ class MediaLibrarySessionCallback
                     }
                 }
                 // The queue folder mirrors the live player, so it is never served from a snapshot.
-                val items = if (parentId == MusicService.QUEUE) load() else browseChildrenCache.children(parentId, page, load)
+                val items = if (parentId == MusicService.QUEUE) load() else browseFolderUpdates.children(parentId, load)
                 val visibleItems = spotifyAutoVisibleChildren(items, context.spotifyMetadataExtensionEnabled()) { it.mediaId }
                 LibraryResult.ofItemList(visibleItems.autoBrowsePage(page, pageSize), params)
             }
@@ -1061,9 +1062,8 @@ class MediaLibrarySessionCallback
          */
         private suspend fun spotifyLikedMediaItems(): List<MediaItem> {
             if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
-            spotifyPlaylistItemCache.get(SPOTIFY_LIKED_CACHE_KEY)?.let { return it }
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) return emptyList()
-            val resolved =
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) return emptyList()
+            val resolved = spotifyPlaylistItemCache.children(SPOTIFY_LIKED_CACHE_KEY) {
                 runCatching {
                     spotifyLibraryRepository
                         .likedSongs()
@@ -1081,7 +1081,8 @@ class MediaLibrarySessionCallback
                             }.filterNotNull()
                         }
                 }.getOrElse { emptyList() }
-            if (resolved.isNotEmpty()) spotifyPlaylistItemCache.put(SPOTIFY_LIKED_CACHE_KEY, resolved)
+            }
+            if (resolved.isEmpty()) spotifyPlaylistItemCache.invalidate { it == SPOTIFY_LIKED_CACHE_KEY }
             return resolved
         }
 
@@ -1159,8 +1160,7 @@ class MediaLibrarySessionCallback
 
         private suspend fun spotifyPlaylistMediaItems(playlistId: String): List<MediaItem> {
             if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
-            spotifyPlaylistItemCache.get(playlistId)?.let { return it }
-            val resolved =
+            val resolved = spotifyPlaylistItemCache.children(playlistId) {
                 runCatching {
                     spotifyLibraryRepository
                         .playlistTracks(playlistId)
@@ -1173,7 +1173,8 @@ class MediaLibrarySessionCallback
                             }.filterNotNull()
                         }
                 }.getOrElse { emptyList() }
-            if (resolved.isNotEmpty()) spotifyPlaylistItemCache.put(playlistId, resolved)
+            }
+            if (resolved.isEmpty()) spotifyPlaylistItemCache.invalidate { it == playlistId }
             return resolved
         }
 
@@ -1340,7 +1341,7 @@ class MediaLibrarySessionCallback
                 }
 
                 PlaylistEntity.DOWNLOADED_PLAYLIST_ID -> {
-                    val count = downloadUtil.downloads.value.size
+                    val count = downloadUtil.downloads.value.count { it.value.state == Download.STATE_COMPLETED }
                     queueMediaItem(
                         "${MusicService.PLAYLIST}/$playlistId",
                         context.getString(R.string.downloaded_songs),
@@ -1628,39 +1629,6 @@ class MediaLibrarySessionCallback
                 ?: onlinePlaylistSongs(playlistId)
                     .firstOrNull { it.id == songId }
                     ?.toMediaItem(parentId)
-
-        private suspend fun addCurrentSongToPlaylist(
-            mediaSession: MediaSession,
-            playlistId: String,
-        ): Boolean {
-            val currentItem =
-                withContext(Dispatchers.Main.immediate) {
-                    mediaSession.player.currentMediaItem
-                } ?: return false
-            val songId = currentItem.mediaId.trim().takeIf(String::isNotBlank) ?: return false
-            return withContext(Dispatchers.IO) {
-                val playlist = database.getPlaylistById(playlistId) ?: return@withContext false
-                if (!playlist.playlist.isEditable) return@withContext false
-                if (database.checkInPlaylist(playlistId, songId) > 0) return@withContext false
-                val browseId = playlist.playlist.browseId
-                val setVideoId =
-                    if (browseId != null) {
-                        if (songId.isLocalMediaId() || songId.isTelegramMediaId()) return@withContext false
-                        YouTube.addToPlaylist(browseId, songId).getOrNull() ?: return@withContext false
-                    } else {
-                        null
-                    }
-                database.withTransaction {
-                    if (getSongByIdBlocking(songId) == null) {
-                        currentItem.metadata?.let { insert(it) } ?: return@withTransaction false
-                    }
-                    val latestPlaylist = getPlaylistByIdBlocking(playlistId) ?: return@withTransaction false
-                    if (checkInPlaylist(playlistId, songId) > 0) return@withTransaction false
-                    addSongEntriesToPlaylist(latestPlaylist, listOf(songId to setVideoId))
-                    true
-                }
-            }
-        }
 
         private suspend fun MediaSession.currentMediaItemsWithStartPosition(): MediaSession.MediaItemsWithStartPosition =
             withContext(Dispatchers.Main.immediate) {
