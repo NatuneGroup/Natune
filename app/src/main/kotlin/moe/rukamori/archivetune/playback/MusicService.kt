@@ -568,7 +568,9 @@ class MusicService :
     private lateinit var connectivityManager: ConnectivityManager
     lateinit var connectivityObserver: NetworkConnectivityObserver
     val waitingForNetworkConnection = MutableStateFlow(false)
-    private val autoOfflineAvailability by lazy { AutoOfflineAvailability { connectivityObserver.isCurrentlyConnected() } }
+    private val autoOfflineAvailability by lazy { AutoOfflineAvailability({ connectivityObserver.isCurrentlyConnected() },
+        scheduleExpiry = { delayMs, action -> scope.launch { delay(delayMs); action() } },
+        onChanged = { scope.launch { if (::mediaSession.isInitialized) mediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(mediaSession) } }) }
     private val isNetworkConnected = MutableStateFlow(false)
 
     private val audioQuality by enumPreference(
@@ -1553,6 +1555,7 @@ class MusicService :
                     (autoOfflineSongs.knownSong(id)?.format?.itag == -1 || isFullyCachedForAuto(id)) },
                 isFullyCached = { song -> isFullyCachedForAuto(song) },
                 isFullyCachedId = { id -> isFullyCachedForAuto(id) },
+                onUserRetry = { autoOfflineAvailability.onUserRetry() },
             )
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
@@ -1611,9 +1614,7 @@ class MusicService :
         scope.launch {
             connectivityObserver.networkStatus.collect { isConnected ->
                 isNetworkConnected.value = isConnected
-                val availabilityChanged = autoOfflineAvailability.onConnectivityChanged(isConnected)
-                if (autoOfflineAvailability.isOffline()) retainOfflineQueue(player, mediaLibrarySessionCallback.autoOfflineSongs)
-                if (availabilityChanged) mediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(mediaSession)
+                autoOfflineAvailability.onConnectivityChanged(isConnected)
                 if (isConnected && waitingForNetworkConnection.value) {
                     waitingForNetworkConnection.value = false
                     if (player.currentMediaItem != null && player.playWhenReady &&
@@ -7176,6 +7177,7 @@ class MusicService :
         initialBufferRecoveryAttemptedMediaId = null
         updateInitialBufferRecovery(player.playbackState)
         recoveryRetry.onMediaItemTransition(mediaItem?.mediaId, player.playbackState == Player.STATE_READY, player.playbackState == Player.STATE_BUFFERING)
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) skipUnavailableOfflineItem(player, mediaLibrarySessionCallback.autoOfflineSongs)
 
         // Catch-all for user-initiated skips that bypass PlayerConnection (notification, lock
         // screen, Bluetooth, Android Auto): a SEEK transition while a crossfade fade loop is still
@@ -8076,10 +8078,7 @@ class MusicService :
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
         val isLocalMedia = currentMediaId.isLocalMediaId()
-        val isConnectionError = error.isNetworkPlaybackFailure()
-        if (!isLocalMedia && isConnectionError && autoOfflineAvailability.onConnectionFailure()) {
-            mediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(mediaSession)
-        }
+        if (!isLocalMedia && error.isNetworkPlaybackFailure()) autoOfflineAvailability.onConnectionFailure()
 
         val librespotFailure = generateSequence(error as Throwable) { it.cause }.take(16)
             .filterIsInstance<SpotifyLibrespotAudioException>().firstOrNull()
@@ -8137,7 +8136,6 @@ class MusicService :
 
         // Partial spans cannot fund an offline retry; eligibility is the resolver's full-file lookup.
         if (!isLocalMedia && availableOffline && autoOfflineAvailability.isOffline()) {
-            retainOfflineQueue(player, mediaLibrarySessionCallback.autoOfflineSongs)
             Timber.tag("MusicService").i(
                 "Offline playback recovery for %s (fullyCached=%b, hasSpans=%b); re-preparing to force cache read",
                 currentMediaId,
@@ -10704,6 +10702,7 @@ class MusicService :
 
         resolveMultiSourceDataSpec(dataSpec, mediaId, lowDataModeActive, prefs = prefs)?.let { sourceDataSpec ->
             scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
+            autoOfflineAvailability.onNetworkSuccess()
             return sourceDataSpec
         }
 
@@ -10856,6 +10855,7 @@ class MusicService :
             requireNotNull(playbackData) {
                 getString(R.string.error_unknown)
             }
+        autoOfflineAvailability.onNetworkSuccess()
         nonNullPlayback.playbackTracking
             ?.remotePlaybackTrackingUrl()
             ?.let { remotePlaybackTrackingUrlCache[mediaId] = it }

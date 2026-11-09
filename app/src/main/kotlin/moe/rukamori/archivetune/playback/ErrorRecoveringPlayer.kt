@@ -50,13 +50,9 @@ internal class ErrorRecoveringPlayer(
             if (recover) onRecover()
             // A callback may change the queue or revoke a source/download. Never apply a stale index.
             if (!unchanged(items) || offlineSongs.isOffline() && !offlineSongs.canPlayId(items[index].mediaId)) return
-            val selection = retainOfflineQueue(target, offlineSongs, index, positionMs) ?: return
-            if (offlineSongs.isOffline()) {
-                target.seekTo(selection.startIndex, positionMs)
-            } else {
-                seek()
-            }
-            prepareAfterError(recover, selection.items, selection.startIndex)
+            // Unavailable entries are skipped, never removed: the queue survives reconnection.
+            if (offlineSongs.isOffline()) target.seekTo(index, positionMs) else seek()
+            prepareAfterError(recover, items, index)
         } finally {
             navigating = false
         }
@@ -108,10 +104,10 @@ internal class ErrorRecoveringPlayer(
             if (recover) onRecover()
             if (!unchanged(original)) return
             if (selection != null && offlineSongs.isOffline()) {
-                if (!offlineSongs.canPlayId(selection.items[selection.startIndex].mediaId)) return
-                target.setMediaItems(selection.items, selection.startIndex, selection.startPositionMs)
+                if (!offlineSongs.canPlayId(items[selection.sourceIndex].mediaId)) return
+                target.setMediaItems(items, selection.sourceIndex, selection.startPositionMs)
             } else replace()
-            if (selection != null) prepareAfterError(recover, selection.items, selection.startIndex)
+            if (selection != null) prepareAfterError(recover, items, selection.sourceIndex)
         } finally {
             navigating = false
         }
@@ -136,31 +132,17 @@ internal class ErrorRecoveringPlayer(
         replaceItems(listOf(mediaItem), 0, if (resetPosition) C.TIME_UNSET else target.currentPosition) { target.setMediaItem(mediaItem, resetPosition) }
 }
 
-/** Remove unavailable ranges from the tail so Media3 retains window identities and shuffle order. */
-internal fun retainOfflineQueue(
-    player: Player,
-    songs: AutoOfflineSongs,
-    startIndex: Int = player.currentMediaItemIndex,
-    positionMs: Long = player.currentPosition,
-): AutoOfflineSongs.Selection<MediaItem>? {
-    val original = List(player.mediaItemCount) { player.getMediaItemAt(it) }
-    val selection = songs.selectItems(original, startIndex, positionMs) ?: return null
-    if (selection.items.size == original.size) return selection
-    val retained = selection.items.toHashSet()
-    val expected = original.toMutableList()
-    fun unchanged(): Boolean = player.mediaItemCount == expected.size && expected.indices.all { player.getMediaItemAt(it) == expected[it] }
-    var end = original.size
-    while (end > 0) {
-        if (original[end - 1] in retained) { end--; continue }
-        var start = end - 1
-        while (start > 0 && original[start - 1] !in retained) start--
-        if (!unchanged()) return null
-        player.removeMediaItems(start, end)
-        expected.subList(start, end).clear()
-        if (!unchanged()) return null
-        end = start
-    }
-    return selection
+/**
+ * An automatic transition onto an entry that cannot play offline moves to the next playable
+ * entry in the live repeat/shuffle order, leaving the timeline intact.
+ */
+internal fun skipUnavailableOfflineItem(player: Player, songs: AutoOfflineSongs): Boolean {
+    val current = player.currentMediaItem ?: return false
+    if (!songs.isOffline() || songs.canPlayId(current.mediaId)) return false
+    val next = ErrorRecoveringPlayer(player, songs) {}.nextMediaItemIndex
+    if (next == C.INDEX_UNSET || next == player.currentMediaItemIndex) return false
+    player.seekTo(next, C.TIME_UNSET)
+    return true
 }
 
 /** Repeat/shuffle navigation is supplied by the live timeline; revisiting an index terminates the scan. */

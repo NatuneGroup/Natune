@@ -230,8 +230,9 @@ internal suspend fun MediaLibrarySessionCallback.queueEntryPlayback(
         val player = session.player
         val items = List(player.mediaItemCount) { player.getMediaItemAt(it) }
         val position = AutoQueueMediaIds.resolvePosition(entry, items.map { it.mediaId }) ?: return@withContext null
+        // Only validate the tap: the live queue is replayed whole and transport skips offline gaps.
         val selection = autoOfflineSongs.selectItems(items, position, positionMs) ?: return@withContext null
-        MediaSession.MediaItemsWithStartPosition(selection.items, selection.startIndex, selection.startPositionMs)
+        MediaSession.MediaItemsWithStartPosition(items, selection.sourceIndex, selection.startPositionMs)
     }
 }
 
@@ -307,7 +308,7 @@ internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistPlayback(
             }
 
             AndroidAutoPinnedPlaylistKind.ONLINE ->
-                onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem() }
+                offlinePinnedPlaylistItems(ref.playlistId) ?: onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem() }
         }
     if (songs.isEmpty()) return null
     // Pinned playlist taps honour the driving-playlist playback mode: shuffle starts a

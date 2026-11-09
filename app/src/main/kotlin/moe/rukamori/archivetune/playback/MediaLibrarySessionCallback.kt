@@ -798,6 +798,7 @@ class MediaLibrarySessionCallback
                 val defaultResult =
                     MediaSession.MediaItemsWithStartPosition(emptyList(), startIndex, startPositionMs)
                 val firstItem = mediaItems.firstOrNull() ?: return@future defaultResult
+                autoOfflineSongs.onUserRetry()
                 val voiceQuery =
                     firstItem.requestMetadata.searchQuery
                         ?.trim()
@@ -836,7 +837,7 @@ class MediaLibrarySessionCallback
                     }
 
                     MusicService.HOME_SUGGESTED_SONGS -> {
-                        val songs = homeSuggestedSongs().map { it.toMediaItem() }
+                        val songs = offlineSnapshotItems(MusicService.HOME_SUGGESTED_SONGS) ?: homeSuggestedSongs().map { it.toMediaItem() }
                         songs.toMediaItemsWithStartPosition(firstItem.mediaId.autoSongPathId(1), startPositionMs, defaultResult)
                     }
 
@@ -939,18 +940,14 @@ class MediaLibrarySessionCallback
                         val action = path.getOrNull(2)
                         val selectedSongId =
                             if (action == PLAYLIST_ACTION_SHUFFLE) path.getOrNull(3) else path.getOrNull(2)
-                        val songs =
-                            onlinePlaylistSongs(playlistId).let { songs ->
-                                if (action == PLAYLIST_ACTION_SHUFFLE) songs.shuffled() else songs
-                            }
+                        val songs = offlineOnlinePlaylistItems(playlistId, action == PLAYLIST_ACTION_SHUFFLE)
+                            ?: onlinePlaylistSongs(playlistId).let { if (action == PLAYLIST_ACTION_SHUFFLE) it.shuffled() else it }.map { it.toMediaItem() }
                         if (action == PLAYLIST_ACTION_SHUFFLE) {
                             withContext(Dispatchers.Main.immediate) {
                                 mediaSession.player.shuffleModeEnabled = true
                             }
                         }
-                        songs
-                            .map { it.toMediaItem() }
-                            .toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
+                        songs.toMediaItemsWithStartPosition(selectedSongId, startPositionMs, defaultResult)
                     }
 
                     MusicService.QUEUE -> {

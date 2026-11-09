@@ -106,18 +106,19 @@ class ErrorRecoveringPlayerTest {
     }
 
     @Test
-    fun offlineNextFiltersTheContinuationQueueAndKeepsDuplicateObjectsAndPlayIntent() {
+    fun offlineNextSkipsUnavailableItemsWithoutRemovingThemAndKeepsPlayIntent() {
         val first = item("cached")
         val last = item("cached")
         val local = item("file:///music/a/b.mp3")
-        val queue = FakeQueue(listOf(item("failed-online"), item("partial"), first, local, last), 0, playWhenReady = false)
+        val original = listOf(item("failed-online"), item("partial"), first, local, last)
+        val queue = FakeQueue(original, 0, playWhenReady = false)
 
         ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.seekToNextMediaItem()
 
-        assertEquals(listOf(first, local, last), queue.items)
+        assertEquals(original, queue.items)
         assertSame(first, queue.player.currentMediaItem)
-        assertSame(last, queue.items.last())
-        assertEquals(listOf(0 until 2), queue.removed)
+        assertEquals(2, queue.index)
+        assertTrue(queue.removed.isEmpty())
         assertEquals(1, queue.prepares)
         assertFalse(queue.playWhenReady)
         assertFalse(queue.calls.any { it.startsWith("set") })
@@ -134,7 +135,8 @@ class ErrorRecoveringPlayerTest {
 
         val tapped = FakeQueue(listOf(item("online"), first, item("partial"), last), 0)
         ErrorRecoveringPlayer(tapped.player, offlinePolicy()) {}.seekToDefaultPosition(3)
-        assertEquals(1, tapped.index)
+        assertEquals(3, tapped.index)
+        assertEquals(4, tapped.items.size)
         assertSame(last, tapped.player.currentMediaItem)
         assertEquals(1, tapped.prepares)
     }
@@ -153,16 +155,17 @@ class ErrorRecoveringPlayerTest {
     }
 
     @Test
-    fun offlineNavigationUsesTheLiveShuffleOrderAndPreservesItWhenRemovingRanges() {
+    fun offlineNavigationUsesTheLiveShuffleOrderAndLeavesTheQueueIntact() {
         val local = item("file:///music/local.mp3")
         val cached = item("cached")
-        val queue = FakeQueue(listOf(item("online"), cached, item("partial"), local), 0)
+        val original = listOf(item("online"), cached, item("partial"), local)
+        val queue = FakeQueue(original, 0)
         queue.shuffle = true
         queue.order = listOf(0, 3, 1, 2)
         ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.seekToNext()
-        assertEquals(listOf(cached, local), queue.items)
+        assertEquals(original, queue.items)
         assertSame(local, queue.player.currentMediaItem)
-        assertEquals(1, queue.index)
+        assertEquals(3, queue.index)
         assertEquals(listOf(0, 3, 1, 2), queue.order)
         assertEquals(1, queue.prepares)
     }
@@ -181,14 +184,15 @@ class ErrorRecoveringPlayerTest {
     }
 
     @Test
-    fun replacingAQueueAfterASourceErrorFiltersAndRemapsTheNewSelectionBeforePreparing() {
+    fun replacingAQueueAfterASourceErrorKeepsEveryEntryAndValidatesTheSelectionBeforePreparing() {
         val queue = FakeQueue(listOf(item("old")), 0)
         val cached = item("cached")
         val local = item("content://media/audio/42")
-        ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.setMediaItems(listOf(item("online"), cached, local), 1, 8_000L)
-        assertEquals(listOf(cached, local), queue.items)
+        val replacement = listOf(item("online"), cached, local)
+        ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.setMediaItems(replacement, 1, 8_000L)
+        assertEquals(replacement, queue.items)
         assertSame(cached, queue.player.currentMediaItem)
-        assertEquals(0, queue.index)
+        assertEquals(1, queue.index)
         assertEquals(8_000L, queue.positionMs)
         assertEquals(1, queue.prepares)
     }
@@ -197,25 +201,40 @@ class ErrorRecoveringPlayerTest {
     fun aReplacementWithoutAnExplicitSelectionStartsAtTheFirstPlayableItem() {
         val queue = FakeQueue(listOf(item("failed")), 0)
         val cached = item("cached")
-        ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.setMediaItems(listOf(item("online"), cached))
-        assertEquals(listOf(cached), queue.items)
+        val replacement = listOf(item("online"), cached)
+        ErrorRecoveringPlayer(queue.player, offlinePolicy()) {}.setMediaItems(replacement)
+        assertEquals(replacement, queue.items)
         assertSame(cached, queue.player.currentMediaItem)
-        assertEquals(0, queue.index)
+        assertEquals(1, queue.index)
         assertEquals(0L, queue.positionMs)
         assertEquals(1, queue.prepares)
     }
 
     @Test
-    fun retainingAnOfflineQueueLeavesThePlayingOccurrenceAndPositionUntouched() {
+    fun anAutomaticTransitionOntoAnUnavailableEntrySkipsItWithoutChangingTheQueue() {
         val cached = item("cached")
-        val queue = FakeQueue(listOf(item("online"), cached, item("partial")), 1, state = Player.STATE_READY, error = null)
-        queue.positionMs = 12_000L
-        val selected = retainOfflineQueue(queue.player, offlinePolicy())!!
-        assertEquals(0, selected.startIndex)
-        assertSame(cached, queue.player.currentMediaItem)
-        assertEquals(12_000L, queue.positionMs)
-        assertEquals(0, queue.prepares)
-        assertTrue(queue.calls.all { it == "removeMediaItems" })
+        val original = listOf(cached, item("uncached"), item("cached"))
+        val queue = FakeQueue(original, 1, state = Player.STATE_READY, error = null)
+        assertTrue(skipUnavailableOfflineItem(queue.player, offlinePolicy()))
+        assertEquals(2, queue.index)
+        assertEquals(original, queue.items)
+        assertTrue(queue.removed.isEmpty())
+        assertEquals(listOf("seekTo"), queue.calls)
+    }
+
+    @Test
+    fun connectivityStateNeverPrunesThePhoneQueue() {
+        val original = listOf(item("cached"), item("uncached"))
+        val playable = FakeQueue(original, 0, state = Player.STATE_READY, error = null)
+        assertFalse(skipUnavailableOfflineItem(playable.player, offlinePolicy()))
+        val online = FakeQueue(original, 1, state = Player.STATE_READY, error = null)
+        assertFalse(skipUnavailableOfflineItem(online.player, AutoOfflineSongs(isOffline = { false })))
+        val noSuccessor = FakeQueue(original, 1, state = Player.STATE_READY, error = null)
+        assertFalse(skipUnavailableOfflineItem(noSuccessor.player, offlinePolicy()))
+        for (queue in listOf(playable, online, noSuccessor)) {
+            assertEquals(original, queue.items)
+            assertTrue(queue.calls.isEmpty())
+        }
     }
 
     private fun offlinePolicy() = AutoOfflineSongs(isOffline = { true }, isFullyCachedId = { it == "cached" })

@@ -27,6 +27,7 @@ internal suspend fun MediaLibrarySessionCallback.searchOfflineSongs(
         )
     }
 
+    autoOfflineSongs.onUserRetry()
     // Filter before the preview limit: online matches must not hide later offline matches or inflate the count.
     val libraryCount = database.searchSongsCount(query)
     val librarySongs = autoOfflineSongs.filter(database.searchSongs(query,
