@@ -154,7 +154,7 @@ fun YouTubePlaylistMenu(
             try {
                 val fetchedSongs = loadCompleteYouTubePlaylist(playlist.id).songs
                 database.withTransaction {
-                    val existingPlaylist = playlistEntityByBrowseId(playlist.id)
+                    val existingPlaylist = playlistEntityByAnyBrowseId(playlist.id)
                     val targetPlaylistId =
                         if (existingPlaylist == null) {
                             val playlistEntity =
@@ -251,7 +251,7 @@ fun YouTubePlaylistMenu(
             },
         )
     }
-    val dbPlaylist by database.playlistByBrowseId(playlist.id).collectAsStateWithLifecycle(initialValue = null)
+    val dbPlaylist by database.playlistByAnyBrowseId(playlist.id).collectAsStateWithLifecycle(initialValue = null)
     val (speedDialSongIds, onSpeedDialSongIdsChange) = rememberPreference(SpeedDialSongIdsKey, "")
     val speedDialPins = remember(speedDialSongIds) { parseSpeedDialPins(speedDialSongIds) }
     val playlistPin =
@@ -709,7 +709,7 @@ fun YouTubePlaylistMenu(
                                             val localPlaylistId =
                                                 withContext(Dispatchers.IO) {
                                                     database
-                                                        .playlistByBrowseId(playlist.id)
+                                                        .playlistByAnyBrowseId(playlist.id)
                                                         .first()
                                                         ?.playlist
                                                         ?.id
