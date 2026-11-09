@@ -237,10 +237,15 @@ class ShrinkSourceContractsTest(unittest.TestCase):
         self.assertIn("if (squaredError > pixels.size.toLong() * 3 * 16) return", encoder)
         self.assertIn("if (bytes.size < file.length())", encoder)
 
-    def test_final_signed_gate_checks_stl_and_keeps_existing_size_limit(self):
+    def test_final_signed_gate_checks_stl_and_keeps_the_size_limit(self):
         workflow = (ROOT / ".github/workflows/build_pull_request.yml").read_text()
-        self.assertIn('python3 scripts/check_android_native_stl.py "$APK" --expect-static', workflow)
-        self.assertIn("MAX_APK_BYTES=20000000", workflow)
+        audit = workflow.split("libdiscord_partner_sdk.so", 1)[1].split("          fi\n", 1)[0]
+        shared, static = audit.split("          else\n", 1)
+        self.assertIn('python3 scripts/check_android_native_stl.py "$APK"\n', shared)
+        self.assertNotIn("--expect-static", shared)
+        self.assertIn('python3 scripts/check_android_native_stl.py "$APK" --expect-static', static)
+        # test_candidate_workflow.py owns the exact boundary; only require that the gate exists.
+        self.assertRegex(workflow, r"MAX_APK_BYTES=\d+\n")
         recompress = workflow.index('python3 scripts/recompress_apk.py "$APK" "$COMPRESSED_APK"')
         align = workflow.index('"$BUILD_TOOLS/zipalign" -p -f 4 "$COMPRESSED_APK" "$ALIGNED_APK"')
         sign = workflow.index('"$BUILD_TOOLS/apksigner" sign', align)

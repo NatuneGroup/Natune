@@ -1195,7 +1195,12 @@ jobs:
             echo "::error::The final signed APK is debuggable."
             exit 1
           fi
-          python3 scripts/check_android_native_stl.py "$APK" --expect-static
+          # Discord Social SDK builds keep c++_shared (see app/build.gradle.kts); SDK-free ones are static.
+          if python3 -c 'import sys, zipfile; sys.exit(0 if any(n.endswith("/libdiscord_partner_sdk.so") for n in zipfile.ZipFile(sys.argv[1]).namelist()) else 1)' "$APK"; then
+            python3 scripts/check_android_native_stl.py "$APK"
+          else
+            python3 scripts/check_android_native_stl.py "$APK" --expect-static
+          fi
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
           APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
