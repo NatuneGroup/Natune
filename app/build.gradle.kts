@@ -450,11 +450,12 @@ android {
         buildConfigField("boolean", "IS_NIGHTLY", "$isNightlyBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
-        // Google Oboe ships as a prefab package, and prefab requires the shared
-        // C++ STL. All native targets then build against c++_shared.
+        // The two in-tree JNI libraries own their C++ objects and catch exceptions internally.
+        // Optional prebuilt SDK/runtime variants retain the shared STL conservatively.
         externalNativeBuild {
             cmake {
-                arguments += "-DANDROID_STL=c++_shared"
+                val androidStl = if (discordSocialSdkEnabled || automix) "c++_shared" else "c++_static"
+                arguments += "-DANDROID_STL=$androidStl"
                 arguments += "-DNATUNE_DISCORD_SOCIAL_SDK=${if (discordSocialSdkEnabled) "ON" else "OFF"}"
             }
         }
@@ -844,9 +845,6 @@ dependencies {
 
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
-    // Google Oboe 1.11.0 pin, kept as approved: the LastWave engine that linked it is gone, so no
-    // native target consumes the prefab package today and nothing depends on it at runtime.
-    implementation("com.google.oboe:oboe:1.11.0")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
     implementation("androidx.media3:media3-ui:${libs.versions.media3.get()}")
