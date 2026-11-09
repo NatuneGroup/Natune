@@ -23,9 +23,9 @@ class AutoBrowseChildrenCacheTest {
                 listOf(loads)
             }
 
-            val first = async { cache.children("home_quick_picks", 0, load) }
-            val second = async { cache.children("home_quick_picks", 0, load) }
-            val third = async { cache.children("home_quick_picks", 2, load) }
+            val first = async { cache.children("home_quick_picks", load) }
+            val second = async { cache.children("home_quick_picks", load) }
+            val third = async { cache.children("home_quick_picks", load) }
             runCurrent()
 
             assertEquals(1, loads)
@@ -43,7 +43,7 @@ class AutoBrowseChildrenCacheTest {
         }
 
     @Test
-    fun aLaterPageDuringAReloadAwaitsTheFreshSnapshot() =
+    fun aPageAfterExplicitInvalidationAwaitsTheFreshSnapshot() =
         runTest {
             val cache = AutoBrowseChildrenCache<Int>()
             val gate = CompletableDeferred<Unit>()
@@ -55,10 +55,11 @@ class AutoBrowseChildrenCacheTest {
                     listOf(2)
                 }
             }
-            cache.children("liked", 0, load) // cached snapshot = [1]
+            cache.children("liked", load) // cached snapshot = [1]
 
-            val reopen = async { cache.children("liked", 0, load) }
-            val later = async { cache.children("liked", 1, load) }
+            cache.clear()
+            val reopen = async { cache.children("liked", load) }
+            val later = async { cache.children("liked", load) }
             runCurrent()
             assertFalse(later.isCompleted) // must not serve the stale [1]
 
@@ -84,8 +85,8 @@ class AutoBrowseChildrenCacheTest {
                 listOf(loads)
             }
 
-            val first = async { runCatching { cache.children("album/x", 0, load) } }
-            val second = async { runCatching { cache.children("album/x", 0, load) } }
+            val first = async { runCatching { cache.children("album/x", load) } }
+            val second = async { runCatching { cache.children("album/x", load) } }
             runCurrent()
             assertEquals(1, loads)
             gate.complete(Unit)
@@ -93,7 +94,7 @@ class AutoBrowseChildrenCacheTest {
 
             assertEquals(true, first.await().exceptionOrNull() is IllegalStateException)
             assertEquals(true, second.await().exceptionOrNull() is IllegalStateException)
-            assertEquals(listOf(2), cache.children("album/x", 0, load))
+            assertEquals(listOf(2), cache.children("album/x", load))
             assertEquals(2, loads)
         }
 
@@ -104,8 +105,8 @@ class AutoBrowseChildrenCacheTest {
             var loads = 0
             val load: suspend () -> List<Int> = { loads++; List(10) { it + loads * 100 } }
 
-            val first = cache.children("home_quick_picks", 0, load)
-            val second = cache.children("home_quick_picks", 1, load)
+            val first = cache.children("home_quick_picks", load)
+            val second = cache.children("home_quick_picks", load)
 
             assertEquals(1, loads)
             assertEquals(first, second)
@@ -113,24 +114,49 @@ class AutoBrowseChildrenCacheTest {
         }
 
     @Test
-    fun pageZeroReloadsSoReopeningAFolderSeesFreshContent() =
+    fun repeatedPageZeroRequestsKeepTheSameSnapshot() =
         runTest {
             val cache = AutoBrowseChildrenCache<Int>()
             var loads = 0
             val load: suspend () -> List<Int> = { loads++; listOf(loads) }
 
-            cache.children("liked", 0, load)
-            val reopened = cache.children("liked", 0, load)
+            cache.children("liked", load)
+            val reopened = cache.children("liked", load)
 
+            assertEquals(1, loads)
+            assertEquals(listOf(1), reopened)
+        }
+
+    @Test
+    fun libraryRefreshAllowsPageZeroToSeeFreshContent() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            var loads = 0
+            val load: suspend () -> List<Int> = { loads++; listOf(loads) }
+
+            cache.children("liked", load)
+            cache.clear()
+
+            assertEquals(listOf(2), cache.children("liked", load))
             assertEquals(2, loads)
-            assertEquals(listOf(2), reopened)
+        }
+
+    @Test
+    fun loadedMutableListsCannotChangeAnOpenFolder() =
+        runTest {
+            val cache = AutoBrowseChildrenCache<Int>()
+            val source = mutableListOf(1, 2, 3)
+            cache.children("playlist/x") { source }
+            source.reverse()
+
+            assertEquals(listOf(1, 2, 3), cache.children("playlist/x") { source })
         }
 
     @Test
     fun aLaterPageWithoutSnapshotLoadsInsteadOfReturningNothing() =
         runTest {
             val cache = AutoBrowseChildrenCache<Int>()
-            assertEquals(listOf(1, 2), cache.children("album/x", 3) { listOf(1, 2) })
+            assertEquals(listOf(1, 2), cache.children("album/x") { listOf(1, 2) })
         }
 
     @Test
@@ -145,7 +171,7 @@ class AutoBrowseChildrenCacheTest {
                 listOf(loads)
             }
 
-            val stale = async { cache.children("home_quick_picks", 0, load) }
+            val stale = async { cache.children("home_quick_picks", load) }
             runCurrent()
             assertEquals(1, loads)
             cache.clear()
@@ -155,7 +181,7 @@ class AutoBrowseChildrenCacheTest {
             assertEquals(listOf(1), stale.await()) // its own caller still gets a result
             // ...but it did not repopulate the cache: a later page must reload under the new
             // generation instead of serving the pre-clear snapshot.
-            assertEquals(listOf(2), cache.children("home_quick_picks", 1, load))
+            assertEquals(listOf(2), cache.children("home_quick_picks", load))
             assertEquals(2, loads)
         }
 
@@ -165,12 +191,12 @@ class AutoBrowseChildrenCacheTest {
             val cache = AutoBrowseChildrenCache<Int>(maxEntries = 1)
             var loads = 0
             val load: suspend () -> List<Int> = { loads++; listOf(loads) }
-            cache.children("a", 0, load)
-            cache.children("b", 0, load)
-            cache.children("a", 1, load) // "a" was evicted by "b"
+            cache.children("a", load)
+            cache.children("b", load)
+            cache.children("a", load) // "a" was evicted by "b"
             assertEquals(3, loads)
             cache.clear()
-            cache.children("a", 1, load)
+            cache.children("a", load)
             assertEquals(4, loads)
         }
 
