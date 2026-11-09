@@ -916,10 +916,9 @@ class MusicService :
     /**
      * Session-facing player: controller transport edges arrive as real play()/pause()/
      * setPlayWhenReady() calls, so [OutputFadingPlayer] applies the click-free fade with the
-     * true intent while Media3 session processing stays intact. Rebuilt per promotion because
-     * the wrapped player itself is.
+     * true intent. Rebuilt with the metadata projection after player promotion.
      */
-    private fun sessionFacingPlayer(): Player = OutputFadingPlayer(player, outputFades)
+    private fun sessionFacingPlayer(): Player = NowPlayingMetadataPlayer(OutputFadingPlayer(player, outputFades), queueMetadataUpdates::sessionMetadata)
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
     // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
@@ -1567,6 +1566,7 @@ class MusicService :
             ),
         )
         addSession(mediaSession)
+        mediaLibrarySessionCallback.observeBrowseContent(mediaSession, scope)
 
         scope.launch {
             currentMediaMetadata.collect { metadata ->
@@ -4432,8 +4432,8 @@ class MusicService :
                     ?: resolveCrossfadeTargetIndex(target, incomingPlayer).takeIf { it != C.INDEX_UNSET }
                     ?: targetIndex
             val promotedItem = incomingPlayer.getMediaItemAt(promotedIndex)
-            currentMediaMetadata.value = queueMetadataUpdates.metadataFor(promotedItem)
             onMediaItemTransition(promotedItem, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+            queueMetadataUpdates.publishCurrentMetadata()
 
             // 7. Fade, stop and release ONLY the old outgoing player.
             releaseOutgoingCrossfadePlayer(outgoingPlayer)
@@ -7093,7 +7093,7 @@ class MusicService :
         cacheQueuedMetadata()
     }
 
-    private val queueMetadataUpdates by lazy { QueueMetadataUpdates({ player }, currentMediaMetadata) }
+    private val queueMetadataUpdates by lazy { QueueMetadataUpdates({ player }, currentMediaMetadata, ::publishResolvedNowPlayingMetadata) }
     private val Player.resolvedCurrentMetadata: MediaMetadata?
         get() = currentMediaItem?.let(queueMetadataUpdates::metadataFor)
 
@@ -7880,7 +7880,6 @@ class MusicService :
             )
         ) {
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                currentMediaMetadata.value = player.resolvedCurrentMetadata
                 queueMetadataUpdates.publishCurrentMetadata()
             }
             requestDiscordSync(

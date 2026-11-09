@@ -63,7 +63,7 @@ internal class ModuleMediaSourceFactory(
 }
 
 private class ModuleMediaSource(
-    private val item: MediaItem,
+    @Volatile private var item: MediaItem,
     private val factory: MediaSource.Factory,
     private val resolver: ResolveModuleAudioUseCase,
     private val bindings: ModuleDownloadRepository,
@@ -78,21 +78,31 @@ private class ModuleMediaSource(
 
     override fun getMediaItem(): MediaItem = item
 
+    override fun canUpdateMediaItem(mediaItem: MediaItem): Boolean = moduleMediaItemCanUpdate(item, mediaItem)
+
+    override fun updateMediaItem(mediaItem: MediaItem) {
+        require(canUpdateMediaItem(mediaItem))
+        // The child owns a resolved URI/cache key. Updating that child's item with the original
+        // queue URI would change its audio source; only the outer presentation needs the new tags.
+        item = mediaItem
+    }
+
     override fun prepareSourceInternal(mediaTransferListener: TransferListener?) {
         super.prepareSourceInternal(mediaTransferListener)
         val owner = CoroutineScope(SupervisorJob() + Handler(checkNotNull(Looper.myLooper())).asCoroutineDispatcher())
         scope = owner
+        val resolvingItem = item
         owner.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    val completed = completedDownload(item.mediaId)
-                    val download = if (completed) bindings.find(item.mediaId) else null
-                    val audio = download ?: if (completed) null else selectAudio(item)
+                    val completed = completedDownload(resolvingItem.mediaId)
+                    val download = if (completed) bindings.find(resolvingItem.mediaId) else null
+                    val audio = download ?: if (completed) null else selectAudio(resolvingItem)
                     if (audio != null) storage.record(audio)
                     audio to (download != null)
                 }
-                selected(item.mediaId, result.first)
-                val source = result.first?.let { storage.mediaSource(item, it, result.second) } ?: factory.createMediaSource(item)
+                selected(resolvingItem.mediaId, result.first)
+                val source = result.first?.let { storage.mediaSource(resolvingItem, it, result.second) } ?: factory.createMediaSource(resolvingItem)
                 child = source
                 prepareChildSource(Unit, source)
             } catch (error: CancellationException) { throw error }
@@ -125,4 +135,24 @@ private class ModuleMediaSource(
         child = null
         failure = null
     }
+}
+
+/** Playback configuration, recording identity, and source eligibility must survive an edit. */
+internal fun moduleMediaItemCanUpdate(previous: MediaItem, updated: MediaItem): Boolean {
+    val oldRawTag = previous.localConfiguration?.tag
+    val newRawTag = updated.localConfiguration?.tag
+    val oldTag = previous.metadata
+    val newTag = updated.metadata
+    if ((oldTag == null || newTag == null) && oldRawTag != newRawTag) return false
+    if (oldTag?.canonicalMetadata() != newTag?.canonicalMetadata()) {
+        // Permit display fields (including artwork) but never a different recording or source gate.
+        if (oldTag == null || newTag == null || oldTag.canonicalMetadata().copy(
+                title = newTag.canonicalMetadata().title,
+                artists = newTag.canonicalMetadata().artists,
+                thumbnailUrl = newTag.thumbnailUrl,
+                album = newTag.album,
+            ) != newTag.canonicalMetadata()) return false
+    }
+    return previous.buildUpon().setTag(updated.localConfiguration?.tag)
+        .setMediaMetadata(updated.mediaMetadata).build() == updated
 }
