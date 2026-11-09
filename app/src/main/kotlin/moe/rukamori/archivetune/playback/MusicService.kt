@@ -5903,6 +5903,7 @@ class MusicService :
         suppressAutoPlayback = false
         val initialLoadGeneration = ++initialQueueLoadGeneration
         initialQueueLoadInProgress = true
+        if (queue is YouTubePlaylistQueue) queue.beginPlayback()
         currentQueue = queue
         queueCheckpointGate.reset()
         queueTitle = null
@@ -5914,7 +5915,6 @@ class MusicService :
         clearAutomix()
         autoAddedMediaIds.clear()
         if (queue is YouTubePlaylistQueue) {
-            queue.beginPlayback()
             startFinitePlaylistLoad(queue, initial = true, playWhenReady = playWhenReady)
             return
         }
@@ -6137,14 +6137,13 @@ class MusicService :
         }
     }
 
-    fun clearAutomix() {
-        autoAddedMediaIds.clear()
-    }
+    fun clearAutomix() = autoAddedMediaIds.clear()
+
+    internal fun acceptUserQueueRemoval() = queueCheckpointGate.onUserRemoval()
 
     fun removeQueueItemsWithUndo(windows: List<Timeline.Window>): QueueRemoval? {
-        // QueueLocked gates user removes, moves and clears only; undo stays unaffected.
         if (dataStore.get(QueueLockedKey, false)) { showQueueLockedToast(); return null }
-        return queueRemovals.remove(windows.map { it.uid }.toSet())
+        return queueRemovals.remove(windows.map { it.uid }.toSet()).also { if (it != null) acceptUserQueueRemoval() }
     }
 
     fun undoQueueRemoval(ticket: Long): Boolean = queueRemovals.undo(ticket)
@@ -6161,6 +6160,7 @@ class MusicService :
         val removal = queueRemovals.remove(windows.filterNot { it.uid == currentUid }.map { it.uid }.toSet())
         autoAddedMediaIds.clear()
         scope.launch { dataStore.edit { it[AutoLoadMoreKey] = false } }
+        saveQueueToDisk()
         return removal
     }
 

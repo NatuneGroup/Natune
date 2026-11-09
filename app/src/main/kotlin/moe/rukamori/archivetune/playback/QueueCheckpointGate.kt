@@ -10,13 +10,26 @@ internal class QueueCheckpointGate(
     private val mediaItemCount: () -> Int,
 ) {
     private var finiteReplacementHasUserChanges = false
+    private var finiteEmptyQueueHasUserRemoval = false
 
     fun reset() {
         finiteReplacementHasUserChanges = false
+        finiteEmptyQueueHasUserRemoval = false
+    }
+
+    /** Called only after a user removal has changed the timeline, never for automatic filtering. */
+    fun onUserRemoval() {
+        val finite = queue() as? YouTubePlaylistQueue ?: return
+        // Before the owned initial clear, the remaining items still belong to the previous queue.
+        if (!finite.initialTimelineCleared && !finite.timelineInstalled) return
+        finiteReplacementHasUserChanges = true
+        finiteEmptyQueueHasUserRemoval = mediaItemCount() == 0
     }
 
     fun onTimelineChanged(isEmpty: Boolean) {
-        if (!isEmpty && !transientMutation() && queue().hasUnacceptedFiniteReplacement()) {
+        if (!isEmpty) finiteEmptyQueueHasUserRemoval = false
+        val finite = queue() as? YouTubePlaylistQueue ?: return
+        if (!isEmpty && !transientMutation() && finite.initialTimelineCleared && finite.hasUnacceptedFiniteReplacement()) {
             finiteReplacementHasUserChanges = true
         }
     }
@@ -24,10 +37,13 @@ internal class QueueCheckpointGate(
     fun blocked(): Boolean {
         if (transientMutation()) return true
         val finite = queue() as? YouTubePlaylistQueue ?: return false
-        // User edits only override the loader's own unaccepted state, never the accepted continuation guard below.
+        // Preparation can suspend before clearing the previous queue's timeline.
+        if (!finite.timelineInstalled && !finite.initialTimelineCleared) return true
+        // Nonempty user edits only override the unaccepted replacement; empty removal acceptance is separate.
         if (finite.hasUnacceptedFiniteReplacement()) return !finiteReplacementHasUserChanges
         // An installed preload does not confirm the first page; either request can still fail.
-        // Keep filtered-empty checkpoints until confirmed exhaustion or an explicit queue clear.
-        return mediaItemCount() == 0 && (!finite.confirmedExhausted || finite.snapshot.continuation != null)
+        // Only a removal that left it empty accepts that result; additions cannot accept later filtering.
+        return mediaItemCount() == 0 && !finiteEmptyQueueHasUserRemoval &&
+            (!finite.confirmedExhausted || finite.snapshot.continuation != null)
     }
 }
