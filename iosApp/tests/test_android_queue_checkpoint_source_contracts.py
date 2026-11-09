@@ -34,6 +34,26 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         )
         self.assertNotIn("currentQueue).toPersistQueue", live_snapshot)
 
+    def test_explicit_empty_without_a_timeline_event_reaches_both_save_paths(self):
+        snapshot = self.service.split("internal fun snapshotQueue()", 1)[1].split(
+            "internal suspend fun writeQueueSnapshot", 1
+        )[0]
+        self.assertIn("if (queueCheckpointGate.blocked()) return null", snapshot)
+        self.assertIn(
+            "queueCheckpointGate.canSnapshotEmpty(hasQueueTimelineChanges, queueRestoreCompleted.value)",
+            snapshot,
+        )
+        self.assertIn(
+            "hasAcceptedEmptyCheckpoint get() = queueCheckpointGate.hasAcceptedEmptyCheckpoint",
+            self.service,
+        )
+        teardown = (PLAYBACK / "QueueTeardownPersistence.kt").read_text()
+        self.assertIn(
+            "shouldSave(enabled, player.mediaItemCount, hasQueueTimelineChanges, hasAcceptedEmptyCheckpoint)",
+            teardown,
+        )
+        self.assertIn("snapshotQueue()", teardown)
+
     def test_auto_installs_are_intercepted_at_the_session_player_after_resolution(self):
         callback = (PLAYBACK / "MediaLibrarySessionCallback.kt").read_text()
         resolver = callback.split("override fun onSetMediaItems", 1)[1].split(

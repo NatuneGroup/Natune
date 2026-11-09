@@ -717,6 +717,7 @@ class MusicService :
     private val queuePersistence = QueuePersistenceState.shared
     internal var hasQueueTimelineChanges = false
         private set
+    internal val hasAcceptedEmptyCheckpoint get() = queueCheckpointGate.hasAcceptedEmptyCheckpoint
     private val queueCheckpointGate = QueueCheckpointGate(
         queue = { currentQueue },
         transientMutation = { isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress },
@@ -12177,7 +12178,7 @@ class MusicService :
         val checkpoint = queuePersistence.checkpointOrder.nextSnapshot()
         val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
         // Startup's empty player must not replace an unreadable saved queue or race restoration.
-        if (mediaItemsSnapshot.isEmpty() && (!hasQueueTimelineChanges || !queueRestoreCompleted.value || player.mediaItemCount > 0)) return null
+        if (mediaItemsSnapshot.isEmpty() && !queueCheckpointGate.canSnapshotEmpty(hasQueueTimelineChanges, queueRestoreCompleted.value)) return null
         val currentMediaItemIndex = player.currentMediaItemIndex
         val currentPosition = player.currentPosition
         val persistQueue = queueCheckpointGate.persistQueue(player, mediaItemsSnapshot, currentMediaItemIndex, currentPosition)
@@ -12191,7 +12192,6 @@ class MusicService :
                 currentMediaItemIndex = currentMediaItemIndex,
                 playbackState = player.playbackState,
             )
-
         return PersistedQueueSnapshot(checkpoint, persistQueue, persistPlayerState)
     }
 

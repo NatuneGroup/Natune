@@ -15,6 +15,7 @@ internal class QueueCheckpointGate(
     private var savedTitle: String? = title()
     private var ownedMutationDepth = 0
     private var emptyTimelineAccepted = false
+    private var explicitEmptyTimelineAccepted = false
     private var sourceDetached = false
     var persistenceQueue: Queue = queue()
         private set
@@ -26,6 +27,13 @@ internal class QueueCheckpointGate(
         }
     val timelineMutationInProgress: Boolean
         get() = ownedMutationDepth > 0
+    /** Explicit acceptance can require a write even when an already-empty player emits no event. */
+    val hasAcceptedEmptyCheckpoint: Boolean
+        get() = emptyTimelineAccepted && explicitEmptyTimelineAccepted
+
+    /** Preserve startup data and unpersistable items even after an explicit empty acceptance. */
+    fun canSnapshotEmpty(hasQueueTimelineChanges: Boolean, restoreCompleted: Boolean): Boolean =
+        restoreCompleted && mediaItemCount() == 0 && (hasQueueTimelineChanges || hasAcceptedEmptyCheckpoint)
 
     /** Call before changing currentQueue/title, so retained items keep their previous identity. */
     fun beginReplacement(replacement: Queue) {
@@ -95,6 +103,7 @@ internal class QueueCheckpointGate(
         persistenceQueue = EmptyQueue
         savedTitle = null
         emptyTimelineAccepted = acceptEmptyTimeline || mediaItemCount() == 0
+        explicitEmptyTimelineAccepted = acceptEmptyTimeline
     }
 
     fun onUserClear() = onSourceDetached(acceptEmptyTimeline = true)

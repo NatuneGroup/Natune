@@ -36,6 +36,17 @@ subsequent nonempty loader insertion resets empty acceptance before any filterin
 Startup restoration and its chunked hydration retain their existing
 transient guards and explicitly bind the restored identity.
 
+Explicit clear/removal and successful external-empty installation also record an
+accepted empty checkpoint independently of timeline notifications. Scheduled and
+teardown saves honor that acceptance when a filtered cold restore installed no
+items and a later clear produces no timeline event. The empty snapshot still
+requires completed restoration and a truly empty player; automatic detachment
+alone cannot bypass the startup guard or unresolved finite protection. Later
+nonempty timelines and new replacements invalidate the earlier empty acceptance.
+`QueueEmptyCheckpointTest` covers both writers against the object-stream file,
+including removal of the old playlist, title, items and continuation. It uses no
+URI conversion; JVM execution remains a CI gate.
+
 ## External installation routes
 
 All external installations use `MusicService.installExternalTimeline` and the
