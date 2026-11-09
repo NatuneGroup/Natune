@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -151,7 +152,8 @@ def write_zip(path, extra=()):
         archive.writestr("AndroidManifest.xml", b"binary-manifest")
         archive.writestr("classes.dex", b"dex")
         archive.writestr("resources.arsc", b"arsc")
-        archive.writestr("lib/arm64-v8a/libc++_shared.so", b"native")
+        from scripts.test_apk_shrink import elf_fixture
+        archive.writestr("lib/arm64-v8a/libarchivetune_analysis.so", elf_fixture())
         for name in extra:
             archive.writestr(name, b"optional")
     return path
@@ -974,7 +976,10 @@ class SigningTest(unittest.TestCase):
         stage = runner_temp / "natune-candidate"
         stage.mkdir()
         apk = stage / "natune-android-arm64-release-candidate.apk"
-        apk.write_bytes(b"unsigned-apk-bytes")
+        write_zip(apk)
+        script_directory = directory / "scripts"
+        script_directory.mkdir()
+        shutil.copyfile(ROOT / "scripts/recompress_apk.py", script_directory / "recompress_apk.py")
         tools = directory / "build-tools"
         tools.mkdir()
         calls = directory / "calls.jsonl"
@@ -1047,7 +1052,10 @@ class SigningTest(unittest.TestCase):
     def test_sign_aligns_with_historical_keystore_and_verifies_the_pin(self):
         result, apk, keystore_copy, calls, values = self.sign()
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(b"unsigned-apk-bytes-signed", apk.read_bytes())
+        self.assertTrue(apk.read_bytes().endswith(b"-signed"))
+        with zipfile.ZipFile(apk) as archive:
+            self.assertEqual(b"arsc", archive.read("resources.arsc"))
+            self.assertEqual(zipfile.ZIP_STORED, archive.getinfo("resources.arsc").compress_type)
         self.assertEqual(
             b"fixture-keystore-bytes", base64.b64decode(values["KEYSTORE"]))
         self.assertEqual(base64.b64decode(values["KEYSTORE"]), keystore_copy.read_bytes())
