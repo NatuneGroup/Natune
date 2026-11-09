@@ -1,18 +1,22 @@
 package moe.rukamori.archivetune.shared.data.update
 
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.settings.UpdateOffer
 import moe.rukamori.archivetune.shared.domain.settings.archiveMatchesOffer
 import moe.rukamori.archivetune.shared.domain.update.UpdateAttemptOwner
 import moe.rukamori.archivetune.shared.domain.update.UpdateDownloadState
+import moe.rukamori.archivetune.shared.domain.update.replacementDownloadOffer
 import java.awt.Desktop
 import java.io.FileOutputStream
 import java.net.URI
@@ -67,6 +71,8 @@ class JvmUpdateInstaller(
     private val installedCode: Int,
     scope: CoroutineScope,
     private val nowMs: () -> Long,
+    private val checker: SharedUpdateChecker? = null,
+    private val buildRemovedMessage: (suspend () -> String)? = null,
 ) {
     private val attempts = UpdateAttemptOwner(scope, UpdateDownloadState.Idle as UpdateDownloadState)
     val state = attempts.stateFlow
@@ -78,21 +84,58 @@ class JvmUpdateInstaller(
 
     fun isActive(): Boolean = attempts.isActive()
 
-    fun startDownload(offer: UpdateOffer): Boolean =
-        attempts.start(UpdateDownloadState.Downloading(null, offer)) {
-            try {
-                val staged = stagedFor(offer)
-                if (staged != null) {
-                    attempts.update(UpdateDownloadState.ReadyToInstall(reused = true, offer = offer))
+    fun startDownload(offer: UpdateOffer): Boolean {
+        val revision = checker?.selectionRevision
+        return attempts.start(UpdateDownloadState.Downloading(null, offer)) {
+            var activeOffer = offer
+            var retried = false
+            while (true) {
+                try {
+                    val staged = stagedFor(activeOffer)
+                    if (staged != null) {
+                        attempts.update(UpdateDownloadState.ReadyToInstall(reused = true, offer = activeOffer))
+                        return@start
+                    }
+                    download(activeOffer)
+                    return@start
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    val httpFailure = failure as? UpdateDownloadHttpException
+                    if (httpFailure != null && (httpFailure.statusCode == 404 || httpFailure.statusCode == 410)) {
+                        val status = httpFailure.statusCode
+                        val refreshed = if (retried) null else try {
+                            checker?.latestRelease(offer.channel, forceRefresh = true)
+                                ?.let { checker?.eligibleOffer(it, offer.channel) }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
+                        currentCoroutineContext().ensureActive()
+                        val selectionIsCurrent = revision != null &&
+                            checker?.isCurrentSelection(offer.channel, revision) == true
+                        val replacement = replacementDownloadOffer(
+                            status, activeOffer, refreshed, selectionIsCurrent, retried,
+                        )
+                        if (replacement != null) {
+                            activeOffer = replacement
+                            retried = true
+                            attempts.update(UpdateDownloadState.Downloading(null, activeOffer))
+                            continue
+                        }
+                        attempts.update(UpdateDownloadState.Failed(
+                            buildRemovedMessage?.invoke() ?: failure.message,
+                            activeOffer,
+                        ))
+                    } else {
+                        attempts.update(UpdateDownloadState.Failed(failure.message ?: failure.javaClass.simpleName, activeOffer))
+                    }
                     return@start
                 }
-                download(offer)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                attempts.update(UpdateDownloadState.Failed(failure.message ?: failure.javaClass.simpleName, offer))
             }
         }
+    }
 
     fun cancelDownload() = attempts.cancel(UpdateDownloadState.Idle)
 
@@ -126,7 +169,9 @@ class JvmUpdateInstaller(
 
     private suspend fun download(offer: UpdateOffer) {
         pruneStaging()
-        client.prepareGet(offer.downloadUrl).execute { response ->
+        client.prepareGet(offer.downloadUrl) { expectSuccess = false }.execute { response ->
+            val status = response.status.value
+            if (status !in 200..299) throw UpdateDownloadHttpException(status)
             val expected = response.contentLength() ?: -1L
             val channel = response.bodyAsChannel()
             val buffer = ByteArray(256 * 1024)

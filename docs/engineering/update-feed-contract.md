@@ -12,7 +12,7 @@ channel values.
 | Channel | Source branch | Tag shape | Manifest asset |
 |---|---|---|---|
 | `stable` | `main` | `vX.Y.Z` (semver, optional `-suffix`) | `stable.json` |
-| `nightly` | `dev` | `N<yyyyMMdd>` optionally `N<yyyyMMddHHmm>` | `nightly.json` |
+| `nightly` | `dev` | `N<yyyyMMddHHmm>` (clients also accept legacy `N<yyyyMMdd>`) | `nightly.json` |
 
 Canary is retired. The client treats a stored `CANARY`/`DAILY_NIGHTLY` selection
 as `NIGHTLY` and drops the `canary_*` cache keys once (see
@@ -27,15 +27,15 @@ One JSON object per channel, uploaded as a release asset on the fixed
 {
   "schema": 1,
   "channel": "nightly",
-  "tag": "N20261027",
-  "versionName": "N20261027",
-  "versionCode": 36300,
+  "tag": "N202610270000",
+  "versionName": "N202610270000",
+  "versionCode": 1793066033,
   "commit": "abc1234",
   "publishedAt": "2026-10-27T00:00:00Z",
-  "releaseUrl": "https://github.com/NatuneGroup/ArchiveTune/releases/tag/N20261027",
+  "releaseUrl": "https://github.com/NatuneGroup/Natune/releases/tag/N202610270000",
   "notes": "…release body…",
   "assets": [
-    { "name": "app-gms-mobile-arm64-nightly.apk", "url": "…/download/N20261027/app-gms-mobile-arm64-nightly.apk", "size": 123, "sha256": "…" }
+    { "name": "app-gms-mobile-arm64-nightly.apk", "url": "…/download/N202610270000/app-gms-mobile-arm64-nightly.apk", "size": 123, "sha256": "…" }
   ]
 }
 ```
@@ -86,20 +86,23 @@ or `<= 0` codes are `UNKNOWN_BUILD_CODE` and produce no offer). A manifest entry
 with no installable asset for the host is surfaced as "newer but not
 installable", never as an offer.
 
-Allocation: nightly codes are `NIGHTLY_FLOOR + <minutes since the dev epoch>`;
-stable codes follow the Android app's versioning. Two CI builds landing inside
-the same minute therefore share one `versionCode`. Documented tie-break
-(implemented in `UpdateReleaseSelection.buildNumberOrNull` and the eligibility
-path):
+Allocation: Stable and Nightly both use `trustedUpgradeVersionCodeFloor` plus
+Unix epoch **seconds**, independently of commit count and workflow run ID. Runs
+prepared in different seconds get increasing codes. Eligibility stays strictly
+higher even if two preparations happen within the same second.
 
-- Equality is identity: a client already on a build with that code is never
-  re-offered the twin build.
-- Candidate ordering is the feed's: manifests/releases are deduplicated by tag
-  and ordered newest first (`mergeManifestRelease`, `findLatestRelease`),
-  so the later build wins for anyone older.
-- CI should prefer bumping the tag's minute-suffix (`N<yyyyMMddHHmm>`) when two
-  runs land in one window so both builds keep distinct, ordered identities even
-  though the code is shared.
+Each Nightly build has an immutable `N<yyyyMMddHHmm>` tag. CI bumps occupied tags
+forward by one minute, with a bounded allocation loop. A rerun may replace only
+its own release (same commit and `at-build:` code); another build's release or
+tag is never replaced. CI never deletes the release that the published
+`nightly.json` offers: a rerun of that build keeps the release and the feed
+unchanged, a rerun refuses to replace its release while that manifest cannot be
+read or parsed, and the stale-head check after publishing keeps the offered
+release. Only a REST 404 for the `update-feed` release, or its asset list
+without `nightly.json`, counts as no published manifest: `gh` also reports
+"release not found" when its lookup fails. Nightly pruning protects the release
+referenced by the published `nightly.json` and skips deletion when that
+manifest cannot be read.
 
 ## What the client does with it
 
@@ -113,6 +116,11 @@ path):
    release page for `OPEN_URL` hosts.
 3. `latestRelease`/`allReleases`/`allPreReleases` keep the same caching TTLs as
    the app: stable 6 h, nightly 15 min, commit history 15 min.
+4. Android and desktop treat download HTTP 404/410 as a missing build. They force
+   a check of the offer's channel, bypassing both manifest and release-list TTLs,
+   and retry once only if an eligible offer has a different identity or asset URL
+   and the original channel-selection revision is still current. Otherwise they
+   explain that the build was replaced or removed and ask the user to check again.
 
 ## Stamping the desktop build identity
 
@@ -123,7 +131,7 @@ code as the manifest's `versionCode`; a local `runDistributable` keeps `0` and
 the updater reports itself unavailable — that is deliberate, not a bug.
 
 `desktopDisplayVersion`/`VERSION_NAME_OVERRIDE` produce the tag-shaped
-`VERSION_NAME` (`N<yyyyMMdd>` for dev builds); `isNightlyBuild` is derived from
+`VERSION_NAME` (`N<yyyyMMddHHmm>` for dev builds); `isNightlyBuild` is derived from
 `VERSION_NAME.startsWith("N")`.
 
 ## Feed publication mechanics (for the CI session)

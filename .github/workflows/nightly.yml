@@ -62,7 +62,19 @@ jobs:
             exit 1
           fi
 
-          VERSION_NAME="N$(date -u +'%Y%m%d')"
+          VERSION_NAME="N$(date -u +'%Y%m%d%H%M')"
+          for TRY in {1..20}; do
+            if ! gh release view "$VERSION_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 &&
+               ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION_NAME" >/dev/null 2>&1; then
+              break
+            fi
+            if (( TRY == 20 )); then
+              echo "::error::Could not allocate an unused nightly tag after $TRY tries."
+              exit 1
+            fi
+            TAG_TIME="${VERSION_NAME:1:4}-${VERSION_NAME:5:2}-${VERSION_NAME:7:2} ${VERSION_NAME:9:2}:${VERSION_NAME:11:2}:00 UTC"
+            VERSION_NAME="N$(date -u -d "$TAG_TIME +1 minute" +'%Y%m%d%H%M')"
+          done
           PACKAGE_VERSION="$(python3 .github/scripts/next-version.py "$BASE_VERSION")"
           VERSION_CODE=$((FLOOR + $(date -u +%s)))
           if (( VERSION_CODE <= FLOOR || VERSION_CODE > 2147483647 )); then

@@ -77,10 +77,10 @@ fun providerCredentialLiteral(name: String, vararg legacyNames: String): String 
 // VERSION_CODE_OVERRIDE without committing a version bump.
 //
 // The versionCode is not derived from this repository's commit count: the private KMP root has a
-// fresh history below the published builds. CI allocates a repository-wide run-based code above
+// fresh history below the published builds. CI allocates Unix epoch seconds plus
 // trustedUpgradeVersionCodeFloor (see below), preserving the existing install/upgrade line.
 //
-// Nightly names use the UTC date, "N<yyyyMMdd>", for the release tag, title and app versionName.
+// Nightly names use an unused UTC minute, "N<yyyyMMddHHmm>", for the release tag, title and app versionName.
 val baseVersionName = "15.0.0"
 val baseVersionCode = 1500
 // Last trusted published build (Nightly N202610151104, build 6833). Signed builds must install over it in place.
