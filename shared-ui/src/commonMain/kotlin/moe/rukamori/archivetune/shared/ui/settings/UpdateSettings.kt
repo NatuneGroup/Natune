@@ -371,7 +371,7 @@ fun UpdateSettings(
                     scope.launch {
                         try {
                             controller.edit { this[EnableUpdateNotificationKey] = true }
-                            onNotificationChanged(true)
+                            onNotificationChanged?.invoke(true)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Exception) {

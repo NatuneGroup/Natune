@@ -93,6 +93,7 @@ class IosSourceContractsTest(unittest.TestCase):
         common = (UI_COMMON / "settings/UpdateSettings.kt").read_text()
         self.assertIn("onNotificationChanged: (suspend (Boolean) -> Unit)?", common)
         self.assertIn("onNotificationChanged?.invoke", common)
+        self.assertNotRegex(common, r"(?<![?.\w])onNotificationChanged\(")
 
     def test_only_portable_pcm_core_drives_audio_and_native_callback(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()
