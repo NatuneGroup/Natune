@@ -1,74 +1,134 @@
 package moe.rukamori.archivetune.playback
 
+import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 
-/** Main-thread replacement installation and user acceptance, independent of loader retry state. */
+/** The checkpoint identity follows the installed timeline, never a requested replacement. */
 internal class QueueCheckpointGate(
     private val queue: () -> Queue,
     private val transientMutation: () -> Boolean,
     private val mediaItemCount: () -> Int,
+    private val title: () -> String? = { null },
 ) {
     private var pendingReplacement: Queue? = null
-    private var finiteReplacementHasUserChanges = false
-    private var finiteEmptyQueueHasUserRemoval = false
+    private var savedTitle: String? = title()
+    private var ownedMutationDepth = 0
+    private var emptyTimelineAccepted = false
+    var persistenceQueue: Queue = queue()
+        private set
+    val persistenceTitle: String?
+        get() = when {
+            persistenceQueue === EmptyQueue && mediaItemCount() == 0 -> null
+            queue() === persistenceQueue -> title()
+            else -> savedTitle
+        }
+    val timelineMutationInProgress: Boolean
+        get() = ownedMutationDepth > 0
 
-    fun beginReplacement() {
-        pendingReplacement = queue()
-        finiteReplacementHasUserChanges = false
-        finiteEmptyQueueHasUserRemoval = false
+    /** Call before changing currentQueue/title, so retained items keep their previous identity. */
+    fun beginReplacement(replacement: Queue) {
+        savedTitle = persistenceTitle
+        pendingReplacement = replacement
+        emptyTimelineAccepted = false
     }
 
-    /** Only the replacement's own initial/preload installation can accept its timeline. */
+    /** Loader callbacks during their synchronous clear/insertion cannot accept a user edit. */
+    fun mutateTimeline(mutation: () -> Unit) {
+        ownedMutationDepth++
+        try {
+            mutation()
+        } finally {
+            ownedMutationDepth--
+        }
+    }
+
     fun onReplacementInstalled(installedQueue: Queue) {
-        if (queue() === installedQueue) pendingReplacement = null
+        if (queue() !== installedQueue) return
+        persistenceQueue = installedQueue
+        savedTitle = title()
+        pendingReplacement = null
+        if (mediaItemCount() > 0) emptyTimelineAccepted = false
+    }
+
+    /** Failure, cancellation and supersession abandon only their own pending request. */
+    fun onReplacementFinished(replacement: Queue) {
+        if (pendingReplacement === replacement) pendingReplacement = null
+    }
+
+    fun onExternalTimelineInstalled(installedQueue: Queue) {
+        if (queue() !== installedQueue) return
+        onReplacementInstalled(installedQueue)
+        emptyTimelineAccepted = mediaItemCount() == 0
+        if (emptyTimelineAccepted) {
+            persistenceQueue = EmptyQueue
+            savedTitle = null
+        }
+    }
+
+    /** Shared transaction for service installers and session forwarding; thrown mutations retain identity. */
+    fun installExternalTimeline(install: () -> Unit, acceptIdentity: () -> Queue, save: () -> Unit) {
+        try {
+            mutateTimeline {
+                install()
+                onExternalTimelineInstalled(acceptIdentity())
+            }
+        } finally {
+            save()
+        }
     }
 
     fun onUserClear() {
-        pendingReplacement = null
-        finiteReplacementHasUserChanges = false
-        finiteEmptyQueueHasUserRemoval = false
+        onExternalTimelineInstalled(queue())
+        emptyTimelineAccepted = true
     }
 
     fun onUserAddition() {
-        if (transientMutation() || mediaItemCount() == 0) return
-        val finite = queue() as? YouTubePlaylistQueue
-        if (finite != null && !finite.initialTimelineCleared && !finite.timelineInstalled) return
-        pendingReplacement = null
-        finiteReplacementHasUserChanges = finite != null
-        finiteEmptyQueueHasUserRemoval = false
+        if (transientMutation() || ownedMutationDepth > 0 || mediaItemCount() == 0) return
+        acceptUserIdentity()
+        emptyTimelineAccepted = false
     }
 
     /** Called only after a user removal has changed the timeline, never for automatic filtering. */
     fun onUserRemoval() {
-        val finite = queue() as? YouTubePlaylistQueue
-        // Before the owned initial clear, the remaining items still belong to the previous queue.
-        if (finite != null && !finite.initialTimelineCleared && !finite.timelineInstalled) return
-        pendingReplacement = null
-        finiteReplacementHasUserChanges = finite != null
-        finiteEmptyQueueHasUserRemoval = finite != null && mediaItemCount() == 0
-    }
-
-    fun onTimelineChanged(isEmpty: Boolean) {
-        if (!isEmpty) finiteEmptyQueueHasUserRemoval = false
-        val finite = queue() as? YouTubePlaylistQueue ?: return
-        if (!isEmpty && !transientMutation() && finite.initialTimelineCleared && finite.hasUnacceptedFiniteReplacement()) {
-            onUserAddition()
+        if (transientMutation() || ownedMutationDepth > 0) return
+        acceptUserIdentity()
+        emptyTimelineAccepted = mediaItemCount() == 0
+        if (emptyTimelineAccepted) {
+            persistenceQueue = EmptyQueue
+            savedTitle = null
         }
     }
 
+    private fun acceptUserIdentity() {
+        val finite = queue() as? YouTubePlaylistQueue
+        // Before the loader's clear, edits still belong to the retained timeline, even after cancel.
+        if (finite != null && (finite.initialTimelineCleared || finite.timelineInstalled)) {
+            onReplacementInstalled(finite)
+        }
+        pendingReplacement = null
+    }
+
+    fun onTimelineChanged(isEmpty: Boolean) {
+        if (!isEmpty) emptyTimelineAccepted = false
+        if (transientMutation() || ownedMutationDepth > 0) return
+        savedTitle = persistenceTitle
+        // Safety valve for an installer/edit outside the loader. Filtering does not accept emptiness.
+        pendingReplacement = null
+        if (!isEmpty) onUserAddition()
+    }
+
     fun blocked(): Boolean {
-        if (transientMutation()) return true
-        // Automatic filtering can change the identity too; only installation/user edits accept it.
-        if (pendingReplacement != null) return true
-        val finite = queue() as? YouTubePlaylistQueue ?: return false
-        // Preparation can suspend before clearing the previous queue's timeline.
-        if (!finite.timelineInstalled && !finite.initialTimelineCleared) return true
-        // Nonempty user edits only override the unaccepted replacement; empty removal acceptance is separate.
-        if (finite.hasUnacceptedFiniteReplacement() && !finiteReplacementHasUserChanges) return true
-        // An installed preload does not confirm the first page; either request can still fail.
-        // Only a removal that left it empty accepts that result; additions cannot accept later filtering.
-        return mediaItemCount() == 0 && !finiteEmptyQueueHasUserRemoval &&
-            (!finite.confirmedExhausted || finite.snapshot.continuation != null)
+        if (transientMutation() || ownedMutationDepth > 0) return true
+        // A pending/failed replacement never prevents saving the currently playing items.
+        if (mediaItemCount() > 0 || emptyTimelineAccepted) return false
+        // A loader clear or automatic filtering cannot erase an unresolved finite playlist.
+        // Explicit removal/clear and external installation accept emptiness independently of loading.
+        return unresolvedFinite(queue()) || unresolvedFinite(persistenceQueue)
+    }
+
+    private fun unresolvedFinite(queue: Queue): Boolean {
+        val finite = queue as? YouTubePlaylistQueue ?: return false
+        return !finite.confirmedExhausted || finite.snapshot.continuation != null
     }
 }

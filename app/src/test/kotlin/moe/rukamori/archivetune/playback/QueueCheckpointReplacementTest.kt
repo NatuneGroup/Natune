@@ -50,7 +50,7 @@ class QueueCheckpointReplacementTest {
     }
 
     @Test
-    fun pendingRadioReplacement_preservesTheOldCheckpointPastDebounceAndAtTeardown() = runTest {
+    fun pendingRadioReplacement_checkpointsCurrentItemsWithThePreviousIdentityIncludingAtTeardown() = runTest {
         val fixture = Fixture(this)
         fixture.items = listOf("old-current", "old-upcoming")
         fixture.scheduler.request()
@@ -62,23 +62,23 @@ class QueueCheckpointReplacementTest {
         runCurrent()
         advanceTimeBy(250L)
         runCurrent()
-        assertEquals(listOf(listOf("old-current", "old-upcoming")), fixture.written)
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(List(2) { listOf("old-current", "old-upcoming") }, fixture.written)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
 
         // Automatic filtering of the old songs cannot install the pending replacement.
         fixture.changeTimeline(listOf("old-current"))
         advanceUntilIdle()
-        assertEquals(1, fixture.snapshots.size)
-        assertFalse(fixture.savePosition(100L))
-        assertNull(fixture.snapshotIfAccepted())
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(listOf("old-current"), fixture.written.last())
+        assertTrue(fixture.savePosition(100L))
+        assertEquals(QueueType.LIST, requireNotNull(fixture.snapshotIfAccepted()).queueType)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
 
         // Filtering all old songs also changes currentQueue to EmptyQueue automatically.
         fixture.queue = EmptyQueue
         fixture.changeTimeline(emptyList())
         advanceUntilIdle()
-        assertEquals(listOf(listOf("old-current", "old-upcoming")), fixture.written)
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(emptyList<String>(), fixture.written.last())
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
     }
 
     @Test
@@ -117,8 +117,8 @@ class QueueCheckpointReplacementTest {
         fixture.beginReplacement(radio)
         fixture.scheduler.request()
         advanceUntilIdle()
-        assertEquals(listOf(listOf("seed")), fixture.written)
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(List(2) { listOf("seed") }, fixture.written)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
 
         fixture.installTimeline(listOf("preload"))
         advanceUntilIdle()
@@ -132,7 +132,8 @@ class QueueCheckpointReplacementTest {
         val fixture = Fixture(this)
         fixture.scheduler.request()
         advanceUntilIdle()
-        fixture.beginReplacement(YouTubeQueue(WatchEndpoint(playlistId = "RDfailed")))
+        val radio = YouTubeQueue(WatchEndpoint(playlistId = "RDfailed"))
+        fixture.beginReplacement(radio)
         val initial = CompletableDeferred<Queue.Status>()
         var failed = false
         val load = launch {
@@ -141,6 +142,8 @@ class QueueCheckpointReplacementTest {
                 fixture.installTimeline(status.items.map { it.mediaId })
             } catch (_: IOException) {
                 failed = true
+            } finally {
+                fixture.finishReplacement(radio)
             }
         }
         runCurrent()
@@ -149,13 +152,14 @@ class QueueCheckpointReplacementTest {
         fixture.scheduler.request()
         advanceUntilIdle()
         assertTrue(failed)
-        assertEquals(listOf(listOf("seed")), fixture.written)
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(List(2) { listOf("seed") }, fixture.written)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
 
         fixture.addItemsByUser(listOf("seed", "manual-after-failure"))
         val teardown = requireNotNull(fixture.teardownSnapshot())
         assertEquals(listOf("seed", "manual-after-failure"), teardown.items)
-        assertEquals("RDfailed", (teardown.queueData as QueueData.YouTubeData).playlistId)
+        assertEquals(QueueType.LIST, teardown.queueType)
+        assertNull(teardown.queueData)
         advanceUntilIdle()
         assertEquals(listOf("seed", "manual-after-failure"), fixture.written.last())
         assertTrue(fixture.savePosition(400L))
@@ -170,7 +174,7 @@ class QueueCheckpointReplacementTest {
         advanceUntilIdle()
 
         assertEquals(listOf(listOf("current")), fixture.written)
-        assertEquals(QueueType.YOUTUBE, fixture.snapshots.single().queueType)
+        assertEquals(QueueType.LIST, fixture.snapshots.single().queueType)
         assertTrue(fixture.savePosition(500L))
         assertEquals(listOf("current"), requireNotNull(fixture.teardownSnapshot()).items)
     }
@@ -181,13 +185,13 @@ class QueueCheckpointReplacementTest {
         fixture.beginReplacement(YouTubeQueue(WatchEndpoint(playlistId = "RDclear")))
         fixture.scheduler.request()
         advanceUntilIdle()
-        assertTrue(fixture.written.isEmpty())
+        assertEquals(listOf(listOf("seed")), fixture.written)
 
         // Clear queue keeps the current song; an identity-only clear still requests a save.
         fixture.clearQueueIdentity()
         advanceUntilIdle()
-        assertEquals(listOf(listOf("seed")), fixture.written)
-        assertEquals(QueueType.LIST, fixture.snapshots.single().queueType)
+        assertEquals(List(2) { listOf("seed") }, fixture.written)
+        assertEquals(QueueType.LIST, fixture.snapshots.last().queueType)
         assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
     }
 
@@ -236,6 +240,7 @@ class QueueCheckpointReplacementTest {
         assertTrue(fixture.written.isEmpty())
 
         fixture.changeTimeline(listOf("prefix", "restored-window", "suffix"))
+        fixture.checkpointGate.onReplacementInstalled(fixture.queue)
         fixture.hydrating = false
         fixture.scheduler.request()
         advanceUntilIdle()
@@ -253,10 +258,11 @@ class QueueCheckpointReplacementTest {
         fixture.scheduler.request()
         advanceUntilIdle()
 
-        assertTrue(fixture.written.isEmpty())
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(listOf(listOf("seed")), fixture.written)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
         fixture.installTimeline(listOf("newer-radio"))
         advanceUntilIdle()
-        assertEquals(listOf(listOf("newer-radio")), fixture.written)
+        assertEquals(listOf(listOf("seed"), listOf("newer-radio")), fixture.written)
+        assertEquals("RDnewer", (fixture.snapshots.last().queueData as QueueData.YouTubeData).playlistId)
     }
 }
