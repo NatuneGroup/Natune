@@ -14,7 +14,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -64,6 +66,11 @@ class OnlinePlaylistViewModel
         private val _playlistSongs = MutableStateFlow<List<SongItem>>(emptyList())
         val playlistSongs = _playlistSongs.asStateFlow()
 
+        private val _showingOfflineCopy = MutableStateFlow(false)
+
+        /** True while the songs on screen are the saved copy, which must play without a refetch. */
+        val showingOfflineCopy = _showingOfflineCopy.asStateFlow()
+
         private val _isLoading = MutableStateFlow(false)
         val isLoading = _isLoading.asStateFlow()
 
@@ -78,7 +85,7 @@ class OnlinePlaylistViewModel
 
         val dbPlaylist =
             database
-                .playlistByBrowseId(playlistId)
+                .playlistByAnyBrowseId(playlistId)
                 .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
         private val _viewCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -93,6 +100,8 @@ class OnlinePlaylistViewModel
 
         var continuation: String? = null
             private set
+
+        private var loadJob: Job? = null
 
         init {
             load(initial = true)
@@ -168,6 +177,7 @@ class OnlinePlaylistViewModel
                 return
             }
 
+            if (loadJob?.isActive == true) return
             if (initial) {
                 if (_isLoading.value) return
                 _isLoading.value = true
@@ -176,32 +186,78 @@ class OnlinePlaylistViewModel
                 _isRefreshing.value = true
             }
 
-            viewModelScope.launch(Dispatchers.IO) {
-                _error.value = null
+            loadJob =
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        _error.value = null
+                        val hideVideo = context.dataStore.get(HideVideoKey, false)
+                        val blockedArtistIds = database.getBlockedArtistIds().toSet()
+                        val offlineCopy =
+                            runCatching { database.offlinePlaylistCopy(playlistId, hideVideo, blockedArtistIds) }
+                                .onFailure { throwable -> if (throwable is CancellationException) throw throwable }
+                                .getOrNull()
 
-                YouTube
-                    .playlist(playlistId)
-                    .onSuccess { playlistPage ->
-                        val visibleSongs =
-                            playlistPage.songs
-                                .filterVideo(context.dataStore.get(HideVideoKey, false))
-                                .filterBlockedArtists(database.getBlockedArtistIds().toSet())
-                                .distinctByPlaylistEntry()
-                        _playlist.value = playlistPage.playlist
-                        _playlistSongs.value = visibleSongs
-                        continuation = playlistPage.songsContinuation ?: playlistPage.continuation
-                        prefetchViewCounts(visibleSongs.map { song -> song.id })
-                    }.onFailure { throwable ->
-                        _error.value = throwable.message ?: "Failed to load playlist"
-                        reportException(throwable)
+                        // A saved copy is shown before the network answers, so an offline or slow
+                        // fetch never stands between the user and songs already on the device.
+                        if (offlineCopy != null && _playlistSongs.value.isEmpty()) {
+                            showOfflineCopy(offlineCopy)
+                            if (initial) _isLoading.value = false
+                        }
+
+                        val result = YouTube.playlist(playlistId)
+                        val playlistPage = result.getOrNull()
+                        val source =
+                            onlinePlaylistSongsSource(
+                                fetchSucceeded = playlistPage != null,
+                                fetchedSongCount = playlistPage?.songs?.size ?: 0,
+                                fetchConfirmedEmpty = playlistPage?.isConfirmedEmpty() == true,
+                                savedMembershipSize = offlineCopy?.membershipSize ?: 0,
+                            )
+                        when (source) {
+                            OnlinePlaylistSongsSource.REMOTE -> {
+                                val page = requireNotNull(playlistPage)
+                                val visibleSongs =
+                                    page.songs
+                                        .filterVideo(hideVideo)
+                                        .filterBlockedArtists(blockedArtistIds)
+                                        .distinctByPlaylistEntry()
+                                _playlist.value = page.playlist
+                                _playlistSongs.value = visibleSongs
+                                _showingOfflineCopy.value = false
+                                continuation = page.songsContinuation ?: page.continuation
+                                prefetchViewCounts(visibleSongs.map { song -> song.id })
+                            }
+
+                            OnlinePlaylistSongsSource.OFFLINE_COPY -> {
+                                // Even when an online list is already shown, a failed refresh switches to
+                                // the saved copy: the online list's play actions need the network.
+                                showOfflineCopy(requireNotNull(offlineCopy))
+                                playlistPage?.let { page -> _playlist.value = page.playlist }
+                                result.exceptionOrNull()?.let(::reportException)
+                            }
+
+                            OnlinePlaylistSongsSource.NONE -> {
+                                result.exceptionOrNull()?.let { throwable ->
+                                    _error.value = throwable.message ?: "Failed to load playlist"
+                                    reportException(throwable)
+                                }
+                            }
+                        }
+                    } finally {
+                        if (initial) {
+                            _isLoading.value = false
+                        } else {
+                            _isRefreshing.value = false
+                        }
                     }
-
-                if (initial) {
-                    _isLoading.value = false
-                } else {
-                    _isRefreshing.value = false
                 }
-            }
+        }
+
+        private fun showOfflineCopy(offlineCopy: OfflinePlaylistCopy) {
+            if (_playlist.value == null) _playlist.value = offlineCopy.playlist
+            _playlistSongs.value = offlineCopy.songs
+            _showingOfflineCopy.value = true
+            continuation = null
         }
 
         private fun prefetchViewCounts(videoIds: List<String>) {

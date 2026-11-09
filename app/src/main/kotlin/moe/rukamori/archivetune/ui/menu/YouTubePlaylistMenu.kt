@@ -124,6 +124,7 @@ fun YouTubePlaylistMenu(
     selectAction: () -> Unit = {},
     canSelect: Boolean = false,
     snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
+    offlineCopy: Boolean = false,
 ) {
     val context = LocalContext.current
     val database = LocalDatabase.current
@@ -154,7 +155,7 @@ fun YouTubePlaylistMenu(
             try {
                 val fetchedSongs = loadCompleteYouTubePlaylist(playlist.id).songs
                 database.withTransaction {
-                    val existingPlaylist = playlistEntityByBrowseId(playlist.id)
+                    val existingPlaylist = playlistEntityByAnyBrowseId(playlist.id)
                     val targetPlaylistId =
                         if (existingPlaylist == null) {
                             val playlistEntity =
@@ -251,7 +252,7 @@ fun YouTubePlaylistMenu(
             },
         )
     }
-    val dbPlaylist by database.playlistByBrowseId(playlist.id).collectAsStateWithLifecycle(initialValue = null)
+    val dbPlaylist by database.playlistByAnyBrowseId(playlist.id).collectAsStateWithLifecycle(initialValue = null)
     val (speedDialSongIds, onSpeedDialSongIdsChange) = rememberPreference(SpeedDialSongIdsKey, "")
     val speedDialPins = remember(speedDialSongIds) { parseSpeedDialPins(speedDialSongIds) }
     val playlistPin =
@@ -332,18 +333,14 @@ fun YouTubePlaylistMenu(
                         Icon(
                             painter =
                                 painterResource(
-                                    if (dbPlaylist?.playlist?.bookmarkedAt !=
-                                        null
-                                    ) {
+                                    if (dbPlaylist?.playlist?.bookmarkedAt != null) {
                                         R.drawable.favorite
                                     } else {
                                         R.drawable.favorite_border
                                     },
                                 ),
                             tint =
-                                if (dbPlaylist?.playlist?.bookmarkedAt !=
-                                    null
-                                ) {
+                                if (dbPlaylist?.playlist?.bookmarkedAt != null) {
                                     MaterialTheme.colorScheme.error
                                 } else {
                                     LocalContentColor.current
@@ -513,6 +510,7 @@ fun YouTubePlaylistMenu(
             playlist.playEndpoint,
             playlist.shuffleEndpoint,
             playlist.radioEndpoint,
+            offlineCopy,
             playText,
             shuffleText,
             startRadioText,
@@ -520,7 +518,7 @@ fun YouTubePlaylistMenu(
             onDismiss,
         ) {
             buildList {
-                playlist.playEndpoint?.let { playEndpoint ->
+                playlist.playEndpoint?.takeIf { !offlineCopy }?.let { playEndpoint ->
                     add(
                         NewAction(
                             icon = {
@@ -544,7 +542,7 @@ fun YouTubePlaylistMenu(
                         ),
                     )
                 }
-                playlist.shuffleEndpoint?.let { shuffleEndpoint ->
+                playlist.shuffleEndpoint?.takeIf { !offlineCopy }?.let { shuffleEndpoint ->
                     add(
                         NewAction(
                             icon = {
@@ -567,7 +565,7 @@ fun YouTubePlaylistMenu(
                         ),
                     )
                 }
-                playlist.radioEndpoint?.let { radioEndpoint ->
+                playlist.radioEndpoint?.takeIf { !offlineCopy }?.let { radioEndpoint ->
                     add(
                         NewAction(
                             icon = {
@@ -709,7 +707,7 @@ fun YouTubePlaylistMenu(
                                             val localPlaylistId =
                                                 withContext(Dispatchers.IO) {
                                                     database
-                                                        .playlistByBrowseId(playlist.id)
+                                                        .playlistByAnyBrowseId(playlist.id)
                                                         .first()
                                                         ?.playlist
                                                         ?.id

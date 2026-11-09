@@ -790,7 +790,7 @@ class SyncUtils
                         for (playlist in remotePlaylists) {
                             if (!isSyncStillEnabled(gen)) return@onSuccess
                             try {
-                                val existingPlaylist = database.playlistByBrowseId(playlist.id).firstOrNull()
+                                val existingPlaylist = database.playlistByAnyBrowseId(playlist.id).firstOrNull()
                                 if (existingPlaylist == null) {
                                     val playlistEntity =
                                         PlaylistEntity(
@@ -845,7 +845,7 @@ class SyncUtils
                                 val playlistId =
                                     localPlaylistIdByBrowseId[playlist.id]
                                         ?: database
-                                            .playlistByBrowseId(playlist.id)
+                                            .playlistByAnyBrowseId(playlist.id)
                                             .firstOrNull()
                                             ?.playlist
                                             ?.id
