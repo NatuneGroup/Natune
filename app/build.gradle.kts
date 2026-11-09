@@ -923,6 +923,7 @@ dependencies {
 
     implementation(libs.timber)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     testImplementation(libs.turbine)
     testImplementation(libs.coroutines.test)
     implementation(libs.translator)

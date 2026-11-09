@@ -7,8 +7,9 @@ import kotlinx.coroutines.CompletableDeferred
  *
  * A car loads a folder one page at a time. Several folders are built from a fresh shuffle or a
  * live network feed, so rebuilding them for page 1+ returned rows that disagreed with page 0 and
- * Android Auto reset the list, snapping the scroll back to the top. Page 0 is what a car asks for
- * when it opens a folder, so it reloads and replaces the snapshot; later pages slice that snapshot.
+ * Android Auto reset the list, snapping the scroll back to the top. A car can request page 0 again
+ * while the folder is still open; it is not a reliable signal that the user reopened the folder.
+ * Every page uses the same snapshot until relevant content changes or cache eviction.
  */
 internal class AutoBrowseChildrenCache<T>(
     private val maxEntries: Int = 16,
@@ -21,30 +22,22 @@ internal class AutoBrowseChildrenCache<T>(
     // One in-flight load per folder. Concurrent callers await the same Deferred instead of each
     // rebuilding the (possibly shuffled or network-backed) list and overwriting the snapshot.
     private val inFlight = HashMap<String, CompletableDeferred<List<T>>>()
-    // Bumped by clear() so a load that started before a library refresh can never repopulate the
-    // cache with the now-stale list. refreshAutomotiveLibrary() clears while older page loads may
-    // still be suspended on a network/shuffle rebuild.
-    private var generation = 0L
 
     suspend fun children(
         parentId: String,
-        page: Int,
         load: suspend () -> List<T>,
     ): List<T> {
         var owner = false
         var snapshot: List<T>? = null
         var deferred: CompletableDeferred<List<T>>? = null
-        var startedGeneration = 0L
         synchronized(lock) {
-            // An active load wins over a possibly-stale committed snapshot, so a page 1+ request
-            // that races a page 0 reload awaits the new list rather than serving the old one.
+            // Concurrent requests, including repeated page 0 requests, share one folder load.
             val active = inFlight[parentId]?.takeIf { it.isActive }
-            val committed = if (page > 0) entries[parentId] else null
+            val committed = entries[parentId]
             when {
                 active != null -> deferred = active
                 committed != null -> snapshot = committed
                 else -> {
-                    startedGeneration = generation
                     val pending = CompletableDeferred<List<T>>()
                     inFlight[parentId] = pending
                     deferred = pending
@@ -60,7 +53,7 @@ internal class AutoBrowseChildrenCache<T>(
         // is dropped from inFlight so the next request can retry.
         val loaded =
             try {
-                load()
+                load().toList()
             } catch (t: Throwable) {
                 synchronized(lock) {
                     if (inFlight[parentId] === pending) inFlight.remove(parentId)
@@ -69,12 +62,12 @@ internal class AutoBrowseChildrenCache<T>(
                 throw t
             }
         synchronized(lock) {
-            // A clear() during load() bumped the generation; the result is still returned to the
-            // caller that requested it, but it must NOT seed a snapshot: later pages would then
-            // read a list built before the library refresh. A page request made after clear()
-            // finds no snapshot and reloads under the new generation.
-            if (generation == startedGeneration) entries[parentId] = loaded
-            if (inFlight[parentId] === pending) inFlight.remove(parentId)
+            // Invalidation detaches this folder's pending load. Its older callers can finish,
+            // but it cannot overwrite a fresh snapshot or remove a newer in-flight request.
+            if (inFlight[parentId] === pending) {
+                entries[parentId] = loaded
+                inFlight.remove(parentId)
+            }
         }
         // Complete outside the lock: an awaiter may resume immediately and re-enter children().
         pending.complete(loaded)
@@ -83,10 +76,15 @@ internal class AutoBrowseChildrenCache<T>(
 
     fun clear() {
         synchronized(lock) {
-            generation++
             entries.clear()
             inFlight.clear()
         }
+    }
+
+    fun invalidate(matches: (String) -> Boolean): Set<String> = synchronized(lock) {
+        val affected = (entries.keys + inFlight.keys).filter(matches).toSet()
+        affected.forEach { entries.remove(it); inFlight.remove(it) }
+        affected
     }
 }
 
