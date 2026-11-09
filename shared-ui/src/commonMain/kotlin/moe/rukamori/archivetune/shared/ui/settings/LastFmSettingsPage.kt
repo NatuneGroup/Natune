@@ -31,6 +31,8 @@ fun LastFmSettingsPage(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    onDashboard: (() -> Unit)? = null,
+    authorizationPrompt: @Composable () -> Unit = {},
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -40,7 +42,8 @@ fun LastFmSettingsPage(
     val loggedIn = preferences.lastFmLoggedIn()
     val canEnable = preferences.lastFmCanEnableScrobbling(defaultApiKey, defaultSecret)
     val scrobbling = preferences[EnableLastFMScrobblingKey, false]
-    val rows = listOf(
+    val rows = listOfNotNull(
+        onDashboard?.let { SettingsRow.Action("lastfm_dashboard", Res.string.m6_profile_lastfm_dashboard, it) },
         SettingsRow.Action(
             "lastfm_connect_button", Res.string.m6_lastfm_connect_button,
             { onConnect(LastFmProvider.LASTFM) }, description = Res.string.m6_lastfm_connect_button_description,
@@ -86,6 +89,7 @@ fun LastFmSettingsPage(
         ),
     )
     Column(modifier.fillMaxSize()) {
+        authorizationPrompt()
         if (loggedIn) ListItem(
             headlineContent = { Text(preferences[LastFMUsernameKey].orEmpty()) },
             trailingContent = {

@@ -129,6 +129,7 @@
   <string name="phone_reference_proxy_auth">Proxy Authorization (optional)</string>
   <string name="phone_reference_reset_listening_stats">Reset listening stats</string>
   <string name="phone_reference_romanization">Romanization</string>
+  <string name="phone_reference_scrobbling_configuration">Scrobbling Configuration</string>
   <string name="phone_reference_search_history">Search history</string>
   <string name="phone_reference_seek_seconds_addup">Progressive seek</string>
   <string name="phone_reference_set_first_lyrics_provider">Preferred lyrics provider</string>

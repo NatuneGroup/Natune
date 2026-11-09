@@ -33,6 +33,7 @@ PAGES = {
     'discord/experimental': 'DiscordExperimental', 'internet': 'InternetSettings',
     'downloads': 'DownloadsSettings', 'storage': 'StorageSettings',
     'canvas': 'CanvasSettings', 'ai_integration': 'AiIntegrationSettings',
+    'lastfm': 'LastFMSettings', 'backup_restore': 'BackupAndRestore', 'update': 'UpdateScreen',
 }
 TITLE_KEYS = {
     'appearance': 'appearance', 'player': 'player_and_audio', 'privacy': 'settings_behavior_title',
@@ -238,6 +239,7 @@ def main():
     routes = ['package moe.rukamori.archivetune.shared.ui.settings', '',
               '/** Android screen references used only by the phone settings host. */',
               'fun phoneSettingsReference(route: String): PhoneSettingsReference? = when (route.substringBefore(\'?\')) {']
+    routes.append('    "settings" -> PhoneSettingsHomeReference')
     for route, name in page_sources:
         routes.append(f'    "settings/{route}" -> {name}')
     routes += ['    "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface" -> PhoneAppearanceSettingsReference',

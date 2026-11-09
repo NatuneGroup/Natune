@@ -39,7 +39,7 @@ authentication, Keychain, MediaPlayer and system extensions stay host bindings.
 | Modules / module detail | `screens/settings/ModulesSettings.kt` | `IosModulesPage.kt` | Yes: `settings/ModuleDetailsSettings.kt` | Custom 24dp column: enable/import/configure/remove only. Android has flexible header, enable summary/stat cards, Installed/Catalogs tabs, native extensions, ordered modules, catalogs, FAB/add menu and review dialogs. |
 | Android Auto | `screens/settings/AndroidAutoSettings.kt` | `IosLaneSettings.kt` | Yes: `settings/AndroidAutoSettings.kt` | Route is redirected to a redesigned System integrations page. Android rows must remain disabled with Not available on iOS; CarPlay is a separate system host. |
 | AOD customization | `screens/settings/AodCustomizedScreen.kt` | `IosLaneSettings.kt` | Yes: `settings/AodSettingsRows.kt` | Blank unavailable page, and the entry is filtered; preserve Android row layout with unavailable states. |
-| Launcher icon | `screens/settings/IconScreen.kt` | `IosAppearanceEditors.kt` | No: iOS owns presentation | Two text buttons instead of Android icon selection grid. Only two alternate icons ship in the iOS host; other choices must be visible/unavailable. |
+| Launcher icon | `screens/settings/IconScreen.kt` | `IosAppearanceEditors.kt` | No: iOS owns presentation | Two text buttons instead of Android current-icon card, search/sort and segmented icon list. Only two alternate icons ship in the iOS host; other choices must be visible/unavailable. |
 | Palette / theme creator | `screens/settings/PalettePickerScreen.kt` | `IosAppearanceEditors.kt` | Yes: `settings/ColorPaletteSettings.kt` | Shared palette picker; Theme creator aliases palette, omitting Android creator tools. |
 | Custom background | `screens/settings/CustomizeBackground.kt` | `IosCustomBackground.kt` | No: iOS owns presentation | Native file/image choice plus iOS-rendered sliders; Android preview, row order and dialog chrome differ. |
 | Hidden playlists | `screens/settings/HiddenPlaylistsScreen.kt` | `IosHiddenPlaylists.kt` | No: iOS owns presentation | iOS list uses text Restore actions; Android visibility icons, title and empty state differ. |
@@ -150,8 +150,8 @@ changes land; the table above describes the starting revision.
 
 ## Shared settings presentation implementation
 
-The phone host now opts into a common segmented settings renderer and 33
-Android source references (431 row/group references). Reference titles and
+The phone host now opts into a common segmented settings renderer and 36
+Android source references (463 row/group references). Reference titles and
 icons are shared Compose resources; vector geometry comes from Android with
 OS color references normalized to portable literals. Existing typed settings
 rows retain their callbacks and persisted keys. Unbound controls have no writer
@@ -178,3 +178,16 @@ Android's numbered rows and drag handles through the same KMP reorderable
 dependency. Native bindings retain file/image IO, observed output facts,
 package validation and process/restore operations. Module catalog/native
 extension operations without an iOS owner stay visible and unavailable.
+
+Launcher selection now uses a direct commonMain port of Android's current-icon
+card, search/sort, segmented rows, preview sizes and author attribution. All 20
+pinned IconPack choices are included. UIKit applies the alternate icon after
+its completion callback succeeds; a refused platform capability disables the
+same row with the iOS availability description. Native catalogs retain the
+legacy `ArchiveTuneAndroid` alias. The full iOS asset-catalog compile and device
+icon switching still require CI/device evidence.
+
+Last.fm authorization prompts, the backup date picker and startup recovery
+surface now render in commonMain as well. The settings index retains Modules
+and Liquid glass in Android's Player/content group. All new strings are in
+shared Compose resources. Android UI and playback sources are unchanged.
