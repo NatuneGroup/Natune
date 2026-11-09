@@ -16,10 +16,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.seconds
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuHost
 import moe.rukamori.archivetune.shared.ui.component.ProfileMenuState
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
@@ -141,6 +143,49 @@ class DesktopTitleBarTest {
         onNodeWithTag("desktop-account-menu").assertDoesNotExist()
         onNodeWithTag("desktop-settings-button").performClick()
         runOnIdle { assertEquals(1, settings) }
+    }
+
+    @Test
+    fun theDefaultWindowKeepsSettingsAndAccountBesideCustomCaptionButtons() = runDesktopComposeUiTest(
+        width = 1440,
+        testTimeout = 60.seconds,
+    ) {
+        // The default 1024 px test scene would clamp the requested 1080 dp window.
+        var width by mutableStateOf(1080.dp)
+        setContent {
+            Bar(
+                width = width,
+                rows = Rows(),
+                settings = {},
+                windowControls = {
+                    Row { Box(Modifier.width(138.dp).height(32.dp).testTag("caption-buttons")) }
+                },
+            )
+        }
+
+        onNodeWithTag("caption-buttons").assertIsDisplayed()
+        onNodeWithTag("desktop-settings-button").assertIsDisplayed()
+        onNodeWithTag("desktop-account-button").assertIsDisplayed()
+        onNodeWithTag("desktop-title-bar").assertWidthIsEqualTo(1080.dp)
+        val settings = onNodeWithTag("desktop-settings-button").getUnclippedBoundsInRoot()
+        val account = onNodeWithTag("desktop-account-button").getUnclippedBoundsInRoot()
+        val caption = onNodeWithTag("caption-buttons").getUnclippedBoundsInRoot()
+        assertEquals(settings.right, account.left)
+        assertEquals(account.right, caption.left)
+
+        // The full-width metric's exact boundary also governs the composed bar on resize.
+        runOnIdle { width = 1079.dp }
+        onNodeWithTag("caption-buttons").assertIsDisplayed()
+        onNodeWithTag("desktop-settings-button").assertDoesNotExist()
+        onNodeWithTag("desktop-account-button").assertDoesNotExist()
+        runOnIdle { width = 1080.dp }
+        onNodeWithTag("desktop-settings-button").assertIsDisplayed()
+        onNodeWithTag("desktop-account-button").assertIsDisplayed()
+        runOnIdle { width = 1440.dp }
+        onNodeWithTag("desktop-title-bar").assertWidthIsEqualTo(1440.dp)
+        onNodeWithTag("caption-buttons").assertIsDisplayed()
+        onNodeWithTag("desktop-settings-button").assertIsDisplayed()
+        onNodeWithTag("desktop-account-button").assertIsDisplayed()
     }
 
     @Test
