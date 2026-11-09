@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.playback
 
 import androidx.media3.exoplayer.offline.Download
 import kotlinx.coroutines.test.runTest
+import moe.rukamori.archivetune.db.entities.ArtistEntity
 import moe.rukamori.archivetune.db.entities.PlaylistEntity
 import moe.rukamori.archivetune.db.entities.PlaylistSongMap
 import moe.rukamori.archivetune.db.entities.Song
@@ -15,13 +16,28 @@ import java.time.LocalDateTime
 class AutoBrowseContentChangesTest {
     private val addedAt = LocalDateTime.of(2026, 1, 1, 0, 0)
     private val song = Song(SongEntity("A", "Song", inLibrary = addedAt), emptyList())
+    private val likedAlias = "${MusicService.PLAYLIST}/${PlaylistEntity.LIKED_PLAYLIST_ID}"
 
     @Test
-    fun playbackStatisticsAndLyricsOffsetsDoNotInvalidateAnyFolder() {
+    fun playbackStatisticsDurationsAndLyricsOffsetsDoNotInvalidateAnyFolder() {
         val before = mapOf("A" to song.autoBrowseContent())
-        val after = mapOf("A" to song.copy(song = song.song.copy(totalPlayTime = 180_000, lyricsOffset = 200)).autoBrowseContent())
+        val played = song.song.copy(totalPlayTime = 180_000, duration = 215, lyricsOffset = 200)
+        val after = mapOf("A" to song.copy(song = played).autoBrowseContent())
         assertEquals(before, after)
         val changes = autoBrowseSongChanges(before, after)
+        assertTrue(changes.folders.isEmpty())
+        assertTrue(changes.prefixes.isEmpty())
+    }
+
+    @Test
+    fun songsThatPlaybackStoresRefreshNoFolder() {
+        // Playback stores the current and related songs outside the library, without a song_album_map row.
+        val related = Song(
+            SongEntity("B", "Related", thumbnailUrl = "https://example.com/b.jpg", albumId = "album-B", albumName = "Album B"),
+            listOf(ArtistEntity("artist-B", "Artist B")),
+        )
+        val before = mapOf("A" to song.autoBrowseContent())
+        val changes = autoBrowseSongChanges(before, before + ("B" to related.autoBrowseContent()))
         assertTrue(changes.folders.isEmpty())
         assertTrue(changes.prefixes.isEmpty())
     }
@@ -32,9 +48,13 @@ class AutoBrowseContentChangesTest {
         val after = mapOf("A" to song.copy(song = song.song.copy(liked = true, likedDate = addedAt)).autoBrowseContent())
         val changes = autoBrowseSongChanges(before, after)
         assertTrue(changes.affects(MusicService.LIKED))
-        assertTrue(changes.affects("${MusicService.PLAYLIST}/${PlaylistEntity.LIKED_PLAYLIST_ID}"))
+        assertTrue(changes.affects(likedAlias))
+        assertTrue(changes.affects("$likedAlias/sort"))
         assertTrue(changes.affects(MusicService.PLAYLIST))
         assertFalse(changes.affects("${MusicService.PLAYLIST}/other"))
+        assertFalse(changes.affects(MusicService.SONG))
+        assertFalse(changes.affects(MusicService.DOWNLOADED))
+        assertFalse(changes.affects(MusicService.RECENT))
         assertFalse(changes.affects(MusicService.QUEUE))
     }
 
@@ -45,8 +65,36 @@ class AutoBrowseContentChangesTest {
         val change = autoBrowseSongChanges(before, after, mapOf("A" to setOf("contains-A")))
         assertTrue(change.affects("${MusicService.PLAYLIST}/contains-A"))
         assertTrue(change.affects("${MusicService.PINNED_PLAYLISTS}/local/contains-A"))
+        assertTrue(change.affects(MusicService.SONG))
         assertFalse(change.affects("${MusicService.PLAYLIST}/unrelated"))
+        assertFalse(change.affects(MusicService.LIKED))
         assertFalse(change.affects(MusicService.QUEUE))
+    }
+
+    @Test
+    fun savingASongToTheLibraryRefreshesTheLibraryFolders() {
+        val stored = Song(SongEntity("B", "Song B", albumId = "album-B"), listOf(ArtistEntity("artist-B", "Artist B")))
+        val saved = stored.copy(song = stored.song.copy(inLibrary = addedAt))
+        val change = autoBrowseSongChanges(mapOf("B" to stored.autoBrowseContent()), mapOf("B" to saved.autoBrowseContent()))
+        listOf(MusicService.SONG, MusicService.ARTIST, "${MusicService.ARTIST}/artist-B", MusicService.ALBUM).forEach {
+            assertTrue(it, change.affects(it))
+        }
+        assertFalse(change.affects(MusicService.LIKED))
+        assertFalse(change.affects(MusicService.DOWNLOADED))
+    }
+
+    @Test
+    fun blockingAnArtistRefreshesTheFoldersThatHideTheirSongs() {
+        val artist = ArtistEntity("artist-A", "Artist A")
+        val liked = song.copy(song = song.song.copy(liked = true, likedDate = addedAt), artists = listOf(artist))
+        val blocked = liked.copy(artists = listOf(artist.copy(blockedAt = addedAt)))
+        val change = autoBrowseSongChanges(mapOf("A" to liked.autoBrowseContent()), mapOf("A" to blocked.autoBrowseContent()))
+        assertTrue(change.affects(MusicService.LIKED))
+        assertTrue(change.affects("$likedAlias/sort"))
+        assertTrue(change.affects(MusicService.HOME_KEEP_LISTENING))
+        assertFalse(change.affects(MusicService.PLAYLIST))
+        assertFalse(change.affects(MusicService.SONG))
+        assertFalse(change.affects(MusicService.ARTIST))
     }
 
     @Test
@@ -86,6 +134,7 @@ class AutoBrowseContentChangesTest {
     fun downloadAndSpotifyChangesRefreshTheirNestedFolders() {
         assertTrue(autoBrowseDownloadChanges.affects(MusicService.DOWNLOADED))
         assertTrue(autoBrowseDownloadChanges.affects("${MusicService.PLAYLIST}/${PlaylistEntity.DOWNLOADED_PLAYLIST_ID}"))
+        assertTrue(autoBrowseDownloadChanges.affects("${MusicService.PLAYLIST}/${PlaylistEntity.DOWNLOADED_PLAYLIST_ID}/sort"))
         assertTrue(autoBrowseSpotifyChanges.affects(MusicService.PLAYLIST))
         assertTrue(autoBrowseSpotifyChanges.affects(MusicService.SPOTIFY_LIKED))
         assertTrue(autoBrowseSpotifyChanges.affects("${MusicService.SPOTIFY_PLAYLIST}/account-playlist"))
