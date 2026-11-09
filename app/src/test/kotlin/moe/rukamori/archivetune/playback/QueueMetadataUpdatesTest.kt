@@ -1,8 +1,20 @@
 package moe.rukamori.archivetune.playback
 
 import android.os.Looper
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.DeviceInfo
+import androidx.media3.common.FlagSet
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Metadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import kotlinx.coroutines.flow.MutableStateFlow
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
@@ -16,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
 @RunWith(RobolectricTestRunner::class)
@@ -113,6 +126,26 @@ class QueueMetadataUpdatesTest {
         assertEquals("https://art/resolved", fixture.recorder.metadata.single().artworkUri?.toString())
     }
 
+    @Test
+    fun sessionListenersReceiveEveryCallbackAPlainForwardingPlayerDelivers() {
+        val fixture = Fixture(FakeQueue(listOf(item("A")), 0))
+        val viaSession = CallRecorder()
+        fixture.session.addListener(viaSession.listener)
+        val referenceQueue = FakeQueue(listOf(item("A")), 0)
+        val viaReference = CallRecorder()
+        ForwardingPlayer(referenceQueue.player).addListener(viaReference.listener)
+        val callbacks = Player.Listener::class.java.methods.filter { it.isDefault }
+        val arguments = callbacks.associateWith { sampleArguments(it, fixture.queue.player) }
+
+        listOf(fixture.queue, referenceQueue).forEach { queue ->
+            callbacks.forEach { callback -> queue.listeners.toList().forEach { callback.invoke(it, *arguments.getValue(callback)) } }
+        }
+
+        assertEquals(callbacks.size, viaReference.calls.size)
+        assertEquals(viaReference.calls, viaSession.calls)
+        assertSame(fixture.session, viaSession.eventPlayer)
+    }
+
     private class Fixture(var queue: FakeQueue) {
         val current = MutableStateFlow<MediaMetadata?>(null)
         val recorder = Recorder()
@@ -138,6 +171,28 @@ class QueueMetadataUpdatesTest {
             eventPlayer = player
             this.events.add(events)
         }
+    }
+
+    /** Records callbacks reflectively, so a listener method added by a Media3 upgrade cannot be missed. */
+    private class CallRecorder {
+        val calls = mutableListOf<List<Any?>>()
+        var eventPlayer: Player? = null
+        private val type = Player.Listener::class.java
+        val listener = Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { proxy, method, args ->
+            when (method.name) {
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args?.get(0)
+                "toString" -> "CallRecorder"
+                else -> {
+                    val values: MutableList<Any?> = args?.toMutableList() ?: mutableListOf()
+                    // The forwarding player and the resolved metadata differ by design; both are asserted elsewhere.
+                    if (method.name == "onEvents") eventPlayer = values[0] as Player
+                    if (method.name == "onEvents" || method.name == "onMediaMetadataChanged") values[0] = null
+                    calls.add(listOf<Any?>(method.name) + values)
+                    null
+                }
+            }
+        } as Player.Listener
     }
 
     private class FakeQueue(initial: List<MediaItem>, var currentIndex: Int) {
@@ -179,6 +234,35 @@ class QueueMetadataUpdatesTest {
     }
 
     private companion object {
+        /** Values differ by parameter position so swapped arguments fail the comparison. */
+        fun sampleArguments(callback: Method, player: Player): Array<Any> = callback.parameterTypes.mapIndexed { index, type ->
+            when (type) {
+                Int::class.javaPrimitiveType -> index + 1
+                Long::class.javaPrimitiveType -> index + 1L
+                Float::class.javaPrimitiveType -> index + 1f
+                Boolean::class.javaPrimitiveType -> index % 2 == 0
+                Player::class.java -> player
+                Player.Events::class.java -> Player.Events(FlagSet.Builder().add(Player.EVENT_IS_PLAYING_CHANGED).build())
+                Player.Commands::class.java -> Player.Commands.EMPTY
+                Player.PositionInfo::class.java ->
+                    Player.PositionInfo(null, 0, MediaItem.EMPTY, null, 0, index * 1_000L, index * 1_000L, -1, -1)
+                Timeline::class.java -> Timeline.EMPTY
+                MediaItem::class.java -> MediaItem.EMPTY
+                Tracks::class.java -> Tracks.EMPTY
+                androidx.media3.common.MediaMetadata::class.java -> androidx.media3.common.MediaMetadata.EMPTY
+                TrackSelectionParameters::class.java -> TrackSelectionParameters.DEFAULT
+                PlaybackException::class.java -> PlaybackException("sample", null, PlaybackException.ERROR_CODE_UNSPECIFIED)
+                PlaybackParameters::class.java -> PlaybackParameters.DEFAULT
+                AudioAttributes::class.java -> AudioAttributes.DEFAULT
+                DeviceInfo::class.java -> DeviceInfo.UNKNOWN
+                VideoSize::class.java -> VideoSize.UNKNOWN
+                CueGroup::class.java -> CueGroup.EMPTY_TIME_ZERO
+                List::class.java -> emptyList<Any>()
+                Metadata::class.java -> Metadata()
+                else -> throw AssertionError("No sample argument for ${callback.name}(${type.name})")
+            }
+        }.toTypedArray()
+
         fun metadata(id: String) = MediaMetadata(id, id, listOf(MediaMetadata.Artist("artist", "Artist")), 180, "https://art/$id")
         fun item(id: String): MediaItem = MediaItem.Builder().setMediaId(id).setUri(id).setCustomCacheKey(id)
             .setTag(metadata(id)).setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(id)
