@@ -1095,7 +1095,7 @@ class FinalMetadataTest(unittest.TestCase):
     def setUpClass(cls):
         cls.script = run_script("Record the final signed APK metadata, checksum and size report")
 
-    def record(self, *, badging_text=None, extra_entries=(), extra_stage_file=False):
+    def record(self, *, badging_text=None, extra_entries=(), extra_stage_file=False, apk_bytes=0):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         runner_temp = directory / "runner"
         runner_temp.mkdir()
@@ -1103,6 +1103,14 @@ class FinalMetadataTest(unittest.TestCase):
         stage.mkdir()
         apk = write_zip(
             stage / "natune-android-arm64-release-candidate.apk", extra_entries)
+        if apk_bytes:
+            # The fixed-size stored entry grows the real ZIP. ZipFile append accounts for
+            # 90 bytes of local/central metadata and both end records for this closed fixture.
+            padding = apk_bytes - apk.stat().st_size - 90
+            self.assertGreater(padding, 0)
+            with zipfile.ZipFile(apk, "a", compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr("padding", b"\0" * padding)
+            self.assertEqual(apk_bytes, apk.stat().st_size)
         if extra_stage_file:
             (stage / "unexpected-baseline.apk").write_bytes(b"must not upload")
         tools = directory / "build-tools"
@@ -1181,6 +1189,16 @@ class FinalMetadataTest(unittest.TestCase):
     def test_legacy_sdk_version_label_still_records(self):
         result, _, _ = self.record(badging_text=badging(legacy_min_sdk=True))
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_final_signed_apk_must_remain_under_twenty_million_bytes(self):
+        result, apk, stage = self.record(apk_bytes=19_999_999)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        for size in (20_000_000, 20_000_001):
+            with self.subTest(size=size):
+                result, apk, stage = self.record(apk_bytes=size)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("release-candidate limit is under 20000000 bytes", result.stdout + result.stderr)
+                self.assertFalse((stage / "candidate-metadata.json").exists())
 
     def test_unexpected_staged_file_blocks_the_hand_off(self):
         result, _, _ = self.record(extra_stage_file=True)

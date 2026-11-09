@@ -1196,6 +1196,12 @@ jobs:
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
           APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
+          MAX_APK_BYTES=20000000
+          if (( APK_BYTES >= MAX_APK_BYTES )); then
+            echo "::error::Final signed APK is $APK_BYTES bytes; the release-candidate limit is under $MAX_APK_BYTES bytes."
+            exit 1
+          fi
+          echo "Final signed APK is $APK_BYTES bytes (under $MAX_APK_BYTES)."
           printf '%s  %s\n' "$APK_SHA256" "$(basename "$APK")" > "$STAGE/SHA256SUMS"
           JAVA_VERSION_LINE="$(java -version 2>&1 | sed -n '1p')"
           export JAVA_VERSION_LINE APK_SHA256 APK_BYTES
