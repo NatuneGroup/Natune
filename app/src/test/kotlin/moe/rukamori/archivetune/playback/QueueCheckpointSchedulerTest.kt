@@ -404,6 +404,83 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
+    fun preloadFilteredToEmpty_whileFirstPagePending_preservesThePlaylistCheckpoint() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFinitePreload()
+        advanceUntilIdle()
+        assertEquals(QueueType.YOUTUBE_PLAYLIST, fixture.snapshots.single().queueType)
+
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+
+        assertTrue(queue.timelineInstalled)
+        assertEquals(FinitePlaylistPhase.INITIALIZING, queue.snapshot.phase)
+        assertNull(queue.snapshot.continuation)
+        assertEquals(listOf(listOf("preload")), fixture.written)
+        assertEquals(1, fixture.snapshots.size)
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
+    fun preloadFilteredToEmpty_afterFirstPageFailure_preservesThePlaylistCheckpoint() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFinitePreload()
+        advanceUntilIdle()
+
+        queue.fail()
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+
+        assertEquals(FinitePlaylistPhase.FAILED, queue.snapshot.phase)
+        assertNull(queue.snapshot.continuation)
+        assertEquals(listOf(listOf("preload")), fixture.written)
+        assertEquals(QueueType.YOUTUBE_PLAYLIST, fixture.snapshots.single().queueType)
+        assertNull(fixture.snapshotIfAccepted())
+        assertNull(fixture.teardownSnapshot())
+    }
+
+    @Test
+    fun preloadFilteredToEmpty_afterConfirmedFinalPage_allowsAnEmptyCheckpoint() = runTest {
+        val fixture = Fixture(this)
+        val queue = fixture.beginFinitePreload()
+        advanceUntilIdle()
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("preload")), fixture.written)
+
+        queue.accept(YouTubePlaylistQueue.Proposal(
+            FinitePlaylistSnapshot(phase = FinitePlaylistPhase.EXHAUSTED), emptyList(),
+        ))
+        fixture.scheduler.request()
+        advanceUntilIdle()
+
+        assertTrue(queue.confirmedExhausted)
+        assertNull(queue.snapshot.continuation)
+        assertEquals(listOf(listOf("preload"), emptyList<String>()), fixture.written)
+        assertEquals(QueueType.LIST, fixture.snapshots.last().queueType)
+        assertTrue(fixture.commit(requireNotNull(fixture.teardownSnapshot())))
+    }
+
+    @Test
+    fun preloadFilteredToEmpty_explicitClear_allowsAnEmptyCheckpoint() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginFinitePreload()
+        advanceUntilIdle()
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("preload")), fixture.written)
+
+        // Explicit clear changes the queue identity, even when filtering already emptied it.
+        fixture.queue = EmptyQueue
+        fixture.changeTimeline(emptyList())
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("preload"), emptyList<String>()), fixture.written)
+        assertEquals(QueueType.LIST, fixture.snapshots.last().queueType)
+        assertTrue(fixture.commit(requireNotNull(fixture.teardownSnapshot())))
+    }
+
+    @Test
     fun emptyFilteredFinitePage_preservesThePreviousCheckpointThroughNextPageFailure() = runTest {
         val fixture = Fixture(this)
         fixture.scheduler.request()
@@ -649,6 +726,14 @@ class QueueCheckpointSchedulerTest {
             finite.beginPlayback()
             finite.initialTimelineCleared = true
             changeTimeline(emptyList())
+            return finite
+        }
+
+        fun beginFinitePreload(): YouTubePlaylistQueue {
+            val finite = beginFiniteReplacement()
+            // MusicService installs the preload before accepting the first page proposal.
+            finite.timelineInstalled = true
+            changeTimeline(listOf("preload"))
             return finite
         }
 
