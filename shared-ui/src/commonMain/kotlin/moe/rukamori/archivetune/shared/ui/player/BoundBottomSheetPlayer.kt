@@ -29,8 +29,14 @@ fun BoundBottomSheetPlayer(
 ) {
     key(queue, queue.player, settings, controls) {
         val native by controls.state.collectAsState()
-        val onAction: (PlayerAction) -> Unit = remember(queue.player, controls) {
-            { action: PlayerAction -> dispatchNativePlayerAction(queue.player, controls, action) }
+        val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+        val onAction: (PlayerAction) -> Unit = remember(queue.player, controls, phone, interaction) {
+            { action: PlayerAction ->
+                if (phone && action == PlayerAction.MORE && (interaction.fullscreenLyrics || interaction.panel == PlayerPanel.LYRICS)) {
+                    val accepted = queue.player.snapshot.value
+                    if (controls.state.value.matches(accepted)) controls.onLyricsMenu(accepted?.occurrenceId)
+                } else dispatchNativePlayerAction(queue.player, controls, action)
+            }
         }
         // Volume is written only while the observed native owner reports a volume; the UI never invents one.
         val setVolume: (Float) -> Unit = remember(controls) {

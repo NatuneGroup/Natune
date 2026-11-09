@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.shared.ui.home
 
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import org.jetbrains.compose.resources.painterResource
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,7 +58,11 @@ fun HomeShelfOccurrenceCard(
         null
     }
     val menuControl: (@Composable () -> Unit)? = if (menu) {
-        { TextButton(onClick = { more?.invoke(occurrence) }) { Text(stringResource(Res.string.m4_more)) } }
+        {
+            if (LocalAndroidPhonePresentation.current) IconButton(onClick = { more?.invoke(occurrence) }) {
+                Icon(painterResource(Res.drawable.m4hv_icon_more_vert), stringResource(Res.string.m4_more))
+            } else TextButton(onClick = { more?.invoke(occurrence) }) { Text(stringResource(Res.string.m4_more)) }
+        }
     } else {
         null
     }

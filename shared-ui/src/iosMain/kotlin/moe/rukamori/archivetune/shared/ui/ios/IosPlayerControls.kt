@@ -175,6 +175,10 @@ internal class IosPlayerControls(
         graph.player.seekTo(iosSeekTarget(position, if (forward) step else -step, playback.durationMs ?: 0L))
     }
 
+    override fun onLyricsMenu(occurrenceId: String?) {
+        graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.let(itemMenu::openLyrics)
+    }
+
     override fun onAction(action: PlayerAction, occurrenceId: String?) {
         when (action) {
             // The root closes the sheet for COLLAPSE before an action reaches the host.
@@ -221,7 +225,7 @@ internal class IosPlayerControls(
             graph.report("player action ${PlayerAction.MORE.name} has no queue entry on the iOS host")
             return
         }
-        itemMenu.open(entry)
+        itemMenu.openPlayer(entry)
     }
 
     private fun openAlbum(occurrenceId: String?) {

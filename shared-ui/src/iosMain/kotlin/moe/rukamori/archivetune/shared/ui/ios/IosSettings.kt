@@ -425,8 +425,12 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
     val back: () -> Unit = { navigation.back() }
     CompositionLocalProvider(
         LocalSettingsBack provides back,
-        // The shared pages stay mounted; only rows whose readers are Android-only are omitted here.
-        LocalUnsupportedSettingsAnchors provides AndroidOnlySettingsAnchors.all,
+        // Android-only controls keep their original rows and cannot write unsupported preferences.
+        moe.rukamori.archivetune.shared.ui.settings.LocalPhoneSettingsReference provides
+            moe.rukamori.archivetune.shared.ui.settings.phoneSettingsReference(route.value),
+        moe.rukamori.archivetune.shared.ui.settings.LocalUnavailableSettingsAnchors provides
+            (AndroidOnlySettingsAnchors.all - setOf("dev_show_discord_debug", "dev_show_nerd_stats", "account_force_sync") +
+                setOf("bit_perfect_usb", "usb_exclusive_audio", "storage_folder", "dns_over_https", "dns_provider", "dns_custom_url", "audio_normalization", "enable_video_playback")),
     ) {
         IosSettingsRouteBody(host, owners, route, navigation)
     }
@@ -463,9 +467,7 @@ private fun IosSettingsRouteBody(
                 scrollTo = scrollTo,
                 // The root never takes key focus on this host, so a shortcut table here could never fire.
                 keyboardShortcuts = false,
-                hostIntegration = SettingsRow.Action("ios_system_integrations", Res.string.ios_system_integrations,
-                    run = { navigate("settings/system_integrations") },
-                    description = Res.string.ios_system_integrations_description, navRoute = "settings/system_integrations"),
+                androidAuto = true,
             )
             "settings/tidal" -> {
                 val health by owners.tidalInstanceHealth.collectAsState()
@@ -606,9 +608,8 @@ private fun IosSettingsRouteBody(
                 if (telegram == null) IosUnboundSurface(Modifier.fillMaxSize())
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
-            "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
-            "settings/update" -> androidx.compose.foundation.layout.Column {
-                IosReleasePage(owners.graph, navigate)
+            "settings/privacy" -> IosPrivacySettingsPage(host, owners.graph, owners.controller, onFailure, scrollTo)
+            "settings/update" -> {
                 UpdateSettings(
                 controller = owners.controller,
                 isNightlyBuild = false,
@@ -795,25 +796,15 @@ private fun IosTelegramSettingsPage(
  * the Android page need a history editor this host does not have yet.
  */
 @Composable
-private fun IosPrivacySettingsPage(host: IosHost, controller: SettingsController, onFailure: () -> Unit, scrollTo: String?) {
-    val snapshot by controller.store.snapshots.collectAsState()
-    val preferences = snapshot
-    if (preferences == null) {
-        CircularProgressIndicator()
-        return
-    }
-    val presence = host.listenerPresence
-    SettingsPage(
-        rows = privacyInlineSettingsRows(),
-        preferences = preferences,
+private fun IosPrivacySettingsPage(host: IosHost, graph: IosSessionGraph, controller: SettingsController, onFailure: () -> Unit, scrollTo: String?) {
+    moe.rukamori.archivetune.shared.ui.settings.PrivacySettings(
         controller = controller,
-        scrollTo = scrollTo,
+        resetListeningStats = graph.history::reset,
         onFailure = onFailure,
-        extraItems = {
-            if (presence != null) {
-                item(key = "listener_presence") {
-                    IosListenerPresenceSection(presence, host::report, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                }
+        scrollTo = scrollTo,
+        listenerPresence = {
+            host.listenerPresence?.let { presence ->
+                IosListenerPresenceSection(presence, host::report, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
         },
     )
@@ -873,7 +864,7 @@ private fun IosDeveloperSettingsPage(
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
-        androidDebugSections = false,
+        androidDebugSections = true,
     )
 }
 

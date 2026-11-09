@@ -60,29 +60,25 @@ internal fun IosModulesPage(host: IosHost, graph: IosSessionGraph) {
             onBack = { editing = null; issue = null })
         return
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Text(stringResource(Res.string.ios_modules_title), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(Res.string.ios_modules_contracts))
-        issue?.let { Text(moduleIssueText(it), color = MaterialTheme.colorScheme.error) }
-        Row { Text(stringResource(Res.string.ios_modules_enable)); Switch(prefs?.get(ModulesEnabledKey) == true,
-            onCheckedChange = { scope.launch { graph.settings.edit { this[ModulesEnabledKey] = it } } }) }
-        Button(enabled = !busy, onClick = { action {
-                val file = host.files.pickDocument(host.viewController) ?: return@action
-                graph.modules.install(host.files.read(file, 4L * 1024 * 1024))
-                refresh()
-        } }) { Text(stringResource(Res.string.ios_modules_import)) }
-        modules.forEach { module ->
-            ListItem(headlineContent = { Text(module.name) }, supportingContent = { Column { Text(module.id); status[module.id]?.let { Text(moduleIssueText(it), color = MaterialTheme.colorScheme.error) } } },
-                trailingContent = { Row {
-                    TextButton(enabled = !busy, onClick = { action {
-                        config = Json.parseToJsonElement(graph.modules.configuration(module.id)).jsonObject; savedConfig = config; editing = module
-                    } }) { Text(stringResource(Res.string.ios_modules_configure)) }
-                    TextButton(enabled = !busy, onClick = { action {
-                        graph.modules.remove(module.id); refresh()
-                    } }) { Text(stringResource(Res.string.ios_modules_remove)) }
-                } })
-        }
-    }
+    moe.rukamori.archivetune.shared.ui.settings.ModulesSettings(
+        modules = modules.map { module -> moe.rukamori.archivetune.shared.ui.settings.SettingsModule(
+            module.id, module.name, enabled[module.id] == true, status[module.id]?.let { moduleIssueText(it) }) },
+        enabled = prefs?.get(ModulesEnabledKey) == true,
+        busy = busy,
+        issue = issue?.let { moduleIssueText(it) },
+        onEnabled = { value -> action { graph.settings.edit { this[ModulesEnabledKey] = value } } },
+        onImport = { action {
+            val file = host.files.pickDocument(host.viewController) ?: return@action
+            graph.modules.install(host.files.read(file, 4L * 1024 * 1024)); refresh()
+        } },
+        onConfigure = { id -> action {
+            config = Json.parseToJsonElement(graph.modules.configuration(id)).jsonObject
+            savedConfig = config; editing = modules.first { it.id == id }
+        } },
+        onModuleEnabled = { id, value -> action { graph.modules.setEnabled(id, value); refresh() } },
+        onMove = { id, delta -> action { graph.modules.move(id, delta); refresh() } },
+        onRemove = { id -> action { graph.modules.remove(id); refresh() } },
+    )
 }
 
 @Composable

@@ -83,6 +83,6 @@ ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME =
 NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"
 
-ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid
+ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = ArchiveTuneAndroid NatuneIcon_5847 NatuneIcon_104570 NatuneIcon_950492 NatuneIcon_417667 NatuneIcon_152487 NatuneIcon_944391 NatuneIcon_454033 NatuneIcon_801991 NatuneIcon_720714 NatuneIcon_207115 NatuneIcon_692860 NatuneIcon_712543 NatuneIcon_955439 NatuneIcon_934989 NatuneIcon_539452 NatuneIcon_399860 NatuneIcon_320974 NatuneIcon_980484 NatuneIcon_286407 NatuneIcon_531862
 
 CODE_SIGN_ENTITLEMENTS = ArchiveTune/Natune.entitlements

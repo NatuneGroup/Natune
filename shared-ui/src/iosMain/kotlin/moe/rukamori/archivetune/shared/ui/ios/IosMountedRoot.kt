@@ -12,6 +12,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -79,6 +81,7 @@ private fun IosMountedState(host: IosHost, session: IosSessionState, active: Boo
                 val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
                 DisposableEffect(state.graph) { onDispose { recognition.close() } }
                 val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
+                CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
                 ArchiveTuneRoot(
                     host = bindings,
                     visible = active,
@@ -86,6 +89,7 @@ private fun IosMountedState(host: IosHost, session: IosSessionState, active: Boo
                     opticalCapabilities = IosOpticalCapabilities,
                     safeArea = safeArea,
                 )
+                }
             }
         }
     }

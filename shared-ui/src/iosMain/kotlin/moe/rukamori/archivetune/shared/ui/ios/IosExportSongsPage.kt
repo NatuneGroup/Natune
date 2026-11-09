@@ -137,77 +137,12 @@ internal fun IosExportSongsPage(
         }
     }
 
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            text = { Text(stringResource(Res.string.ios_export_songs_delete_confirm, chosen.size)) },
-            confirmButton = {
-                TextButton(onClick = { confirmDelete = false; delete() }) {
-                    Text(stringResource(Res.string.ios_export_songs_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text(stringResource(Res.string.m6_cancel))
-                }
-            },
-        )
-    }
-
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Text(
-            stringResource(Res.string.ios_export_songs_title),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(vertical = 16.dp),
-        )
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text(stringResource(Res.string.ios_export_songs_search)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(stringResource(Res.string.ios_export_songs_selected, chosen.size), Modifier.weight(1f))
-            TextButton(onClick = { selected = selected + visible.map { it.id } }) {
-                Text(stringResource(Res.string.ios_export_songs_select_all))
-            }
-            TextButton(onClick = { selected = emptySet() }) {
-                Text(stringResource(Res.string.ios_export_songs_clear_selection))
-            }
-            OutlinedButton(onClick = { confirmDelete = true }, enabled = chosen.isNotEmpty() && !exporting) {
-                Text(stringResource(Res.string.ios_export_songs_delete))
-            }
-            Button(onClick = ::export, enabled = chosen.isNotEmpty() && !exporting) {
-                Text(stringResource(Res.string.ios_export_songs_export))
-            }
-        }
-        if (exporting) {
-            Text(
-                stringResource(Res.string.ios_export_songs_progress, progress, chosen.size),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        when {
-            rows == null -> CircularProgressIndicator()
-            songs.isEmpty() -> Text(stringResource(Res.string.ios_export_songs_empty))
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                items(visible, key = { it.id }) { song ->
-                    fun toggle() { selected = if (song.id in selected) selected - song.id else selected + song.id }
-                    ListItem(
-                        modifier = Modifier.clickable { toggle() },
-                        leadingContent = { Checkbox(checked = song.id in selected, onCheckedChange = { toggle() }) },
-                        headlineContent = { Text(song.title) },
-                        supportingContent = { if (song.artists.isNotBlank()) Text(song.artists) },
-                    )
-                }
-            }
-        }
-    }
+    moe.rukamori.archivetune.shared.ui.settings.ExportSongsSettings(
+        loading = rows == null,
+        songs = songs.map { moe.rukamori.archivetune.shared.ui.settings.ExportSettingsSong(it.id, it.title, it.artists) },
+        query = query, selected = selected, exporting = exporting, progress = progress,
+        onQuery = { query = it }, onSelection = { selected = it }, onExport = ::export, onDelete = ::delete,
+    )
 }
 
 private class IosExportableSong(val row: PortableStoredSongRow, val title: String, val artists: String) {

@@ -163,7 +163,9 @@ fun ArchiveTuneRoot(
             }
             LaunchedEffect(host.customArtwork) { host.customArtwork?.ensureLoaded() }
             val artworkOverrides by (host.customArtwork?.overrides ?: remember { kotlinx.coroutines.flow.MutableStateFlow<moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides?>(null) }).collectAsState()
+            val overflowAnchor = remember { moe.rukamori.archivetune.shared.ui.menu.OverflowMenuAnchor() }
             CompositionLocalProvider(
+                moe.rukamori.archivetune.shared.ui.menu.LocalOverflowMenuAnchor provides overflowAnchor,
                 moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides provides edits,
                 LocalPodcastProgress provides byEpisode,
                 moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
@@ -391,6 +393,7 @@ private fun ArchiveTuneLoadedRoot(
                         ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
                             host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
                             preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
+                            settings = host.settings, onFailure = host.onFailure,
                             searchFocusRequested = searchFocusRequested,
                             onSearchFocusConsumed = { searchFocusRequested = false },
                             modifier = pageModifier)
@@ -499,6 +502,7 @@ private fun ArchiveTuneLoadedRoot(
                                         nativeState = nativeState,
                                         artwork = host.artwork,
                                         motion = policy.motion,
+                                        preferences = preferences,
                                         onExpand = { expanded = true },
                                         onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
                                         onPlayPause = ::playPause,

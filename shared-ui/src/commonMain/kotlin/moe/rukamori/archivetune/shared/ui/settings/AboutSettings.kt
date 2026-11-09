@@ -216,7 +216,10 @@ fun AboutSettings(
     val channel = preferences.selectedUpdateChannel(isNightlyBuild)
     // The column is capped at 840 dp, so the Box has to take the whole page and centre it: a wrapping Box left the
     // About content pinned to the left edge on every wider window (840 dp of a 1440 px page).
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+    Column(modifier.fillMaxSize()) {
+    if (phone) LocalSettingsBack.current?.let { SettingsBackHeader(it, Res.string.m6_settings_home_about) }
+    Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
         LazyColumn(modifier = Modifier.widthIn(max = 840.dp).fillMaxSize()) {
             item(key = "about_header") {
                 AboutHeader(appName, versionLine, channel, distributionLabel, debugOrAbiLabel, appLogo)
@@ -230,9 +233,11 @@ fun AboutSettings(
                     onClick = { navigate("settings/changelog?channel=${channel.name}") },
                 )
             }
-            if (updaterAvailable) {
+            if (updaterAvailable || phone) {
                 item(key = "about_updates") {
-                    AboutRow(stringResource(Res.string.m6_about_updates), icon = Res.drawable.m6_icon_sync, onClick = { navigate("settings/update") })
+                    AboutRow(stringResource(Res.string.m6_about_updates), icon = Res.drawable.m6_icon_sync,
+                        supporting = if (updaterAvailable) null else stringResource(Res.string.phone_not_available_on_ios),
+                        enabled = updaterAvailable, onClick = if (updaterAvailable) { { navigate("settings/update") } } else null)
                 }
             }
             item(key = "about_licenses") {
@@ -297,6 +302,7 @@ fun AboutSettings(
         }
     }
 
+    }
     when (activeDialog) {
         AboutDialog.NONE -> Unit
         AboutDialog.TRANSLATION_CONTRIBUTORS -> AboutFullScreenDialog(
@@ -391,6 +397,7 @@ private fun AboutRow(
     icon: DrawableResource,
     supporting: String? = null,
     onClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
 ) {
     ListItem(
         headlineContent = { Text(title) },
@@ -398,7 +405,7 @@ private fun AboutRow(
             if (supporting != null) Text(supporting, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         leadingContent = { Icon(painterResource(icon), contentDescription = null) },
-        modifier = Modifier.clickable(enabled = onClick != null) { onClick?.invoke() },
+        modifier = Modifier.clickable(enabled = enabled && onClick != null) { onClick?.invoke() },
     )
 }
 

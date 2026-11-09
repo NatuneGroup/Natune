@@ -17,10 +17,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.download.downloadTaskId
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompleteList
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistSong
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -48,6 +52,9 @@ import moe.rukamori.archivetune.shared.ui.menu.SharedOverflowMenu
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuFacts
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.SongOverflowMenu
+import moe.rukamori.archivetune.shared.ui.host.completeCatalogueList
+import moe.rukamori.archivetune.shared.ui.host.playableRows
+import moe.rukamori.archivetune.shared.ui.menu.collectionQueueActions
 import moe.rukamori.archivetune.shared.ui.menu.collectionShareAction
 import moe.rukamori.archivetune.shared.ui.menu.customArtworkEntryAction
 import moe.rukamori.archivetune.shared.ui.menu.playlistOccurrenceRemoval
@@ -77,6 +84,7 @@ import moe.rukamori.archivetune.shared.ui.resources.m5pq_equalizer
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiLyricsOperation
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.menu.unavailableOnIos
 
 /**
  * Queue commands get their own occurrence of the same item, because a row's list id can already sit in the queue and a
@@ -94,6 +102,7 @@ private class IosSongMenuHost(
     private val host: IosHost,
     private val openRoute: (String) -> Unit,
     private val sleepSheet: IosSleepTimerSheetState,
+    private val selected: ContentOccurrence,
 ) : SongMenuHost {
     /**
      * The song loads alone and the watch-next tail is appended behind it, the pair of calls `PlayerConnection.startRadio`
@@ -103,13 +112,13 @@ private class IosSongMenuHost(
      */
     override suspend fun startRadio(song: ContentRef) {
         if (song.provider != ContentProvider.YOUTUBE.id || song.kind != ContentKind.SONG) state.unavailable()
-        val seeded = graph.queue.startRadio(song) { state.target?.queuedEntry() ?: state.unavailable() }
+        val seeded = graph.queue.startRadio(song) { selected.queuedEntry() }
         check(seeded) { "The radio tail could not be seeded" }
     }
 
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
         if (inLibrary) {
-            val item = state.target?.item ?: state.unavailable()
+            val item = selected.item
             graph.library.saveItems(listOf(item))
         } else {
             // The repository cascade the Android store performs: membership and its like go, while
@@ -128,7 +137,7 @@ private class IosSongMenuHost(
     }
 
     override suspend fun removeFromHistory(song: ContentRef) {
-        val id = state.target?.occurrenceId?.removePrefix("history:") ?: state.unavailable()
+        val id = selected.occurrenceId.removePrefix("history:")
         graph.pageOwners.history.remove(HistoryOrigin.LOCAL, setOf(id))
     }
 
@@ -139,7 +148,7 @@ private class IosSongMenuHost(
      * host cannot store is refused before any task exists, so the notice names the limit instead of a bare failure.
      */
     override suspend fun startDownload(song: ContentRef) {
-        val item = state.target?.item
+        val item = selected.item
         try {
             if (item != null && item.ref == song) graph.downloads.start(item) else graph.downloads.start(song, "")
         } catch (refused: DownloadRefused) {
@@ -164,7 +173,7 @@ private class IosSongMenuHost(
     override suspend fun openWithExternalDownloader(song: ContentRef): Boolean = false
 
     override suspend fun viewAlbum(albumId: String) {
-        val item = state.target?.item ?: state.unavailable()
+        val item = selected.item
         state.dismiss()
         openRoute(ArchiveRoutes.content(ContentRef(item.ref.provider, ContentKind.ALBUM, albumId)))
     }
@@ -199,7 +208,7 @@ private class IosSongMenuHost(
     override suspend fun saveCoverArtwork(song: ContentRef, artworkUrl: String): Boolean {
         val image = graph.artworkLoader.load(artworkUrl) ?: return false
         val png = iosArtworkPng(image) ?: return false
-        val name = songExportFileName(state.target?.item?.title.orEmpty(), "png")
+        val name = songExportFileName(selected.item?.title.orEmpty(), "png")
         return iosExportStagedFile(host, name) { staged -> iosWriteBytes(staged, png) } ?: true
     }
 
@@ -238,9 +247,14 @@ internal fun IosSongMenu(
     openRoute: (String) -> Unit,
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
+    tempoActions: IosTempoPitchActions,
 ) {
+    if (menu.lyricsMenu) {
+        IosLyricsMenu(menu, graph, occurrence, openRoute)
+        return
+    }
     val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host, graph)) }
-    val songHost = remember { IosSongMenuHost(menu, graph, host, openRoute, sleepSheet) }
+    val songHost = remember(occurrence.occurrenceId) { IosSongMenuHost(menu, graph, host, openRoute, sleepSheet, occurrence) }
     val editablePlaylists by remember {
         graph.libraryContent.playlistRows().map { rows -> rows.filter { it.editable }.map { it.item } }
     }.collectAsState(emptyList())
@@ -372,7 +386,7 @@ internal fun IosSongMenu(
         val document = lyricDocument
         val playing = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }
         if (document != null && playing?.item?.ref == ref && document.hasLines) {
-            add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.editOpen = true; menu.dismiss() })
+            add(OverflowAction("edit_lyrics", Res.string.ios_lyrics_edit) { graph.lyricsTools.openEdit(document.occurrenceId); menu.dismiss() })
             add(OverflowAction("translate_lyrics", Res.string.ios_lyrics_translate) {
                 check(graph.lyricsSurface.sessions.manual(AiLyricsOperation.TRANSLATE)); menu.dismiss()
             })
@@ -386,7 +400,11 @@ internal fun IosSongMenu(
                 menu.dismiss()
             })
         }
-    }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
+    }.map { action -> if (action.id in iosBoundSongRows(ref, facts, artistRef != null)) action else action.unavailableOnIos() }
+    if (menu.playerMenu) {
+        IosPlayerQueueMenu(menu, graph, host, occurrence, facts, actions, tempoActions, openRoute)
+        return
+    }
     SongOverflowMenu(
         identity = "ios-song:${occurrence.occurrenceId}",
         expanded = true,
@@ -408,11 +426,23 @@ internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurre
         value = true to iosNowPlayingShareLink(ref, host)
     }
     val (loaded, link) = result
-    val actions = link?.let { url -> listOf(collectionShareAction { iosShareText(host, url) }) }.orEmpty()
-    if (actions.isEmpty()) {
-        if (loaded) LaunchedEffect(occurrence) { menu.refuse() }
-        return
+    val complete by produceState<FinitePlaylistCompleteList<ContentOccurrence>?>(null, ref) {
+        if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind in setOf(ContentKind.ALBUM, ContentKind.PLAYLIST)) {
+            val request = ArchiveRoutes.resolve(ArchiveRoutes.content(ref))?.contentRequest() ?: return@produceState
+            value = try {
+                withTimeoutOrNull(FinitePlaylistCompletion.TIMEOUT_MS) {
+                    completeCatalogueList(graph.youtubeContent, request, emptyList(), null)?.let { all ->
+                        FinitePlaylistCompleteList(occurrence.item.title, playableRows(all).mapIndexed { index, row ->
+                            FinitePlaylistSong(row, row.item.ref.id, row.setVideoId, index)
+                        })
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+        }
     }
+    val actions = collectionQueueActions(complete, IosMenuInsertQueue(graph.queue)) +
+        link?.let { url -> listOf(collectionShareAction { iosShareText(host, url) }) }.orEmpty()
     SharedOverflowMenu(
         menuIdentity = "ios-item:${occurrence.occurrenceId}",
         expanded = true,
@@ -429,6 +459,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         // Link share covers catalog songs and Telegram tracks alike: the client's message-link query
         // resolves a Telegram id, and only local files keep having no share owner here.
         add("share")
+        add("copy_link")
         if (ref.kind == ContentKind.SONG) add("save_canvas")
         // Library add and remove both commit through the repository now.
         if (!facts.isLocal) add("library")

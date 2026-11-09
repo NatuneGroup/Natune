@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.navigation.LocalBackToMain
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.painterResource
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 
 internal val defaultCollectionTextOrder = Comparator<String> { a, b -> a.compareTo(b, ignoreCase = true) }
@@ -32,9 +34,10 @@ internal fun ManagementHeader(title: String, back: () -> Unit) {
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(stringResource(Res.string.m4_back), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            if (LocalAndroidPhonePresentation.current) Icon(painterResource(Res.drawable.m4_icon_arrow_back), stringResource(Res.string.m4_back), Modifier.size(24.dp))
+            else Text(stringResource(Res.string.m4_back), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
-        Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+        Text(title, style = if (LocalAndroidPhonePresentation.current) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
     }
 }
 
