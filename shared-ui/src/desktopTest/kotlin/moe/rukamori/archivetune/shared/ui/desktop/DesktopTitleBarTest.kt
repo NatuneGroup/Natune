@@ -144,6 +144,24 @@ class DesktopTitleBarTest {
     }
 
     @Test
+    fun theDefaultWindowKeepsSettingsAndAccountBesideCustomCaptionButtons() = runComposeUiTest {
+        setContent {
+            Bar(
+                width = 1080.dp,
+                rows = Rows(),
+                settings = {},
+                windowControls = {
+                    Row { Box(Modifier.width(138.dp).height(32.dp).testTag("caption-buttons")) }
+                },
+            )
+        }
+
+        onNodeWithTag("caption-buttons").assertIsDisplayed()
+        onNodeWithTag("desktop-settings-button").assertIsDisplayed()
+        onNodeWithTag("desktop-account-button").assertIsDisplayed()
+    }
+
+    @Test
     fun aNarrowWindowsTitleBarDropsTheActionsInsteadOfClippingThem() = runComposeUiTest {
         val rows = Rows()
         var controls by mutableStateOf<(@Composable () -> Unit)?>(null)

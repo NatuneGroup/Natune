@@ -3,11 +3,13 @@ package moe.rukamori.archivetune.shared.ui.screens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.onNodeWithTag
@@ -15,6 +17,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.SearchBarPositionKey
+import moe.rukamori.archivetune.shared.ui.desktop.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
@@ -58,6 +63,33 @@ class SearchFocusTest {
         onNodeWithTag("search-query").performTextInput("abc")
         assertEquals("abc", query)
         assertEquals(1, consumed)
+    }
+
+    @Test
+    fun desktopDoesNotRestoreAPhoneBottomSearchField() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalDesktopLayout provides true) {
+                    SearchScreen(
+                        query = "duplicate",
+                        scope = SearchScope.Online,
+                        onQuery = {},
+                        onScope = {},
+                        onSubmit = {},
+                        onVoice = null,
+                        onRecognition = null,
+                        state = PagedContentState(initialized = true),
+                        actions = ContentActions({}, null, {}, {}),
+                        artwork = { _, modifier -> Box(modifier) },
+                        preferences = PreferenceSnapshot.of(SearchBarPositionKey to "BOTTOM"),
+                    )
+                }
+            }
+        }
+
+        // The desktop title bar owns the field. The page must not add either its top field or the restored phone pill.
+        onNodeWithTag("search-query").assertDoesNotExist()
+        onNodeWithTag("search-query-bottom").assertDoesNotExist()
     }
 
     @Test

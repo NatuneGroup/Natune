@@ -215,6 +215,11 @@ private fun ArchiveTuneLoadedRoot(
         val queue by host.queue.state.collectAsState()
         val playback by host.queue.player.snapshot.collectAsState()
         val current = queue.entries.firstOrNull { it.occurrenceId == (playback?.occurrenceId ?: queue.currentOccurrenceId) }
+        // Removing the final entry also removes the sheet and its close control. Restore the phone chrome immediately
+        // instead of leaving `expanded` stuck on an invisible player with no in-app escape.
+        LaunchedEffect(expanded, current == null) {
+            if (expanded && current == null) expanded = false
+        }
         LaunchedEffect(host, navigation) {
             host.routes.collect { route ->
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
