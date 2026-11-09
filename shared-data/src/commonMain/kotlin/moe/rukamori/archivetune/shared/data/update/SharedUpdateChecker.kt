@@ -35,7 +35,6 @@ import moe.rukamori.archivetune.shared.domain.settings.UpdateFeedManifestNightly
 import moe.rukamori.archivetune.shared.domain.settings.UpdateFeedManifestStableJsonKey
 import moe.rukamori.archivetune.shared.domain.settings.UpdateFeedManifestStableLastCheckedAtKey
 import moe.rukamori.archivetune.shared.domain.settings.UpdateOffer
-import moe.rukamori.archivetune.shared.domain.settings.defaultUpdateChannel
 import moe.rukamori.archivetune.shared.domain.settings.eligibleUpdateOffer
 import moe.rukamori.archivetune.shared.domain.settings.selectedUpdateChannel
 import moe.rukamori.archivetune.shared.domain.settings.setUpdateChannel
@@ -157,7 +156,7 @@ class SharedUpdateChecker(
 
     fun releaseVersionName(release: ReleaseInfo, channel: UpdateChannel): String = when (channel) {
         UpdateChannel.STABLE -> getReleaseVersionName(release)
-        UpdateChannel.NIGHTLY -> getPreReleaseVersionName(release, profile.versionName)
+        UpdateChannel.NIGHTLY -> getPreReleaseVersionName(release)
     }
 
     /**

@@ -5,7 +5,7 @@ The `NatuneGroup/Natune` repository has two release channels:
 | Channel | Branch | Trigger | Release |
 | --- | --- | --- | --- |
 | Stable | `main` | Every push or manual dispatch | GitHub Release titled `X.Y.Z`, tagged `vX.Y.Z` |
-| Nightly | `dev` | Every push or manual dispatch | Prerelease titled and tagged `N<yyyyMMdd>` using the UTC date |
+| Nightly | `dev` | Every push or manual dispatch | Immutable prerelease titled and tagged `N<yyyyMMddHHmm>` using UTC |
 
 Every successful release run builds the Android flavor matrix, Windows x64, Linux
 x64 and arm64, macOS x64 and arm64, and an unsigned iOS IPA. The Android and
@@ -29,19 +29,29 @@ The rule is implemented in `.github/scripts/next-version.py`. Stable releases
 are skipped if their calculated tag already exists.
 
 Nightly tag, release title, Android `versionName`, desktop display version and
-artifact names use `N<yyyyMMdd>` in UTC (for example, `N20261026`). The iOS
+artifact names use `N<yyyyMMddHHmm>` in UTC (for example, `N202611091123`). The iOS
 `CFBundleShortVersionString` must be numeric, so the IPA carries the package
 version there and the allocated build code as `CFBundleVersion`. A
-same-date nightly replaces its prior release and tag. After each successful
-nightly publish, only the newest five `N<digits>` releases are kept, ordered by
-publish time; older ones are deleted together with their tags. Stable `v*`
+nightly build gets its own immutable release and tag; occupied minute tags are
+bumped forward until unused. Only a rerun of the same commit and build code may
+replace its own release. If the published `nightly.json` already offers that
+release, the rerun leaves the release and the feed unchanged and publishes
+nothing; if the manifest cannot be read or parsed, the rerun refuses to replace
+the release. Only a REST 404 for `update-feed`, or its asset list without
+`nightly.json`, counts as a missing manifest. When `dev` advances while a release is being published, that
+release is removed again unless `nightly.json` offers it. After each successful
+nightly publish, the newest five
+`N<digits>` releases are kept, ordered by publish time, along with this run's tag
+and the release referenced by the published `nightly.json`; older unprotected
+releases are deleted together with their tags. If the feed cannot be read or
+parsed, pruning is skipped. Stable `v*`
 releases, the `update-feed` release and `local-*` tags are never touched. Unless
 `force` is selected for a manual run, the workflow skips when the current `dev`
 commit matches the target of the latest nightly release.
 
 Desktop package formats require numeric versions. Stable installers use the
 stable version; nightly installers use the next stable version as their package
-version while retaining `N<yyyyMMdd>` in the release title and artifact name.
+version while retaining `N<yyyyMMddHHmm>` in the release title and artifact name.
 
 `VERSION_CODE_OVERRIDE` is allocated from the current UTC epoch second (Unix
 seconds) plus `trustedUpgradeVersionCodeFloor` in `app/build.gradle.kts`. Stable
@@ -93,10 +103,8 @@ they are no longer needed.
 
 The workflows also publish `stable.json` and `nightly.json` to the fixed
 `update-feed` prerelease in this repository. The manifest links point to this
-repository's release assets. The app's current updater repository constants
-still name `NatuneGroup/ArchiveTune`; whether this repository's own feed should
-serve app updates is a separate product decision, so those endpoints stay
-unchanged until it is resolved.
+repository's release assets. Android and the shared updater both read the
+`NatuneGroup/Natune` feed.
 
 ## Manual ARM64 release candidate (artifact only)
 
