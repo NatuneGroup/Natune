@@ -27,6 +27,9 @@ import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import moe.rukamori.archivetune.db.entities.AlbumArtistMap
@@ -38,6 +41,7 @@ import moe.rukamori.archivetune.db.entities.LibraryTopMixEntity
 import moe.rukamori.archivetune.db.entities.LibraryTopMixSongMap
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.PlayCountEntity
+import moe.rukamori.archivetune.db.entities.Playlist
 import moe.rukamori.archivetune.db.entities.PlaylistEntity
 import moe.rukamori.archivetune.db.entities.PlaylistSongMap
 import moe.rukamori.archivetune.db.entities.PlaylistSongMapPreview
@@ -90,6 +94,18 @@ class MusicDatabase(
         delegate.withTransaction {
             block(this@MusicDatabase)
         }
+
+    /** The saved copy of a remote playlist, whichever browse-ID form ("VL" prefix or not) it was stored under. */
+    fun playlistByAnyBrowseId(browseId: String): Flow<Playlist?> {
+        val forms = playlistBrowseIdForms(browseId)
+        if (forms.isEmpty()) return flowOf(null)
+        return combine(forms.map { form -> playlistByBrowseId(form) }) { copies ->
+            fullestPlaylistCopy(copies.toList()) { copy -> copy.songCount }
+        }
+    }
+
+    fun playlistEntityByAnyBrowseId(browseId: String): PlaylistEntity? =
+        playlistBrowseIdForms(browseId).firstNotNullOfOrNull { form -> playlistEntityByBrowseId(form) }
 
     suspend fun awaitIdle(timeoutMs: Long = 5_000L) {
         withTimeout(timeoutMs) {
