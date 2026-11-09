@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.extensions.toPersistQueue
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
+import moe.rukamori.archivetune.models.QueueData
 import moe.rukamori.archivetune.models.QueueType
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistPhase
@@ -316,8 +317,7 @@ class QueueCheckpointSchedulerTest {
         queue.accept(YouTubePlaylistQueue.Proposal(
             FinitePlaylistSnapshot(phase = FinitePlaylistPhase.EXHAUSTED), emptyList(),
         ))
-        queue.timelineInstalled = true
-        fixture.changeTimeline(listOf("replacement"))
+        fixture.installTimeline(listOf("replacement"))
         advanceUntilIdle()
         assertEquals(listOf("replacement"), fixture.written.last())
         assertEquals(QueueType.YOUTUBE_PLAYLIST, fixture.snapshots.last().queueType)
@@ -390,7 +390,7 @@ class QueueCheckpointSchedulerTest {
         advanceUntilIdle()
         val manualSnapshot = fixture.snapshots.single()
 
-        fixture.changeTimeline(emptyList())
+        fixture.removeItemsByUser(emptyList())
         advanceUntilIdle()
 
         assertEquals(listOf(listOf("manual"), emptyList<String>()), fixture.written)
@@ -439,8 +439,7 @@ class QueueCheckpointSchedulerTest {
             continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
         ))
         fixture.mutating = true
-        queue.timelineInstalled = true
-        fixture.changeTimeline(listOf("accepted-page"))
+        fixture.installTimeline(listOf("accepted-page"))
         fixture.mutating = false
         queue.fail()
         fixture.scheduler.request()
@@ -583,8 +582,7 @@ class QueueCheckpointSchedulerTest {
             continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
         ))
         // The loader accepts a fully filtered first page and starts its continuation request.
-        queue.timelineInstalled = true
-        fixture.scheduler.request()
+        fixture.installTimeline(emptyList())
         advanceUntilIdle()
         assertEquals(listOf(listOf("seed")), fixture.written)
         assertNull(fixture.teardownSnapshot())
@@ -611,8 +609,7 @@ class QueueCheckpointSchedulerTest {
             continuation = "next-page", phase = FinitePlaylistPhase.PAGEABLE,
         ))
         fixture.mutating = true
-        queue.timelineInstalled = true
-        fixture.changeTimeline(listOf("accepted-page"))
+        fixture.installTimeline(listOf("accepted-page"))
         fixture.mutating = false
         fixture.scheduler.request()
         advanceUntilIdle()
@@ -639,8 +636,7 @@ class QueueCheckpointSchedulerTest {
 
         // The loader later accepts its first page while the earlier user edit is still remembered.
         fixture.mutating = true
-        queue.timelineInstalled = true
-        fixture.changeTimeline(listOf("manual", "accepted-page"))
+        fixture.installTimeline(listOf("manual", "accepted-page"))
         fixture.mutating = false
         advanceUntilIdle()
         assertEquals(listOf("manual", "accepted-page"), fixture.written.last())
@@ -774,13 +770,14 @@ class QueueCheckpointSchedulerTest {
         assertEquals(listOf(listOf("newer-user-queue")), current.written)
     }
 
-    private data class Snapshot(
+    internal data class Snapshot(
         val checkpoint: QueueCheckpointToken,
         val items: List<String>,
         val queueType: QueueType,
+        val queueData: QueueData?,
     )
 
-    private class Fixture(
+    internal class Fixture(
         scope: CoroutineScope,
         private val persistence: QueuePersistenceState = QueuePersistenceState(),
     ) {
@@ -819,8 +816,7 @@ class QueueCheckpointSchedulerTest {
         ): YouTubePlaylistQueue {
             val finite = YouTubePlaylistQueue(WatchEndpoint(playlistId = "fixture"), snapshot = snapshot)
             finite.beginPlayback()
-            queue = finite
-            checkpointGate.reset()
+            beginReplacement(finite)
             if (clearInitialTimeline) {
                 finite.initialTimelineCleared = true
                 changeTimeline(emptyList())
@@ -831,9 +827,26 @@ class QueueCheckpointSchedulerTest {
         fun beginFinitePreload(): YouTubePlaylistQueue {
             val finite = beginFiniteReplacement()
             // MusicService installs the preload before accepting the first page proposal.
-            finite.timelineInstalled = true
-            changeTimeline(listOf("preload"))
+            installTimeline(listOf("preload"))
             return finite
+        }
+
+        fun beginReplacement(nextQueue: Queue) {
+            queue = nextQueue
+            checkpointGate.beginReplacement()
+        }
+
+        fun installTimeline(next: List<String>) {
+            (queue as? YouTubePlaylistQueue)?.timelineInstalled = true
+            changeTimeline(next)
+            checkpointGate.onReplacementInstalled(queue)
+            scheduler.request()
+        }
+
+        fun addItemsByUser(next: List<String>) {
+            changeTimeline(next)
+            checkpointGate.onUserAddition()
+            scheduler.request()
         }
 
         fun changeTimeline(next: List<String>) {
@@ -850,6 +863,7 @@ class QueueCheckpointSchedulerTest {
 
         fun clearQueueIdentity() {
             queue = EmptyQueue
+            checkpointGate.onUserClear()
             scheduler.request()
         }
 
@@ -858,11 +872,12 @@ class QueueCheckpointSchedulerTest {
         fun teardownSnapshot(): Snapshot? =
             if (TeardownQueuePersistence.shouldSave(enabled, items.size, hasTimelineChanges)) snapshotIfAccepted() else null
 
-        fun snapshot(): Snapshot = Snapshot(
-            persistence.checkpointOrder.nextSnapshot(),
-            items.toList(),
-            (if (items.isEmpty()) EmptyQueue else queue).toPersistQueue(null, emptyList(), 0, 0L).queueType,
-        ).also { snapshots += it }
+        fun snapshot(): Snapshot {
+            val persisted = (if (items.isEmpty()) EmptyQueue else queue).toPersistQueue(null, emptyList(), 0, 0L)
+            return Snapshot(
+                persistence.checkpointOrder.nextSnapshot(), items.toList(), persisted.queueType, persisted.queueData,
+            ).also { snapshots += it }
+        }
 
         fun savePosition(position: Long): Boolean {
             if (!enabled || checkpointGate.blocked() || items.isEmpty()) return false
