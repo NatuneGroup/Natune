@@ -14,6 +14,9 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.session.LyricsSessions
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.painterResource
+import androidx.compose.foundation.layout.Column
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -26,6 +29,7 @@ class OverflowAction(
     val confirm: StringResource? = null,
     /** Format arguments of [confirm], such as the playlist name the baseline confirmations include. */
     val confirmArgs: List<Any> = emptyList(),
+    val description: StringResource? = null,
     val run: suspend () -> Unit,
 )
 
@@ -39,7 +43,7 @@ fun SharedOverflowMenu(
     val lifetime = remember(menuIdentity, expanded) { Any() }
     val latestLifetime by rememberUpdatedState(lifetime)
     fun perform(action: OverflowAction) {
-        if (busy) return
+        if (busy || !action.enabled) return
         busy = true
         scope.launch {
             try {
@@ -54,7 +58,11 @@ fun SharedOverflowMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         actions.forEach { action ->
             DropdownMenuItem(
-                text = { Text(stringResource(action.label), color = if (action.destructive) MaterialTheme.colorScheme.error else Color.Unspecified) },
+                text = { Column {
+                    Text(stringResource(action.label), color = if (action.destructive) MaterialTheme.colorScheme.error else Color.Unspecified)
+                    action.description?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+                } },
+                leadingIcon = if (LocalAndroidPhonePresentation.current) { { Icon(painterResource(phoneMenuIcon(action.id)), null) } } else null,
                 modifier = Modifier.testTag("menu:${action.id}"),
                 enabled = action.enabled && !busy, onClick = onClick@{
                 if (action.confirm != null) {

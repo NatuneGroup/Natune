@@ -180,7 +180,7 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet, tempoSheet)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet, tempoSheet, tempoPitchActions)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
             IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             IosTempoPitchOverlay(tempoSheet, graph, tempoPitchActions)

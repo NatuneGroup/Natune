@@ -120,81 +120,22 @@ private suspend fun openIosBackup(host: IosHost, graph: IosSessionGraph): Backup
     }
 }
 
-/**
- * The restart a staged restore needs. iOS has no relaunch mechanism, so Quit now ends the process and the next launch
- * applies the restore; Later keeps the current library and settings until the next start.
- */
 @Composable
 internal fun IosBackupRestartDialog(graph: IosSessionGraph) {
     val requested by graph.backup.restartRequested.collectAsState()
-    if (!requested) return
-    AlertDialog(
-        onDismissRequest = { graph.backup.dismissRestart() },
-        title = { Text(stringResource(Res.string.ios_backup_restart_title)) },
-        text = { Text(stringResource(Res.string.ios_backup_restart_message)) },
-        confirmButton = {
-            TextButton(onClick = { exit(0) }) {
-                Text(stringResource(Res.string.ios_backup_restart_quit))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = { graph.backup.dismissRestart() }) {
-                Text(stringResource(Res.string.ios_backup_restart_later))
-            }
-        },
-    )
+    moe.rukamori.archivetune.shared.ui.settings.BackupRestartDialog(requested, graph.backup::dismissRestart, quit = { exit(0) })
 }
 
-/**
- * The open-time report for a staged restore that failed: the previous library and settings are already back in
- * place, the pending set rests under the failed-staging name, and this dialog holds the notice until answered.
- */
 @Composable
 internal fun IosBackupRestoreFailedDialog(graph: IosSessionGraph) {
     val failed by graph.backup.restoreFailed.collectAsState()
-    if (!failed) return
-    AlertDialog(
-        onDismissRequest = { graph.backup.dismissRestoreFailed() },
-        title = { Text(stringResource(Res.string.ios_backup_restore_failed_title)) },
-        text = { Text(stringResource(Res.string.ios_backup_restore_failed_message)) },
-        confirmButton = {
-            TextButton(onClick = { graph.backup.dismissRestoreFailed() }) {
-                Text(stringResource(Res.string.ios_backup_restore_failed_dismiss))
-            }
-        },
-    )
+    moe.rukamori.archivetune.shared.ui.settings.BackupRestoreFailedDialog(failed, graph.backup::dismissRestoreFailed)
 }
 
-/**
- * The recovery surface for a restore that left the library unresolvable: the session runs on a throwaway
- * database, so this dialog replaces the normal state until the user picks a resolution. Both actions move the
- * displaced files into a dated quarantine — nothing is deleted — and the restart dialog then carries the
- * session out.
- */
 @Composable
 internal fun IosRestoreBlockedDialog(graph: IosSessionGraph) {
     val blocked by graph.backup.recoveryMode.collectAsState()
-    if (!blocked) return
-    val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { /* a blocked library resolves only by choosing */ },
-        title = { Text(stringResource(Res.string.ios_restore_blocked_title)) },
-        text = { Text(stringResource(Res.string.ios_restore_blocked_message)) },
-        confirmButton = {
-            if (graph.backup.previousLibraryAvailable) {
-                TextButton(
-                    onClick = { scope.launch { graph.backup.resolveRestoreRecovery(restorePrevious = true) } },
-                ) {
-                    Text(stringResource(Res.string.ios_restore_blocked_previous))
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = { scope.launch { graph.backup.resolveRestoreRecovery(restorePrevious = false) } },
-            ) {
-                Text(stringResource(Res.string.ios_restore_blocked_empty))
-            }
-        },
-    )
+    moe.rukamori.archivetune.shared.ui.settings.RestoreBlockedDialog(blocked, graph.backup.previousLibraryAvailable) { previous ->
+        graph.backup.resolveRestoreRecovery(restorePrevious = previous)
+    }
 }

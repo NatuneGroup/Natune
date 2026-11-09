@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="phone_library_liked">Liked</string>
+  <string name="phone_library_count">%1$d items</string>
+  <string name="phone_library_sort_song_count">Song count</string>
+  <string name="phone_library_sort_year">Year</string>
+  <string name="phone_library_sort_length">Length</string>
+  <string name="phone_library_sort_last_updated">Last updated</string>
+</resources>

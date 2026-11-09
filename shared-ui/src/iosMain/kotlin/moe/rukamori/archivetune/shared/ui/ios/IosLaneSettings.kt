@@ -113,8 +113,9 @@ internal fun IosLaneSettingsPage(
     scrollTo: String?,
 ) {
     when (path) {
-        in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage(stringResource(Res.string.ios_aod_unavailable))
-        "settings/android_auto", "settings/system_integrations" -> IosSystemIntegrationsPage()
+        in IOS_LANE_UNAVAILABLE_ROUTES -> moe.rukamori.archivetune.shared.ui.settings.UnavailablePhoneSettings(owners.controller, onFailure, scrollTo)
+        "settings/android_auto" -> moe.rukamori.archivetune.shared.ui.settings.UnavailablePhoneSettings(owners.controller, onFailure, scrollTo)
+        "settings/system_integrations" -> IosSystemIntegrationsPage()
         "settings/modules" -> IosModulesPage(host, owners.graph)
         "settings/appearance/icon" -> IosIconEditor(onFailure)
         "settings/appearance/palette_picker", "settings/appearance/theme_creator" -> IosPaletteEditor(owners.controller, onFailure)
@@ -130,20 +131,7 @@ internal fun IosLaneSettingsPage(
             NavigationBarSettingsPage(
                 owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
             )
-        "settings/jiosaavn" -> IosLaneRowsPage(owners.controller, scrollTo, onFailure) { preferences ->
-            listOf(
-                SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false),
-                SettingsRow.Choice(
-                    "jiosaavn_audio_quality", Res.string.m6_audio_quality, SaavnAudioQualityKey, "QUALITY_320",
-                    listOf(
-                        SettingsRow.Option("QUALITY_320", Res.string.m6_quality_320),
-                        SettingsRow.Option("QUALITY_160", Res.string.m6_quality_160),
-                        SettingsRow.Option("QUALITY_96", Res.string.m6_quality_96),
-                    ),
-                    enabled = preferences[JioSaavnEnabledKey, false],
-                ),
-            )
-        }
+        "settings/jiosaavn" -> moe.rukamori.archivetune.shared.ui.settings.SharedJioSaavnSettings(owners.controller, onFailure, scrollTo)
         "settings/content" -> IosLaneContentSettingsPage(owners.controller, onFailure, scrollTo)
         "settings/applemusic" -> AppleMusicSettings(
             owners.controller, onFailure, scrollTo,
@@ -201,40 +189,10 @@ private fun IosLaneContentSettingsPage(
     onFailure: () -> Unit,
     scrollTo: String?,
 ) {
-    val snapshot by controller.store.snapshots.collectAsState()
-    val preferences = snapshot
-    if (preferences == null) {
-        CircularProgressIndicator()
-        return
-    }
     val systemDefault = stringResource(Res.string.m6_system_default)
-    val languageOptions = remember(systemDefault) {
-        listOf("system" to systemDefault) + iosLaneIsoOptions(languages = true)
-    }
-    val countryOptions = remember(systemDefault) {
-        listOf("system" to systemDefault) + iosLaneIsoOptions(languages = false)
-    }
-    val languageLabel = stringResource(Res.string.m6_content_language)
-    val countryLabel = stringResource(Res.string.m6_content_country)
-    SettingsPage(
-        rows = listOf(
-            SettingsRow.Custom("content_language", Res.string.m6_content_language) {
-                IosLaneValueChoice(languageLabel, preferences[ContentLanguageKey, "system"], languageOptions, onFailure) {
-                    controller.edit { this[ContentLanguageKey] = it }
-                }
-            },
-            SettingsRow.Custom("content_country", Res.string.m6_content_country) {
-                IosLaneValueChoice(countryLabel, preferences[ContentCountryKey, "system"], countryOptions, onFailure) {
-                    controller.edit { this[ContentCountryKey] = it }
-                }
-            },
-            SettingsRow.Toggle("hide_explicit", Res.string.m6_hide_explicit, HideExplicitKey, false),
-        ),
-        preferences = preferences,
-        controller = controller,
-        scrollTo = scrollTo,
-        onFailure = onFailure,
-    )
+    val languages = remember(systemDefault) { listOf("system" to systemDefault) + iosLaneIsoOptions(true) }
+    val countries = remember(systemDefault) { listOf("system" to systemDefault) + iosLaneIsoOptions(false) }
+    moe.rukamori.archivetune.shared.ui.settings.ContentSettings(controller, languages, countries, onFailure, scrollTo)
 }
 
 /** (code, localized name) pairs for the platform's ISO catalogs; an unnamed code shows itself. */
@@ -248,54 +206,6 @@ private fun iosLaneIsoOptions(languages: Boolean): List<Pair<String, String>> {
             locale.localizedStringForCountryCode(code)
         }
         code to (name?.replaceFirstChar { it.uppercase() } ?: code)
-    }
-}
-
-/** A host-drawn choice row: the ISO catalogs are runtime text, which SettingsRow.Option cannot hold. */
-@Composable
-private fun IosLaneValueChoice(
-    title: String,
-    current: String,
-    options: List<Pair<String, String>>,
-    onFailure: () -> Unit,
-    onPick: suspend (String) -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var open by remember { mutableStateOf(false) }
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(options.firstOrNull { it.first == current }?.second ?: current) },
-        modifier = Modifier.clickable { open = true },
-    )
-    if (open) {
-        AlertDialog(
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton(onClick = { open = false }) { Text(stringResource(Res.string.m6_integration_ok)) }
-            },
-            title = { Text(title) },
-            text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp).fillMaxWidth()) {
-                    items(options) { (value, label) ->
-                        ListItem(
-                            headlineContent = { Text(label) },
-                            modifier = Modifier.clickable {
-                                open = false
-                                scope.launch {
-                                    try {
-                                        onPick(value)
-                                    } catch (cancelled: CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) {
-                                        onFailure()
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
-            },
-        )
     }
 }
 

@@ -37,13 +37,20 @@ internal fun IosReleasePage(graph: IosSessionGraph, navigate: (String) -> Unit) 
 @Composable
 internal fun IosIconEditor(onFailure: () -> Unit) {
     val app = platform.UIKit.UIApplication.sharedApplication
-    Column(Modifier.padding(24.dp)) {
-        Text(stringResource(Res.string.ios_icon_title), style = MaterialTheme.typography.headlineSmall)
-        TextButton(enabled = app.supportsAlternateIcons, onClick = {
-            app.setAlternateIconName(null, completionHandler = { error -> if (error != null) onFailure() })
-        }) { Text(stringResource(Res.string.ios_icon_default)) }
-        TextButton(enabled = app.supportsAlternateIcons, onClick = {
-            app.setAlternateIconName("ArchiveTuneAndroid", completionHandler = { error -> if (error != null) onFailure() })
-        }) { Text(stringResource(Res.string.ios_icon_android)) }
-    }
+    var selected by remember { mutableStateOf(app.alternateIconName?.removePrefix("NatuneIcon_") ?: "default") }
+    var applying by remember { mutableStateOf<String?>(null) }
+    moe.rukamori.archivetune.shared.ui.settings.LauncherIconSettings(selected, applying,
+        supported = { id -> id == "default" || app.supportsAlternateIcons },
+        onSelect = { id ->
+            if (id != selected && applying == null) {
+                applying = id
+                app.setAlternateIconName(id.takeUnless { it == "default" }?.let { "NatuneIcon_$it" }, completionHandler = { error ->
+                    applying = null
+                    if (error == null) selected = id else onFailure()
+                })
+            }
+        },
+        onOpenAuthor = { id -> moe.rukamori.archivetune.shared.ui.settings.SharedLauncherIconCatalog.firstOrNull { it.id == id }
+            ?.githubAuthorUrl?.let { openIosUri(it) { onFailure() } } },
+    )
 }

@@ -30,6 +30,13 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import moe.rukamori.archivetune.shared.ui.menu.LocalOverflowMenuAnchor
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -81,6 +88,9 @@ internal fun PlayerIcon(
     contentColor: Color = Color.Unspecified,
     shape: Shape = if (square) RoundedCornerShape(20.dp) else CircleShape,
 ) {
+    val menuAnchor = LocalOverflowMenuAnchor.current
+    var bounds by remember { mutableStateOf<Rect?>(null) }
+    val click = { if (symbol == PlayerSymbol.MORE) menuAnchor?.bounds = bounds; onClick() }
     val containerColor = container ?: if (large || secondary) MaterialTheme.colorScheme.primaryContainer else null
     val color = when {
         contentColor != Color.Unspecified -> contentColor
@@ -98,8 +108,8 @@ internal fun PlayerIcon(
         }, environment.active)
     }
     IconButton(
-        onClick = if (motion == null) onClick else { { motion.tap(); onClick() } }, enabled = enabled,
-        modifier = modifier.size(width ?: size, size).then(
+        onClick = if (motion == null) click else { { motion.tap(); click() } }, enabled = enabled,
+        modifier = modifier.then(if (symbol == PlayerSymbol.MORE) Modifier.onGloballyPositioned { bounds = it.boundsInWindow() } else Modifier).size(width ?: size, size).then(
             if (containerColor != null) Modifier.background(containerColor, shape) else Modifier,
         ).semantics {
             contentDescription = label
@@ -160,10 +170,11 @@ internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, s
 @Composable
 internal fun ActionButton(action: PlayerAction, c: PlayerRenderContext, modifier: Modifier = Modifier, secondary: Boolean = false) {
     // An action with no owner on this host is hidden rather than offered as a control that only reports itself.
-    if (action !in c.state.actionSupport) return
+    val supported = action in c.state.actionSupport
+    if (!supported && !moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) return
     val outputButton = c.slots.outputButton
     if (action == PlayerAction.OUTPUT && outputButton != null) {
-        outputButton(modifier.size(48.dp), LocalContentColor.current, true)
+        outputButton(modifier.size(48.dp), LocalContentColor.current, supported)
         return
     }
     val selected = when(action) {
@@ -177,8 +188,8 @@ internal fun ActionButton(action: PlayerAction, c: PlayerRenderContext, modifier
         selected != null -> stringResource(if(selected) Res.string.m5_on else Res.string.m5_off)
         else -> null
     }
-    PlayerIcon(action.symbol(), stringResource(action.label()), { c.actions.onAction(action) }, modifier,
-        enabled = when(action) {
+    PlayerIcon(action.symbol(), stringResource(action.label()) + if (supported) "" else " • " + stringResource(Res.string.phone_not_available_on_ios), { c.actions.onAction(action) }, modifier,
+        enabled = supported && when(action) {
             PlayerAction.PREVIOUS -> c.state.canPrevious
             PlayerAction.NEXT -> c.state.canNext
             else -> true

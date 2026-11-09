@@ -1,0 +1,340 @@
+<div align="center">
+
+# Natune Icon Pack
+
+**The app icon set for [Natune](https://github.com/NatuneGroup/ArchiveTune) (formerly ArchiveTune)**
+
+[![Icons](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FNatuneGroup%2FIconPack%2Fmain%2Fmetadata.json&query=%24.length&label=Icons&color=blueviolet&style=for-the-badge)](#icons)
+[![License](https://img.shields.io/badge/License-CC--BY--SA--4.0-green?style=for-the-badge)](LICENSE)
+
+</div>
+
+---
+
+## About
+
+This repository is **Natune's fork** of [rukamori/IconPack](https://github.com/rukamori/IconPack), the icon pack behind the in-app icon switcher. Natune pins this repository as the `IconPack` git submodule; at build time each `metadata.json` entry becomes a launcher alias, and `svg/<Source>` is rasterized into its launcher icon.
+
+Upstream icon pack: rukamori/IconPack at `950d412`. Forked from that point; the three icons upstream removed are restored here (see below).
+
+### What changed from upstream
+
+- **Six icons replaced with Natune artwork.** The `Id` of each is unchanged, so a user's chosen icon survives the update.
+- **Two new icons:** *Autumn* and *Synthwave*.
+- **Nine icons redrawn for Natune.** Their old artwork still carried the ArchiveTune mark, which is interleaved with the traced art and could not be removed cleanly. Each redraw keeps its original palette and motif and uses the Natune record-and-seedling mark.
+- **Three restored Ids.** Upstream removed *Bricks* (`320974`), *Satoru Gojo* (`539452`) and *Guest Roblox* (`980484`). This fork restores each Id: *Bricks* is a Natune redraw of the upstream icon, and *Infinity* (`539452`) and *Guest* (`980484`) are new designs with no character or brand marks.
+- The Natune record-and-seedling mark is kept within the adaptive-icon safe zone (66 dp) in every icon. It is centred in all but *Guest*, where it sits on the avatar's shirt.
+- Legacy `pack/` and `xml/` files and the previews of replaced icons were removed. Upstream history is intact.
+- `Submission` pointers were dropped; this fork has no `submissions/` backlog.
+
+## Icons
+
+| Id | Name | Artist | Origin |
+|---|---|---|---|
+| 5847 | Sakura | Natune | Replaced artwork (was morieeattonkatsu) |
+| 152487 | Sakura Retro | Natune | Replaced artwork (was morrieeattonkatsu) |
+| 950492 | Frostwave - Japanese Winter | Natune | Replaced artwork (was Animesh) |
+| 944391 | pixelart | Natune | Replaced artwork (was BunglonMewing) |
+| 934989 | Ramadhan | Natune | Replaced artwork (was BunglonMewing) |
+| 692860 | Neon Vibes | Natune | Replaced artwork (was ValteMCPE) |
+| 286407 | Autumn | Natune | New |
+| 531862 | Synthwave | Natune | New |
+| 539452 | Infinity | Natune | New (restores removed Id) |
+| 980484 | Guest | Natune | New (restores removed Id) |
+| 104570 | Marin Kitagawa | Natune | Redrawn (after raspweed) |
+| 417667 | Suzume | Natune | Redrawn (after Animesh) |
+| 801991 | Hatsune Miku | Natune | Redrawn (after ValteMCPE) |
+| 454033 | Kanade Tune | Natune | Redrawn (after BunglonMewing) |
+| 720714 | Kawaiitune | Natune | Redrawn (after cognitiveshadows03) |
+| 207115 | Depth | Natune | Redrawn (after cognitiveshadows03) |
+| 712543 | AT6 | Natune | Redrawn (after DougAlvarenga) |
+| 955439 | Minecraft | Natune | Redrawn (after BunglonMewing) |
+| 399860 | Minecraft Sakura | Natune | Redrawn (after Sucuboy_u) |
+| 320974 | Bricks | Natune | Redrawn (after DougAlvarenga; restores removed Id) |
+
+### Previews
+
+<table>
+<tr>
+<td align="center"><img src="previews/5847.png" width="96"><br>Sakura</td>
+<td align="center"><img src="previews/152487.png" width="96"><br>Sakura Retro</td>
+<td align="center"><img src="previews/950492.png" width="96"><br>Frostwave</td>
+<td align="center"><img src="previews/944391.png" width="96"><br>pixelart</td>
+<td align="center"><img src="previews/934989.png" width="96"><br>Ramadhan</td>
+<td align="center"><img src="previews/692860.png" width="96"><br>Neon Vibes</td>
+</tr>
+<tr>
+<td align="center"><img src="previews/286407.png" width="96"><br>Autumn</td>
+<td align="center"><img src="previews/531862.png" width="96"><br>Synthwave</td>
+<td align="center"><img src="previews/539452.png" width="96"><br>Infinity</td>
+<td align="center"><img src="previews/980484.png" width="96"><br>Guest</td>
+<td align="center"><img src="previews/104570.png" width="96"><br>Marin Kitagawa</td>
+<td align="center"><img src="previews/417667.png" width="96"><br>Suzume</td>
+</tr>
+<tr>
+<td align="center"><img src="previews/801991.png" width="96"><br>Hatsune Miku</td>
+<td align="center"><img src="previews/454033.png" width="96"><br>Kanade Tune</td>
+<td align="center"><img src="previews/720714.png" width="96"><br>Kawaiitune</td>
+<td align="center"><img src="previews/207115.png" width="96"><br>Depth</td>
+<td align="center"><img src="previews/712543.png" width="96"><br>AT6</td>
+<td align="center"><img src="previews/955439.png" width="96"><br>Minecraft</td>
+</tr>
+<tr>
+<td align="center"><img src="previews/399860.png" width="96"><br>Minecraft Sakura</td>
+<td align="center"><img src="previews/320974.png" width="96"><br>Bricks</td>
+</tr>
+</table>
+
+## Credits
+
+Redrawn and replaced icons are Natune artwork. Their palettes and motifs build on the upstream icons below; no traced artwork from these authors is reused. *Infinity* and *Guest* are new designs and reuse no upstream artwork.
+
+| Upstream icon | Original author | Profile |
+|---|---|---|
+| Sakura, Sakura Retro | morieeattonkatsu, morrieeattonkatsu | [rukamori](https://github.com/rukamori) |
+| Marin Kitagawa | raspweed | [raspweed](https://github.com/raspweed) |
+| Frostwave - Japanese Winter, Suzume | Animesh | [agupta07505](https://github.com/agupta07505) |
+| pixelart, Kanade Tune, Ramadhan, Minecraft | BunglonMewing | [BunglonMewing](https://github.com/BunglonMewing) |
+| Hatsune Miku, Neon Vibes | ValteMCPE | [ValteMCPE](https://github.com/ValteMCPE) |
+| Kawaiitune, Depth | cognitiveshadows03 | [cognitiveshadows03](https://github.com/cognitiveshadows03) |
+| AT6, Bricks | DougAlvarenga | [dougalvarenga](https://github.com/dougalvarenga) |
+| Minecraft Sakura | Sucuboy_u | [kpro199procreator](https://github.com/kpro199procreator) |
+
+Upstream project and its contributors: [rukamori/IconPack](https://github.com/rukamori/IconPack).
+
+## Format
+
+`metadata.json` is a JSON array. Each entry needs:
+
+- `Id`: unique 4- or 6-digit string. Never reuse an `Id` for a different icon; the app keys user selections by it.
+- `Name`, `Author`: shown in the icon switcher.
+- `Source`: an SVG basename in `svg/`.
+- `GitHubAuthorUrl` (optional), `Link` (optional).
+- `BackgroundMode` (optional): `integrated` or `transparent`; `BackgroundColor` (optional): literal hex.
+
+SVG files must have a four-value `viewBox`, contain vector artwork, and avoid scripts, foreign objects, external references and DTDs. The app rasterizes each one at 512 px (see `GenerateIconPackTask` in NatuneGroup/ArchiveTune).
+
+Previews are 256 px renders:
+
+```sh
+rsvg-convert --width 256 --height 256 --keep-aspect-ratio --output previews/<Id>.png svg/<Source>
+```
+
+## Contributing
+
+Icon submissions are not accepted in this fork. Suggest an icon by opening an issue on [NatuneGroup/ArchiveTune](https://github.com/NatuneGroup/ArchiveTune/issues).
+
+The submission workflow (`build.yml`) is disabled in this fork. The manual `update` and `remove` workflows remain; they need the `ICON_PACK_PAT` repository secret and only run on demand.
+
+---
+
+## License
+
+Icon artwork in this repository is licensed under the terms in [LICENSE](LICENSE) (CC-BY-SA-4.0). Upstream's original icons keep their authors' rights and attributions above.
+
+
+ARCHIVETUNE ICON PACK LICENSE
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+Copyright © the respective ArchiveTune Icon Pack contributors.
+
+1. LICENSED MATERIAL
+
+Except where a file, directory, or attribution record explicitly states
+otherwise, the original icons, illustrations, SVG files, documentation, and
+other creative material in this repository are licensed under the:
+
+Creative Commons Attribution-ShareAlike 4.0 International Public License
+(CC BY-SA 4.0)
+
+The complete and legally binding license terms are available at:
+
+https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+A human-readable summary is available at:
+
+https://creativecommons.org/licenses/by-sa/4.0/
+
+The Creative Commons legal code, rather than this explanatory notice, controls
+in the event of any inconsistency.
+
+2. COPYRIGHT OWNERSHIP
+
+Copyright in each contributed icon or other creative work remains with its
+respective author.
+
+The author of each work is identified, where available, in metadata.json,
+ATTRIBUTION.md, the file itself, its commit history, or the corresponding pull
+request.
+
+No transfer of copyright ownership occurs merely because a work is included in
+this repository.
+
+3. PERMISSIONS
+
+Subject to the terms of CC BY-SA 4.0, you may:
+
+* copy and redistribute the licensed material in any medium or format;
+* remix, transform, and build upon the licensed material;
+* use the licensed material for personal or commercial purposes; and
+* combine adapted versions of the licensed material with works distributed
+  under a BY-SA Compatible License where the compatibility rules permit it.
+
+These permissions are irrevocable provided that you comply with the applicable
+license conditions.
+
+4. ATTRIBUTION
+
+When sharing an icon or other licensed material, including a modified version,
+you must provide appropriate attribution.
+
+Where reasonably practicable, attribution should include:
+
+* the title or name of the icon;
+* the name or username of its author;
+* a reference or link to the original material;
+* a reference to the CC BY-SA 4.0 license; and
+* an indication of whether the material was modified.
+
+A suitable attribution format is:
+
+```
+"[ICON NAME]" by [AUTHOR], from ArchiveTune Icon Pack,
+licensed under CC BY-SA 4.0. Changes: [DESCRIPTION OR "none"].
+```
+
+Attribution may be provided in application credits, accompanying documentation,
+an attribution file, an about page, image metadata, or another reasonable
+location appropriate to the medium.
+
+Attribution must not imply that an author, contributor, ArchiveTune, or another
+rights holder endorses you or your use of the material.
+
+5. SHAREALIKE
+
+If you remix, transform, or build upon licensed material and distribute the
+result, you must make your contributions to the adapted material available
+under:
+
+* CC BY-SA 4.0;
+* a later version of CC BY-SA where permitted by the license; or
+* a license officially designated by Creative Commons as a BY-SA Compatible
+  License for the applicable use.
+
+You may not impose additional legal terms or effective technological measures
+that prevent recipients from exercising rights granted by the applicable
+license.
+
+6. GPLv3 COMPATIBILITY
+
+Creative Commons has designated GNU General Public License version 3 as a
+one-way BY-SA Compatible License for applicable adapted material.
+
+Where the Creative Commons compatibility rules apply, adapted material based
+on CC BY-SA 4.0 material may be distributed under GNU GPL version 3.
+
+This compatibility is one-way. Material originally licensed under GNU GPL
+version 3 does not automatically become available under CC BY-SA 4.0.
+
+Compatibility does not remove attribution requirements, notices, third-party
+rights, or other obligations that continue to apply under CC BY-SA 4.0 and the
+Creative Commons compatibility rules.
+
+7. MATERIAL NOT COVERED BY THIS LICENSE
+
+This license applies only to copyright and similar rights that a contributor
+or other licensor has authority to grant.
+
+The following are not licensed under this notice unless explicitly stated
+otherwise:
+
+* files marked with a different license;
+* works for which the copyright holder has not agreed to CC BY-SA 4.0;
+* third-party artwork included without relicensing authority;
+* trademarks, service marks, trade names, and logos;
+* names, likenesses, privacy rights, and publicity rights;
+* patents or patent claims;
+* characters, branding, designs, or other intellectual property belonging to
+  third parties; and
+* material used under fair use, fair dealing, quotation rights, or another
+  copyright exception or limitation.
+
+References to third-party games, applications, characters, franchises,
+companies, or products do not imply sponsorship, endorsement, affiliation, or
+authorization by their respective owners.
+
+You are responsible for determining whether your intended use requires
+additional permission from a third party.
+
+8. CONTRIBUTOR AUTHORIZATION
+
+This license applies to a contribution only when its contributor has agreed to
+license that contribution under CC BY-SA 4.0.
+
+By intentionally submitting a new contribution for inclusion in this
+repository after this licensing notice has been adopted, the contributor
+represents that:
+
+* the contribution is their original work, or they have sufficient authority
+  to submit and license it;
+* the contribution does not knowingly violate another party's copyright,
+  trademark, privacy, publicity, or other rights;
+* any third-party material is clearly identified together with its source and
+  license; and
+* they license their contribution under CC BY-SA 4.0.
+
+Contributions made before adoption of this notice are covered only when the
+relevant copyright holder has expressly agreed to CC BY-SA 4.0. A repository
+maintainer cannot unilaterally relicense another contributor's work.
+
+9. EXCEPTIONS
+
+A copyright holder may apply a different license to material they own by
+placing a clear license notice in or next to that material.
+
+An exception applies only to the material identified by that notice. It does
+not alter the license of other repository contents.
+
+Any file whose license status is unclear must not be assumed to be available
+under CC BY-SA 4.0.
+
+10. NO WARRANTY
+
+To the extent permitted by applicable law, the licensed material is provided
+as-is and as-available, without warranties of any kind.
+
+The licensors make no representations or warranties regarding title,
+non-infringement, accuracy, merchantability, fitness for a particular purpose,
+absence of defects, or suitability for any particular use.
+
+To the extent permitted by applicable law, the licensors will not be liable
+under any legal theory for losses, costs, expenses, or damages arising from
+this license or the use of the licensed material.
+
+The complete warranty disclaimer and limitation of liability in the
+CC BY-SA 4.0 legal code remain applicable.
+
+11. INDIVIDUAL FILE IDENTIFICATION
+
+Where practical, licensed files may contain the following identifier:
+
+```
+SPDX-License-Identifier: CC-BY-SA-4.0
+```
+
+For formats that do not support embedded comments, licensing and attribution
+information may be recorded in metadata.json, ATTRIBUTION.md, or an adjacent
+sidecar file.
+
+12. LICENSE VERSION AND CONTROLLING TERMS
+
+This repository uses Creative Commons Attribution-ShareAlike 4.0 International.
+
+The official CC BY-SA 4.0 legal code is incorporated into this notice by
+reference and provides the controlling legal terms:
+
+https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+Creative Commons is not a party to this license and does not endorse this
+repository or its contents.

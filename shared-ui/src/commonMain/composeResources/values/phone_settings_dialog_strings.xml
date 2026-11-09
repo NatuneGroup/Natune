@@ -1,0 +1,4 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="phone_reset_listening_stats_confirm">Reset all listening stats on this device? This deletes listening history, play counts, and listening time. Your library, playlists, and downloads will be kept. This cannot be undone.</string>
+</resources>

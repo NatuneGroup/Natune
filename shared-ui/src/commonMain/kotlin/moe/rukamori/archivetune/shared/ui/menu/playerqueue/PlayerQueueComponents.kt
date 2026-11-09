@@ -72,6 +72,7 @@ internal fun PlayerQueueRow(
     modifier: Modifier = Modifier,
     isError: Boolean = false,
     supporting: String? = null,
+    enabled: Boolean = true,
 ) {
     val headlineContent: @Composable () -> Unit = {
         Text(
@@ -79,7 +80,7 @@ internal fun PlayerQueueRow(
             color = if (isError) MaterialTheme.colorScheme.error else Color.Unspecified,
         )
     }
-    val rowModifier = modifier.clickable(onClick = onClick)
+    val rowModifier = modifier.clickable(enabled = enabled, onClick = onClick)
     val colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     if (supporting == null) {
         ListItem(
@@ -125,6 +126,7 @@ internal class PlayerQueueGridItem(
     val enabled: Boolean,
     val leading: @Composable () -> Unit,
     val onClick: () -> Unit,
+    val unavailable: Boolean = false,
 )
 
 @Composable
@@ -189,6 +191,7 @@ private fun PlayerQueueGridTile(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.basicMarquee(),
             )
+            if (item.unavailable) Text(stringResource(Res.string.phone_not_available_on_ios), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
         }
     }
 }
