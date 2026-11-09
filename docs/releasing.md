@@ -266,8 +266,8 @@ exact-head packaging run — Blacksmith for every host, with
 - Linux x64 and arm64 install `gperf` for TDLib source generation. The arm64 leg
   uses `blacksmith-8vcpu-ubuntu-2404-arm`.
 - iOS release CI explicitly expects the pinned Xcode 26.4 (`setup-xcode`,
-  resolving to the macOS 26 runner image's 26.4.1; the Blacksmith image's exact
-  Xcode build is unverified until a run selects it) and builds only the
+  resolving to 26.4.1 on both the macOS 26 runner image and the Blacksmith image,
+  where runs report build 17E202) and builds only the
   `iphoneos` native closure. It retains the producer's strict version check
   rather than allowing an arbitrary/unverified Xcode, and keeps code signing
   disabled for the IPA. The job installs gpg like the desktop macOS legs, and the
@@ -281,7 +281,9 @@ exact-head packaging run — Blacksmith for every host, with
   configures or installs the NDK there. `xcodebuild -hideShellScriptEnvironment`
   keeps Xcode from printing every build setting, credentials included, into the
   public log, where Xcode's escaping (`=` becomes `\=`) defeats GitHub's masking.
-  This is not yet a successful device-link/package result.
+  Nightlies and releases have published the unsigned IPA since N20261103. These
+  heap, SDK and log settings stay unproven until a nightly IPA leg passes with
+  them.
 
 Nightly preparation runs `scripts.test_release_workflow`,
 `scripts.test_native_release_packaging` and `scripts.test_native_dependency_cache`
@@ -325,10 +327,15 @@ A same-speed iOS release leg alone would exceed the reported balance. The iOS
 compile check is the bounded trial: a `workflow_dispatch` with the default
 `ios_simulator_app=false` has a 45-minute ceiling (1,800 equivalent minutes at
 40x), while `ios_simulator_app=true` raises it to 330 minutes (13,200). The
-release workflow's dispatch defaults `build_ios=false`; a release or nightly with
-`build_ios=true` runs the 3-hour-class iOS job. Neither the opt-in app link nor a
-`build_ios=true` release/nightly may run until the owner explicitly approves the
-spend. Xcode 26.4 selection and actual Blacksmith durations remain unverified.
+opt-in app link may not run until the owner explicitly approves that spend.
+
+Every nightly and release builds the unsigned IPA. `nightly.yml` and `release.yml`
+call `_release-artifacts.yml` without `build_ios`, so its `workflow_call` default
+of `true` applies; only a manual `workflow_dispatch` of that workflow defaults to
+`build_ios=false`. On 2026-11-09 the owner approved keeping the IPA in every
+nightly. On `blacksmith-12vcpu-macos-26`, the 21 successful IPA jobs from
+2026-11-07 to 2026-11-09 took 21 to 59 minutes (median 26.5 minutes, about 1,060
+equivalent minutes at 40x).
 
 ## Native dependency caches
 

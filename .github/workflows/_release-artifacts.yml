@@ -1450,12 +1450,11 @@ jobs:
   ios:
     name: Unsigned iOS IPA
     # Blacksmith's 12 vCPU macOS 26 image is Apple silicon and follows the macOS 26 runner image.
-    # setup-xcode must resolve the pinned 26.4 to /Applications/Xcode_26.4.app; that selection is
-    # unverified on the Blacksmith image until a run passes.
+    # setup-xcode resolves the pinned 26.4 to /Applications/Xcode_26.4.1.app (build 17E202) there.
     # BUDGET: the GitHub-hosted macos-26 baseline for this leg measured 3 h 09 m (run 41735716057);
-    # at the provider's 40 equivalent minutes per 12 vCPU macOS minute, a same-duration run would
-    # consume about 7,600 equivalent minutes, above the reported 3,000-equivalent-minute allowance.
-    # Do not run this leg (build_ios=true) until the owner explicitly approves that spend.
+    # successful Blacksmith runs from 2026-11-07 to 2026-11-09 took 21 to 59 minutes (median 26.5,
+    # about 1,060 equivalent minutes at 40x). The owner approved this leg for every nightly on
+    # 2026-11-09, so workflow_call keeps build_ios on by default; manual dispatches opt in.
     runs-on: blacksmith-12vcpu-macos-26
     if: inputs.build_ios
     permissions:
