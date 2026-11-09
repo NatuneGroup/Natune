@@ -347,8 +347,9 @@ internal fun iosHomePage(
             }
         } else {
             val rows = if (request is HomeVariantPlay.Shelf) request.occurrences else listOf(row)
-            lists.recordShelf(IOS_HOME_REQUEST, "home-action:${row.occurrenceId}", rows)
-            lists.playOccurrence(IOS_HOME_REQUEST, QueueStart(row.item.ref, row.occurrenceId, row.setVideoId))
+            val shelfKey = "home-action:${row.occurrenceId}"
+            lists.recordShelf(IOS_HOME_REQUEST, shelfKey, rows)
+            lists.playOccurrence(IOS_HOME_REQUEST, QueueStart(row.item.ref, row.occurrenceId, row.setVideoId), shelfKey)
         }
     }
     val content = BitChordHomeContent(

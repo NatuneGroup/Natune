@@ -232,6 +232,8 @@ data class PlayerQueueMenuState(
     val menuStyle: PlayerMenuStyle = PlayerMenuStyle.Default,
     val externalDownloaderSupported: Boolean = true,
     val speedDialSupported: Boolean = true,
+    /** False when the host always plays this track from one fixed origin, so a chosen source would never be used. */
+    val sourceSelectionSupported: Boolean = true,
 ) : PlayerSongSourceState
 
 /**

@@ -31,6 +31,8 @@ internal fun IosPlayerQueueMenu(
     val sourceActions = remember(graph, selected.occurrenceId) { IosSongSourceActions(graph, menu, selected) }
     val source by sourceActions.state.collectAsState()
     val item = selected.item
+    // Telegram tracks always stream their TDLib file; the queue resolver never consults a chosen source for them.
+    val sourceSelectable = item.ref.provider != moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef.SCHEME
     val track = PlayerQueueTrack(item.ref.id, item.title, item.artists.map { PlayerQueueArtist(it.id, it.name) },
         item.albumId?.let { PlayerQueueAlbum(it, item.album.orEmpty()) }, item.artworkUri, facts.isLocal)
     fun run(id: String) {
@@ -73,8 +75,12 @@ internal fun IosPlayerQueueMenu(
         override fun refreshSongSources(track: PlayerQueueTrack) = sourceActions.refreshSongSources(track)
         override suspend fun searchSongSources(query: String, sourceFilter: moe.rukamori.archivetune.shared.domain.source.AudioSourceType?, includeAmazon: Boolean) =
             sourceActions.searchSongSources(query, sourceFilter, includeAmazon)
-        override fun chooseSongSource(track: PlayerQueueTrack, source: moe.rukamori.archivetune.shared.domain.source.AudioSourceType?) = sourceActions.chooseSongSource(track, source)
-        override fun chooseSongSourceSearchResult(track: PlayerQueueTrack, request: PlayerSourceOverrideRequest) = sourceActions.chooseSongSourceSearchResult(track, request)
+        override fun chooseSongSource(track: PlayerQueueTrack, source: moe.rukamori.archivetune.shared.domain.source.AudioSourceType?) {
+            if (sourceSelectable) sourceActions.chooseSongSource(track, source) else menu.failed()
+        }
+        override fun chooseSongSourceSearchResult(track: PlayerQueueTrack, request: PlayerSourceOverrideRequest) {
+            if (sourceSelectable) sourceActions.chooseSongSourceSearchResult(track, request) else menu.failed()
+        }
         override fun playYouTubeSearchResult(track: PlayerQueueTrack, result: PlayerSourceSearchResult) = sourceActions.playYouTubeSearchResult(track, result)
     }
     val state = PlayerQueueMenuState(
@@ -100,6 +106,7 @@ internal fun IosPlayerQueueMenu(
         amazonSearchEnabled = source.amazonSearchEnabled, searchableSources = source.searchableSources,
         alwaysOnDisplaySupported = false,
         radioSupported = item.ref.iosYouTubeSong(),
+        sourceSelectionSupported = sourceSelectable,
         downloadsSupported = facts.download != CollectionDownloadState.NOT_DOWNLOADED || iosDownloadRefusal(item.ref) == null,
         tempoPitchPresets = parseTempoPitchPresets(preferences[TempoPitchPresetsJsonKey]),
         tempoPitchRemembered = preferences[TempoPitchRememberedKey, false],

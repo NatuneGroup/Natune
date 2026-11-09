@@ -200,11 +200,12 @@ fun PlayerQueueMenu(
                     )
                 }
             }
-            if (!track.isLocal) {
+            if (!track.isLocal && (state.sourceSelectionSupported || phone)) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_source,
-                        enabled = true,
+                        unavailable = phone && !state.sourceSelectionSupported,
+                        enabled = state.sourceSelectionSupported,
                         leading = { icon(PlayerQueueMenuIcon.TUNE, LocalContentColor.current, Modifier.size(28.dp)) },
                         onClick = { showSourceDialog = true },
                     ),
