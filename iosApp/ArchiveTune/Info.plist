@@ -12,6 +12,7 @@
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ArchiveTuneUpdateChannel</key><string>$(ARCHIVETUNE_UPDATE_CHANNEL)</string>
     <key>ArchiveTuneTelegramApiId</key><string>$(ARCHIVETUNE_TELEGRAM_API_ID)</string>
     <key>ArchiveTuneTelegramApiHash</key><string>$(ARCHIVETUNE_TELEGRAM_API_HASH)</string>
     <key>ArchiveTuneTidalClientId</key><string>$(ARCHIVETUNE_TIDAL_CLIENT_ID)</string>

@@ -110,6 +110,24 @@ class UpdateFeedContractTest {
     }
 
     @Test
+    fun cachedDownloadUrlForAnotherPlatformIsDropped() {
+        // Restored settings can carry a desktop cache onto iOS; its link must not become an iOS artifact.
+        val desktop = ReleaseInfo(
+            "v2.0.0", null, null, null, "https://x/tag", "https://x/v2.0.0/natune-linux-x64-v2.0.0.deb", 9L, "bb",
+        )
+        val ios = desktop.copy(downloadUrl = "https://x/v2.0.0/natune-ios-v2.0.0.ipa?raw=1")
+        val isIpa = { name: String -> name.startsWith("natune-ios-") && name.endsWith(".ipa") }
+
+        val decoded = parseReleasesJson(encodeReleasesJson(listOf(desktop, ios)), null, isIpa)
+
+        assertNull(decoded[0].downloadUrl)
+        assertNull(decoded[0].sha256)
+        assertEquals(ios.downloadUrl, decoded[1].downloadUrl)
+        assertEquals("bb", decoded[1].sha256)
+        assertNull(parseReleasesJson(encodeReleasesJson(listOf(desktop)), "app-gms-mobile-arm64.apk").single().downloadUrl)
+    }
+
+    @Test
     fun semVerOrdersReleasesAndPreReleases() {
         val a = parseSemVer("v1.2.3")!!
         val b = parseSemVer("1.2.4")!!

@@ -454,10 +454,12 @@ Appearance now mounts an independent seed-color palette/theme editor and native 
 selection using the retained Android launcher artwork in an iOS app-icon asset. The full Android
 IconPack remains absent. The shared Liquid Glass settings route is mounted and keeps refraction
 capability false, so unsupported optical controls remain disabled. Discord's shared experimental
-translator/button editor is mounted over the existing presence settings. Updates now offer an
-explicit release-page handoff while retaining channel/changelog preferences; iOS cannot install
-an arbitrary package in process. Asset-catalog alternate-icon merging, Apple compilation and all
-new controls remain unverified.
+translator/button editor is mounted over the existing presence settings. Updates now use the real
+bundle version/build and release-stamped channel, share the feed/commit-history checker with
+Changelog, and offer an explicit release-page handoff while retaining the stored channel choice.
+Notification controls are omitted because iOS has no scheduler or notification-center delivery;
+iOS cannot install an arbitrary package in process. Asset-catalog alternate-icon merging, Apple
+compilation and all new controls remain unverified.
 
 Readable `.arch` API-v1 audio packages now have an iOS manager and bounded QuickJS execution,
 using the retained Android `module-host.js` API (fetch, URL, timers, base64 and typed settings).

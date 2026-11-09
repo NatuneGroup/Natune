@@ -65,7 +65,8 @@ private fun JsonObject.string(name: String): String? =
  * `sha256` are the extra fields the shared encoder writes for manifest-derived entries. [downloadUrl]
  * is set only when an asset matches [expectedArtifactName] exactly, then [artifactMatcher] — no match
  * means the release page is the only install path for this build. [ReleaseInfo.sha256] survives the
- * cache round-trip so a downloaded artifact stays verifiable after a restart.
+ * cache round-trip so a downloaded artifact stays verifiable after a restart. A cached `download_url`
+ * must name this build's artifact too: restored settings can carry another platform's cache.
  */
 fun parseReleasesJson(
     text: String,
@@ -91,18 +92,31 @@ fun parseReleasesJson(
                 downloadSha256 = asset.string("sha256")
             }
         }
+        // A cached re-encode carries the resolved link outright; keep it only for this build's artifact.
+        val cachedUrl = obj.string("download_url")?.takeIf {
+            downloadUrl == null && cachedArtifactMatches(it, expectedArtifactName, artifactMatcher)
+        }
         ReleaseInfo(
             tagName = tag,
             name = obj.string("name"),
             body = obj.string("body"),
             publishedAt = obj.string("published_at"),
             htmlUrl = htmlUrl,
-            // A cached re-encode carries the resolved link outright; it survives the re-parse unchanged.
-            downloadUrl = downloadUrl ?: obj.string("download_url"),
+            downloadUrl = downloadUrl ?: cachedUrl,
             versionCode = (obj["version_code"] as? JsonPrimitive)?.longOrNull,
-            sha256 = downloadSha256 ?: obj.string("sha256"),
+            sha256 = downloadSha256 ?: obj.string("sha256").takeIf { cachedUrl != null },
         )
     }
+}
+
+private fun cachedArtifactMatches(
+    url: String,
+    expectedArtifactName: String?,
+    artifactMatcher: ((String) -> Boolean)?,
+): Boolean {
+    if (expectedArtifactName == null && artifactMatcher == null) return true
+    val name = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
+    return name == expectedArtifactName || artifactMatcher?.invoke(name) == true
 }
 
 /**
