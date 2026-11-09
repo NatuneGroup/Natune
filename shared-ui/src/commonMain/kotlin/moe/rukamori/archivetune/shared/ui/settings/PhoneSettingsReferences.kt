@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 /** Android screen references used only by the phone settings host. */
 fun phoneSettingsReference(route: String): PhoneSettingsReference? = when (route.substringBefore('?')) {
+    "settings" -> PhoneSettingsHomeReference
     "settings/appearance" -> PhoneAppearanceSettingsReference
     "settings/appearance/extras" -> PhoneAppearanceExtrasSettingsReference
     "settings/appearance/navigation_bar" -> PhoneNavigationBarSettingsReference
@@ -35,6 +36,9 @@ fun phoneSettingsReference(route: String): PhoneSettingsReference? = when (route
     "settings/storage" -> PhoneStorageSettingsReference
     "settings/canvas" -> PhoneCanvasSettingsReference
     "settings/ai_integration" -> PhoneAiIntegrationSettingsReference
+    "settings/lastfm" -> PhoneLastFMSettingsReference
+    "settings/backup_restore" -> PhoneBackupAndRestoreReference
+    "settings/update" -> PhoneUpdateScreenReference
     "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface" -> PhoneAppearanceSettingsReference
     else -> null
 }
