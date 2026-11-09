@@ -21,7 +21,8 @@ fun queuePlayerState(queue: QueueState,playback: PlaybackSnapshot?,active: Boole
     val index=entry?.let { queue.playOrder.indexOf(it.occurrenceId) } ?: -1
     return PlayerState(playback.takeIf { playing!=null },item?.title.orEmpty(),item?.subtitle.orEmpty(),queue.playOrder,
         canPrevious=index>0,canNext=index>=0 && index<queue.playOrder.lastIndex,active=active,
-        albumTitle=item?.album,explicit=item?.explicit ?: false)
+        albumTitle=item?.album,explicit=item?.explicit ?: false,
+        standInOccurrenceId=entry?.occurrenceId.takeIf { playing==null })
 }
 
 /**
@@ -71,12 +72,13 @@ fun ObservedBottomSheetPlayer(
         // Null means not read yet, not a default V4 flash before the saved style arrives.
         val ready=preferences
         if(ready!=null) {
+            val state=decorateState(queuePlayerState(queueState,playback,active))
+            val displayedPlayback by rememberUpdatedState(state.playback)
             val actions=remember(queue,queue.player,actionScope,onAction,setVolume,onLyricsVisibility) {
                 controllerPlayerActions(queue.player,{ id -> actionScope.launch { queue.select(id) } },
-                    setVolume,onAction,onLyricsVisibility)
+                    setVolume,onAction,onLyricsVisibility,{ displayedPlayback })
             }
-            BottomSheetPlayer(decorateState(queuePlayerState(queueState,playback,active)),
-                actions,ready,slots,blurSupported,modifier,interaction)
+            BottomSheetPlayer(state,actions,ready,slots,blurSupported,modifier,interaction)
         }
     }
 }
