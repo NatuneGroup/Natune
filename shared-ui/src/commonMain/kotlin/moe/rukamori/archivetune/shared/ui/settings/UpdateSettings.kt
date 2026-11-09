@@ -35,11 +35,13 @@ sealed interface UpdateFeedResult {
 
 private enum class UpdateDialog { CHANNEL, NIGHTLY_CONFIRM, NOTIFICATION_CONFIRM, UP_TO_DATE, CHECK_ERROR }
 
+private val updateNotificationPreferenceKeys = setOf(EnableUpdateNotificationKey, PersistentUpdatePopupKey)
+
 /**
  * Channel, notification and popup preferences plus the manual check, the offer sheet, the download
  * progress dialog and the result dialogs — the UpdateScreen semantics in shared form. Notification
- * scheduling/permissions, feed transport and download/install are host callbacks; this page never
- * performs a network call itself.
+ * scheduling/permissions, feed transport and download/install are host callbacks; hosts without
+ * notification delivery omit those rows. This page never performs a network call itself.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +53,8 @@ fun UpdateSettings(
     /** [forceRefresh] mirrors the app's split: the auto-check on open serves caches, the button forces. */
     checkFeed: suspend (UpdateChannel, forceRefresh: Boolean) -> UpdateFeedResult,
     onChannelChanged: suspend (UpdateChannel) -> Unit,
-    onNotificationChanged: suspend (Boolean) -> Unit,
+    /** Null hides notification controls on hosts with no notification scheduler or OS notification delivery. */
+    onNotificationChanged: (suspend (Boolean) -> Unit)?,
     /** Invoked when the user taps Update on an offer (download for DIRECT_INSTALL, open URL for OPEN_URL). */
     installOffer: (UpdateOffer) -> Unit,
     /** Live download state from the host's installer port; null when the host never downloads. */
@@ -216,7 +219,10 @@ fun UpdateSettings(
             run = { navigate("settings/changelog?channel=${selected.name}") },
             description = Res.string.m6_update_changelog_desc,
         ),
-    )
+    ).filter { row ->
+        onNotificationChanged != null ||
+            (row as? SettingsRow.Toggle)?.key !in updateNotificationPreferenceKeys
+    }
     SettingsPage(
         rows = rows,
         preferences = preferences,
@@ -226,7 +232,7 @@ fun UpdateSettings(
         modifier = modifier,
         onCommitted = { change ->
             if (EnableUpdateNotificationKey in change.changedKeys) {
-                onNotificationChanged(change.after[EnableUpdateNotificationKey, false])
+                onNotificationChanged?.invoke(change.after[EnableUpdateNotificationKey, false])
             }
         },
         extraItems = {

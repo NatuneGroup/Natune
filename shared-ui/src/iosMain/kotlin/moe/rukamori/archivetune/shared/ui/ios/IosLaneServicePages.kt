@@ -150,13 +150,13 @@ internal fun IosLaneServiceSettingsPage(
         }
         "settings/changelog" -> {
             val releaseChannel = UpdateChannel.entries.firstOrNull { it.name == channel }
-                ?: owners.releaseNotes.selectedChannel()
+                ?: owners.update.checker.selectedChannel()
             var retryTick by remember { mutableIntStateOf(0) }
             val state by produceState<ChangelogState>(ChangelogState.Loading, releaseChannel, retryTick) {
                 value = ChangelogState.Loading
                 value = when (releaseChannel) {
-                    UpdateChannel.STABLE -> owners.releaseNotes.allReleases(forceRefresh = retryTick > 0)
-                    UpdateChannel.NIGHTLY -> owners.releaseNotes.allPreReleases(forceRefresh = retryTick > 0)
+                    UpdateChannel.STABLE -> owners.update.checker.allReleases(forceRefresh = retryTick > 0)
+                    UpdateChannel.NIGHTLY -> owners.update.checker.allPreReleases(forceRefresh = retryTick > 0)
                 }.map { releases ->
                     releases.filter { it.tagName != UpdateRepository.UPDATE_FEED_TAG }
                         .map { ChangelogRelease(it.tagName, it.name ?: it.tagName, it.publishedAt, it.body) }
