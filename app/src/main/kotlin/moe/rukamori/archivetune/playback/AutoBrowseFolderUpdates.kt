@@ -25,6 +25,8 @@ internal class AutoBrowseFolderUpdates<T> {
         (affected + subscribed).forEach(notify)
     }
 
+    fun snapshot(parentId: String): List<T>? = cache.snapshot(parentId)
+
     fun clear() = cache.clear()
 
     /** Availability changes re-filter the same snapshots, preserving their shuffle order. */

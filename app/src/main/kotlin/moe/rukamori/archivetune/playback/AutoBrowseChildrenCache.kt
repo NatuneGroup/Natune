@@ -80,6 +80,9 @@ internal class AutoBrowseChildrenCache<T>(
         return loaded
     }
 
+    /** The committed snapshot, if any, without starting a load. */
+    fun snapshot(parentId: String): List<T>? = synchronized(lock) { entries[parentId] }
+
     fun clear() {
         synchronized(lock) {
             entries.clear()

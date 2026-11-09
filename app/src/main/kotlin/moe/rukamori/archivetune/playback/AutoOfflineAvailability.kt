@@ -1,31 +1,66 @@
 package moe.rukamori.archivetune.playback
 
+import android.os.SystemClock
 import androidx.media3.common.PlaybackException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
-/** A failed connection can precede Android's connectivity callback. Cached playback does not clear it. */
-internal class AutoOfflineAvailability(private val connected: () -> Boolean) {
-    @Volatile private var connectionFailed = false
+/**
+ * A failed connection can precede Android's connectivity callback, and a provider timeout can
+ * happen on a validated network, so a failure marks Auto offline only for [failureWindowMs].
+ * Cached playback does not clear it; a network success, a connectivity callback or an explicit
+ * user retry on a validated network does.
+ */
+internal class AutoOfflineAvailability(
+    private val connected: () -> Boolean,
+    private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
+    private val failureWindowMs: Long = FAILURE_WINDOW_MS,
+    private val scheduleExpiry: (delayMs: Long, action: () -> Unit) -> Unit = { _, _ -> },
+    private val onChanged: () -> Unit = {},
+) {
+    @Volatile private var failedAtMs: Long? = null
     private var lastReportedOffline = !connected()
 
-    fun isOffline(): Boolean = connectionFailed || !connected()
+    fun isOffline(): Boolean = failedAtMs?.let { nowMs() - it < failureWindowMs } == true || !connected()
 
     fun onConnectionFailure(): Boolean {
-        connectionFailed = true
-        return changed()
+        val failedAt = nowMs()
+        failedAtMs = failedAt
+        scheduleExpiry(failureWindowMs) { if (failedAtMs == failedAt) refresh() }
+        return refresh()
+    }
+
+    fun onNetworkSuccess(): Boolean {
+        if (failedAtMs == null) return false
+        failedAtMs = null
+        return refresh()
+    }
+
+    /** A new search or tap may go online again once Android reports a validated network. */
+    fun onUserRetry(): Boolean {
+        if (failedAtMs != null && connected()) failedAtMs = null
+        return refresh()
     }
 
     fun onConnectivityChanged(isConnected: Boolean): Boolean {
-        if (isConnected) connectionFailed = false
-        return changed()
+        if (isConnected) failedAtMs = null
+        return refresh()
     }
 
-    private fun changed(): Boolean {
-        val offline = isOffline()
-        return (offline != lastReportedOffline).also { lastReportedOffline = offline }
+    /** Reports, once, each change of the effective state, including a silently expired failure. */
+    fun refresh(): Boolean {
+        val changed = synchronized(this) {
+            val offline = isOffline()
+            (offline != lastReportedOffline).also { lastReportedOffline = offline }
+        }
+        if (changed) onChanged()
+        return changed
+    }
+
+    companion object {
+        const val FAILURE_WINDOW_MS = 30_000L
     }
 }
 

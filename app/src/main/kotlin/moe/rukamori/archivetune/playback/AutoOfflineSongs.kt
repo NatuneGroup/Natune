@@ -32,6 +32,7 @@ internal class AutoOfflineSongs(
     private val isDownloaded: (String) -> Boolean = { false },
     private val isFullyCached: (Song) -> Boolean = { false },
     private val isFullyCachedId: (String) -> Boolean = { false },
+    val onUserRetry: () -> Unit = {},
 ) {
     @Volatile private var knownSongs: Map<String, Song> = emptyMap()
 
@@ -66,7 +67,8 @@ internal class AutoOfflineSongs(
             it.mediaMetadata.isBrowsable == true || it.mediaMetadata.isPlayable != true || canPlayId(it.mediaId.autoSongMediaId())
         } else items
 
-    data class Selection<T>(val items: List<T>, val startIndex: Int, val startPositionMs: Long)
+    /** [sourceIndex] is the chosen occurrence's index in the unfiltered list. */
+    data class Selection<T>(val items: List<T>, val startIndex: Int, val startPositionMs: Long, val sourceIndex: Int)
 
     fun select(songs: List<Song>, selectedSongId: String?, startPositionMs: Long): Selection<Song>? {
         rememberSongs(songs)
@@ -82,12 +84,12 @@ internal class AutoOfflineSongs(
         items: List<T>, startIndex: Int, positionMs: Long, allowFirstPlayable: Boolean, canPlay: (T) -> Boolean,
     ): Selection<T>? {
         if (items.isEmpty() || startIndex !in items.indices) return null
-        if (!isOffline()) return Selection(items, startIndex, positionMs)
+        if (!isOffline()) return Selection(items, startIndex, positionMs, startIndex)
         val playable = items.withIndex().filter { canPlay(it.value) }
         if (playable.isEmpty()) return null
         val selected = playable.indexOfFirst { it.index == startIndex }
         if (selected < 0 && !allowFirstPlayable) return null
         val index = selected.coerceAtLeast(0)
-        return Selection(playable.map { it.value }, index, if (selected >= 0) positionMs else 0L)
+        return Selection(playable.map { it.value }, index, if (selected >= 0) positionMs else 0L, playable[index].index)
     }
 }

@@ -151,6 +151,27 @@ class AutoOfflineSongsTest {
         assertEquals(listOf(online), folders.children("home_suggested_songs", cacheEmpty = false) { error("Keep the existing snapshot") })
     }
 
+    @Test
+    fun anOfflineTapReadsTheRetainedOnlineSnapshotInItsVisibleOrderWithoutReloading() = runTest {
+        policy.updateSongs(listOf(song("online"), song("cached"), song("download")))
+        val folders = AutoBrowseFolderUpdates<MediaItem>()
+        assertNull(folders.snapshot("online_playlist/PL"))
+        val action = item("online_playlist/PL/_shuffle", browsable = true)
+        val rows = listOf(action, item("online_playlist/PL/online"), item("online_playlist/PL/cached"), item("online_playlist/PL/download"))
+        folders.children("online_playlist/PL") { rows }
+        val snapshot = folders.snapshot("online_playlist/PL")!!
+        assertEquals(rows, snapshot)
+        assertEquals(snapshot, folders.children("online_playlist/PL") { error("The retained snapshot must not reload offline") })
+        val playable = snapshot.filter { it.mediaMetadata.isBrowsable != true }
+            .map { it.buildUpon().setMediaId(it.mediaId.autoSongMediaId()).build() }
+        val selected = policy.selectItems(playable, 1, 4_000L)!!
+        assertEquals(listOf("cached", "download"), selected.items.map { it.mediaId })
+        assertEquals(0, selected.startIndex)
+        assertEquals(1, selected.sourceIndex)
+        assertEquals(4_000L, selected.startPositionMs)
+        assertNull(policy.selectItems(playable, 0, 4_000L))
+    }
+
     private fun song(id: String, local: Boolean = false) = Song(SongEntity(id, id, isLocal = local), emptyList())
 
     private fun item(id: String, browsable: Boolean = false): MediaItem = MediaItem.Builder().setMediaId(id)
