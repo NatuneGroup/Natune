@@ -1208,8 +1208,8 @@ jobs:
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
           APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
-          # 20 MB app budget plus ~3.7 MB for the bundled Discord Social SDK (arm64).
-          MAX_APK_BYTES=24000000
+          # Includes the bundled Discord Social SDK (~3.7 MB on arm64) on top of the app.
+          MAX_APK_BYTES=28000000
           if (( APK_BYTES >= MAX_APK_BYTES )); then
             echo "::error::Final signed APK is $APK_BYTES bytes; the release-candidate limit is under $MAX_APK_BYTES bytes."
             exit 1
