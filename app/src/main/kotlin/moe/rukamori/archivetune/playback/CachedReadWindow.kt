@@ -7,6 +7,12 @@
 
 package moe.rukamori.archivetune.playback
 
+import androidx.media3.datasource.cache.Cache
+import androidx.media3.datasource.cache.ContentMetadata
+
+internal fun recordedContentLength(cache: Cache, key: String): Long? =
+    runCatching { cache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L) }.getOrNull()?.takeIf { it > 0L }
+
 internal data class CachedReadWindow(
     val position: Long,
     val length: Long,
