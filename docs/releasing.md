@@ -121,7 +121,7 @@ gh workflow run build_pull_request.yml \
 
 - `candidate_version_code` is mandatory. It must be an absolute code allocated
   above the source `trustedUpgradeVersionCodeFloor`, above the measured
-  N20261103 ARM64 baseline `1793753723`, and above the newest `at-build:` marker
+  N20261109 ARM64 baseline `1794231625`, and above the newest `at-build:` marker
   in this repository's published release bodies read at dispatch. A
   blank/default value or an unreadable marker fails closed after checkout but
   before any build or signing. The release list must be read completely (a
@@ -146,10 +146,10 @@ gh workflow run build_pull_request.yml \
   provider/client BuildConfig mappings as the release Android leg.
 - Signing follows the release leg: zipalign, the historical keystore with v1
   signing disabled, `apksigner verify`, and a v2/v3 certificate match. Before
-  the pin is trusted, the job downloads the public N20261103 baseline into
+  the pin is trusted, the job downloads the public N20261109 baseline into
   `RUNNER_TEMP`, verifies its exact bytes and SHA-256
-  (`287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc`,
-  20,306,627 bytes) and versionCode `1793753723`, and lets
+  (`2cb8bd3fbed1ce396d9b85bd9cf1b1e6e7235a2663d2ff848943780c2d6ff034`,
+  23,617,037 bytes) and versionCode `1794231625`, and lets
   `apksigner verify --print-certs` confirm its certificate SHA-256
   `6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9`.
   The candidate must present the same certificate. That pin was derived from

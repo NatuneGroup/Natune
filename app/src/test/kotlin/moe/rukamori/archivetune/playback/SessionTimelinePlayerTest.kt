@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.playback
 
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import java.lang.reflect.Proxy
@@ -177,6 +178,9 @@ internal class QueueCheckpointTestPlayer(initial: List<MediaItem>) {
     val items = initial.toMutableList()
     var currentIndex = 0
     var position = 0L
+    var playbackState = Player.STATE_READY
+    var playerError: PlaybackException? = null
+    var prepares = 0
     var beforeInstallation: () -> Unit = {}
     var changed: () -> Unit = {}
     private val timeline = object : Timeline() {
@@ -194,8 +198,12 @@ internal class QueueCheckpointTestPlayer(initial: List<MediaItem>) {
             "getMediaItemCount" -> items.size
             "getMediaItemAt" -> items[args!![0] as Int]
             "getCurrentMediaItemIndex" -> currentIndex
+            "getCurrentMediaItem" -> items.getOrNull(currentIndex)
             "getCurrentPosition" -> position
+            "getPlaybackState" -> playbackState
+            "getPlayerError" -> playerError
             "getCurrentTimeline" -> timeline
+            "prepare" -> { prepares++; playbackState = Player.STATE_BUFFERING; playerError = null; null }
             "setMediaItems", "setMediaItem", "clearMediaItems" -> {
                 beforeInstallation()
                 val installationArgs = args ?: emptyArray()

@@ -9,6 +9,7 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.text.method.LinkMovementMethod
+import android.graphics.Typeface
 import android.util.TypedValue
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +21,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.res.ResourcesCompat
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
@@ -30,7 +30,7 @@ import io.noties.markwon.image.ImagesPlugin
 import io.noties.markwon.image.network.OkHttpNetworkSchemeHandler
 import io.noties.markwon.linkify.LinkifyPlugin
 import io.noties.markwon.simple.ext.SimpleExtPlugin
-import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.ui.theme.sharedPoppinsAssetPath
 
 @Composable
 fun MarkdownText(
@@ -45,7 +45,7 @@ fun MarkdownText(
 
     val typeface =
         remember(context) {
-            ResourcesCompat.getFont(context, R.font.poppins)
+            Typeface.createFromAsset(context.assets, sharedPoppinsAssetPath())
         }
 
     val markwon =

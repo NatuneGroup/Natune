@@ -119,7 +119,8 @@ fun SearchScreen(
     }
     val appleMusicStyle = preferences.appleMusicSearchBar()
     val pill = rememberPillStyle(preferences)
-    val searchBarAtBottom = preferences[SearchBarPositionKey] == "BOTTOM"
+    // Desktop search always belongs to the title bar, even when a restored phone profile says BOTTOM.
+    val searchBarAtBottom = !LocalDesktopLayout.current && preferences[SearchBarPositionKey] == "BOTTOM"
     val hideSearchBarWhileScrolling = preferences[HideSearchChromeWhileScrollingKey, false]
     val bottomSearchChromeSpace =
         (if (appleMusicStyle) AppleSearchBarHeight else ExpressiveSearchBarHeight) + BottomSearchPillMargin * 2

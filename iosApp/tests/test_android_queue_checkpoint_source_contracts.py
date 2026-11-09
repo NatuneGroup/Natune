@@ -41,12 +41,14 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         )[0]
         self.assertIn("scope.future(Dispatchers.IO)", resolver)
         self.assertNotIn("installExternalTimeline", resolver)
-        session_factory = self.service.split("private fun sessionFacingPlayer()", 1)[1].split(
+        session_factory = self.service.split("private fun recoveringPlayer()", 1)[1].split(
             "private var secondaryCrossfadePlayer", 1
         )[0]
         self.assertIn("queueSessionTimelinePlayer", session_factory)
         self.assertIn("installExternalTimeline(queue, title, target = target", session_factory)
         self.assertIn("retainsInstalledOccurrences = replay", session_factory)
+        self.assertIn("ErrorRecoveringPlayer", session_factory)
+        self.assertIn("OutputFadingPlayer(recoveringPlayer(), outputFades)", session_factory)
         self.assertIn("target === currentPlayer()", self.session)
         installer = self.service.split("internal fun installExternalTimeline", 1)[1].split("fun clearAutomix", 1)[0]
         self.assertLess(installer.index("if (target !== player) return"), installer.index("invalidatePlaylistWork()"))
@@ -185,6 +187,39 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         dismiss = self.service.split("fun dismissPlaylistLoadError", 1)[1].split("fun reloadFinitePlaylist", 1)[0]
         self.assertIn("finitePlaylistPublisher.owner", dismiss)
         self.assertIn("wholePlaylistPublisher.owner", dismiss)
+
+    def test_offline_recovery_setters_forward_through_the_queue_installer(self):
+        factory = self.service.split("private fun recoveringPlayer()", 1)[1].split(
+            "private var secondaryCrossfadePlayer", 1
+        )[0]
+        self.assertRegex(factory, r"ErrorRecoveringPlayer\(\s*queueSessionTimelinePlayer\(player, queueCheckpointGate")
+        self.assertIn("mediaLibrarySessionCallback.autoOfflineSongs", factory)
+        self.assertIn("waitingForNetworkConnection.value = false; recoveryRetry.cancelPending()", factory)
+        recovering = (PLAYBACK / "ErrorRecoveringPlayer.kt").read_text()
+        replacement = recovering.split("private fun replaceItems", 1)[1].split("override fun setMediaItems", 1)[0]
+        self.assertIn("target.setMediaItems(items, selection.sourceIndex, selection.startPositionMs)", replacement)
+        for method in ("setMediaItems", "setMediaItem"):
+            self.assertEqual(3, len(re.findall(r"override fun " + method + r"\(", recovering)))
+        self.assertIn("skipUnavailableOfflineItem(player, mediaLibrarySessionCallback.autoOfflineSongs)", self.service)
+
+    def test_offline_auto_resolution_snapshots_and_stale_tap_rejection_survive_the_merge(self):
+        callback = (PLAYBACK / "MediaLibrarySessionCallback.kt").read_text()
+        resolver = callback.split("override fun onSetMediaItems", 1)[1].split("override fun onAddMediaItems", 1)[0]
+        for path in ("offlineSnapshotItems", "offlineOnlinePlaylistItems", "queueEntryPlayback", "pinnedPlaylistPlayback"):
+            self.assertIn(path, resolver)
+        self.assertIn("autoOfflineSongs.onUserRetry()", resolver)
+        self.assertNotIn(".setMediaItems(", resolver)
+        snapshots = (PLAYBACK / "AutoOfflineBrowseSnapshots.kt").read_text()
+        self.assertIn("browseFolderUpdates.snapshot(parentId)", snapshots)
+        self.assertIn("resolveAutoPlaybackItem(item)", snapshots)
+        queue_ids = (PLAYBACK / "AutoQueueMediaIds.kt").read_text()
+        self.assertIn("it in queueMediaIds.indices && queueMediaIds[it] == entry.songMediaId", queue_ids)
+        extensions = (PLAYBACK / "AutoBrowseExtensions.kt").read_text()
+        tap = extensions.split("internal suspend fun MediaLibrarySessionCallback.queueEntryPlayback", 1)[1].split(
+            "internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistEntries", 1
+        )[0]
+        self.assertIn("AutoQueueMediaIds.resolvePosition", tap)
+        self.assertIn("MediaSession.MediaItemsWithStartPosition(items, selection.sourceIndex, selection.startPositionMs)", tap)
 
 
 if __name__ == "__main__":

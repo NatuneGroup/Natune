@@ -14,6 +14,12 @@ object AboutBundledNotices {
     val entries: List<AboutLicenseEntry> =
         listOf(
             AboutLicenseEntry(
+                name = "Google Oboe (historical dependency)",
+                version = "1.11.0",
+                license = "Apache License 2.0",
+                noticeResource = "files/notices/Google-Oboe-Apache-2.0.txt",
+            ),
+            AboutLicenseEntry(
                 name = "Natune IconPack — Natune and the credited community artists",
                 version = "554c3dd24f4240d6b836e9f36572acd78afc8888",
                 license = "CC BY-SA 4.0",

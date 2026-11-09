@@ -125,8 +125,10 @@ Tests added:
 The new user decision retains Android-only controls as disabled rows rather
 than hiding them. `IosSettingsScreen` supplies shared phone reference metadata
 and an availability policy; desktop keeps its PC presentation. Ordinary
-settings editors/dialogs and launcher-icon selection now render in commonMain.
-UIKit remains responsible for applying alternate icons and system pickers.
+settings editors/dialogs and launcher-icon selection now render in the shared
+Compose iOS route. The launcher selector and its resources live in `iosMain`, so
+Android packaging excludes the iOS previews without removing icon choices or
+attribution. UIKit remains responsible for applying alternate icons and system pickers.
 See [the screen inventory](ios-android-ui-gap.md) for the source changes and
 remaining visual/runtime limits. These changes have only lightweight repository
 and Python contract evidence; exact-head CI and device/pixel evidence remain

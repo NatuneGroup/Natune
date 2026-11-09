@@ -112,6 +112,61 @@ infinite-queue generation cleanup is unchanged. Queue loading/traversal/shuffle
 helpers live in small files; the moved shuffle and recommendation policies retain
 their previous behavior and allow MusicService to shrink.
 
+## Merge with Android Auto offline playback
+
+The round-6 fix was committed as
+`684da7ec3c82510b4c1d0f7bf848a4d913dd76a4`, then `git fetch origin` and
+`git merge --no-commit origin/dev` merged dev at
+`24df1f6720db12c3cfa47b56ca7ab2d4475b45c3` (PR #107). The result is a merge
+commit, without rebasing or force-pushing. MusicService's session factory was the
+only conflict. The rest of dev, including its automatically merged Auto callback,
+is retained.
+
+The final session path is `NowPlayingMetadataPlayer` → `OutputFadingPlayer` →
+`ErrorRecoveringPlayer` → `SessionTimelinePlayer` → the raw service player.
+Recovery validates offline availability before its new indexed `setMediaItems`
+call reaches the queue wrapper. The wrapper's captured target still matches the
+active raw service player. This preserves checkpoint acceptance and stale-player
+rejection for all six recovery setter overloads, including the additional setter
+inside `ErrorRecoveringPlayer.replaceItems`.
+
+`MediaLibrarySessionCallback.onSetMediaItems` keeps every offline selection path
+from dev: voice/library/local playback, retained Home/online/pinned browse
+snapshots and indexed queue taps. It returns resolved items to Media3, whose actual
+setter uses the composed session player. Offline queue taps retain the complete
+occurrence list and use `selection.sourceIndex`, so recovery preserves hydration
+and finite loading even when unavailable rows precede the tapped duplicate.
+`AutoQueueMediaIds.resolvePosition` still rejects stale stamped positions.
+`AutoOfflineAvailability`, cache/download eligibility, `AutoOfflineBrowseSnapshots`
+and automatic `skipUnavailableOfflineItem` behavior remain intact; skip changes
+position without replacing or pruning the queue.
+
+`OfflineSessionTimelinePlayerTest` covers the composed offline recovery path for
+all six setters, the exact duplicate occurrence during hydration/finite loading,
+and rejection of an unavailable explicit tap before checkpoint mutation. Python
+contracts check the same wrapper order, all new offline resolver paths, retained
+snapshots and stale-tap rejection. PR #107's existing tests retain their expectations:
+
+| Offline protection | Covering test |
+| --- | --- |
+| Bounded connection failure, cache playback and validated retry semantics | `AutoOfflineAvailabilityTest.aSourceConnectionFailurePrecedesTheNetworkCallbackAndIsNotClearedByCachedPlayback`; `anExplicitRetryGoesOnlineOnlyWhenTheNetworkIsValidated` |
+| Local/completed/fully cached rows keep their order and selected identity/position | `AutoOfflineSongsTest.offlineFilteringKeepsOnlyLocalCompletedAndFullyCachedRowsInOriginalOrder`; `filteringRemapsAnExplicitSelectionWithoutChangingItsIdentityOrPosition` |
+| A missing or unavailable explicit tap cannot select another song | `AutoOfflineSongsTest.aMissingOrUnavailableTapNeverSubstitutesAnotherSong`; `ErrorRecoveringPlayerTest.anUnavailableExplicitTapOrRevokedCacheCannotChooseAnUnrelatedSong` |
+| A stale stamped queue position cannot remap to an earlier duplicate occurrence | `AutoQueueMediaIdsTest.resolvePosition_rejectsAMovedEntryInsteadOfRemappingIt`; `resolvePosition_aTapFilteredOutOfItsStampedPositionNeverSelectsAnEarlierDuplicate` |
+| Retained online browse snapshots keep visible order and are rechecked without a network reload | `AutoOfflineSongsTest.anOfflineTapReadsTheRetainedOnlineSnapshotInItsVisibleOrderWithoutReloading` |
+| Offline navigation and automatic skipping preserve every queue entry and play intent | `ErrorRecoveringPlayerTest.offlineNextSkipsUnavailableItemsWithoutRemovingThemAndKeepsPlayIntent`; `anAutomaticTransitionOntoAnUnavailableEntrySkipsItWithoutChangingTheQueue` |
+| Recovery prepares an idle source error once and rejects reentrant/superseded navigation | `ErrorRecoveringPlayerTest.everyTransportSeekPreparesAnIdleSourceErrorExactlyOnceAndKeepsPlayIntent`; `reentrantNavigationFromRecoveryAndSeekCallbacksCannotSkipTwice`; `aQueueChangedDuringRecoveryNeverReceivesTheOldSelection` |
+
+All Kotlin files added for this task start with the package line and stay below
+1,000 lines. The over-budget service files obey both the assigned-head limit for
+round 6 and the user's new dev baseline for the merge:
+
+| File | Assigned head | Round-6 fix | origin/dev | Merged result |
+| --- | ---: | ---: | ---: | ---: |
+| MusicService.kt | 12,779 | 12,726 | 12,667 | 12,610 |
+| MediaLibrarySessionCallback.kt | 2,078 | 2,078 | 1,937 | 1,937 |
+| ListenTogetherManager.kt | 2,393 | 2,393 | 2,393 | 2,393 |
+
 ## Preserved protections and regression coverage
 
 These are the earlier checkpoint protections, with the tests that retain them.
@@ -185,6 +240,7 @@ or the fixture needed to express the real installation/clear hook:
 | `queueTapReplayingTheSameOccurrences_keepsThePreviousQueueIdentityAndTitle` | Its service fixture now uses `installServiceQueueTimeline`; a replay keeps the pending requested source while preserving the previous installed identity/title. Replacing currentQueue with the previous identity would invalidate the unfinished loader |
 | Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` | The adapter now passes explicit occurrence proof to the installer; the source contract checks that routing |
 | Python `test_automatic_filtering_stays_separate_from_explicit_empty_acceptance` | Empty user removal calls the shared detachment method; assertions now follow that method rather than require duplicated field writes in the removal hook |
+| Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` after the dev merge | The queue wrapper now lives inside `recoveringPlayer`, beneath offline recovery. The contract follows that factory while retaining the same actual-setter acceptance expectation |
 
 New Kotlin fixtures cover pending identity/title/occurrences, failed and empty
 radio followed by external installation, suspended-preload cancellation followed
@@ -202,3 +258,5 @@ no Gradle, JVM, Kotlin build, lint or Kotlin tests run locally. The round-6 base
 `12ce05f3e2258b9778123512c255ad6fe3afc8c1`. Allowed validation consists of
 `python3 scripts/check_repository.py --worktree`,
 `python3 -m unittest discover -s iosApp/tests -p 'test_*.py'` and Git diff checks.
+Round 6 passed with 0 repository findings and 48 Python tests; the merged candidate
+passed with 0 repository findings, 52 Python tests and clean staged/worktree diffs.
