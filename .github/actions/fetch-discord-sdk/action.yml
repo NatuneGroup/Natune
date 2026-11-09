@@ -1,0 +1,40 @@
+name: Fetch the Discord Social SDK
+description: >-
+  Downloads the licensed Discord Social SDK Android AAR from the private NatuneGroup mirror at a
+  pinned commit, verifies its SHA-256 and places it where app/build.gradle.kts looks for it.
+  Fails when the token is missing so a shipping build can never silently fall back to the no-op
+  presence backend.
+inputs:
+  token:
+    description: Token with read access to NatuneGroup/discord-social-sdk
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download and verify the pinned AAR
+      shell: bash
+      env:
+        DISCORD_SDK_TOKEN: ${{ inputs.token }}
+        # Social SDK 1.10.19337 (the header discord_social_jni.cpp is written against).
+        SDK_COMMIT: 61b43f044ac8557007a0ad66e64b2dc74e47a591
+        SDK_SHA256: b1b2491f1e1848c79fd6f1986d5aa1e0c8019e88a6e62c7be06b89e8e4870933
+        SDK_PATH: third_party/discord-social-sdk/android/discord_partner_sdk.aar
+      run: |
+        set -euo pipefail
+        if [[ -z "$DISCORD_SDK_TOKEN" ]]; then
+          echo "::error::DISCORD_SDK_TOKEN is not available; refusing to build without Discord Rich Presence."
+          exit 1
+        fi
+        mkdir -p "$(dirname "$SDK_PATH")"
+        curl --fail --silent --show-error --location --retry 3 \
+          -H "Authorization: Bearer $DISCORD_SDK_TOKEN" \
+          -H "Accept: application/vnd.github.raw" \
+          --output "$SDK_PATH" \
+          "https://api.github.com/repos/NatuneGroup/discord-social-sdk/contents/android/discord_partner_sdk.aar?ref=$SDK_COMMIT"
+        ACTUAL="$(sha256sum "$SDK_PATH" | cut -d' ' -f1)"
+        if [[ "$ACTUAL" != "$SDK_SHA256" ]]; then
+          rm -f "$SDK_PATH"
+          echo "::error::Discord Social SDK AAR SHA-256 $ACTUAL does not match the pinned $SDK_SHA256."
+          exit 1
+        fi
+        echo "Fetched Discord Social SDK AAR ($(wc -c < "$SDK_PATH" | tr -d '[:space:]') bytes, SHA-256 verified)."

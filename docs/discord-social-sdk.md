@@ -1,13 +1,27 @@
 # Discord Social SDK on Android
 
 Now Playing uses the **official Discord Social SDK with OAuth PKCE**. There is no
-user-token WebView login and no direct Gateway IDENTIFY transport. The SDK is
-strictly opt-in: default builds, release/nightly artifacts and every CI workflow
-are SDK-free and do not grow in APK size.
+user-token WebView login and no direct Gateway IDENTIFY transport.
 
-## Default builds (SDK absent)
+## Shipping builds (SDK bundled)
 
-Nothing in the default build references the SDK:
+Stable, Nightly and signed release-candidate APKs always include the SDK. Before
+assembling, `.github/actions/fetch-discord-sdk` downloads the AAR from the private
+`NatuneGroup/discord-social-sdk` mirror at a pinned commit, checks its pinned
+SHA-256 and builds with `-Pnatune.discordSdk=true`. The step fails when the
+`DISCORD_SDK_TOKEN` Actions secret is missing, and
+`scripts/check_discord_sdk_apk.py` fails the build when an APK lacks
+`libdiscord_partner_sdk.so` or `libnatune_discord_social.so` for any packaged
+ABI, so a shipping build can no longer fall back to the "unavailable" notice.
+The SDK adds roughly 3.7 MB per ABI; the signed-candidate size gate is
+24,000,000 bytes.
+
+To update the SDK, push the new AAR to the mirror and change `SDK_COMMIT` and
+`SDK_SHA256` in the action together.
+
+## Pull-request and local default builds (SDK absent)
+
+Pull-request and debug CI builds never receive the token. Without the SDK:
 
 - no AAR dependency, no `discord_partner_sdk` prefab package, no
   `natune_discord_social` JNI library and no AndroidX Browser dependency;
@@ -15,11 +29,8 @@ Nothing in the default build references the SDK:
   playback never tries to send presence;
 - Discord settings keeps browser PKCE account linking and shows an
   "unavailable" notice instead of a broken SDK login;
-- no workflow fetches the private SDK repository, passes the opt-in property or
-  references `DISCORD_SDK_TOKEN` (that secret does not exist).
-
-The licensed SDK adds roughly 3.7 MB compressed per ABI, so it must not be
-bundled in release APKs.
+- pull-request jobs never fetch the private SDK repository or see
+  `DISCORD_SDK_TOKEN`.
 
 ## Building locally with the SDK
 
@@ -38,7 +49,7 @@ Then build with the Gradle property:
 
 Both conditions are required: `natune.discordSdk=true` **and** the AAR file being
 present. An absent property or AAR leaves the integration off, even if the other
-condition is met. Release APKs are never built with this property.
+condition is met.
 
 ## Application ID and redirects
 
@@ -100,10 +111,8 @@ song/artist, album-art URL/caption, timestamps and up to two buttons. Playback
 policy still owns update and clear/stop decisions.
 
 **Verification status:** the JNI and manifest wiring are written against SDK
-1.10.19337's `discordpp.h`. No Gradle/JVM or native build is run on the
-constrained development host; CI builds are SDK-free. A local SDK-enabled build
-plus a device authorization/presence check is still required before shipping an
-SDK build.
+1.10.19337's `discordpp.h`. Shipping and signed-candidate CI builds compile
+and link the SDK target; pull-request builds stay SDK-free.
 
 References: [mobile account linking](https://docs.discord.com/developers/discord-social-sdk/development-guides/account-linking-on-mobile),
 [mobile SDK guide](https://discord.com/developers/docs/social-sdk/md_pages_2mobile.html),

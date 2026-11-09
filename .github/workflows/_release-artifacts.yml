@@ -206,11 +206,17 @@ jobs:
         with:
           variant: ${{ matrix.variant }}
 
+      - name: Fetch the Discord Social SDK for Rich Presence
+        uses: ./.github/actions/fetch-discord-sdk
+        with:
+          token: ${{ secrets.DISCORD_SDK_TOKEN }}
+
       - name: Assemble Android APK
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2
+          ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2 \
+            -Pnatune.discordSdk=true
 
       - name: Verify Librespot in the shipping APK
         shell: bash
@@ -218,6 +224,13 @@ jobs:
           LIBRESPOT_VARIANT: ${{ matrix.variant }}
           LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
         run: python3 native/librespot/android-artifact.py apk "$LIBRESPOT_VARIANT" --available "$LIBRESPOT_AVAILABLE"
+
+      - name: Verify Discord Rich Presence in the shipping APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          for apk in "${APKS[@]}"; do python3 scripts/check_discord_sdk_apk.py "$apk"; done
 
       - name: Stage APK
         shell: bash
