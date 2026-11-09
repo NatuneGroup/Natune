@@ -70,7 +70,20 @@ class IosSourceContractsTest(unittest.TestCase):
         settings = (UI_IOS / "IosSettings.kt").read_text()
         self.assertIn("updaterAvailable = owners.update.updaterAvailable", settings)
         self.assertIn("onNotificationChanged = null", settings)
-        self.assertIn("openIosUri(offer.htmlUrl, host::report)", settings)
+        self.assertIn("installOffer = { offer -> openIosUri(offer.downloadUrl, host::report) }", settings)
+        self.assertIn("checker.eligibleOffer(release, channel)?.let { return UpdateFeedResult.Offer(it) }", owner)
+        checker = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/update/SharedUpdateChecker.kt").read_text()
+        offer_policy = checker.split("fun eligibleOffer(", 1)[1].split("private fun rememberOffer(", 1)[0]
+        destination = re.search(r"UpdateInstallMode\.OPEN_URL\s*->\s*release\.(\w+)", offer_policy)
+        self.assertIsNotNone(destination)
+        release = {
+            "htmlUrl": "https://github.com/NatuneGroup/Natune/releases/tag/v2.0.0",
+            "downloadUrl": "https://github.com/NatuneGroup/Natune/releases/download/v2.0.0/app-gms-mobile-arm64-release.apk",
+        }
+        self.assertEqual("https://github.com/NatuneGroup/Natune/releases/tag/v2.0.0",
+                         release[destination.group(1)])
+        self.assertNotEqual(release["downloadUrl"], release[destination.group(1)])
+        self.assertIn("release.body, url,", offer_policy)
         common = (UI_COMMON / "settings/UpdateSettings.kt").read_text()
         self.assertIn("onNotificationChanged: (suspend (Boolean) -> Unit)?", common)
         self.assertIn("onNotificationChanged?.invoke", common)
