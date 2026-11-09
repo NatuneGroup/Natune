@@ -26,8 +26,8 @@ internal class QueueCheckpointGate(
         val finite = queue() as? YouTubePlaylistQueue ?: return false
         // User edits only override the loader's own unaccepted state, never the accepted continuation guard below.
         if (finite.hasUnacceptedFiniteReplacement()) return !finiteReplacementHasUserChanges
-        // Filtering can empty an accepted page while its next request is pending or has failed.
-        // Preserve the previous checkpoint until more items arrive or the user clears the queue.
-        return mediaItemCount() == 0 && (finite.hasNextPage() || finite.snapshot.continuation != null)
+        // An installed preload does not confirm the first page; either request can still fail.
+        // Keep filtered-empty checkpoints until confirmed exhaustion or an explicit queue clear.
+        return mediaItemCount() == 0 && (!finite.confirmedExhausted || finite.snapshot.continuation != null)
     }
 }
