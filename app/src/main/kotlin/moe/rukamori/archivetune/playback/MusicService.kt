@@ -5741,6 +5741,7 @@ class MusicService :
                     queue.preloadedItem = preload
                     queue.timelineInstalled = true
                     player.setMediaItem(preload)
+                    queueCheckpointGate.onReplacementInstalled(queue)
                     player.prepare()
                     player.playWhenReady = playWhenReady
                 }
@@ -5831,6 +5832,7 @@ class MusicService :
                                     appendFiniteItems(status.items)
                                 }
                                 queue.timelineInstalled = true
+                                queueCheckpointGate.onReplacementInstalled(queue)
                                 queueTitle = proposal.snapshot.title
                             } finally {
                                 finiteMutationInProgress = false
@@ -5905,10 +5907,9 @@ class MusicService :
         initialQueueLoadInProgress = true
         if (queue is YouTubePlaylistQueue) queue.beginPlayback()
         currentQueue = queue
-        queueCheckpointGate.reset()
+        queueCheckpointGate.beginReplacement()
         queueTitle = null
-        val permanentShuffle = dataStore.get(PermanentShuffleKey, false)
-        if (!permanentShuffle) {
+        if (!dataStore.get(PermanentShuffleKey, false)) {
             player.shuffleModeEnabled = false
         }
 
@@ -5925,14 +5926,14 @@ class MusicService :
                 val hideExplicit = dataStore.get(HideExplicitKey, false)
                 val hideVideo = dataStore.get(HideVideoKey, false)
                 if (initialLoadGeneration != initialQueueLoadGeneration || currentQueue !== queue) return@launch
-                val preloadItem =
-                    queue.preloadItem
-                        ?.toMediaItem()
-                        ?.takeUnless { item ->
-                            item.hasBlockedArtist(loadBlockedArtistIds())
-                        }
+                val preloadItem = queue.preloadItem?.toMediaItem()
+                    ?.takeUnless { item ->
+                        item.hasBlockedArtist(loadBlockedArtistIds())
+                    }
                 if (preloadItem != null) {
                     player.setMediaItem(preloadItem)
+                    queueCheckpointGate.onReplacementInstalled(queue)
+                    saveQueueToDisk()
                     player.prepare()
                     player.playWhenReady = playWhenReady
                 }
@@ -5960,22 +5961,18 @@ class MusicService :
                     initialStatus = initialStatus.copy(items = expandedItems)
                 }
                 if (initialLoadGeneration != initialQueueLoadGeneration) return@launch
-                if (initialStatus.title != null) {
-                    queueTitle = initialStatus.title
-                }
+                initialStatus.title?.let { queueTitle = it }
                 if (initialStatus.items.isEmpty()) return@launch
                 if (preloadItem != null) {
                     val preloadMediaId = preloadItem.mediaId.trim()
                     val insertionIndex =
                         initialStatus.mediaItemIndex.coerceIn(0, initialStatus.items.size)
-                    val itemsBeforeCurrent =
-                        initialStatus.items
-                            .subList(0, insertionIndex)
-                            .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
-                    val itemsAfterCurrent =
-                        initialStatus.items
-                            .subList(insertionIndex, initialStatus.items.size)
-                            .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
+                    val itemsBeforeCurrent = initialStatus.items
+                        .subList(0, insertionIndex)
+                        .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
+                    val itemsAfterCurrent = initialStatus.items
+                        .subList(insertionIndex, initialStatus.items.size)
+                        .filterNot { preloadMediaId.isNotEmpty() && it.mediaId.trim() == preloadMediaId }
 
                     player.addMediaItems(0, itemsBeforeCurrent)
                     player.addMediaItems(itemsAfterCurrent)
@@ -5983,16 +5980,15 @@ class MusicService :
                         applyCurrentFirstShuffleOrder()
                     }
                 } else {
-                    val items = initialStatus.items
-                    val index = initialStatus.mediaItemIndex
-
-                    player.setMediaItems(items, index, initialStatus.position)
+                    player.setMediaItems(initialStatus.items, initialStatus.mediaItemIndex, initialStatus.position)
+                    queueCheckpointGate.onReplacementInstalled(queue)
                     player.prepare()
                     player.playWhenReady = playWhenReady
                     if (player.shuffleModeEnabled) {
                         applyCurrentFirstShuffleOrder()
                     }
                 }
+                saveQueueToDisk()
             } finally {
                 // A superseded load must not clear the guard belonging to the newer queue.
                 if (initialLoadGeneration == initialQueueLoadGeneration) {
@@ -6155,6 +6151,7 @@ class MusicService :
         cancelInfiniteQueueBootstrap(newQueue = false)
         invalidatePlaylistWork()
         currentQueue = EmptyQueue
+        queueCheckpointGate.onUserClear()
         val windows = player.getQueueWindows()
         val currentUid = windows.firstOrNull { it.firstPeriodIndex == player.currentMediaItemIndex }?.uid
         val removal = queueRemovals.remove(windows.filterNot { it.uid == currentUid }.map { it.uid }.toSet())
@@ -6202,6 +6199,7 @@ class MusicService :
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "playback_cleared")
         clearAutomix()
         currentQueue = EmptyQueue
+        queueCheckpointGate.onUserClear()
         queueTitle = null
         waitingForNetworkConnection.value = false
         currentMediaMetadata.value = null
@@ -6329,6 +6327,8 @@ class MusicService :
             },
             prepare = { player.prepare() },
         )
+        queueCheckpointGate.onUserAddition()
+        saveQueueToDisk()
     }
 
     /**
