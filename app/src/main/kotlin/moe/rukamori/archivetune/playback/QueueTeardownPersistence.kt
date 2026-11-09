@@ -4,7 +4,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.constants.PersistentQueueKey
@@ -16,9 +15,9 @@ import timber.log.Timber
 
 private const val TAG = "QueueTeardownPersistence"
 
-/** A queue/player-state pair read on the main thread, with the save generation it belongs to. */
+/** A queue/player-state pair read on the main thread, with its generation and snapshot order. */
 internal class PersistedQueueSnapshot(
-    val saveGeneration: Long,
+    val checkpoint: QueueCheckpointToken,
     val queue: PersistQueue,
     val playerState: PersistPlayerState,
 )
@@ -44,7 +43,7 @@ private val teardownPersistenceScope = CoroutineScope(SupervisorJob() + Dispatch
 internal fun MusicService.saveQueueForTeardown(): TeardownQueueSave? {
     val snapshot = runCatching {
         val enabled = dataStore.get(PersistentQueueKey, true)
-        if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount)) {
+        if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount, hasQueueTimelineChanges, hasAcceptedEmptyCheckpoint)) {
             snapshotQueue()
         } else {
             null
@@ -53,11 +52,11 @@ internal fun MusicService.saveQueueForTeardown(): TeardownQueueSave? {
         Timber.tag(TAG).w(it, "Could not snapshot the queue during teardown")
     }.getOrNull() ?: return null
 
-    val write = teardownPersistenceScope.launch {
+    val write = QueuePersistenceState.shared.teardownWrites.launch(teardownPersistenceScope) {
         runCatching { writeQueueSnapshot(snapshot) }
             .onFailure { Timber.tag(TAG).w(it, "Queue save failed during teardown") }
     }
-    val waitBudgetMs = TeardownQueuePersistence.destroyWaitMillis(snapshot.queue.items.size)
+    val waitBudgetMs = TeardownQueuePersistence.destroyWaitMillis(snapshot.queue.items.size.coerceAtLeast(1))
     return TeardownQueueSave(write, waitBudgetMs)
 }
 
@@ -92,11 +91,13 @@ internal object TeardownQueuePersistence {
     /** The ceiling: a teardown wait never exceeds this, whatever the queue size. */
     const val DESTROY_WAIT_MAX_MS = 500L
 
-    /** The last-chance save only exists for a queue a user could actually resume. */
+    /** Accepted clears need a checkpoint too; an untouched empty player must preserve saved data. */
     fun shouldSave(
         persistentQueueEnabled: Boolean,
         mediaItemCount: Int,
-    ): Boolean = persistentQueueEnabled && mediaItemCount > 0
+        hasQueueTimelineChanges: Boolean = false,
+        hasAcceptedEmptyCheckpoint: Boolean = false,
+    ): Boolean = persistentQueueEnabled && (mediaItemCount > 0 || hasQueueTimelineChanges || hasAcceptedEmptyCheckpoint)
 
     /** Longer queues serialize longer, up to the ceiling that keeps teardown's wait bounded. */
     fun destroyWaitMillis(mediaItemCount: Int): Long {
