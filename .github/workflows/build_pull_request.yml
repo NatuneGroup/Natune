@@ -950,6 +950,11 @@ jobs:
         with:
           variant: arm64
 
+      - name: Fetch the Discord Social SDK for Rich Presence
+        uses: ./.github/actions/fetch-discord-sdk
+        with:
+          token: ${{ secrets.DISCORD_SDK_TOKEN }}
+
       - name: Assemble only the GMS mobile ARM64 release APK
         shell: bash
         env:
@@ -994,13 +999,20 @@ jobs:
           # Standard slim Nightly shape: no optional ONNX models/runtime, TDLib stays the
           # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
           ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
-            -Pautomix=false -PslimTdlib=true
+            -Pautomix=false -PslimTdlib=true -Pnatune.discordSdk=true
 
       - name: Verify Librespot in the candidate APK
         shell: bash
         env:
           LIBRESPOT_AVAILABLE: ${{ steps.librespot.outputs.available }}
         run: python3 native/librespot/android-artifact.py apk arm64 --available "$LIBRESPOT_AVAILABLE"
+
+      - name: Verify Discord Rich Presence in the candidate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          for apk in "${APKS[@]}"; do python3 scripts/check_discord_sdk_apk.py "$apk"; done
 
       - name: Stage and validate the assembled release APK
         shell: bash
@@ -1196,7 +1208,8 @@ jobs:
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
           APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
-          MAX_APK_BYTES=20000000
+          # 20 MB app budget plus ~3.7 MB for the bundled Discord Social SDK (arm64).
+          MAX_APK_BYTES=24000000
           if (( APK_BYTES >= MAX_APK_BYTES )); then
             echo "::error::Final signed APK is $APK_BYTES bytes; the release-candidate limit is under $MAX_APK_BYTES bytes."
             exit 1
