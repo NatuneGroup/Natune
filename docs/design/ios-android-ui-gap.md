@@ -169,3 +169,12 @@ These source references are an implementation aid, not pixel or compilation
 evidence. Android helper-drawn/custom controls and host service cards still
 need individual presentation ports; native dialogs and unsupported APIs remain
 explicit review items. Desktop does not opt into this renderer.
+
+The next port moves Modules summary/tabs/add/menu/remove confirmation,
+About loading/dialog state, background editing, hidden-playlist list/actions,
+download export selection, backup restart/failure/recovery dialogs and
+home/library/artwork/tag arrange dialogs into commonMain. Arrange lists use
+Android's numbered rows and drag handles through the same KMP reorderable
+dependency. Native bindings retain file/image IO, observed output facts,
+package validation and process/restore operations. Module catalog/native
+extension operations without an iOS owner stay visible and unavailable.
