@@ -298,20 +298,20 @@ class QueueCheckpointSchedulerTest {
 
         assertFalse(queue.initialTimelineCleared)
         assertTrue(queue.hasUnacceptedFiniteReplacement())
-        assertEquals(listOf(listOf("seed", "old-upcoming")), fixture.written)
-        assertEquals(1, fixture.snapshots.size)
-        assertFalse(fixture.savePosition(100L))
-        assertNull(fixture.teardownSnapshot())
+        assertEquals(List(2) { listOf("seed", "old-upcoming") }, fixture.written)
+        assertEquals(2, fixture.snapshots.size)
+        assertTrue(fixture.savePosition(100L))
+        assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
 
         // A nonempty filtering event during preparation must not accept the old timeline either.
         fixture.changeTimeline(listOf("seed"))
         advanceTimeBy(250L)
         runCurrent()
-        assertEquals(1, fixture.snapshots.size)
+        assertEquals(listOf("seed"), fixture.written.last())
         finishPreparation.complete(Unit)
         load.join()
         advanceUntilIdle()
-        assertEquals(listOf(listOf("seed", "old-upcoming")), fixture.written)
+        assertEquals(List(2) { listOf("seed", "old-upcoming") } + listOf(listOf("seed")), fixture.written)
         assertNull(fixture.teardownSnapshot())
 
         queue.accept(YouTubePlaylistQueue.Proposal(
@@ -416,20 +416,20 @@ class QueueCheckpointSchedulerTest {
     }
 
     @Test
-    fun unacceptedReplacement_blocksPositionOnlyWritesWithANonemptyTimeline() = runTest {
+    fun retainedTimelineDuringFailedReplacement_savesPositionWithThePreviousIdentity() = runTest {
         val fixture = Fixture(this)
         val queue = fixture.beginFiniteReplacement()
-        // A retained item is not accepted until the playlist-changed callback observes a user edit.
+        // Without installation/acceptance, these items still belong to the previous identity.
         fixture.items = listOf("retained")
         queue.fail()
-        assertFalse(fixture.savePosition(500L))
-        assertTrue(fixture.positions.isEmpty())
-        assertNull(fixture.snapshotIfAccepted())
+        assertTrue(fixture.savePosition(500L))
+        assertEquals(listOf(500L), fixture.positions)
+        assertEquals(QueueType.LIST, requireNotNull(fixture.snapshotIfAccepted()).queueType)
 
         fixture.changeTimeline(listOf("manual"))
         advanceUntilIdle()
         assertTrue(fixture.savePosition(600L))
-        assertEquals(listOf(600L), fixture.positions)
+        assertEquals(listOf(500L, 600L), fixture.positions)
     }
 
     @Test
@@ -595,7 +595,7 @@ class QueueCheckpointSchedulerTest {
         assertNull(fixture.snapshotIfAccepted())
 
         // stopAndClearPlayback switches the queue identity before clearing the player.
-        fixture.queue = EmptyQueue
+        fixture.clearQueueIdentity()
         fixture.changeTimeline(emptyList())
         advanceUntilIdle()
         assertEquals(emptyList<String>(), fixture.written.last())
@@ -775,6 +775,7 @@ class QueueCheckpointSchedulerTest {
         val items: List<String>,
         val queueType: QueueType,
         val queueData: QueueData?,
+        val title: String?,
     )
 
     internal class Fixture(
@@ -787,6 +788,7 @@ class QueueCheckpointSchedulerTest {
         var mutating = false
         var items = listOf("seed")
         var queue: Queue = EmptyQueue
+        var queueTitle: String? = null
         var hasTimelineChanges = false
         val snapshots = mutableListOf<Snapshot>()
         val written = mutableListOf<List<String>>()
@@ -797,6 +799,7 @@ class QueueCheckpointSchedulerTest {
             queue = { queue },
             transientMutation = { restoring || hydrating || mutating },
             mediaItemCount = { items.size },
+            title = { queueTitle },
         )
         val scheduler = QueueCheckpointScheduler(
             scope = { scope },
@@ -819,7 +822,7 @@ class QueueCheckpointSchedulerTest {
             beginReplacement(finite)
             if (clearInitialTimeline) {
                 finite.initialTimelineCleared = true
-                changeTimeline(emptyList())
+                checkpointGate.mutateTimeline { changeTimeline(emptyList()) }
             }
             return finite
         }
@@ -832,15 +835,32 @@ class QueueCheckpointSchedulerTest {
         }
 
         fun beginReplacement(nextQueue: Queue) {
+            checkpointGate.beginReplacement(nextQueue)
             queue = nextQueue
-            checkpointGate.beginReplacement()
+            queueTitle = null
         }
 
         fun installTimeline(next: List<String>) {
-            (queue as? YouTubePlaylistQueue)?.timelineInstalled = true
-            changeTimeline(next)
+            checkpointGate.mutateTimeline {
+                (queue as? YouTubePlaylistQueue)?.timelineInstalled = true
+                changeTimeline(next)
+            }
             checkpointGate.onReplacementInstalled(queue)
             scheduler.request()
+        }
+
+        fun finishReplacement(replacement: Queue = queue) {
+            checkpointGate.onReplacementFinished(replacement)
+            scheduler.request()
+        }
+
+        fun installExternalTimeline(next: List<String>, installedQueue: Queue = EmptyQueue, title: String? = null) {
+            finishReplacement()
+            checkpointGate.installExternalTimeline({ changeTimeline(next) }, {
+                queue = installedQueue
+                queueTitle = title
+                queue
+            }, scheduler::request)
         }
 
         fun addItemsByUser(next: List<String>) {
@@ -863,6 +883,7 @@ class QueueCheckpointSchedulerTest {
 
         fun clearQueueIdentity() {
             queue = EmptyQueue
+            queueTitle = null
             checkpointGate.onUserClear()
             scheduler.request()
         }
@@ -873,9 +894,10 @@ class QueueCheckpointSchedulerTest {
             if (TeardownQueuePersistence.shouldSave(enabled, items.size, hasTimelineChanges)) snapshotIfAccepted() else null
 
         fun snapshot(): Snapshot {
-            val persisted = (if (items.isEmpty()) EmptyQueue else queue).toPersistQueue(null, emptyList(), 0, 0L)
+            val persisted = (if (items.isEmpty()) EmptyQueue else checkpointGate.persistenceQueue)
+                .toPersistQueue(checkpointGate.persistenceTitle.takeIf { items.isNotEmpty() }, emptyList(), 0, 0L)
             return Snapshot(
-                persistence.checkpointOrder.nextSnapshot(), items.toList(), persisted.queueType, persisted.queueData,
+                persistence.checkpointOrder.nextSnapshot(), items.toList(), persisted.queueType, persisted.queueData, persisted.title,
             ).also { snapshots += it }
         }
 
