@@ -926,7 +926,7 @@ fun UpdateScreen(
             },
             title = {
                 Text(
-                    text = stringResource(R.string.error_loading_changelog),
+                    text = stringResource(R.string.update_error_title),
                     style = MaterialTheme.typography.headlineSmall,
                 )
             },

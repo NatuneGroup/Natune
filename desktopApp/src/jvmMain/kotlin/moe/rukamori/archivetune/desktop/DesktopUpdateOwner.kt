@@ -8,11 +8,13 @@ import moe.rukamori.archivetune.shared.domain.settings.UpdateOffer
 import moe.rukamori.archivetune.shared.domain.update.UpdateDownloadState
 import moe.rukamori.archivetune.shared.domain.update.UpdateInstallMode
 import moe.rukamori.archivetune.shared.domain.update.UpdateInstallProfile
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m6_update_build_removed
 import moe.rukamori.archivetune.shared.ui.settings.UpdateCommit
 import moe.rukamori.archivetune.shared.ui.settings.UpdateFeedResult
+import org.jetbrains.compose.resources.getString
 import java.nio.file.Path
 import java.util.Locale
-import kotlin.io.path.Path
 
 /** Channel the desktop artifact matcher uses per release naming: `natune-desktop-<os>-<arch>-<version>.<ext>`. */
 internal class DesktopUpdateOwner(
@@ -61,6 +63,8 @@ internal class DesktopUpdateOwner(
         installedCode = installedCode,
         scope = graph.scope,
         nowMs = { System.currentTimeMillis() },
+        checker = checker,
+        buildRemovedMessage = { getString(Res.string.m6_update_build_removed) },
     )
 
     /** The page's feed check: a verified newer candidate offers itself; anything else is informational. */

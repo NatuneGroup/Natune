@@ -1937,10 +1937,46 @@ jobs:
               exit 0
             fi
           else
-            if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            if ! EXISTING_RELEASE="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish,body 2> "$RUNNER_TEMP/nightly-release-error")"; then
+              if ! grep -qiE 'release not found|HTTP 404' "$RUNNER_TEMP/nightly-release-error"; then
+                echo "::error::Nightly release $TAG_NAME could not be verified; refusing to replace it."
+                exit 1
+              fi
+              EXISTING_RELEASE=""
             fi
-            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" >/dev/null 2>&1; then
+            if [[ -n "$EXISTING_RELEASE" ]] &&
+               ! jq -e --arg sha "$COMMIT_SHA" --arg code "$VERSION_CODE" \
+                 '.targetCommitish == $sha and (.body | test("at-build:" + $code + "([^0-9]|$)"))' \
+                 <<< "$EXISTING_RELEASE" >/dev/null; then
+              echo "::error::Nightly release $TAG_NAME belongs to another build; refusing to replace it."
+              exit 1
+            fi
+            if ! EXISTING_TAG="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" \
+              2> "$RUNNER_TEMP/nightly-tag-error")"; then
+              if ! grep -q 'HTTP 404' "$RUNNER_TEMP/nightly-tag-error"; then
+                echo "::error::Nightly tag $TAG_NAME could not be verified; refusing to replace it."
+                exit 1
+              fi
+              EXISTING_TAG=""
+            fi
+            if [[ -n "$EXISTING_TAG" ]]; then
+              TAG_OBJECT="$(jq -c '.object' <<< "$EXISTING_TAG")"
+              # Annotated tags point at tag objects; resolve them before comparing the commit.
+              for DEPTH in {1..5}; do
+                if [[ "$(jq -r '.type' <<< "$TAG_OBJECT")" != tag ]]; then break; fi
+                TAG_OBJECT="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r '.sha' <<< "$TAG_OBJECT")" --jq '.object')"
+              done
+              if ! jq -e --arg sha "$COMMIT_SHA" '.type == "commit" and .sha == $sha' \
+                   <<< "$TAG_OBJECT" >/dev/null; then
+                echo "::error::Nightly tag $TAG_NAME belongs to another commit; refusing to replace it."
+                exit 1
+              fi
+            fi
+            # Only a rerun with the same commit and build code may replace its own release.
+            if [[ -n "$EXISTING_RELEASE" ]]; then
+              gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            elif [[ -n "$EXISTING_TAG" ]]; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" >/dev/null
             fi
             git tag -d "$TAG_NAME" >/dev/null 2>&1 || true
@@ -2035,6 +2071,11 @@ jobs:
         run: |
           set -euo pipefail
           KEEP=5
+          if ! FEED_TAG="$(gh release download update-feed --repo "$GITHUB_REPOSITORY" \
+            --pattern nightly.json --output - | jq -er '.tag | select(type == "string" and test("^N[0-9]{8}([0-9]{4})?$"))')"; then
+            echo "::warning::Cannot read the published nightly.json tag; skipping nightly pruning."
+            exit 0
+          fi
           # Only N<digits> tags are nightly releases, so stable v* tags, update-feed and local-* never match.
           # Drafts and releases without a publish time cannot be ordered, so they are left alone.
           NIGHTLY_RELEASES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
@@ -2047,7 +2088,7 @@ jobs:
               awk -F'\t' -v keep="$KEEP" 'NR > keep { print $1 }'
           )
           for NIGHTLY_TAG in "${SUPERSEDED[@]}"; do
-            if [[ "$NIGHTLY_TAG" == "$TAG_NAME" ]]; then
+            if [[ "$NIGHTLY_TAG" == "$TAG_NAME" || "$NIGHTLY_TAG" == "$FEED_TAG" ]]; then
               continue
             fi
             if gh release delete "$NIGHTLY_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then

@@ -298,8 +298,24 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 pass
             elif args[:2] == ["release", "view"] and "publishedAt" in args:
                 print("2030-01-01T00:00:00Z")
-            elif args[:2] == ["release", "view"] or (args[0] == "api" and "/git/ref/tags/" in args[1]):
-                sys.exit(1)
+            elif args[:2] == ["release", "view"]:
+                if os.environ.get("RELEASE_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                sha = os.environ.get("EXISTING_RELEASE_SHA")
+                if not sha:
+                    sys.exit("release not found")
+                print(json.dumps({"targetCommitish": sha, "body": os.environ.get("EXISTING_RELEASE_BODY", "")}))
+            elif args[0] == "api" and "/git/ref/tags/" in args[1]:
+                if os.environ.get("TAG_READ_ERROR"):
+                    sys.exit("HTTP 503")
+                sha = os.environ.get("EXISTING_TAG_SHA")
+                if not sha:
+                    sys.exit("gh: Not Found (HTTP 404)")
+                print(json.dumps({"object": {"type": os.environ.get("EXISTING_TAG_TYPE", "commit"), "sha": sha}}))
+            elif args[0] == "api" and "/git/tags/" in args[1]:
+                print(json.dumps({"type": "commit", "sha": os.environ["ANNOTATED_COMMIT_SHA"]}))
+            elif args[:2] == ["release", "delete"] or (args[0] == "api" and "DELETE" in args):
+                pass
             else:
                 sys.exit("Unexpected GitHub command: " + repr(args))
         """)
@@ -314,6 +330,145 @@ class ReleaseWorkflowTest(unittest.TestCase):
                            RUNNER_TEMP=str(temporary), GH_CALLS=str(root / "gh-calls"), GH_TOKEN="",
                            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], **(flags or {}))
         return result, names
+
+    def test_nightly_refuses_another_build_without_deleting_or_creating(self):
+        for flags in (
+            {"EXISTING_RELEASE_SHA": "b" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9001 -->"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:9002 -->"},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "<!-- at-build:90010 -->"},
+            {"EXISTING_TAG_SHA": "b" * 40},
+            {"EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001", "EXISTING_TAG_SHA": "b" * 40},
+            {"RELEASE_READ_ERROR": "1", "EXISTING_TAG_SHA": "a" * 40},
+            {"TAG_READ_ERROR": "1", "EXISTING_RELEASE_SHA": "a" * 40, "EXISTING_RELEASE_BODY": "at-build:9001"},
+        ):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("::error::Nightly", result.stdout)
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertFalse(any(args[:2] in (["release", "delete"], ["release", "create"]) or
+                                     "DELETE" in args for args in calls))
+
+    def test_nightly_same_build_rerun_and_its_bare_tag_can_be_replaced(self):
+        for kind in ("release", "bare", "annotated"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                flags = {"EXISTING_TAG_SHA": "a" * 40}
+                if kind == "annotated":
+                    flags.update(EXISTING_TAG_TYPE="tag", EXISTING_TAG_SHA="c" * 40, ANNOTATED_COMMIT_SHA="a" * 40)
+                if kind == "release":
+                    flags.update(EXISTING_RELEASE_SHA="a" * 40, EXISTING_RELEASE_BODY="<!-- at-build:9001 -->")
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                self.assertEqual(1, sum(args[:2] == ["release", "create"] for args in calls))
+                self.assertEqual(1, sum(args[:2] == ["release", "delete"] or "DELETE" in args for args in calls))
+                self.assertTrue((root / "nightly.json").is_file())
+
+    def prune_fixture(self, directory, manifest, *, unreadable=False):
+        root = Path(directory)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        tool(bin_dir, "gh", """
+            #!/usr/bin/env python3
+            import json, os, sys
+            args = sys.argv[1:]
+            with open(os.environ["GH_CALLS"], "a") as calls:
+                calls.write(json.dumps(args) + "\\n")
+            if args[:2] == ["release", "download"]:
+                if os.environ["UNREADABLE"] == "1":
+                    sys.exit(1)
+                print(os.environ["MANIFEST"])
+            elif args[0] == "api":
+                for minute in range(8):
+                    print(f"N20300101000{minute}\\t2030-01-01T00:0{minute}:00Z")
+            elif args[:2] != ["release", "delete"]:
+                sys.exit("Unexpected GitHub command: " + repr(args))
+        """)
+        result = bash_step("Keep only the newest five nightly releases", root,
+                           TAG_NAME="N203001010007", GITHUB_REPOSITORY="NatuneGroup/Natune",
+                           GH_CALLS=str(root / "gh-calls"), MANIFEST=manifest,
+                           UNREADABLE="1" if unreadable else "0",
+                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+        calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+        return result, calls
+
+    def test_prune_preserves_the_published_feed_tag_even_outside_the_newest_five(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, calls = self.prune_fixture(directory, '{"tag":"N203001010001"}')
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(["N203001010002", "N203001010000"],
+                             [args[2] for args in calls if args[:2] == ["release", "delete"]])
+
+    def test_prune_deletes_nothing_when_the_manifest_cannot_be_read_or_parsed(self):
+        for manifest, unreadable in (("", True), ("not json", False), ('{"tag":null}', False),
+                                     ('{"tag":"v1.2.3"}', False)):
+            with self.subTest(manifest=manifest, unreadable=unreadable), tempfile.TemporaryDirectory() as directory:
+                result, calls = self.prune_fixture(directory, manifest, unreadable=unreadable)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("::warning::", result.stdout)
+                self.assertFalse(any(args[:2] == ["release", "delete"] for args in calls))
+                self.assertFalse(any(args[0] == "api" for args in calls))
+
+    def test_prepare_allocates_minute_tags_and_bumps_release_and_bare_tag_collisions(self):
+        for occupied in ("free", "collisions", "exhausted"):
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "app").mkdir()
+                shutil.copyfile(ROOT / "app/build.gradle.kts", root / "app/build.gradle.kts")
+                (root / ".github/scripts").mkdir(parents=True)
+                shutil.copyfile(ROOT / ".github/scripts/next-version.py", root / ".github/scripts/next-version.py")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                tool(bin_dir, "git", "#!/bin/sh\nexit 0\n")
+                tool(bin_dir, "date", """
+                    #!/usr/bin/env python3
+                    from datetime import datetime, timedelta, timezone
+                    import sys
+                    args = sys.argv[1:]
+                    moment = datetime(2030, 1, 1, 23, 59, tzinfo=timezone.utc)
+                    if "-d" in args:
+                        text = args[args.index("-d") + 1]
+                        moment = datetime.strptime(text, "%Y-%m-%d %H:%M:%S UTC +1 minute").replace(tzinfo=timezone.utc) + timedelta(minutes=1)
+                    print(int(moment.timestamp()) if args[-1] == "+%s" else moment.strftime(args[-1][1:]))
+                """)
+                tool(bin_dir, "gh", """
+                    #!/usr/bin/env python3
+                    import json, os, sys
+                    args = sys.argv[1:]
+                    with open(os.environ["GH_CALLS"], "a") as calls:
+                        calls.write(json.dumps(args) + "\\n")
+                    if os.environ["OCCUPIED"] == "exhausted":
+                        sys.exit(0)
+                    if os.environ["OCCUPIED"] == "collisions":
+                        if args[:3] == ["release", "view", "N203001012359"]:
+                            sys.exit(0)
+                        if args[:2] == ["api", "repos/NatuneGroup/Natune/git/ref/tags/N203001020000"]:
+                            sys.exit(0)
+                    sys.exit(1)
+                """)
+                environment = os.environ.copy()
+                environment.update(FORCE="true", GITHUB_REPOSITORY="NatuneGroup/Natune", GITHUB_SHA="a" * 40,
+                                   GITHUB_OUTPUT=str(root / "output"), GH_CALLS=str(root / "gh-calls"),
+                                   OCCUPIED=occupied, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+                result = subprocess.run(["bash", "-c", step_script("Decide whether to build", ROOT / ".github/workflows/nightly.yml")],
+                                        cwd=root, env=environment, capture_output=True, text=True, timeout=30)
+                if occupied == "exhausted":
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn("after 20 tries", result.stdout)
+                    self.assertFalse((root / "output").exists())
+                    self.assertEqual(20, len((root / "gh-calls").read_text().splitlines()))
+                    continue
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                outputs = dict(line.split("=", 1) for line in (root / "output").read_text().splitlines())
+                expected = "N203001020001" if occupied == "collisions" else "N203001012359"
+                self.assertEqual(expected, outputs["tag_name"])
+                self.assertEqual(expected, outputs["version_name"])
+                self.assertRegex(outputs["tag_name"], r"^N[0-9]{12}$")
+                self.assertEqual("true", outputs["should_build"])
+                self.assertEqual("15.1.0", outputs["package_version"])
+                self.assertEqual(str(1893542340 + 6833), outputs["version_code"])
 
     def test_unsigned_nightly_and_stable_publish_the_channel_inventory_and_private_manifest(self):
         for channel, count in (("nightly", 16), ("stable", 17)):
