@@ -39,6 +39,8 @@ interface PlayerNativeControls {
     fun setVolume(volume: Float)
     fun seekStep(forward: Boolean)
     fun onAction(action: PlayerAction, occurrenceId: String?)
+    /** Hosts may own a separate lyrics action menu; the default retains the existing real More action. */
+    fun onLyricsMenu(occurrenceId: String?) = onAction(PlayerAction.MORE, occurrenceId)
 }
 
 internal fun PlayerNativeState.matches(playback: PlaybackSnapshot?): Boolean =

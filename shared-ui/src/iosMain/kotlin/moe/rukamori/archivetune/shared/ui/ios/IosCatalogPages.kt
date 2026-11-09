@@ -58,13 +58,17 @@ internal fun iosCatalogGraphPage(
     back: () -> Unit,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage? = when (route.destination) {
-    ArchiveDestination.HOME -> iosHomePage(graph, owners.lists, openRoute)
+    ArchiveDestination.HOME -> iosHomePage(graph, owners.lists, openRoute) { menu.open(it) }
     ArchiveDestination.DISCOVERY -> iosDiscoveryPage(graph, owners.lists)
     ArchiveDestination.CHARTS -> iosChartsPage(graph, owners.lists)
     ArchiveDestination.MOODS -> iosMoodsPage(graph)
     ArchiveDestination.RELEASES -> iosReleasesPage(graph)
     ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
-        iosProviderSearchPage(graph, owners, route) { openRoute(ArchiveRoutes.musicRecognition()) }
+        iosProviderSearchPage(graph, owners, route) { openRoute(ArchiveRoutes.musicRecognition()) }.let { page ->
+            if (route.destination == ArchiveDestination.SEARCH && page is ArchiveGraphPage.Search) {
+                page.copy(discovery = iosDiscoveryPage(graph, owners.lists) as ArchiveGraphPage.Discovery)
+            } else page
+        }
     ArchiveDestination.ALBUM ->
         if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
             iosSpotifyAlbumPage(graph, host, owners.lists, route, menu, openRoute, back)

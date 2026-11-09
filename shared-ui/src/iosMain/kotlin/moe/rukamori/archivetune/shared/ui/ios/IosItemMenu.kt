@@ -35,6 +35,10 @@ internal class IosItemMenuState {
     var canvasSaveTarget: ContentItem? by mutableStateOf(null)
     var canvasResult: org.jetbrains.compose.resources.StringResource? by mutableStateOf(null)
 
+    var lyricsMenu by mutableStateOf(false)
+        private set
+    var playerMenu by mutableStateOf(false)
+        private set
     var target: ContentOccurrence? by mutableStateOf(null)
         private set
 
@@ -54,10 +58,17 @@ internal class IosItemMenuState {
 
     fun open(occurrence: ContentOccurrence, playlistId: String? = null) {
         target = occurrence
+        playerMenu = false
+        lyricsMenu = false
         this.playlistId = playlistId
     }
 
+    fun openLyrics(occurrence: ContentOccurrence) { open(occurrence); lyricsMenu = true }
+    fun openPlayer(occurrence: ContentOccurrence) { open(occurrence); playerMenu = true }
+
     fun dismiss() {
+        lyricsMenu = false
+        playerMenu = false
         target = null
         playlistId = null
         artworkTarget = null
@@ -143,6 +154,7 @@ internal fun IosItemMenuDialog(
     playlistMenus: IosPlaylistMenuHost,
     sleepSheet: IosSleepTimerSheetState,
     tempoSheet: IosTempoPitchSheetState,
+    tempoActions: IosTempoPitchActions,
 ) {
     IosLyricsToolsDialogs(graph)
     IosCanvasSaveDialog(menu, graph)
@@ -164,7 +176,7 @@ internal fun IosItemMenuDialog(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box {
                 if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
-                    IosSongMenu(menu, graph, host, occurrence, openRoute, sleepSheet, tempoSheet)
+                    IosSongMenu(menu, graph, host, occurrence, openRoute, sleepSheet, tempoSheet, tempoActions)
                 } else if (
                     occurrence.item.ref.kind == ContentKind.PLAYLIST &&
                     occurrence.item.ref.provider == ContentProvider.LOCAL.id

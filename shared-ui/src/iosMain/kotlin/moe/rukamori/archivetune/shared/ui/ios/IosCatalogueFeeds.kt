@@ -3,6 +3,13 @@ package moe.rukamori.archivetune.shared.ui.ios
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.map
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
+import moe.rukamori.archivetune.shared.domain.repository.QueueStart
+import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.home.variants.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -262,6 +269,7 @@ internal fun iosHomePage(
     graph: IosSessionGraph,
     lists: IosCatalogueOwners,
     openRoute: (String) -> Unit,
+    onMore: (ContentOccurrence) -> Unit,
 ): ArchiveGraphPage {
     val saved by graph.settings.snapshots.collectAsState()
     val available = resolvedHomeSources(saved?.get(ActiveHomeSourcesKey).orEmpty(),
@@ -281,7 +289,7 @@ internal fun iosHomePage(
             }
         }
     LaunchedEffect(feed) { feed.reload() }
-    val showChips = graph.settings.snapshots.value?.get(ShowHomeCategoryChipsKey) ?: true
+    val showChips = saved?.get(ShowHomeCategoryChipsKey) ?: true
     // Hiding the row while a chip filters the feed clears it, as the Android home does.
     LaunchedEffect(showChips) {
         if (!showChips && feed.selectedChip != null) feed.selectChip(null)
@@ -291,31 +299,90 @@ internal fun iosHomePage(
     val shelves = feed.shelves.filterBlockedSongs(blocked).map { shelf -> shelf.toHomeShelf(openRoute) }
     SideEffect { shelves.forEach { lists.recordShelf(IOS_HOME_REQUEST, it.key, it.items) } }
     val snapshot by graph.player.snapshot.collectAsState()
-    return ArchiveGraphPage.Home(
-        source = HomeSource.YOUTUBE,
-        // The Spotify catalog home and the QQ source have no owner on this host, so the switcher stays hidden.
-        availableSources = available,
-        sourceChange = sourceChange,
-        design = HomeFeedDesign.Classic,
-        shelves = shelves,
-        page =
-            PagedContentState(
-                request = IOS_HOME_REQUEST,
-                loading = feed.loading,
-                initialized = feed.initialized,
-                failed = feed.failed,
-                continuation = feed.continuation,
-            ),
-        loadMore = feed::loadMore,
-        retry = feed::reload,
-        activeIds = setOfNotNull(snapshot?.occurrenceId),
-        playing = snapshot?.playWhenReady == true,
-        refreshing = feed.refreshing,
-        refresh = feed::reload,
+    val recent by produceState<List<ContentOccurrence>>(emptyList(), graph, blocked, feed.refreshing) {
+        value = try {
+            graph.history.page(HistoryOrigin.LOCAL).events.map { it.item }
+                .filter { it.item.ref.kind == ContentKind.SONG && blocked.none { denied -> denied.provider == it.item.ref.provider && denied.id == it.item.ref.id } }
+                .distinctBy { it.item.ref }.take(15)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { emptyList() }
+    }
+    val speedDial by produceState<List<ContentOccurrence>>(emptyList(), saved?.get(SpeedDialSongIdsKey), graph) {
+        value = try {
+            parseSpeedDialPins(saved?.get(SpeedDialSongIdsKey).orEmpty()).filter { it.type == SpeedDialPinType.SONG }
+            .take(64).mapNotNull { pin -> graph.library.findSong(pin.id, ContentProvider.YOUTUBE.id)?.let { item ->
+                ContentOccurrence("home-pin:${pin.id}", item)
+            } }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { graph.report("home pins could not be read"); emptyList() }
+    }
+    val accountPlaylists by remember(graph) {
+        graph.libraryContent.playlistRows().map { rows -> rows.filter { it.browseId != null }.map { row ->
+            ContentOccurrence("home-account:${row.item.ref.id}", row.item)
+        } }
+    }.collectAsState(emptyList())
+    val sections = shelves.map { HomeVariantSection(it.key, it.title, items = it.items) }
+    val currentItem = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == snapshot?.occurrenceId }?.item
+    fun play(request: HomeVariantPlay) {
+        val row = when (request) {
+            is HomeVariantPlay.Shelf -> request.occurrences.getOrNull(request.startIndex)
+            is HomeVariantPlay.Single -> request.occurrence
+            is HomeVariantPlay.Watch -> request.occurrence
+            is HomeVariantPlay.QuickPick -> request.occurrence
+        } ?: return
+        val toggle = when (request) {
+            is HomeVariantPlay.Shelf -> request.toggleIfActive
+            is HomeVariantPlay.QuickPick, is HomeVariantPlay.Watch -> true
+            is HomeVariantPlay.Single -> false
+        }
+        if (toggle && currentItem?.ref == row.item.ref) {
+            if (snapshot?.playWhenReady == true) graph.player.pause() else graph.player.play()
+            return
+        }
+        if (request is HomeVariantPlay.Watch || request is HomeVariantPlay.QuickPick) {
+            graph.scope.launch {
+                try { graph.queue.startRadio(row.item.ref) { row.queuedEntry() } }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { graph.report("home radio could not be started") }
+            }
+        } else {
+            val rows = if (request is HomeVariantPlay.Shelf) request.occurrences else listOf(row)
+            lists.recordShelf(IOS_HOME_REQUEST, "home-action:${row.occurrenceId}", rows)
+            lists.playOccurrence(IOS_HOME_REQUEST, QueueStart(row.item.ref, row.occurrenceId, row.setVideoId))
+        }
+    }
+    val content = BitChordHomeContent(
+        recents = recent,
+        heroPicks = recent.take(4),
+        remoteQuickPicks = sections.firstOrNull { it.title.contains("quick picks", true) },
+        keepListening = recent.take(8),
+        speedDial = speedDial,
+        livePerformances = sections.filter { it.title.contains("live performance", true) },
+        accountName = saved?.get(AccountNameKey).orEmpty(),
+        accountPlaylists = accountPlaylists,
+        otherSections = sections.filterNot { it.title.contains("live performance", true) || it.title.contains("quick picks", true) },
+        minimal = saved?.get(MinimalHomeModeKey) == true,
+        isRefreshing = feed.refreshing,
+        isLoadingMore = feed.loading && shelves.isNotEmpty(),
+        canLoadMore = feed.continuation != null,
         chips = feed.chips.map { HomeVariantChip(it.stableKey, it.title) },
         selectedChipKey = feed.selectedChip?.stableKey,
-        selectChip = { tapped -> feed.chips.firstOrNull { it.stableKey == tapped.key }?.let(feed::selectChip) },
-        showChips = showChips,
+        showCategoryChips = showChips,
+    )
+    val state: BitChordHomeUi = when {
+        feed.loading && shelves.isEmpty() -> BitChordHomeUi.Loading
+        feed.failed && shelves.isEmpty() -> BitChordHomeUi.Failed()
+        feed.initialized && shelves.isEmpty() && recent.isEmpty() -> BitChordHomeUi.Empty
+        else -> BitChordHomeUi.Ready(content)
+    }
+    return ArchiveGraphPage.HomeBitChord(
+        source = moe.rukamori.archivetune.shared.ui.navigation.HomeSourceBinding(HomeSource.YOUTUBE, available, sourceChange),
+        state = state,
+        actions = BitChordHomeActions(::play, { openRoute(ArchiveRoutes.content(it)) }, onMore, feed::loadMore, feed::reload,
+            selectChip = { tapped -> feed.chips.firstOrNull { it.stableKey == tapped.key }?.let(feed::selectChip) }),
+        nowPlaying = HomeVariantNowPlaying(snapshot?.playWhenReady == true, currentItem?.ref),
+        accountName = content.accountName,
+        blurEffects = saved?.get(DisableBlurKey) != true,
     )
 }
 

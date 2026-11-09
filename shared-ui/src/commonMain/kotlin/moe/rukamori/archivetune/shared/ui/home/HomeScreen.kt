@@ -79,7 +79,8 @@ fun HomePageHeader(
                 Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = if (compact) Space.xs else Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
+                if (!moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current)
+                    Text(stringResource(Res.string.m4_home), style = desktopPageTitle(LocalDesktopLayout.current))
                 Spacer(Modifier.weight(1f))
                 if (!welcome.isNullOrBlank()) {
                     Text(

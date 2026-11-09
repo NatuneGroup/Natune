@@ -39,7 +39,7 @@ fun ModulesSettings(
     val unavailable = stringResource(Res.string.phone_not_available_on_ios)
     Scaffold(
         topBar = { LargeTopAppBar(title = { Column {
-            Text(stringResource(Res.string.phone_modules_title))
+            Text(stringResource(Res.string.source_modules))
             Text(stringResource(if (tab == 1) Res.string.phone_modules_catalogs else Res.string.phone_modules_subtitle), style = MaterialTheme.typography.bodyMedium)
         } }, navigationIcon = {
             LocalSettingsBack.current?.let { back -> IconButton(onClick = back) { Icon(painterResource(Res.drawable.m4_icon_arrow_back), stringResource(Res.string.m4_back)) } }
@@ -74,7 +74,7 @@ fun ModulesSettings(
                         }
                         Text(stringResource(if (enabled) Res.string.phone_modules_enabled_description else Res.string.phone_modules_off), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ModuleSummary(modules.count { it.enabled }, stringResource(Res.string.phone_modules_provider_enabled), Modifier.weight(1f))
+                            ModuleSummary(modules.count { it.enabled }, stringResource(Res.string.m6_source_enabled), Modifier.weight(1f))
                             ModuleSummary(modules.size, stringResource(Res.string.phone_modules_installed), Modifier.weight(1f))
                             ModuleSummary(0, stringResource(Res.string.phone_modules_catalogs), Modifier.weight(1f))
                         }
@@ -115,11 +115,11 @@ fun ModulesSettings(
                                     IconButton(onClick = { menu = module.id }) { Icon(painterResource(Res.drawable.m4hv_icon_more_vert), stringResource(Res.string.m4_more)) }
                                     DropdownMenu(menu == module.id, onDismissRequest = { menu = null }) {
                                         DropdownMenuItem(text = { Text(stringResource(Res.string.shared_module_information)) }, onClick = { menu = null; onConfigure(module.id) })
-                                        DropdownMenuItem(text = { Text(stringResource(Res.string.phone_modules_move_up)) }, enabled = !busy && index > 0, onClick = { menu = null; onMove(module.id, -1) })
-                                        DropdownMenuItem(text = { Text(stringResource(Res.string.phone_modules_move_down)) }, enabled = !busy && index < modules.lastIndex, onClick = { menu = null; onMove(module.id, 1) })
+                                        DropdownMenuItem(text = { Text(stringResource(Res.string.m4_move_up)) }, enabled = !busy && index > 0, onClick = { menu = null; onMove(module.id, -1) })
+                                        DropdownMenuItem(text = { Text(stringResource(Res.string.m4_move_down)) }, enabled = !busy && index < modules.lastIndex, onClick = { menu = null; onMove(module.id, 1) })
                                         DropdownMenuItem(text = { Column { Text(stringResource(Res.string.phone_modules_check)); Text(unavailable, style = MaterialTheme.typography.bodySmall) } }, enabled = false, onClick = {})
                                         DropdownMenuItem(text = { Column { Text(stringResource(Res.string.phone_modules_check_update)); Text(unavailable, style = MaterialTheme.typography.bodySmall) } }, enabled = false, onClick = {})
-                                        DropdownMenuItem(text = { Text(stringResource(Res.string.phone_modules_remove)) }, enabled = !busy, onClick = { menu = null; removal = module })
+                                        DropdownMenuItem(text = { Text(stringResource(Res.string.ios_modules_remove)) }, enabled = !busy, onClick = { menu = null; removal = module })
                                     }
                                 }
                             } })
@@ -138,7 +138,7 @@ fun ModulesSettings(
     removal?.let { module ->
         AlertDialog(onDismissRequest = { removal = null }, title = { Text(stringResource(Res.string.phone_modules_remove_module_title)) },
             text = { Text(stringResource(Res.string.phone_modules_remove_module_description, module.name)) },
-            confirmButton = { TextButton(enabled = !busy, onClick = { removal = null; onRemove(module.id) }) { Text(stringResource(Res.string.phone_modules_remove)) } },
+            confirmButton = { TextButton(enabled = !busy, onClick = { removal = null; onRemove(module.id) }) { Text(stringResource(Res.string.ios_modules_remove)) } },
             dismissButton = { TextButton(onClick = { removal = null }) { Text(stringResource(Res.string.m6_cancel)) } })
     }
 }

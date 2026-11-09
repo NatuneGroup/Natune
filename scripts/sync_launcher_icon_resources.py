@@ -12,11 +12,26 @@ RES = ROOT / 'shared-ui/src/commonMain/composeResources'
 PACKAGE = ROOT / 'shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/settings'
 icons = json.loads((ROOT / 'IconPack/metadata.json').read_text())
 strings = ET.Element('resources')
+existing_labels = {}
+for resource_file in sorted((RES / 'values').glob('*.xml')):
+    if resource_file.name == 'phone_launcher_catalog_strings.xml':
+        continue
+    for item in ET.parse(resource_file).getroot().findall('string'):
+        existing_labels.setdefault(''.join(item.itertext()), item.attrib['name'])
+
+def shared_label(value, fallback):
+    name = existing_labels.get(value)
+    if name is None:
+        name = fallback
+        ET.SubElement(strings, 'string', name=name).text = value
+        existing_labels[value] = name
+    return name
+
 lines = ['package moe.rukamori.archivetune.shared.ui.settings', '',
          'import moe.rukamori.archivetune.shared.ui.resources.*', '',
          '/** The pinned IconPack catalog; regenerate with scripts/sync_launcher_icon_resources.py. */',
          'val SharedLauncherIconCatalog = listOf(',
-         '    LauncherIcon("default", Res.string.ios_icon_default, Res.drawable.phone_launcher_default, isDefault = true),']
+         '    LauncherIcon("default", Res.string.m6_default, Res.drawable.phone_launcher_default, isDefault = true),']
 assets = ROOT / 'iosApp/ArchiveTune/Assets.xcassets'
 shutil.copyfile(assets / 'AppIcon.appiconset/AppIcon-1024.png', RES / 'drawable/phone_launcher_default.png')
 for icon in icons:
@@ -25,10 +40,10 @@ for icon in icons:
         raise ValueError('Invalid icon identity')
     preview = ROOT / 'IconPack/previews' / (identifier + '.png')
     shutil.copyfile(preview, RES / 'drawable' / ('phone_launcher_' + identifier + '.png'))
-    ET.SubElement(strings, 'string', name='phone_launcher_name_' + identifier).text = icon['Name']
-    ET.SubElement(strings, 'string', name='phone_launcher_author_' + identifier).text = icon['Author']
+    name_label = shared_label(icon['Name'], 'phone_launcher_name_' + identifier)
+    author_label = shared_label(icon['Author'], 'phone_launcher_author_' + identifier)
     profile = json.dumps(icon.get('GitHubAuthorUrl', ''))
-    lines.append(f'    LauncherIcon("{identifier}", Res.string.phone_launcher_name_{identifier}, Res.drawable.phone_launcher_{identifier}, Res.string.phone_launcher_author_{identifier}, {profile}),')
+    lines.append(f'    LauncherIcon("{identifier}", Res.string.{name_label}, Res.drawable.phone_launcher_{identifier}, Res.string.{author_label}, {profile}),')
     destination = assets / ('NatuneIcon_' + identifier + '.appiconset')
     destination.mkdir(exist_ok=True)
     with Image.open(preview) as image:
@@ -44,5 +59,5 @@ lines.append(')')
 (PACKAGE / 'SharedLauncherIconCatalog.kt').write_text('\n'.join(lines) + '\n')
 ET.indent(strings)
 ET.ElementTree(strings).write(RES / 'values/phone_launcher_catalog_strings.xml', encoding='utf-8', xml_declaration=True)
-shutil.copyfile(ROOT / 'IconPack/LICENSE', RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt')
+(RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt').write_text((ROOT / 'IconPack/README.md').read_text() + '\n\n' + (ROOT / 'IconPack/LICENSE').read_text())
 print(f'Synced {len(icons)} pinned launcher icons and their attribution.')

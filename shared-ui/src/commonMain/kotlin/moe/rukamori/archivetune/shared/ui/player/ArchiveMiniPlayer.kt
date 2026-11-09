@@ -26,7 +26,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
+import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.LayoutDirection
+import kotlin.time.TimeSource
+import kotlin.math.abs
+import kotlin.math.exp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,7 +69,9 @@ internal fun ArchiveMiniPlayer(
     onAction: (PlayerAction) -> Unit,
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
 ) {
+    val phone = LocalAndroidPhonePresentation.current
     val playing = playback?.playWhenReady == true && playback.isEnded != true
     val matching = nativeState.matches(playback)
     val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, motion)
@@ -87,15 +101,45 @@ internal fun ArchiveMiniPlayer(
         // take Space from every focused control inside the strip. The claim is per surface and leaves text fields alone.
         BoxWithConstraints(modifier.fillMaxWidth()) {
             val barWidth = maxWidth
-            val compact = barWidth < 300.dp
+            val compact = barWidth < 300.dp || (phone && preferences[CompactMiniPlayerKey, false])
+            val direction = LocalLayoutDirection.current
+            val haptic = LocalHapticFeedback.current
+            var dragOffset by remember(playback?.occurrenceId) { mutableFloatStateOf(0f) }
+            val sensitivity = preferences[SwipeSensitivityKey, .73f].takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: .73f
+            val swipe = if (phone && preferences[SwipeThumbnailKey, true]) Modifier.pointerInput(playback?.occurrenceId, playback?.playbackGeneration, sensitivity, nativeState.canNext, nativeState.canPrevious) {
+                var started = TimeSource.Monotonic.markNow()
+                var distance = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { started = TimeSource.Monotonic.markNow(); distance = 0f; dragOffset = 0f },
+                    onDragCancel = { dragOffset = 0f },
+                    onHorizontalDrag = { change, amount ->
+                        val logical = if (direction == LayoutDirection.Rtl) -amount else amount
+                        if ((logical < 0 && nativeState.canNext) || (logical > 0 && nativeState.canPrevious)) {
+                            change.consume(); dragOffset += logical; distance += abs(logical)
+                        }
+                    },
+                    onDragEnd = {
+                        val velocity = distance / started.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
+                        val autoThreshold = (600.0 / (1.0 + exp(-(-11.44748 * sensitivity + 9.04945)))).toFloat()
+                        val changeSong = (abs(dragOffset) > 50f && velocity > sensitivity * -8.25f + 8.5f) || abs(dragOffset) > autoThreshold
+                        if (changeSong && matching) {
+                            if (preferences[EnableHapticFeedbackKey, true]) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (dragOffset > 0 && nativeState.canPrevious) onAction(PlayerAction.PREVIOUS)
+                            else if (dragOffset < 0 && nativeState.canNext) onAction(PlayerAction.NEXT)
+                        }
+                        dragOffset = 0f
+                    },
+                )
+            } else Modifier
             // The desktop host draws its own player bar in the shell, so this bar is only ever composed by a phone
             // host's bottom chrome; a narrow window keeps its compact single row.
-            if (!isWideTransportBar(barWidth)) {
+            if (phone || !isWideTransportBar(barWidth)) {
                 Column(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 56.dp)
+                        .heightIn(min = if (phone) { if (compact) 64.dp else 70.dp } else 56.dp)
+                        .then(swipe).graphicsLayer { translationX = if (direction == LayoutDirection.Rtl) -dragOffset else dragOffset }
                         .spaceTogglesPlayback(onPlayPause)
                         .clickable(onClick = onExpand)
                         .padding(horizontal = if (compact) 6.dp else 12.dp, vertical = 4.dp)
@@ -103,7 +147,7 @@ internal fun ArchiveMiniPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
                 ) {
-                    artwork(current.item, Modifier.size(if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(8.dp)))
+                    artwork(current.item, Modifier.size(if (phone) { if (compact) 44.dp else 52.dp } else if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(if (phone) 10.dp else 8.dp)))
                     Column(Modifier.weight(1f)) {
                         MarqueeText(current.item.title, style = MaterialTheme.typography.bodyMedium)
                         if (current.item.subtitle.isNotBlank()) {

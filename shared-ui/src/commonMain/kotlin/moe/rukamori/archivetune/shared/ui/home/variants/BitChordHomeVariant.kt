@@ -81,6 +81,9 @@ data class BitChordHomeContent(
     val isLoadingMore: Boolean = false,
     /** True while the owner has a continuation; the variant asks for more as the user nears the end. */
     val canLoadMore: Boolean = false,
+    val chips: List<HomeVariantChip> = emptyList(),
+    val selectedChipKey: String? = null,
+    val showCategoryChips: Boolean = true,
 )
 
 /**
@@ -94,6 +97,7 @@ class BitChordHomeActions(
     val menu: (ContentOccurrence) -> Unit,
     val loadMore: () -> Unit,
     val refresh: () -> Unit,
+    val selectChip: (HomeVariantChip) -> Unit = {},
 )
 
 private val BitChordHomeMaxWidth = 1_200.dp
@@ -115,6 +119,7 @@ fun BitChordHomeVariant(
     contentPadding: PaddingValues = LocalShellContentPadding.current,
     listState: LazyListState = rememberLazyListState(),
     thumbnailAspectRatio: HomeVariantThumbnailAspectRatio = { 1f },
+    greeting: (@Composable () -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         when (state) {
@@ -154,6 +159,7 @@ fun BitChordHomeVariant(
                     contentPadding = contentPadding,
                     listState = listState,
                     thumbnailAspectRatio = thumbnailAspectRatio,
+                    greeting = greeting,
                 )
         }
     }
@@ -169,6 +175,7 @@ private fun BitChordHomeFeed(
     contentPadding: PaddingValues,
     listState: LazyListState,
     thumbnailAspectRatio: HomeVariantThumbnailAspectRatio,
+    greeting: (@Composable () -> Unit)?,
 ) {
     val recentsTitle = stringResource(Res.string.m4hv_bitchord_recently_played)
     val jumpBackInTitle = stringResource(Res.string.m4hv_jump_back_in)
@@ -220,6 +227,13 @@ private fun BitChordHomeFeed(
                             .fillMaxWidth()
                             .align(Alignment.TopCenter),
                 ) {
+                    greeting?.let { header -> item(key = "home_greeting_title") { header() } }
+                    if (content.showCategoryChips && content.chips.isNotEmpty()) {
+                        item(key = "home-category-chips") {
+                            HomeVariantChipRow(content.chips, content.selectedChipKey, actions.selectChip)
+                        }
+                    }
+
                     if (content.recents.size > 1) {
                         item(key = "bitchord_recents", contentType = "recents") {
                             BitChordRecentsShelf(
