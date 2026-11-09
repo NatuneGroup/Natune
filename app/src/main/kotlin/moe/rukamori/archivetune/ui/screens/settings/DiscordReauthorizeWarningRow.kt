@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import moe.rukamori.archivetune.R
 
+@Composable
 internal fun DiscordReauthorizeWarningRow(
     onReauthorize: () -> Unit,
     enabled: Boolean,
