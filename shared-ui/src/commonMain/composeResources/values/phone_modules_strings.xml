@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="phone_modules_title">Modules</string>
+  <string name="phone_modules_subtitle">External audio providers and playback priority</string>
+  <string name="phone_modules_enabled">Use modules</string>
+  <string name="phone_modules_enabled_description">Try enabled providers in order, then use YouTube when no matching stream is available.</string>
+  <string name="phone_modules_off">Module playback is off. You can still manage providers.</string>
+  <string name="phone_modules_provider_enabled">Enabled</string>
+  <string name="phone_modules_installed">Installed</string>
+  <string name="phone_modules_catalogs">Catalogs</string>
+  <string name="phone_extensions_native">Built-in extensions</string>
+  <string name="phone_extensions_native_description">Built-in extensions have their own switches. Playback also follows the audio source settings and account requirements.</string>
+  <string name="phone_modules_empty">No modules installed</string>
+  <string name="phone_modules_empty_description">Import a provider file or add a direct URL to get started.</string>
+  <string name="phone_modules_import_file">Import file</string>
+  <string name="phone_modules_add_url">Add module URL</string>
+  <string name="phone_modules_add_catalog">Add catalog URL</string>
+  <string name="phone_modules_suggested_catalogs">Suggested catalogs</string>
+  <string name="phone_modules_natune_catalog">Natune modules</string>
+  <string name="phone_modules_upstream_catalog">ArchiveTune modules</string>
+  <string name="phone_extensions_catalog">Natune extensions catalog</string>
+  <string name="phone_modules_catalogs_empty">No catalogs added</string>
+  <string name="phone_modules_catalogs_empty_description">Add a catalog URL to find and install compatible providers.</string>
+  <string name="phone_modules_check_all">Check enabled modules</string>
+  <string name="phone_modules_check_updates">Check for updates</string>
+  <string name="phone_modules_move_up">Move up</string>
+  <string name="phone_modules_move_down">Move down</string>
+  <string name="phone_modules_check">Check module</string>
+  <string name="phone_modules_check_update">Check for update</string>
+  <string name="phone_modules_remove">Remove</string>
+  <string name="phone_modules_remove_module_title">Remove module?</string>
+  <string name="phone_modules_remove_module_description">The provider and its settings will be removed. Library entries and completed downloads will remain.</string>
+  <string name="phone_modules_order_hint">Tried from top to bottom. Drag a handle or use Move up and Move down.</string>
+  <string name="phone_modules_show_details">Show details</string>
+  <string name="phone_modules_diagnostics">Connection and diagnostics</string>
+</resources>

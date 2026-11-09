@@ -186,53 +186,10 @@ internal fun IosAboutPage(
     navigation: ShellNavigation,
 ) {
     val repository = remember(graph) { IosAboutRepository(graph.http) }
-    val scope = rememberCoroutineScope()
-    var contributorsState by remember { mutableStateOf<AboutContributorsState>(AboutContributorsState.Loading) }
-    var translationsState by remember { mutableStateOf<AboutTranslationsState>(AboutTranslationsState.Loading) }
-    var dialog by remember { mutableStateOf(AboutDialog.NONE) }
-    fun loadContributors() {
-        contributorsState = AboutContributorsState.Loading
-        scope.launch {
-            contributorsState = repository.contributors().fold(
-                onSuccess = { if (it.isEmpty()) AboutContributorsState.Empty else AboutContributorsState.Loaded(it) },
-                onFailure = { AboutContributorsState.Failed(AboutFailureMessages.requestFailed) },
-            )
-        }
-    }
-    fun loadTranslations() {
-        translationsState = AboutTranslationsState.Loading
-        scope.launch {
-            translationsState = repository.translations().fold(
-                onSuccess = { AboutTranslationsState.Loaded(it) },
-                onFailure = { AboutTranslationsState.Failed(AboutFailureMessages.requestFailed) },
-            )
-        }
-    }
-    LaunchedEffect(repository) { loadContributors() }
-    AboutSettings(
-        controller = controller,
-        isNightlyBuild = false,
-        updaterAvailable = false,
-        appName = stringResource(Res.string.app_name),
-        versionLine = iosApplicationVersion(),
-        distributionLabel = stringResource(Res.string.ios_about_distribution),
-        debugOrAbiLabel = UIDevice.currentDevice.model,
-        appLogo = { NatuneAboutLogo() },
+    moe.rukamori.archivetune.shared.ui.settings.HostedAboutSettings(
+        controller, iosApplicationVersion(), stringResource(Res.string.ios_about_distribution), UIDevice.currentDevice.model,
+        repository::contributors, repository::translations,
         memberAvatar = { url, _, modifier -> IosRemoteArtwork(url, graph.artworkLoader, modifier) },
-        contributorsState = contributorsState,
-        translationsState = translationsState,
-        licensesState = AboutLicensesState.Loaded(AboutBundledNotices.entries, bundledOnly = true),
-        activeDialog = dialog,
-        navigate = { navigation.open(it) },
-        onOpenUri = { openIosUri(it, graph::report) },
-        onRetryContributors = ::loadContributors,
-        onOpenTranslations = {
-            dialog = AboutDialog.TRANSLATION_CONTRIBUTORS
-            if (translationsState !is AboutTranslationsState.Loaded) loadTranslations()
-        },
-        onRetryTranslations = ::loadTranslations,
-        onOpenLicenses = { dialog = AboutDialog.DEPENDENCY_LICENSES },
-        onRetryLicenses = { },
-        onDismissDialog = { dialog = AboutDialog.NONE },
+        navigate = { navigation.open(it) }, openUri = { openIosUri(it, graph::report) },
     )
 }

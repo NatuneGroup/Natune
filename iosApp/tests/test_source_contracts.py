@@ -517,7 +517,7 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn('EQ_UNIT_BANDS = 24u', blend)
         port = (KOTLIN / "IosPlaybackPort.kt").read_text()
         self.assertIn('setTone(true, settings.toIosEqBands(), settings.iosInputGainDb)', port)
-        settings = (UI_IOS / "IosPlaybackSettingsPage.kt").read_text()
+        settings = (UI_COMMON / "settings/PhonePlaybackSettings.kt").read_text()
         self.assertIn('"skip_silence", "audio_normalization", "audio_offload"', settings)
         self.assertIn('enabled = false', settings)
         self.assertIn('Res.string.ios_dsp_limits', settings)
