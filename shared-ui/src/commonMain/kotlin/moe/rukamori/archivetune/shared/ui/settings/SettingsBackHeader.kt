@@ -24,9 +24,9 @@ val LocalSettingsBack = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 /** The one pinned back control a settings page draws when its host supplies [LocalSettingsBack]. */
 @Composable
-internal fun SettingsBackHeader(back: () -> Unit) {
+internal fun SettingsBackHeader(back: () -> Unit, title: org.jetbrains.compose.resources.StringResource? = null) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().heightIn(min = if (title != null) 64.dp else 48.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = back, modifier = Modifier.testTag("settings-back")) {
@@ -35,5 +35,6 @@ internal fun SettingsBackHeader(back: () -> Unit) {
                 contentDescription = stringResource(Res.string.m4_back),
             )
         }
+        title?.let { androidx.compose.material3.Text(stringResource(it), style = androidx.compose.material3.MaterialTheme.typography.titleLarge) }
     }
 }

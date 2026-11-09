@@ -147,3 +147,25 @@ is not supplied by this inventory. No local Gradle/JVM/Xcode build or lint.
 
 Implementation updates and residual differences will be recorded below as
 changes land; the table above describes the starting revision.
+
+## Shared settings presentation implementation
+
+The phone host now opts into a common segmented settings renderer and 33
+Android source references (431 row/group references). Reference titles and
+icons are shared Compose resources; vector geometry comes from Android with
+OS color references normalized to portable literals. Existing typed settings
+rows retain their callbacks and persisted keys. Unbound controls have no writer
+or action and show `Not available on iOS`. Conditional bound controls retain
+their existing preference-dependent availability.
+
+Content runtime language/country selection and Behavior presentation now live
+in commonMain. The Behavior statistics reset uses the existing history owner
+and a shared confirmation. Android Auto and AOD routes retain reference rows
+instead of a replacement informational/empty page. Developer diagnostics use
+the already supplied native slots. The iOS Update handoff block is removed
+from the ordinary settings page.
+
+These source references are an implementation aid, not pixel or compilation
+evidence. Android helper-drawn/custom controls and host service cards still
+need individual presentation ports; native dialogs and unsupported APIs remain
+explicit review items. Desktop does not opt into this renderer.
