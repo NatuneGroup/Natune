@@ -34,6 +34,7 @@ internal class IosUpdateOwner(graph: IosSessionGraph) {
             isNightlyBuild = isNightlyBuild,
             installedCode = installedCode,
             versionName = versionName,
+            artifactMatcher = { it.startsWith(IPA_PREFIX) && it.endsWith(IPA_SUFFIX) },
         ),
         nowMs = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     )
@@ -54,5 +55,7 @@ internal class IosUpdateOwner(graph: IosSessionGraph) {
 
     private companion object {
         const val COMMIT_HISTORY_COUNT = 20
+        const val IPA_PREFIX = "natune-ios-"
+        const val IPA_SUFFIX = ".ipa"
     }
 }

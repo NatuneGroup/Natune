@@ -163,14 +163,16 @@ class SharedUpdateChecker(
      * Offer semantics, ported exactly: only a verified build code strictly above the installed one is
      * offered (never a downgrade, never a same-code re-prompt), and the install URL is the direct
      * artifact link only when this build installs artifacts itself — [UpdateInstallMode.OPEN_URL]
-     * hosts land on the release page.
+     * hosts land on the release page, and only once that release carries this build's artifact.
      */
     fun eligibleOffer(release: ReleaseInfo, channel: UpdateChannel): UpdateOffer? {
         if (!profile.updaterAvailable) return null
         val code = releaseBuildCode(release, channel)
         val url = when (profile.installMode) {
             UpdateInstallMode.DIRECT_INSTALL -> release.downloadUrl
-            UpdateInstallMode.OPEN_URL -> release.htmlUrl
+            // A release whose optional artifact for this platform is still missing or failed to
+            // publish would send the user to a page with nothing to install.
+            UpdateInstallMode.OPEN_URL -> release.htmlUrl.takeIf { !release.downloadUrl.isNullOrBlank() }
             UpdateInstallMode.UNAVAILABLE -> null
         }
         // The digest describes the feed's artifact, so it only travels with a direct artifact link; an
