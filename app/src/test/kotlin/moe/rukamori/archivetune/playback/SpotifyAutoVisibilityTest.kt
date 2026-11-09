@@ -9,10 +9,10 @@ class SpotifyAutoVisibilityTest {
     fun disablingMetadataHidesCachedLaterPages() = runTest {
         val cache = AutoBrowseChildrenCache<String>()
         val folder = MusicService.SPOTIFY_LIKED
-        val cached = cache.children(folder, 0) { listOf("$folder/first", "$folder/second") }
+        val cached = cache.children(folder) { listOf("$folder/first", "$folder/second") }
         assertEquals(cached, spotifyAutoVisibleChildren(cached, true) { it })
 
-        val later = cache.children(folder, 1) { error("Must reuse the page-zero snapshot") }
+        val later = cache.children(folder) { error("Must reuse the folder snapshot") }
         assertEquals(emptyList<String>(), spotifyAutoVisibleChildren(later, false) { it }.autoBrowsePage(1, 1))
     }
 
