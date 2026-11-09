@@ -179,13 +179,18 @@ dependency. Native bindings retain file/image IO, observed output facts,
 package validation and process/restore operations. Module catalog/native
 extension operations without an iOS owner stay visible and unavailable.
 
-Launcher selection now uses a direct commonMain port of Android's current-icon
-card, search/sort, segmented rows, preview sizes and author attribution. All 20
-pinned IconPack choices are included. UIKit applies the alternate icon after
-its completion callback succeeds; a refused platform capability disables the
-same row with the iOS availability description. Native catalogs retain the
-legacy `ArchiveTuneAndroid` alias. The full iOS asset-catalog compile and device
-icon switching still require CI/device evidence.
+Launcher selection uses an iOS-source implementation of Android's current-icon
+card, search/sort, segmented rows, preview sizes and author attribution, rendered
+by the shared Compose iOS settings route. All 20 pinned IconPack choices are
+included. `LauncherIconScreen.kt`, `LauncherIconSettings.kt`, `SharedLauncherIconCatalog.kt`,
+its previews and catalog labels live in `shared-ui/src/iosMain`, not in Android packaging;
+the shared attribution and common license notice remain.
+`scripts/sync_launcher_icon_resources.py` reproduces those iOS resources and native
+asset catalogs. UIKit applies the alternate icon after its completion callback
+succeeds; a refused platform capability disables the same row with the iOS
+availability description. Native catalogs retain the legacy `ArchiveTuneAndroid`
+alias. The iOS asset-catalog compile and device icon switching still require
+CI/device evidence.
 
 Last.fm authorization prompts, the backup date picker and startup recovery
 surface now render in commonMain as well. The settings index retains Modules

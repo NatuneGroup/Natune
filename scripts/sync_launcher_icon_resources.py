@@ -8,16 +8,18 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-RES = ROOT / 'shared-ui/src/commonMain/composeResources'
-PACKAGE = ROOT / 'shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/settings'
+COMMON_RES = ROOT / 'shared-ui/src/commonMain/composeResources'
+RES = ROOT / 'shared-ui/src/iosMain/composeResources'
+PACKAGE = ROOT / 'shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings'
 icons = json.loads((ROOT / 'IconPack/metadata.json').read_text())
 strings = ET.Element('resources')
 existing_labels = {}
-for resource_file in sorted((RES / 'values').glob('*.xml')):
-    if resource_file.name == 'phone_launcher_catalog_strings.xml':
-        continue
-    for item in ET.parse(resource_file).getroot().findall('string'):
-        existing_labels.setdefault(''.join(item.itertext()), item.attrib['name'])
+for source in (COMMON_RES, RES):
+    for resource_file in sorted((source / 'values').glob('*.xml')):
+        if resource_file.name == 'phone_launcher_catalog_strings.xml':
+            continue
+        for item in ET.parse(resource_file).getroot().findall('string'):
+            existing_labels.setdefault(''.join(item.itertext()), item.attrib['name'])
 
 def shared_label(value, fallback):
     name = existing_labels.get(value)
@@ -59,5 +61,5 @@ lines.append(')')
 (PACKAGE / 'SharedLauncherIconCatalog.kt').write_text('\n'.join(lines) + '\n')
 ET.indent(strings)
 ET.ElementTree(strings).write(RES / 'values/phone_launcher_catalog_strings.xml', encoding='utf-8', xml_declaration=True)
-(RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt').write_text((ROOT / 'IconPack/README.md').read_text() + '\n\n' + (ROOT / 'IconPack/LICENSE').read_text())
+(COMMON_RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt').write_text((ROOT / 'IconPack/README.md').read_text() + '\n\n' + (ROOT / 'IconPack/LICENSE').read_text())
 print(f'Synced {len(icons)} pinned launcher icons and their attribution.')
