@@ -19,7 +19,7 @@ import org.jetbrains.compose.resources.painterResource
 import platform.Foundation.NSUUID
 
 @OptIn(ExperimentalForeignApi::class)
-private class IosSongSourceActions(
+internal class IosSongSourceActions(
     private val graph: IosSessionGraph,
     private val menu: IosItemMenuState,
     private val target: ContentOccurrence,
@@ -84,15 +84,6 @@ internal fun IosSongSourceDialog(graph: IosSessionGraph, menu: IosItemMenuState,
     val state by actions.state.collectAsState()
     LaunchedEffect(actions) { graph.settings.snapshots.collect { actions.refreshSongSources(track) } }
     PlayerQueueSongSourceDialog(track, state, actions,
-        icon = { mark, tint, modifier ->
-            val resource = when (mark) {
-                PlayerQueueMenuIcon.SEARCH -> Res.drawable.m4c_icon_search
-                PlayerQueueMenuIcon.CLOSE -> Res.drawable.m12_icon_player_close
-                PlayerQueueMenuIcon.DONE -> Res.drawable.m4hv_icon_done
-                PlayerQueueMenuIcon.TUNE -> Res.drawable.m4hv_icon_discover_tune
-                else -> Res.drawable.m6_icon_account
-            }
-            Icon(painterResource(resource), null, modifier, tint)
-        }, artwork = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
+        icon = ::SharedPlayerQueueIcon, artwork = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         onDismiss = { menu.sourceTarget = null })
 }

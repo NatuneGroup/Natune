@@ -78,6 +78,8 @@ fun PlayerQueueMenu(
     canvasSection: LazyListScope.() -> Unit = {},
     lyricsSection: LazyListScope.() -> Unit = {},
 ) {
+    val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+    val unavailable = stringResource(Res.string.phone_not_available_on_ios)
     val scope = rememberCoroutineScope()
     val queueItem = trigger as? PlayerQueueMenuTrigger.QueueItem
     val isQueue = queueItem != null
@@ -104,11 +106,12 @@ fun PlayerQueueMenu(
 
     val gridItems =
         buildList {
-            if (state.castAvailable) {
+            if (state.castAvailable || phone) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_cast,
-                        enabled = true,
+                        unavailable = phone && !state.castAvailable,
+                        enabled = state.castAvailable,
                         leading = {
                             icon(
                                 if (state.castConnected) PlayerQueueMenuIcon.CAST_CONNECTED else PlayerQueueMenuIcon.CAST,
@@ -120,11 +123,12 @@ fun PlayerQueueMenu(
                     ),
                 )
             }
-            if (!track.isLocal && state.radioSupported) {
+            if (!track.isLocal && (state.radioSupported || phone)) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_start_radio,
-                        enabled = true,
+                        unavailable = phone && !state.radioSupported,
+                        enabled = state.radioSupported,
                         leading = { icon(PlayerQueueMenuIcon.RADIO, LocalContentColor.current, Modifier.size(28.dp)) },
                         onClick = {
                             actions.startRadio(track)
@@ -206,11 +210,12 @@ fun PlayerQueueMenu(
                     ),
                 )
             }
-            if (!isQueue && state.alwaysOnDisplaySupported) {
+            if (!isQueue && (state.alwaysOnDisplaySupported || phone)) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_aod_mode,
-                        enabled = true,
+                        unavailable = phone && !state.alwaysOnDisplaySupported,
+                        enabled = state.alwaysOnDisplaySupported,
                         leading = { icon(PlayerQueueMenuIcon.BEDTIME, LocalContentColor.current, Modifier.size(28.dp)) },
                         onClick = {
                             actions.setAodMode()
@@ -310,6 +315,8 @@ fun PlayerQueueMenu(
                                     Modifier,
                                 )
                             },
+                            enabled = state.speedDialSupported,
+                            supporting = unavailable.takeUnless { state.speedDialSupported },
                             onClick = {
                                 actions.toggleSpeedDialPin(track)
                                 onDismiss()
@@ -356,7 +363,7 @@ fun PlayerQueueMenu(
                     item { Spacer(modifier = Modifier.height(12.dp)) }
                 }
 
-                if (!track.isLocal && state.downloadsSupported) {
+                if (!track.isLocal && (state.downloadsSupported || phone)) {
                     item {
                         PlayerQueueSurface(modifier = Modifier.padding(vertical = 6.dp)) {
                             when (state.download) {
@@ -366,7 +373,8 @@ fun PlayerQueueMenu(
                                         leading = {
                                             icon(PlayerQueueMenuIcon.OFFLINE, MaterialTheme.colorScheme.error, Modifier)
                                         },
-                                        onClick = { actions.removeDownload(track) },
+                                        onClick = { actions.removeDownload(track) }, enabled = state.downloadsSupported,
+                                        supporting = unavailable.takeUnless { state.downloadsSupported },
                                         isError = true,
                                     )
 
@@ -374,20 +382,24 @@ fun PlayerQueueMenu(
                                     PlayerQueueRow(
                                         headline = stringResource(Res.string.m5pq_downloading),
                                         leading = { CircularProgressIndicator(modifier = Modifier.size(24.dp)) },
-                                        onClick = { actions.removeDownload(track) },
+                                        onClick = { actions.removeDownload(track) }, enabled = state.downloadsSupported,
+                                        supporting = unavailable.takeUnless { state.downloadsSupported },
                                     )
 
                                 PlayerQueueDownloadState.NOT_DOWNLOADED ->
                                     PlayerQueueRow(
                                         headline = stringResource(Res.string.m5pq_action_download),
                                         leading = { icon(PlayerQueueMenuIcon.DOWNLOAD, LocalContentColor.current, Modifier) },
-                                        onClick = { actions.downloadTrack(track) },
+                                        onClick = { actions.downloadTrack(track) }, enabled = state.downloadsSupported,
+                                        supporting = unavailable.takeUnless { state.downloadsSupported },
                                     )
                             }
-                            if (state.externalDownloaderEnabled) {
+                            if (state.externalDownloaderEnabled || phone && !state.externalDownloaderSupported) {
                                 PlayerQueueDivider()
                                 PlayerQueueRow(
                                     headline = stringResource(Res.string.m5pq_open_with_downloader),
+                                    enabled = state.externalDownloaderSupported && state.externalDownloaderEnabled,
+                                    supporting = unavailable.takeUnless { state.externalDownloaderSupported },
                                     leading = { icon(PlayerQueueMenuIcon.DOWNLOAD, LocalContentColor.current, Modifier) },
                                     onClick = {
                                         onDismiss()

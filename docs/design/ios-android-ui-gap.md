@@ -191,3 +191,50 @@ Last.fm authorization prompts, the backup date picker and startup recovery
 surface now render in commonMain as well. The settings index retains Modules
 and Liquid glass in Android's Player/content group. All new strings are in
 shared Compose resources. Android UI and playback sources are unchanged.
+
+## Browsing, player and lyrics implementation
+
+- iOS opts into Android phone presentation through one composition local.
+  Desktop keeps its existing Metrolist PC branches, including narrow windows.
+- Phone song rows use Android's 72dp height, 56dp sleeves, 10dp radius,
+  semibold one-line titles, duration subtitles and icon overflow actions.
+- iOS Home binds the existing shared BitChord/Android feed to real remote
+  shelves, recent listens, speed-dial pins and linked account playlists.
+  Greeting and category chips scroll with the feed. Shelf playback still uses
+  the existing complete-list/queue owner; radio uses its existing radio path.
+- Library exposes the existing persisted sort/filter keys and playlist grid
+  setting; artists/albums use the phone grid. The existing owner re-reads the
+  lists after edits. Search embeds the existing Explore/Suggestions owner and
+  uses the inline microphone/source field and segmented tabs.
+- Mini player uses Android's 70dp/64dp heights and swipe threshold/velocity
+  formula, with a real monotonic clock, current-occurrence and direction guards.
+- Player More opens the shared Apple/Material player menu. Lyrics More opens
+  its own shared action list, with the Apple popup anchored to the clicked
+  Compose control. Source, tempo, sleep, playlist selection, lyric editing,
+  timing and translation dialogs render in commonMain. The existing shared
+  timed-lyrics renderer and all saved player-style meanings remain intact.
+- Unsupported Cast/AOD/download/source actions retain disabled controls.
+  Generic song actions retain their rows rather than being filtered. Native
+  callbacks capture the opened occurrence for async operations. Lyric edits
+  keep revision/current-track checks and report a rejected write.
+
+## Remaining differences and limits
+
+**This branch does not establish full pixel or behavior parity.**
+
+| Area | Remaining difference / reason |
+| --- | --- |
+| Android helper-drawn settings controls | The source reference records static row/group order and binds existing typed controls. Helper-only/custom layouts, inline numeric controls and some provider/account cards still use existing shared implementations; they require individual comparison/ports. |
+| Home recommendation data | Forgotten favorites and similar-recommendation owners are not fully bound on iOS. Recents, hero picks and keep-listening currently derive from local recent listens. Remote quick-picks/live grouping follows the supplied shelf metadata. |
+| Library variants/detail chrome | Phone sort/filter/grid controls are bound; Android artist/album spotlight headers and every Apple library/detail/menu permutation are not fully reproduced. |
+| Lyrics provider search / ordinary translation | Provider-search and the Java-only ordinary translator have no iOS binding. Their same menu/dialog choices remain visible and unavailable; configured shared AI translation/romanization and persistent edits are wired. |
+| Module catalogs and native extensions | Installed API-v1 packages work through the existing host. Catalog import/update/check and native binary-extension operations have no iOS UI owner yet, and retain unavailable controls. This is current implementation availability, not a claim that all catalog operations are inherently forbidden by iOS. |
+| Native output / restore facts | iOS output-rate/observed-format rows and staged-restore quit/recovery behavior remain because they describe existing native APIs. They render in shared UI, but differ from Android system facts. |
+| Platform mechanisms | Android Auto, AOD, Media3 offload/PIP/USB-exclusive and Android screenshot/system controls cannot use their Android APIs on iOS; reference controls remain disabled with the shared availability description. UIKit pickers, AirPlay, authorization and alternate-icon confirmation remain system surfaces. |
+| Compilation and runtime | No local Gradle/JVM/Xcode build, lint or JVM test ran. Exact-head Android/desktop/Kotlin-Native CI, full unsigned iOS app linkage, device launch, Dynamic Type extremes, gestures and pixel checks remain unverified. |
+
+Permitted checks after this implementation: repository checker **0 findings**;
+iOS Python contracts **38 tests passed**. Additional bounded source reads
+verified no changed Android sources, no Android/JVM resource imports in the
+changed common code, and no unresolved literal shared-resource references.
+No PR was opened and no CI workflow was dispatched.

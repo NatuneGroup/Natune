@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.settings
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -21,6 +22,7 @@ internal fun SettingsPresentationEntry(
     supportingContent: @Composable () -> Unit,
     trailingContent: @Composable () -> Unit,
     modifier: Modifier,
+    interactionSource: MutableInteractionSource? = null,
 ) {
     if (!phone) {
         ListItem(headlineContent = headlineContent, supportingContent = supportingContent,
@@ -33,6 +35,6 @@ internal fun SettingsPresentationEntry(
                     Icon(painterResource(Res.drawable.m6_icon_arrow_forward), null, Modifier.size(22.dp))
                 }
             }
-        }, reference?.icon, index, count, enabled, modifier)
+        }, reference?.icon, index, count, enabled, modifier, interactionSource)
     }
 }

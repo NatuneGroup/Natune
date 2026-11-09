@@ -4,9 +4,9 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** Android presentation order; regenerate with scripts/sync_phone_settings_reference.py. */
 internal val PhoneAppearanceSettingsReference = PhoneSettingsReference(Res.string.m6_settings_home_appearance, listOf(
-    PhoneSettingReference("group:liquid_glass", Res.string.phone_reference_liquid_glass, null, PhoneSettingKind.HEADER, setOf("liquid_glass"), null, setOf(), false),
+    PhoneSettingReference("group:liquid_glass", Res.string.phone_reference_liquid_glass, null, PhoneSettingKind.HEADER, setOf("liquid_glass", "appearance_theme"), null, setOf(), false),
     PhoneSettingReference("liquid_glass_effects", Res.string.m6_liquid_glass, Res.drawable.phone_reference_blur_on, PhoneSettingKind.TOGGLE, setOf("liquid_glass_effects"), "liquidGlassEnabled", setOf(Res.string.m6_liquid_glass, Res.string.m6_liquid_glass_effects), false),
-    PhoneSettingReference("group:theme", Res.string.m6_theme, null, PhoneSettingKind.HEADER, setOf("theme"), null, setOf(Res.string.m6_theme), false),
+    PhoneSettingReference("group:theme", Res.string.m6_theme, null, PhoneSettingKind.HEADER, setOf("theme", "appearance_theme"), null, setOf(Res.string.m6_theme), false),
     PhoneSettingReference("enable_dynamic_theme", Res.string.phone_reference_enable_dynamic_theme, Res.drawable.phone_reference_palette, PhoneSettingKind.TOGGLE, setOf("enable_dynamic_theme"), "dynamicTheme", setOf(), false),
     PhoneSettingReference("wallpaper_permission", Res.string.phone_reference_wallpaper_permission, Res.drawable.phone_reference_storage, PhoneSettingKind.ACTION, setOf("wallpaper_permission"), null, setOf(), false),
     PhoneSettingReference("random_theme_on_startup", Res.string.m6_random_theme, Res.drawable.phone_reference_shuffle, PhoneSettingKind.TOGGLE, setOf("random_theme_on_startup"), "randomThemeOnStartup", setOf(Res.string.m6_random_theme), true),
@@ -24,7 +24,7 @@ internal val PhoneAppearanceSettingsReference = PhoneSettingsReference(Res.strin
     PhoneSettingReference("backdrop_blur_amount", Res.string.m6_backdrop_amount, Res.drawable.phone_reference_blur_on, PhoneSettingKind.ACTION, setOf("backdrop_blur_amount"), null, setOf(Res.string.m6_backdrop_amount), false),
     PhoneSettingReference("use_system_font", Res.string.phone_reference_font_preference, Res.drawable.phone_reference_text_fields, PhoneSettingKind.VALUE, setOf("font_preference"), null, setOf(), false),
     PhoneSettingReference("custom_font", Res.string.m6_custom_font, Res.drawable.phone_reference_text_fields, PhoneSettingKind.ACTION, setOf("custom_font"), null, setOf(Res.string.m6_custom_font), true),
-    PhoneSettingReference("group:player", Res.string.m6_appearance_player, null, PhoneSettingKind.HEADER, setOf("player"), null, setOf(Res.string.m6_appearance_player), false),
+    PhoneSettingReference("group:player", Res.string.m6_appearance_player, null, PhoneSettingKind.HEADER, setOf("player", "appearance_player"), null, setOf(Res.string.m6_appearance_player), false),
     PhoneSettingReference("home_screens", Res.string.m6_home_screens, Res.drawable.phone_reference_ic_home_outline, PhoneSettingKind.ACTION, setOf("home_screens"), null, setOf(Res.string.m6_home_screens), false),
     PhoneSettingReference("library_style", Res.string.m6_library_style, Res.drawable.phone_reference_music_note, PhoneSettingKind.VALUE, setOf("library_style"), null, setOf(Res.string.m6_library_style), false),
     PhoneSettingReference("player_design_style", Res.string.phone_reference_player_design_style, Res.drawable.phone_reference_palette, PhoneSettingKind.VALUE, setOf("player_design_style"), "playerDesignStyle", setOf(), false),

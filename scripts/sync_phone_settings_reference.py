@@ -204,6 +204,8 @@ def main():
             # their own availability and saved values.
             kind = 'HEADER' if is_group else 'TOGGLE' if found[1] == 'SwitchPreference' else 'VALUE' if 'ListPreference' in found[1] or 'Slider' in found[1] or 'IntPreference' in found[1] else 'ACTION'
             aliases = [title, *ALIASES.get(anchor, []), *ALIASES.get(title, [])]
+            if is_group and route == 'appearance':
+                aliases.extend({'liquid_glass': ['appearance_theme'], 'theme': ['appearance_theme'], 'player': ['appearance_player'], 'interface': ['appearance_interface']}.get(title, []))
             key = bound_keys.get(args.get('checked', args.get('selectedValue', '')).strip())
             key_name = persisted_keys.get(key)
             conditional = any(start < found.start() < end for start, end in conditional_ranges)

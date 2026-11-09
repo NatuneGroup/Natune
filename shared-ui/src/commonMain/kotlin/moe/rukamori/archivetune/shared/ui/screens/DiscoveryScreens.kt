@@ -60,12 +60,14 @@ fun DiscoveryScreen(
     artwork: ContentArtwork,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = LocalShellContentPadding.current,
+    embedded: Boolean = false,
 ) {
     LazyColumn(modifier.fillMaxSize(), contentPadding = contentPadding) {
         item("header") {
-            ManagementHeader(stringResource(Res.string.m4_discover), actions.back)
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(DiscoveryTab.entries, key = { it.name }) { tab ->
+            if (!embedded) ManagementHeader(stringResource(Res.string.m4_discover), actions.back)
+            if (embedded) PhoneSearchDiscoveryTabs(state.tab, actions.tab)
+            else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(if (embedded) listOf(DiscoveryTab.EXPLORE, DiscoveryTab.SUGGESTIONS) else DiscoveryTab.entries, key = { it.name }) { tab ->
                     FilterChip(tab == state.tab, { actions.tab(tab) },
                         modifier = Modifier.testTag("discovery-tab-${tab.name}"),
                         label = { Text(stringResource(when (tab) {
@@ -95,7 +97,15 @@ fun DiscoveryScreen(
                 items(state.suggestions, key = { "suggestion-${it.key}" }) {
                     Shelf(it, actions.section, actions.open, actions.more, artwork)
                 }
-            else -> items(state.shelves, key = { "shelf-${it.key}" }) { Shelf(it, actions.section, actions.open, actions.more, artwork) }
+            else -> {
+                items(state.shelves, key = { "shelf-${it.key}" }) { Shelf(it, actions.section, actions.open, actions.more, artwork) }
+                if (embedded) items(state.moods.chunked(2), key = { "moods-${it.first().key}" }) { group ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        group.forEach { mood -> Box(Modifier.weight(1f)) { MoodTile(mood, actions.section) } }
+                        if (group.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }

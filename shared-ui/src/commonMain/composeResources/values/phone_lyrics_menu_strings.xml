@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="phone_lyrics_lyrics_sync_offset">Lyrics sync offset</string>
+  <string name="phone_lyrics_language_label">Language</string>
+  <string name="phone_lyrics_ai_translation_menu">AI Translation</string>
+</resources>

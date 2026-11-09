@@ -37,7 +37,12 @@ internal fun PhonePreferenceEntry(
     count: Int,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    interactionSource: MutableInteractionSource? = null,
 ) {
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed && enabled) .96f else 1f,
+        animationSpec = if (motionAllowed()) spring(dampingRatio = .6f) else snap(), label = "preference-press")
     val large = 22.dp
     val small = 5.dp
     val shape = when {
@@ -59,7 +64,7 @@ internal fun PhonePreferenceEntry(
     val topAlpha = if (index == 0) .20f else .08f
     val bottomAlpha = if (index == count - 1) .04f else .08f
     Row(
-        modifier.fillMaxWidth()
+        modifier.graphicsLayer { scaleX = scale; scaleY = scale }.fillMaxWidth()
             .padding(horizontal = 16.dp).padding(top = if (index == 0) 0.dp else 1.5.dp)
             .clip(shape).background(background, shape)
             .border(.5.dp, Brush.verticalGradient(listOf(border.copy(alpha = topAlpha), border.copy(alpha = bottomAlpha))), shape)
