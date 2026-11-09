@@ -34,55 +34,22 @@ class ExpandedPlayerRecoveryTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val port = RootPlaybackPort(rootPlayback())
         val player = MusicPlayerController(port, scope)
-        val queue = RootQueue(player, port)
+        val queue = RootQueue(player, port, listOf(ROOT_OCCURRENCE))
         val backRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         var backAtRoot = 0
-        val host = ArchiveTuneHostBindings(
-            queue = queue,
-            settings = RootSettings(),
-            actionScope = scope,
-            routes = emptyFlow(),
-            backRequests = backRequests,
-            page = { ArchiveGraphPage.Host },
-            artwork = { _, modifier -> Box(modifier) },
-            newsImage = { _, modifier -> Box(modifier) },
-            formatNewsDate = { "Date" },
-            librarySourceSelector = {},
-            hostScreen = { _, _ -> Box(Modifier.fillMaxSize().testTag("fixture-page")) },
-            overlays = {},
-            playerSlots = { _, _, _ -> rootPlayerSlots() },
-            playerControls = RootPlayerControls(),
-            more = {},
-            playOccurrence = { _, _ -> error("No playback request expected") },
-            openExternal = { error("No external route expected") },
-            onFailure = { error("No host failure expected") },
-            onBackAtRoot = { backAtRoot++ },
-            newsAvailable = false,
-        )
+        val host = rootHost(queue, scope, backRequests) { backAtRoot++ }
         try {
-            setContent {
-                Box(Modifier.size(400.dp, 800.dp)) {
-                    ArchiveTuneRoot(
-                        host = host,
-                        visible = true,
-                        resumed = true,
-                        opticalCapabilities = OpticalCapabilities(blur = false, refraction = false),
-                    )
-                }
-            }
+            setContent { RootUnderTest(host) }
 
             onNodeWithTag("compact-mini-player").assertIsDisplayed().performClick()
             onNodeWithTag("player-close").assertIsDisplayed()
             onNodeWithTag("shell-bottom-bar").assertDoesNotExist()
 
-            // Replacing playback may retain a queue current item briefly. The old occurrence must lose its modal.
-            runOnIdle { port.snapshots.value = rootPlayback().copy(occurrenceId = "track@1") }
-            onNodeWithTag("player-close").assertDoesNotExist()
-            onNodeWithTag("fixture-page").assertIsDisplayed()
-            onNodeWithTag("shell-bottom-bar").assertIsDisplayed()
+            // Playback may move ahead of the queue briefly; the queue's current item keeps the player and its close.
+            runOnIdle { port.snapshots.value = rootPlayback().copy(occurrenceId = "track@9") }
+            onNodeWithTag("player-close").assertIsDisplayed()
 
             runOnIdle { port.snapshots.value = rootPlayback() }
-            onNodeWithTag("compact-mini-player").assertIsDisplayed().performClick()
             onNodeWithTag("player-close").assertIsDisplayed()
             runOnIdle { scope.launch { queue.remove(setOf(ROOT_OCCURRENCE)) } }
 
@@ -98,8 +65,76 @@ class ExpandedPlayerRecoveryTest {
         }
     }
 
+    @Test
+    fun removingTheCurrentTrackKeepsThePlayerOpenWhileTheSuccessorLoads() = runComposeUiTest {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val port = RootPlaybackPort(rootPlayback())
+        val player = MusicPlayerController(port, scope)
+        val queue = RootQueue(player, port, listOf(ROOT_OCCURRENCE, SUCCESSOR_OCCURRENCE))
+        val host = rootHost(queue, scope, MutableSharedFlow(extraBufferCapacity = 1)) { error("No root back expected") }
+        try {
+            setContent { RootUnderTest(host) }
+
+            onNodeWithTag("compact-mini-player").assertIsDisplayed().performClick()
+            onNodeWithTag("player-close").assertIsDisplayed()
+
+            // The queue publishes the successor first; playback still reports the removed occurrence.
+            runOnIdle { scope.launch { queue.remove(setOf(ROOT_OCCURRENCE)) } }
+            runOnIdle { assertEquals(SUCCESSOR_OCCURRENCE, queue.state.value.currentOccurrenceId) }
+            onNodeWithTag("player-close").assertIsDisplayed()
+            onNodeWithTag("shell-bottom-bar").assertDoesNotExist()
+
+            runOnIdle { port.snapshots.value = rootPlayback().copy(occurrenceId = SUCCESSOR_OCCURRENCE) }
+            onNodeWithTag("player-close").assertIsDisplayed()
+        } finally {
+            player.close()
+            scope.cancel()
+        }
+    }
+
+    @Composable
+    private fun RootUnderTest(host: ArchiveTuneHostBindings) {
+        Box(Modifier.size(400.dp, 800.dp)) {
+            ArchiveTuneRoot(
+                host = host,
+                visible = true,
+                resumed = true,
+                opticalCapabilities = OpticalCapabilities(blur = false, refraction = false),
+            )
+        }
+    }
+
+    private fun rootHost(
+        queue: RootQueue,
+        scope: CoroutineScope,
+        backRequests: MutableSharedFlow<Unit>,
+        onBackAtRoot: () -> Unit,
+    ) = ArchiveTuneHostBindings(
+        queue = queue,
+        settings = RootSettings(),
+        actionScope = scope,
+        routes = emptyFlow(),
+        backRequests = backRequests,
+        page = { ArchiveGraphPage.Host },
+        artwork = { _, modifier -> Box(modifier) },
+        newsImage = { _, modifier -> Box(modifier) },
+        formatNewsDate = { "Date" },
+        librarySourceSelector = {},
+        hostScreen = { _, _ -> Box(Modifier.fillMaxSize().testTag("fixture-page")) },
+        overlays = {},
+        playerSlots = { _, _, _ -> rootPlayerSlots() },
+        playerControls = RootPlayerControls(),
+        more = {},
+        playOccurrence = { _, _ -> error("No playback request expected") },
+        openExternal = { error("No external route expected") },
+        onFailure = { error("No host failure expected") },
+        onBackAtRoot = onBackAtRoot,
+        newsAvailable = false,
+    )
+
     private companion object {
         const val ROOT_OCCURRENCE = "track@0"
+        const val SUCCESSOR_OCCURRENCE = "track@1"
     }
 }
 
@@ -140,12 +175,15 @@ private class RootSettings : SettingsStore {
 private class RootQueue(
     override val player: MusicPlayerController,
     private val port: RootPlaybackPort,
+    occurrenceIds: List<String>,
 ) : ContinuationQueueController {
-    private val entry = ContentOccurrence(
-        "track@0",
-        ContentItem(ContentRef("fixture", ContentKind.SONG, "song"), "Fixture song", durationMs = 180_000),
-    )
-    override val state = MutableStateFlow(QueueState(1, listOf(entry), entry.occurrenceId, listOf(entry.occurrenceId)))
+    private val entries = occurrenceIds.map { id ->
+        ContentOccurrence(
+            id,
+            ContentItem(ContentRef("fixture", ContentKind.SONG, "song-$id"), "Fixture $id", durationMs = 180_000),
+        )
+    }
+    override val state = MutableStateFlow(QueueState(1, entries, entries.first().occurrenceId, occurrenceIds))
 
     override suspend fun remove(occurrenceIds: Set<String>) {
         val remaining = state.value.entries.filterNot { it.occurrenceId in occurrenceIds }
