@@ -145,7 +145,7 @@ internal class MusicServiceWidgetUpdater(
         if (installedTargets.isEmpty()) return
 
         val mediaItem = player.currentMediaItem
-        val meta = mediaItem?.mediaMetadata
+        val meta = service.mediaSession.player.mediaMetadata
         val artFile = meta?.artworkUri?.let { cacheAlbumArt(it) }
         val dominantColor = artFile?.let { extractDominantColor(it) }
         val snapshot =

@@ -11,14 +11,12 @@ internal data class QueueMetadataPresentation(
     val artworkUri: String?,
 )
 
-/** Tags and artwork for a non-current occurrence must not republish the session's queue. */
+/** Only explicit name/album edits replace queue rows; artwork uses the now-playing projection. */
 internal fun queueMetadataNeedsReplacement(
     previous: QueueMetadataPresentation,
     updated: QueueMetadataPresentation,
-    isCurrentItem: Boolean,
 ): Boolean =
-    if (isCurrentItem) previous != updated
-    else previous.copy(artworkUri = updated.artworkUri) != updated
+    previous.copy(artworkUri = updated.artworkUri) != updated
 
 /** Keep notification-sized artwork unless enrichment changed it and the occurrence is current. */
 internal fun queueMetadataArtworkUri(
@@ -46,14 +44,22 @@ internal data class QueueMetadataReplacementBatch<T>(
     val toIndex: Int get() = fromIndex + items.size
 }
 
-/** One replacement for all changed occurrences, retaining every intervening row and its order. */
-internal fun <T : Any> queueMetadataReplacementBatch(
+/** Replace contiguous changed occurrences only: an intervening playing source must survive. */
+internal fun <T : Any> queueMetadataReplacementBatches(
     original: List<T>,
     updates: Map<Int, T>,
-): QueueMetadataReplacementBatch<T>? {
-    if (updates.isEmpty()) return null
+): List<QueueMetadataReplacementBatch<T>> {
     require(updates.keys.all { it in original.indices })
-    val from = updates.keys.minOrNull() ?: return null
-    val to = (updates.keys.maxOrNull() ?: return null) + 1
-    return QueueMetadataReplacementBatch(from, (from until to).map { updates[it] ?: original[it] })
+    val batches = mutableListOf<QueueMetadataReplacementBatch<T>>()
+    val indices = updates.keys.sorted()
+    var cursor = 0
+    while (cursor < indices.size) {
+        val from = indices[cursor]
+        val items = mutableListOf<T>()
+        do {
+            items.add(updates.getValue(indices[cursor++]))
+        } while (cursor < indices.size && indices[cursor] == from + items.size)
+        batches.add(QueueMetadataReplacementBatch(from, items))
+    }
+    return batches
 }

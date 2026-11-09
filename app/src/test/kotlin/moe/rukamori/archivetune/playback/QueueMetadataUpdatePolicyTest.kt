@@ -3,8 +3,6 @@ package moe.rukamori.archivetune.playback
 import moe.rukamori.archivetune.models.MediaMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,16 +11,14 @@ class QueueMetadataUpdatePolicyTest {
 
     @Test
     fun repeatedCatalogResultsDoNotRepublishAnyOccurrence() {
-        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(), false))
-        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(), true))
+        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy()))
     }
 
     @Test
-    fun artworkOnlyUpdatesWaitUntilTheOccurrenceIsCurrent() {
+    fun artworkOnlyUpdatesNeverReplacePlaylistItems() {
         val resolvedArtwork = presentation.copy(artworkUri = "resolved-artwork")
-        assertFalse(queueMetadataNeedsReplacement(presentation, resolvedArtwork, false))
-        assertTrue(queueMetadataNeedsReplacement(presentation, resolvedArtwork, true))
-        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(artworkUri = null), false))
+        assertFalse(queueMetadataNeedsReplacement(presentation, resolvedArtwork))
+        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(artworkUri = null)))
     }
 
     @Test
@@ -33,8 +29,7 @@ class QueueMetadataUpdatePolicyTest {
             presentation.copy(artist = "Edited", artworkUri = "resolved-artwork"),
             presentation.copy(albumTitle = "Edited"),
         )) {
-            assertTrue(queueMetadataNeedsReplacement(presentation, updated, false))
-            assertTrue(queueMetadataNeedsReplacement(presentation, updated, true))
+            assertTrue(queueMetadataNeedsReplacement(presentation, updated))
         }
     }
 
@@ -66,35 +61,24 @@ class QueueMetadataUpdatePolicyTest {
         assertEquals(240, effective.duration)
         assertEquals("spotify-track", effective.spotifyTrackId)
         assertEquals("new-artwork", effective.thumbnailUrl)
-        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(artworkUri = effective.thumbnailUrl), false))
+        assertFalse(queueMetadataNeedsReplacement(presentation, presentation.copy(artworkUri = effective.thumbnailUrl)))
     }
 
     @Test
-    fun duplicateOccurrencesAreBatchedWithInterveningRowsIntact() {
-        data class Row(val id: String, val title: String)
-        val original = listOf(
-            Row("before", "Before"),
-            Row("song", "Old"),
-            Row("between", "Between"),
-            Row("song", "Old"),
-            Row("after", "After"),
-        )
-        val batch = queueMetadataReplacementBatch(
-            original,
-            mapOf(1 to original[1].copy(title = "Edited"), 3 to original[3].copy(title = "Edited")),
-        )!!
+    fun duplicateOccurrencesOnlyReplaceContiguousChangedRows() {
+        val original = listOf("Before", "A", "Playing B", "A", "A", "After")
+        val batches = queueMetadataReplacementBatches(original, mapOf(1 to "Edited A", 3 to "Edited A", 4 to "Edited A"))
 
-        assertEquals(1, batch.fromIndex)
-        assertEquals(4, batch.toIndex)
-        assertEquals(listOf("song", "between", "song"), batch.items.map { it.id })
-        assertEquals(listOf("Edited", "Between", "Edited"), batch.items.map { it.title })
-        assertSame(original[2], batch.items[1])
-        assertNull(queueMetadataReplacementBatch(original, emptyMap()))
+        assertEquals(listOf(1, 3), batches.map { it.fromIndex })
+        assertEquals(listOf(2, 5), batches.map { it.toIndex })
+        assertEquals(listOf(listOf("Edited A"), listOf("Edited A", "Edited A")), batches.map { it.items })
+        assertTrue(batches.none { 2 in it.fromIndex until it.toIndex })
+        assertTrue(queueMetadataReplacementBatches(original, emptyMap()).isEmpty())
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun aBatchCannotReplaceAnOccurrenceOutsideTheQueue() {
-        queueMetadataReplacementBatch(listOf("song"), mapOf(Int.MAX_VALUE to "edited"))
+        queueMetadataReplacementBatches(listOf("song"), mapOf(Int.MAX_VALUE to "edited"))
     }
 
     private fun metadata() = MediaMetadata("song-id", "Song", listOf(MediaMetadata.Artist("artist-id", "Artist")), 180)

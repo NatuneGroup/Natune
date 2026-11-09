@@ -12,6 +12,12 @@ private const val TAG = "MusicService"
 
 private const val AUTOMOTIVE_ROOT_ITEM_COUNT = 11
 
+internal fun MusicService.publishResolvedNowPlayingMetadata() {
+    runCatching { (mediaSession.player as? NowPlayingMetadataPlayer)?.publishMetadata() }
+        .onFailure { Timber.tag(TAG).w(it, "Failed to publish now-playing metadata") }
+    updateWidget()
+}
+
 internal fun MusicService.sendOpenAudioEffectSessionBroadcast(sessionId: Int) {
     try {
         sendBroadcast(

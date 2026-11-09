@@ -186,6 +186,25 @@ class AutoBrowseChildrenCacheTest {
         }
 
     @Test
+    fun targetedInvalidationCannotRepopulateFromAnOlderLoad() = runTest {
+        val cache = AutoBrowseChildrenCache<Int>()
+        val staleGate = CompletableDeferred<Unit>()
+        val unaffectedGate = CompletableDeferred<Unit>()
+        val stale = async { cache.children("liked") { staleGate.await(); listOf(1) } }
+        val unaffected = async { cache.children("playlist/other") { unaffectedGate.await(); listOf(7) } }
+        runCurrent()
+
+        assertEquals(setOf("liked"), cache.invalidate { it == "liked" })
+        assertEquals(listOf(2), cache.children("liked") { listOf(2) })
+        staleGate.complete(Unit)
+        unaffectedGate.complete(Unit)
+        assertEquals(listOf(1), stale.await())
+        assertEquals(listOf(7), unaffected.await())
+        assertEquals(listOf(2), cache.children("liked") { error("stale load overwrote the fresh snapshot") })
+        assertEquals(listOf(7), cache.children("playlist/other") { error("unrelated folder was invalidated") })
+    }
+
+    @Test
     fun clearAndEvictionDropSnapshots() =
         runTest {
             val cache = AutoBrowseChildrenCache<Int>(maxEntries = 1)
