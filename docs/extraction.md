@@ -211,6 +211,9 @@ UI; minting is BotGuard/QuickJS inside the core. Tokens are video-scoped and fee
 the client selection above. `AutoChoosePlaybackClientKey` gates automatic client
 choice — manual selection must stay available.
 
+Android-attested tokens from MorpheApp's PotHelper or microG RE are not supported;
+[the assessment](design/pothelper-microg-re.md) explains why and when to revisit.
+
 ## The `echo/` resolver — the fallback behind the shipped path
 
 18 files under `app/src/main/kotlin/moe/rukamori/archivetune/echo/` plus five assets, ported from
