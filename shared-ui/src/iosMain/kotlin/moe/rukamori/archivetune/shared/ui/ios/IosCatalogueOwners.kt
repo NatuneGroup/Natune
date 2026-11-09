@@ -68,10 +68,14 @@ internal class IosCatalogueOwners(
         while (shownShelves.size > MAX_SHOWN_PAGES) shownShelves.remove(shownShelves.keys.first())
     }
 
-    /** Plays a recorded list or shelf row. Returns false when [collection] is not a recorded catalogue page. */
-    fun playOccurrence(collection: ContentRequest, start: QueueStart): Boolean {
-        val shelfRows =
-            shownShelves[collection]?.values?.firstOrNull { shelf -> shelf.any { it.occurrenceId == start.occurrenceId } }
+    /**
+     * Plays a recorded list or shelf row. Returns false when [collection] is not a recorded catalogue page. [shelfKey]
+     * names the tapped shelf when several shelves reuse the same occurrence ids, as the home history shelves do.
+     */
+    fun playOccurrence(collection: ContentRequest, start: QueueStart, shelfKey: String? = null): Boolean {
+        val shelves = shownShelves[collection]
+        val shelfRows = shelfKey?.let { shelves?.get(it) }
+            ?: shelves?.values?.firstOrNull { shelf -> shelf.any { it.occurrenceId == start.occurrenceId } }
         if (shelfRows != null) {
             owners.scope.launch {
                 val playable = playableRows(shelfRows)
