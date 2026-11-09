@@ -14,7 +14,7 @@ SHA-256 and builds with `-Pnatune.discordSdk=true`. The step fails when the
 `libdiscord_partner_sdk.so` or `libnatune_discord_social.so` for any packaged
 ABI, so a shipping build can no longer fall back to the "unavailable" notice.
 The SDK adds roughly 3.7 MB per ABI; the signed-candidate size gate is
-24,000,000 bytes.
+28,000,000 bytes.
 
 To update the SDK, push the new AAR to the mirror and change `SDK_COMMIT` and
 `SDK_SHA256` in the action together.
