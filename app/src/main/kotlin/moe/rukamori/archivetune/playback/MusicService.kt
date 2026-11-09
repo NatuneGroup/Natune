@@ -714,16 +714,17 @@ class MusicService :
     // then invalidated by the settling transitions.
     @Volatile
     private var initialQueueLoadInProgress = false
-    private val persistentStateLock = Any()
-    private val persistentSaveGeneration = AtomicLong(0L)
+    private val queuePersistence = QueuePersistenceState.shared
     internal var hasQueueTimelineChanges = false
         private set
-    private val queueCheckpointOrder = QueueCheckpointOrder { persistentSaveGeneration.get() }
     private val queueCheckpoints = QueueCheckpointScheduler(
         scope = { CoroutineScope(scope.coroutineContext + SilentHandler) },
-        generation = { persistentSaveGeneration.get() },
+        generation = { queuePersistence.generation.get() },
         enabled = { withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) } },
-        blocked = { isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress },
+        blocked = {
+            isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress ||
+                currentQueue.hasUnacceptedFiniteReplacement()
+        },
         snapshot = { snapshotQueue() },
         write = { writeQueueSnapshot(it) },
     )
@@ -2006,7 +2007,7 @@ class MusicService :
                     if (persistedQueue != null || persistedPlayerState != null) {
                         withContext(Dispatchers.Main.immediate) {
                             isRestoringPersistentState = true
-                            synchronized(persistentStateLock) { persistentSaveGeneration.incrementAndGet() }
+                            synchronized(queuePersistence.lock) { queuePersistence.generation.incrementAndGet() }
                         }
                     }
 
@@ -2050,6 +2051,13 @@ class MusicService :
                 }
             }
         }
+
+        observeQueuePersistence(
+            scope = scope,
+            enabled = dataStore.data.map { it[PersistentQueueKey] ?: true },
+            restoreCompleted = { queueRestoreCompleted.value },
+            checkpoint = ::saveQueueToDisk,
+        )
 
         // Periodic saves keep the resume position current; coalesced checkpoints save queue changes.
         scope.launch {
@@ -12113,7 +12121,7 @@ class MusicService :
         val persistentFile = filesDir.resolve(fileName)
         if (!persistentFile.exists() || !persistentFile.isFile) return null
 
-        return synchronized(persistentStateLock) {
+        return synchronized(queuePersistence.lock) {
             runCatching {
                 persistentFile.inputStream().use { fis ->
                     val payload = PlaybackPersistenceCodec.read(fis)
@@ -12133,10 +12141,10 @@ class MusicService :
         // for their check-write-record step, so no save can record a snapshot as persisted
         // whose file this is about to delete, nor skip as "unchanged" against a cache that
         // describes files already gone.
-        synchronized(persistentStateLock) {
-            persistentSaveGeneration.incrementAndGet()
-            lastPersistedQueue = null
-            lastPersistedPlayerState = null
+        synchronized(queuePersistence.lock) {
+            queuePersistence.generation.incrementAndGet()
+            queuePersistence.lastQueue = null
+            queuePersistence.lastPlayerState = null
             listOf(
                 PERSISTENT_QUEUE_FILE,
                 PERSISTENT_PLAYER_STATE_FILE,
@@ -12165,7 +12173,7 @@ class MusicService :
         val persistentFile = filesDir.resolve(fileName)
         val tempFile = filesDir.resolve("$fileName.tmp")
 
-        return synchronized(persistentStateLock) {
+        return synchronized(queuePersistence.lock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
                     PlaybackPersistenceCodec.write(fos, payload)
@@ -12254,16 +12262,6 @@ class MusicService :
     }
 
     /**
-     * Last player state actually written, compared ignoring [PersistPlayerState.timestamp] so a
-     * paused player — whose position does not move — stops rewriting an identical file every tick.
-     */
-    @Volatile
-    private var lastPersistedPlayerState: PersistPlayerState? = null
-
-    @Volatile
-    private var lastPersistedQueue: PersistQueue? = null
-
-    /**
      * Writes just the resume position and transport flags, skipping the queue snapshot, and only
      * while [PersistentQueueKey] is on. The periodic save and paused changes from onEvents both use it.
      *
@@ -12272,11 +12270,11 @@ class MusicService :
      */
     private suspend fun savePlayerStateToDisk() {
         if (!withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) return
-        val saveGeneration = persistentSaveGeneration.get()
+        val saveGeneration = queuePersistence.generation.get()
         val (checkpoint, state) =
             withContext(Dispatchers.Main.immediate) {
                 if (
-                    saveGeneration != persistentSaveGeneration.get() ||
+                    saveGeneration != queuePersistence.generation.get() ||
                     isRestoringPersistentState ||
                     isHydratingRestoredQueue ||
                     finiteMutationInProgress ||
@@ -12284,7 +12282,7 @@ class MusicService :
                 ) {
                     return@withContext null
                 }
-                queueCheckpointOrder.nextSnapshot() to PersistPlayerState(
+                queuePersistence.checkpointOrder.nextSnapshot() to PersistPlayerState(
                     playWhenReady = player.playWhenReady,
                     repeatMode = player.repeatMode,
                     shuffleModeEnabled = player.shuffleModeEnabled,
@@ -12296,23 +12294,23 @@ class MusicService :
             } ?: return
 
         withContext(Dispatchers.IO) {
-            synchronized(persistentStateLock) {
-                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
-                queueCheckpointOrder.writePlayerStateIfCurrent(checkpoint) {
+            synchronized(queuePersistence.lock) {
+                if (saveGeneration != queuePersistence.generation.get()) return@synchronized
+                queuePersistence.checkpointOrder.writePlayerStateIfCurrent(checkpoint) {
                     persistPlayerStateIfChangedLocked(state)
                 }
             }
         }
     }
 
-    // Caller holds persistentStateLock. The cache only advances after a write that succeeded,
+    // Caller holds queuePersistence.lock. The cache only advances after a write that succeeded,
     // so a failed write is retried by the next identical snapshot instead of being skipped.
     private fun persistPlayerStateIfChangedLocked(state: PersistPlayerState) {
         // timestamp defaults to now, so it always differs — compare everything else.
-        val previous = lastPersistedPlayerState
+        val previous = queuePersistence.lastPlayerState
         if (previous != null && previous.copy(timestamp = 0L) == state.copy(timestamp = 0L)) return
         if (writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)) {
-            lastPersistedPlayerState = state
+            queuePersistence.lastPlayerState = state
         }
     }
 
@@ -12321,8 +12319,8 @@ class MusicService :
     /** Main thread only: the player is thread-confined; teardown runs this before release. */
     internal fun snapshotQueue(): PersistedQueueSnapshot? {
         if (isRestoringPersistentState || isHydratingRestoredQueue) return null
-        if (finiteMutationInProgress) return null
-        val checkpoint = queueCheckpointOrder.nextSnapshot()
+        if (finiteMutationInProgress || currentQueue.hasUnacceptedFiniteReplacement()) return null
+        val checkpoint = queuePersistence.checkpointOrder.nextSnapshot()
 
         val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
         // Startup's empty player must not replace an unreadable saved queue or race restoration.
@@ -12369,13 +12367,13 @@ class MusicService :
     internal suspend fun writeQueueSnapshot(snapshot: PersistedQueueSnapshot) {
         withContext(Dispatchers.IO) {
             if (!dataStore.get(PersistentQueueKey, true)) return@withContext
-            synchronized(persistentStateLock) {
+            synchronized(queuePersistence.lock) {
                 if (isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress) return@synchronized
-                queueCheckpointOrder.writeIfCurrent(snapshot.checkpoint) {
-                    if (snapshot.queue != lastPersistedQueue && writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)) {
-                        lastPersistedQueue = snapshot.queue
+                queuePersistence.checkpointOrder.writeIfCurrent(snapshot.checkpoint) {
+                    if (snapshot.queue != queuePersistence.lastQueue && writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)) {
+                        queuePersistence.lastQueue = snapshot.queue
                     }
-                    queueCheckpointOrder.writePlayerStateIfCurrent(snapshot.checkpoint) {
+                    queuePersistence.checkpointOrder.writePlayerStateIfCurrent(snapshot.checkpoint) {
                         persistPlayerStateIfChangedLocked(snapshot.playerState)
                     }
                 }

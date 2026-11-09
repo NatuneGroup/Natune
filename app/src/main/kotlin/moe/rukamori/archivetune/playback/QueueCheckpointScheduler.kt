@@ -6,6 +6,10 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.models.PersistPlayerState
+import moe.rukamori.archivetune.models.PersistQueue
+import moe.rukamori.archivetune.playback.queues.Queue
+import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 
 /** Main-thread requests coalesce before reading the player, including requests made during IO. */
 internal class QueueCheckpointScheduler<Snapshot>(
@@ -57,6 +61,12 @@ internal class QueueCheckpointScheduler<Snapshot>(
     }
 }
 
+/** The loader's temporary clear is not an accepted empty queue; the previous checkpoint survives it. */
+internal fun Queue.hasUnacceptedFiniteReplacement(): Boolean {
+    val finite = this as? YouTubePlaylistQueue ?: return false
+    return finite.initialTimelineCleared && !finite.timelineInstalled
+}
+
 internal data class QueueCheckpointToken(val saveGeneration: Long, val sequence: Long)
 
 /** Snapshot tokens also order teardown's independent writer. Writes require the persistence lock. */
@@ -81,5 +91,22 @@ internal class QueueCheckpointOrder(private val generation: () -> Long) {
         lastWrittenPlayerStateSequence = token.sequence
         write()
         return true
+    }
+}
+
+/** Teardown writes can outlive their service, so every service shares this persistence identity. */
+internal class QueuePersistenceState {
+    val lock = Any()
+    val generation = AtomicLong(0L)
+    val checkpointOrder = QueueCheckpointOrder { generation.get() }
+
+    @Volatile
+    var lastQueue: PersistQueue? = null
+
+    @Volatile
+    var lastPlayerState: PersistPlayerState? = null
+
+    companion object {
+        val shared = QueuePersistenceState()
     }
 }
