@@ -674,6 +674,7 @@ class MusicService :
     private var wholePlaylistState = PlaylistLoadState()
     private var retryFinitePlaylistLoad: (() -> Unit)? = null
     private var retryWholePlaylistLoad: (() -> Unit)? = null
+    @Volatile
     private var finiteMutationInProgress = false
     private var currentQueue: Queue = EmptyQueue
     var queueTitle: String? = null
@@ -698,7 +699,7 @@ class MusicService :
             },
             markAutomatic = { items -> items.forEach { autoAddedMediaIds.add(it.mediaId) } },
             setShuffleOrder = { localPlayer.setShuffleOrder(DefaultShuffleOrder(it, System.currentTimeMillis())) },
-            save = { if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk() },
+            save = { saveQueueToDisk() },
             loading = infiniteQueueLoading,
             recommendation = androidQueueTailRecommendation(database, autoAddedMediaIds),
         )
@@ -715,6 +716,17 @@ class MusicService :
     private var initialQueueLoadInProgress = false
     private val persistentStateLock = Any()
     private val persistentSaveGeneration = AtomicLong(0L)
+    internal var hasQueueTimelineChanges = false
+        private set
+    private val queueCheckpointOrder = QueueCheckpointOrder { persistentSaveGeneration.get() }
+    private val queueCheckpoints = QueueCheckpointScheduler(
+        scope = { CoroutineScope(scope.coroutineContext + SilentHandler) },
+        generation = { persistentSaveGeneration.get() },
+        enabled = { withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) } },
+        blocked = { isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress },
+        snapshot = { snapshotQueue() },
+        write = { writeQueueSnapshot(it) },
+    )
 
     // Persistent files whose contents this process could not read, reported once each. A file
     // written by an older build stays unreadable after a model change, and the next save replaces
@@ -1992,7 +2004,10 @@ class MusicService :
                     val persistedPlayerState = readPersistentObject<PersistPlayerState>(PERSISTENT_PLAYER_STATE_FILE)
 
                     if (persistedQueue != null || persistedPlayerState != null) {
-                        isRestoringPersistentState = true
+                        withContext(Dispatchers.Main.immediate) {
+                            isRestoringPersistentState = true
+                            synchronized(persistentStateLock) { persistentSaveGeneration.incrementAndGet() }
+                        }
                     }
 
                     var restoredQueue = false
@@ -2022,6 +2037,7 @@ class MusicService :
             }
             withContext(Dispatchers.Main) {
                 queueRestoreCompleted.value = true
+                saveQueueToDisk()
                 (currentQueue as? YouTubePlaylistQueue)?.takeIf { initialQueueLoadGeneration == 0L }?.let { finite ->
                     if (finite.snapshot.phase == FinitePlaylistPhase.UNKNOWN ||
                         finite.snapshot.phase == FinitePlaylistPhase.FAILED ||
@@ -2035,8 +2051,7 @@ class MusicService :
             }
         }
 
-        // Periodic save keeps the resume position roughly current. Queue and paused changes are saved by
-        // their handlers; a full-queue snapshot here would have to map every media item on the main thread.
+        // Periodic saves keep the resume position current; coalesced checkpoints save queue changes.
         scope.launch {
             while (isActive) {
                 pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, PERSISTENT_POSITION_SAVE_INTERVAL.inWholeMilliseconds)
@@ -2535,6 +2550,7 @@ class MusicService :
         restoredQueueBackfillJob?.cancel()
         restoredQueueBackfillJob = null
         isHydratingRestoredQueue = false
+        saveQueueToDisk()
     }
 
     private suspend fun Queue.Status.filterPlaybackContent(
@@ -2635,6 +2651,7 @@ class MusicService :
             if (items.isEmpty()) {
                 if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                     isHydratingRestoredQueue = false
+                    saveQueueToDisk()
                 }
                 return@withContext
             }
@@ -2695,9 +2712,7 @@ class MusicService :
                             if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                                 isHydratingRestoredQueue = false
                                 restoredQueueBackfillJob = null
-                                if (isActive && dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                                    saveQueueToDisk()
-                                }
+                                saveQueueToDisk()
                             }
                         }
                     }
@@ -2705,6 +2720,7 @@ class MusicService :
                 restoreShuffleOrder()
                 if (hydrationGeneration == restoredQueueHydrationGeneration.get()) {
                     isHydratingRestoredQueue = false
+                    saveQueueToDisk()
                 }
             }
         }
@@ -5807,6 +5823,7 @@ class MusicService :
                                 queueTitle = proposal.snapshot.title
                             } finally {
                                 finiteMutationInProgress = false
+                                saveQueueToDisk()
                             }
                         }) return@bounded
                         first = false
@@ -5830,7 +5847,7 @@ class MusicService :
                 ) {
                     onInfiniteQueueEnabled()
                 }
-                if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk()
+                saveQueueToDisk()
             } catch (error: CancellationException) {
                 if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
@@ -7122,6 +7139,10 @@ class MusicService :
         reason: Int,
     ) {
         super.onTimelineChanged(timeline, reason)
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            hasQueueTimelineChanges = true
+            saveQueueToDisk()
+        }
         cacheQueuedMetadata()
         onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
     }
@@ -7230,12 +7251,7 @@ class MusicService :
             scrobbleManager?.onSongStart(player.resolvedCurrentMetadata, duration = player.duration)
         }
 
-        scope.launch {
-            val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-            if (shouldSave) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         ensurePresenceManager()
         if (!isCrossfading) {
             scheduleCrossfade()
@@ -7623,12 +7639,7 @@ class MusicService :
         widgetUpdater.update()
         widgetUpdater.updateProgressTracking()
 
-        scope.launch {
-            val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-            if (shouldSave) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
     }
 
     override fun onPlayWhenReadyChanged(
@@ -7941,11 +7952,7 @@ class MusicService :
 
         // Persist queue on play/pause so a force-stop right after pausing still restores the correct position
         if (events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) && player.mediaItemCount > 0) {
-            scope.launch(SilentHandler) {
-                if (withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) {
-                    saveQueueToDisk()
-                }
-            }
+            saveQueueToDisk()
         }
     }
 
@@ -8015,12 +8022,7 @@ class MusicService :
         }
         onInfiniteQueueEnabled(currentQueue.infiniteQueueSeedMediaId())
 
-        // Save state when shuffle mode changes - must be on Main thread to access player
-        scope.launch {
-            if (dataStore.get(PersistentQueueKey, true)) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         if (!isCrossfading) {
             scheduleCrossfade()
         }
@@ -8036,12 +8038,7 @@ class MusicService :
             }
         }
 
-        // Save state when repeat mode changes - must be on Main thread to access player
-        scope.launch {
-            if (dataStore.get(PersistentQueueKey, true)) {
-                saveQueueToDisk()
-            }
-        }
+        saveQueueToDisk()
         if (!isCrossfading) {
             scheduleCrossfade()
         }
@@ -12270,24 +12267,24 @@ class MusicService :
      * Writes just the resume position and transport flags, skipping the queue snapshot, and only
      * while [PersistentQueueKey] is on. The periodic save and paused changes from onEvents both use it.
      *
-     * Deliberately not [saveQueueToDisk]: that maps every media item to persistable metadata on
-     * the main thread and writes two files. None of that changes here — only the position does —
-     * and the queue file is already written by every handler that can change it.
+     * Structural timeline changes and transport callbacks request separate coalesced queue
+     * checkpoints via [saveQueueToDisk]; this position tick never maps every item on Main.
      */
     private suspend fun savePlayerStateToDisk() {
         if (!withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) return
         val saveGeneration = persistentSaveGeneration.get()
-        val state =
+        val (checkpoint, state) =
             withContext(Dispatchers.Main.immediate) {
                 if (
                     saveGeneration != persistentSaveGeneration.get() ||
                     isRestoringPersistentState ||
                     isHydratingRestoredQueue ||
+                    finiteMutationInProgress ||
                     player.mediaItemCount == 0
                 ) {
                     return@withContext null
                 }
-                PersistPlayerState(
+                queueCheckpointOrder.nextSnapshot() to PersistPlayerState(
                     playWhenReady = player.playWhenReady,
                     repeatMode = player.repeatMode,
                     shuffleModeEnabled = player.shuffleModeEnabled,
@@ -12301,7 +12298,9 @@ class MusicService :
         withContext(Dispatchers.IO) {
             synchronized(persistentStateLock) {
                 if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
-                persistPlayerStateIfChangedLocked(state)
+                queueCheckpointOrder.writePlayerStateIfCurrent(checkpoint) {
+                    persistPlayerStateIfChangedLocked(state)
+                }
             }
         }
     }
@@ -12317,25 +12316,23 @@ class MusicService :
         }
     }
 
-    private suspend fun saveQueueToDisk() {
-        val snapshot = withContext(Dispatchers.Main.immediate) { snapshotQueue() } ?: return
-        writeQueueSnapshot(snapshot)
-    }
+    private fun saveQueueToDisk() = queueCheckpoints.request()
 
     /** Main thread only: the player is thread-confined; teardown runs this before release. */
     internal fun snapshotQueue(): PersistedQueueSnapshot? {
         if (isRestoringPersistentState || isHydratingRestoredQueue) return null
         if (finiteMutationInProgress) return null
-        val saveGeneration = persistentSaveGeneration.get()
+        val checkpoint = queueCheckpointOrder.nextSnapshot()
 
         val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
-        if (mediaItemsSnapshot.isEmpty()) return null
+        // Startup's empty player must not replace an unreadable saved queue or race restoration.
+        if (mediaItemsSnapshot.isEmpty() && (!hasQueueTimelineChanges || !queueRestoreCompleted.value || player.mediaItemCount > 0)) return null
 
         val currentMediaItemIndex = player.currentMediaItemIndex
         val currentPosition = player.currentPosition
         val persistQueue =
-            currentQueue.toPersistQueue(
-                title = queueTitle,
+            (if (mediaItemsSnapshot.isEmpty()) EmptyQueue else currentQueue).toPersistQueue(
+                title = queueTitle.takeIf { mediaItemsSnapshot.isNotEmpty() },
                 items = mediaItemsSnapshot,
                 mediaItemIndex = currentMediaItemIndex,
                 position = currentPosition,
@@ -12366,21 +12363,22 @@ class MusicService :
                 playbackState = player.playbackState,
             )
 
-        return PersistedQueueSnapshot(saveGeneration, persistQueue, persistPlayerState)
+        return PersistedQueueSnapshot(checkpoint, persistQueue, persistPlayerState)
     }
 
     internal suspend fun writeQueueSnapshot(snapshot: PersistedQueueSnapshot) {
         withContext(Dispatchers.IO) {
+            if (!dataStore.get(PersistentQueueKey, true)) return@withContext
             synchronized(persistentStateLock) {
-                if (snapshot.saveGeneration != persistentSaveGeneration.get()) return@synchronized
-                // Transition, play/pause and state-change callbacks fire in bursts for one user action,
-                // each snapshotting the same queue; only the first needs to hit the disk.
-                if (snapshot.queue != lastPersistedQueue &&
-                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)
-                ) {
-                    lastPersistedQueue = snapshot.queue
+                if (isRestoringPersistentState || isHydratingRestoredQueue || finiteMutationInProgress) return@synchronized
+                queueCheckpointOrder.writeIfCurrent(snapshot.checkpoint) {
+                    if (snapshot.queue != lastPersistedQueue && writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)) {
+                        lastPersistedQueue = snapshot.queue
+                    }
+                    queueCheckpointOrder.writePlayerStateIfCurrent(snapshot.checkpoint) {
+                        persistPlayerStateIfChangedLocked(snapshot.playerState)
+                    }
                 }
-                persistPlayerStateIfChangedLocked(snapshot.playerState)
             }
         }
     }
