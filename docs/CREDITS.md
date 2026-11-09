@@ -250,5 +250,7 @@ Shared launcher-icon previews and the iOS alternate-icon assets reproduce the
 pinned Natune IconPack `554c3dd24f4240d6b836e9f36572acd78afc8888`. The icons
 are credited to Natune and their community artists in the selector; the catalog
 retains each author/profile. The complete CC BY-SA 4.0 license is bundled as
-`files/notices/IconPack-CC-BY-SA-4.0.txt` and linked from About. iOS system assets
-are resized to 1024px and made opaque; the shared previews are unchanged.
+`files/notices/IconPack-CC-BY-SA-4.0.txt` in common Compose resources and linked
+from About. The selector and its previews live in the iOS source set, preserving
+every attributed iOS choice without bundling the previews in Android. iOS system
+assets are resized to 1024px and made opaque; the previews are unchanged.
