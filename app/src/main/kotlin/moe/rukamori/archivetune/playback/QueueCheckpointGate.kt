@@ -15,6 +15,7 @@ internal class QueueCheckpointGate(
     private var savedTitle: String? = title()
     private var ownedMutationDepth = 0
     private var emptyTimelineAccepted = false
+    private var sourceDetached = false
     var persistenceQueue: Queue = queue()
         private set
     val persistenceTitle: String?
@@ -31,6 +32,7 @@ internal class QueueCheckpointGate(
         savedTitle = persistenceTitle
         pendingReplacement = replacement
         emptyTimelineAccepted = false
+        sourceDetached = false
     }
 
     /** Loader callbacks during their synchronous clear/insertion cannot accept a user edit. */
@@ -45,7 +47,12 @@ internal class QueueCheckpointGate(
 
     fun onReplacementInstalled(installedQueue: Queue) {
         if (queue() !== installedQueue) return
+        if (installedQueue === EmptyQueue) {
+            onSourceDetached()
+            return
+        }
         persistenceQueue = installedQueue
+        sourceDetached = false
         savedTitle = title()
         pendingReplacement = null
         if (mediaItemCount() > 0) emptyTimelineAccepted = false
@@ -60,28 +67,37 @@ internal class QueueCheckpointGate(
         if (queue() !== installedQueue) return
         onReplacementInstalled(installedQueue)
         emptyTimelineAccepted = mediaItemCount() == 0
-        if (emptyTimelineAccepted) {
-            persistenceQueue = EmptyQueue
-            savedTitle = null
-        }
+        if (emptyTimelineAccepted || installedQueue === EmptyQueue) onSourceDetached(emptyTimelineAccepted)
     }
 
     /** Shared transaction for service installers and session forwarding; thrown mutations retain identity. */
-    fun installExternalTimeline(install: () -> Unit, acceptIdentity: () -> Queue, save: () -> Unit) {
+    fun installExternalTimeline(
+        install: () -> Unit,
+        acceptIdentity: () -> Queue,
+        save: () -> Unit,
+        retainIdentity: Boolean = false,
+    ) {
         try {
             mutateTimeline {
                 install()
-                onExternalTimelineInstalled(acceptIdentity())
+                if (!retainIdentity) onExternalTimelineInstalled(acceptIdentity())
             }
         } finally {
             save()
         }
     }
 
-    fun onUserClear() {
-        onExternalTimelineInstalled(queue())
-        emptyTimelineAccepted = true
+    /** All source resets detach continuation/title; automatic emptiness still protects a saved finite queue. */
+    fun onSourceDetached(acceptEmptyTimeline: Boolean = false) {
+        sourceDetached = true
+        pendingReplacement = null
+        if (!acceptEmptyTimeline && mediaItemCount() == 0 && unresolvedFinite(persistenceQueue)) return
+        persistenceQueue = EmptyQueue
+        savedTitle = null
+        emptyTimelineAccepted = acceptEmptyTimeline || mediaItemCount() == 0
     }
+
+    fun onUserClear() = onSourceDetached(acceptEmptyTimeline = true)
 
     fun onUserAddition() {
         if (transientMutation() || ownedMutationDepth > 0 || mediaItemCount() == 0) return
@@ -94,13 +110,11 @@ internal class QueueCheckpointGate(
         if (transientMutation() || ownedMutationDepth > 0) return
         acceptUserIdentity()
         emptyTimelineAccepted = mediaItemCount() == 0
-        if (emptyTimelineAccepted) {
-            persistenceQueue = EmptyQueue
-            savedTitle = null
-        }
+        if (emptyTimelineAccepted) onSourceDetached(acceptEmptyTimeline = true)
     }
 
     private fun acceptUserIdentity() {
+        if (sourceDetached && queue() === EmptyQueue) onSourceDetached()
         val finite = queue() as? YouTubePlaylistQueue
         // Before the loader's clear, edits still belong to the retained timeline, even after cancel.
         if (finite != null && (finite.initialTimelineCleared || finite.timelineInstalled)) {

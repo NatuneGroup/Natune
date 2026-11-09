@@ -68,14 +68,15 @@ class SessionTimelinePlayerTest {
         val previous = YouTubeQueue(WatchEndpoint(playlistId = "RDprevious"))
         fixture.installExternalTimeline(listOf("current", "upcoming"), previous, "Previous title")
         advanceUntilIdle()
-        fixture.beginReplacement(YouTubeQueue(WatchEndpoint(playlistId = "RDpending")))
+        val pending = YouTubeQueue(WatchEndpoint(playlistId = "RDpending"))
+        fixture.beginReplacement(pending)
         val target = QueueCheckpointTestPlayer(listOf(item("current"), item("upcoming")))
         val session = fixture.sessionPlayer(target)
 
         session.setMediaItems(target.items.toList(), 1, 456L)
         advanceUntilIdle()
 
-        assertSame(previous, fixture.queue)
+        assertSame(pending, fixture.queue)
         assertSame(previous, fixture.checkpointGate.persistenceQueue)
         assertEquals("Previous title", fixture.snapshots.last().title)
         assertEquals("RDprevious", (fixture.snapshots.last().queueData as QueueData.YouTubeData).playlistId)
@@ -152,14 +153,19 @@ class SessionTimelinePlayerTest {
 
     private fun Fixture.sessionPlayer(target: QueueCheckpointTestPlayer, currentPlayer: () -> Player = { target.player }): Player {
         target.changed = { if (target.player === currentPlayer()) changeTimeline(target.items.map { it.mediaId }) }
-        return queueSessionTimelinePlayer(target.player, checkpointGate, { installerTarget, installed, title, mutation ->
+        return queueSessionTimelinePlayer(target.player, checkpointGate, { installerTarget, installed, title, replay, mutation ->
             assertSame(target.player, installerTarget)
-            finishReplacement()
-            checkpointGate.installExternalTimeline(mutation, {
-                queue = installed ?: EmptyQueue
-                queueTitle = title
-                queue
-            }, scheduler::request)
+            installServiceQueueTimeline(checkpointGate, installed, replay,
+                cancelObsoleteWork = { finishReplacement() },
+                install = mutation,
+                acceptIdentity = {
+                    queue = installed ?: EmptyQueue
+                    queueTitle = title
+                    queue
+                },
+                save = scheduler::request,
+                evaluateLoading = {},
+            )
         }, scheduler::request, currentPlayer)
     }
 
