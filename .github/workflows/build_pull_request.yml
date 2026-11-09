@@ -1139,11 +1139,13 @@ jobs:
           APK="${CANDIDATE_APK:?}"
           KEYSTORE_FILE="$(mktemp "$RUNNER_TEMP/candidate-keystore.XXXXXX")"
           ALIGNED_APK="$(mktemp "$RUNNER_TEMP/candidate-aligned.XXXXXX")"
+          COMPRESSED_APK="$(mktemp "$RUNNER_TEMP/candidate-compressed.XXXXXX")"
           VERIFY_LOG="$(mktemp "$RUNNER_TEMP/candidate-verify.XXXXXX")"
           CERTS_LOG="$(mktemp "$RUNNER_TEMP/candidate-certs.XXXXXX")"
-          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK" "$VERIFY_LOG" "$CERTS_LOG"' EXIT
+          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK" "$COMPRESSED_APK" "$VERIFY_LOG" "$CERTS_LOG"' EXIT
           printf '%s' "$KEYSTORE" | base64 --decode > "$KEYSTORE_FILE"
-          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$ALIGNED_APK"
+          python3 scripts/recompress_apk.py "$APK" "$COMPRESSED_APK"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$COMPRESSED_APK" "$ALIGNED_APK"
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KEYSTORE_FILE" \
             --ks-key-alias "$KEY_ALIAS" \
@@ -1204,6 +1206,12 @@ jobs:
           if grep -q "application-debuggable" "$BADGING"; then
             echo "::error::The final signed APK is debuggable."
             exit 1
+          fi
+          # Discord Social SDK builds keep c++_shared (see app/build.gradle.kts); SDK-free ones are static.
+          if python3 -c 'import sys, zipfile; sys.exit(0 if any(n.endswith("/libdiscord_partner_sdk.so") for n in zipfile.ZipFile(sys.argv[1]).namelist()) else 1)' "$APK"; then
+            python3 scripts/check_android_native_stl.py "$APK"
+          else
+            python3 scripts/check_android_native_stl.py "$APK" --expect-static
           fi
           python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
           APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"

@@ -6,6 +6,7 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 
+import moe.rukamori.archivetune.build.optimizeOpaqueIconPng
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.apache.batik.transcoder.SVGAbstractTranscoder
@@ -142,6 +143,9 @@ abstract class GenerateIconPackTask : DefaultTask() {
                                     "must be a literal hex color.",
                             )
                     }
+
+                // Inspect the original corner colors before quantization for adaptive backgrounds.
+                optimizeOpaqueIconPng(targetFile)
 
                 mapOf(
                     "id" to id,
@@ -639,9 +643,9 @@ ${aliases.prependIndent("        ")}
         const val DarkContrastingBackground = "#FF202124"
         const val ComplexArtworkPathThreshold = 32
         const val ComplexArtworkColorThreshold = 4
-        // An adaptive-icon layer is 108dp, 432px at xxxhdpi; 512 leaves headroom for launchers that
-        // draw icons larger. 1024 quadrupled the pixels (about 3 MiB of APK) for no visible gain.
-        const val IconRasterSize = 512
+        // The 18dp inset leaves a 72dp foreground (288px at xxxhdpi). 384px retains 33% headroom
+        // for launcher scaling; legacy 48dp icons need only 192px at xxxhdpi.
+        const val IconRasterSize = 384
         const val ViewBoxValueCount = 4
         const val FullCanvasCoordinateCount = 8
         const val FullCanvasToleranceRatio = 0.01
