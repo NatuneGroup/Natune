@@ -17,10 +17,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.download.downloadTaskId
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompleteList
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistSong
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -48,6 +52,9 @@ import moe.rukamori.archivetune.shared.ui.menu.SharedOverflowMenu
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuFacts
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.SongOverflowMenu
+import moe.rukamori.archivetune.shared.ui.host.completeCatalogueList
+import moe.rukamori.archivetune.shared.ui.host.playableRows
+import moe.rukamori.archivetune.shared.ui.menu.collectionQueueActions
 import moe.rukamori.archivetune.shared.ui.menu.collectionShareAction
 import moe.rukamori.archivetune.shared.ui.menu.customArtworkEntryAction
 import moe.rukamori.archivetune.shared.ui.menu.playlistOccurrenceRemoval
