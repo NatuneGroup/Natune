@@ -55,6 +55,25 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertEqual(1, ios_job.count("ARCHIVETUNE_XCODE_VERSION:"))
         self.assertIn("xcode-version: ${{ env.ARCHIVETUNE_XCODE_VERSION }}", ios_job)
         self.assertLess(ios_job.index("setup-xcode@v1"), ios_job.index("bash scripts/build_ios_native_core.sh"))
+        self.assertIn("ARCHIVETUNE_UPDATE_CHANNEL: ${{ inputs.channel }}", ios_job)
+        self.assertIn('"ARCHIVETUNE_UPDATE_CHANNEL=$ARCHIVETUNE_UPDATE_CHANNEL"', ios_job)
+
+    def test_ios_updates_use_real_bundle_identity_and_public_feed(self):
+        info = plistlib.loads((IOS / "ArchiveTune/Info.plist").read_bytes())
+        self.assertEqual("$(ARCHIVETUNE_UPDATE_CHANNEL)", info["ArchiveTuneUpdateChannel"])
+        config = (IOS / "Configuration/Native.xcconfig").read_text()
+        self.assertRegex(config, r"(?m)^ARCHIVETUNE_UPDATE_CHANNEL\s*=\s*stable$")
+        owner = (UI_IOS / "IosUpdateOwner.kt").read_text()
+        for symbol in ("CFBundleShortVersionString", "CFBundleVersion", "ArchiveTuneUpdateChannel",
+                       "UpdateInstallMode.OPEN_URL", "latestRelease", "branchForChannel(channel)"):
+            self.assertIn(symbol, owner)
+        settings = (UI_IOS / "IosSettings.kt").read_text()
+        self.assertIn("updaterAvailable = owners.update.updaterAvailable", settings)
+        self.assertIn("onNotificationChanged = null", settings)
+        self.assertIn("openIosUri(offer.htmlUrl, host::report)", settings)
+        common = (UI_COMMON / "settings/UpdateSettings.kt").read_text()
+        self.assertIn("onNotificationChanged: (suspend (Boolean) -> Unit)?", common)
+        self.assertIn("onNotificationChanged?.invoke", common)
 
     def test_only_portable_pcm_core_drives_audio_and_native_callback(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()
