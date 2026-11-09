@@ -66,6 +66,11 @@ class OnlinePlaylistViewModel
         private val _playlistSongs = MutableStateFlow<List<SongItem>>(emptyList())
         val playlistSongs = _playlistSongs.asStateFlow()
 
+        private val _showingOfflineCopy = MutableStateFlow(false)
+
+        /** True while the songs on screen are the saved copy, which must play without a refetch. */
+        val showingOfflineCopy = _showingOfflineCopy.asStateFlow()
+
         private val _isLoading = MutableStateFlow(false)
         val isLoading = _isLoading.asStateFlow()
 
@@ -218,6 +223,7 @@ class OnlinePlaylistViewModel
                                         .distinctByPlaylistEntry()
                                 _playlist.value = page.playlist
                                 _playlistSongs.value = visibleSongs
+                                _showingOfflineCopy.value = false
                                 continuation = page.songsContinuation ?: page.continuation
                                 prefetchViewCounts(visibleSongs.map { song -> song.id })
                             }
@@ -251,6 +257,7 @@ class OnlinePlaylistViewModel
         private fun showOfflineCopy(offlineCopy: OfflinePlaylistCopy) {
             if (_playlist.value == null) _playlist.value = offlineCopy.playlist
             _playlistSongs.value = offlineCopy.songs
+            _showingOfflineCopy.value = true
             continuation = null
         }
 
