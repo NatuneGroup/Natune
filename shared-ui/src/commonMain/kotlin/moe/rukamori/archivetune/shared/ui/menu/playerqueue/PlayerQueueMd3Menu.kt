@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.phone_not_available_on_ios
 
 /**
  * The Material 3 action block of the player queue menu: the same [PlayerQueueGridItem]s as the Apple Music icon grid,
@@ -29,6 +30,7 @@ internal fun PlayerQueueActionList(
             ListItem(
                 headlineContent = { Text(text = stringResource(item.label)) },
                 leadingContent = item.leading,
+                supportingContent = if (item.unavailable) { { Text(stringResource(moe.rukamori.archivetune.shared.ui.resources.Res.string.phone_not_available_on_ios)) } } else null,
                 modifier =
                     Modifier
                         .alpha(if (item.enabled) 1f else 0.38f)

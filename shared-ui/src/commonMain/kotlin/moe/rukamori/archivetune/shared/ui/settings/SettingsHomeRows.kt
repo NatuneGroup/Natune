@@ -39,12 +39,14 @@ fun settingsHomeRows(
             add(entry("navigation_bar", Res.string.m6_settings_home_navigation_bar,
                 Res.string.m6_settings_home_navigation_bar_desc, "settings/appearance/navigation_bar"))
         }
+        if (androidAuto && !desktop) add(entry("liquid_glass", Res.string.m6_liquid_glass, Res.string.m6_liquid_glass,
+            "settings/appearance/liquid_glass"))
         add(entry("lyrics_animations", Res.string.m6_settings_home_lyrics_animations,
             Res.string.m6_settings_home_lyrics_animations_desc, "settings/appearance/lyrics_animations"))
         add(entry("playback", Res.string.m6_settings_home_playback, Res.string.m6_settings_home_playback_desc, "settings/player"))
         add(entry("canvas", Res.string.m6_settings_home_canvas, Res.string.m6_settings_home_canvas_desc, "settings/canvas"))
         add(entry("sources", Res.string.m6_settings_home_sources, Res.string.m6_settings_home_sources_desc, "settings/sources"))
-        if (desktop) add(entry("modules", Res.string.source_modules, Res.string.desktop_modules_description, "settings/modules"))
+        if (desktop || androidAuto) add(entry("modules", Res.string.source_modules, Res.string.desktop_modules_description, "settings/modules"))
         add(entry("jiosaavn", Res.string.m6_settings_home_jiosaavn, Res.string.m6_settings_home_jiosaavn_desc, "settings/jiosaavn"))
         add(entry("amazon", Res.string.m6_settings_home_amazon, Res.string.m6_settings_home_amazon_desc, "settings/amazon"))
         add(entry("qqmusic", Res.string.m6_settings_home_qqmusic, Res.string.m6_settings_home_qqmusic_desc, "settings/qqmusic"))

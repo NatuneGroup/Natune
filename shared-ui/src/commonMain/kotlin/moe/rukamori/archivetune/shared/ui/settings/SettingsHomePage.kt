@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.m4_empty
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +39,9 @@ fun SettingsHomePage(
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     var shortcutsVisible by remember { mutableStateOf(false) }
+    val reference = LocalPhoneSettingsReference.current
+    var searchQuery by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     val rows = settingsHomeRows(
@@ -47,15 +53,30 @@ fun SettingsHomePage(
         keyboardShortcuts = keyboardShortcuts,
         hostIntegration = hostIntegration,
     )
-    SettingsPage(
-        rows = rows,
-        preferences = preferences,
-        controller = controller,
-        scrollTo = scrollTo,
-        resumed = resumed,
-        motionEnabled = motionEnabled,
-        onFailure = onFailure,
-        modifier = modifier,
-    )
+    val labels = rows.associate { it.anchor to stringResource(it.title) }
+    val visibleRows = if (reference != null && searchQuery.isNotBlank()) rows.filter { row ->
+        row !is SettingsRow.Header && labels[row.anchor].orEmpty().contains(searchQuery, ignoreCase = true)
+    } else rows
+    val visibleReference = if (reference != null && searchQuery.isNotBlank()) reference.copy(rows = reference.rows.filter { spec ->
+        visibleRows.any { it.anchor == spec.anchor }
+    }) else reference
+    CompositionLocalProvider(LocalPhoneSettingsReference provides visibleReference) {
+        SettingsPage(
+            rows = visibleRows,
+            preferences = preferences,
+            controller = controller,
+            scrollTo = scrollTo,
+            resumed = resumed,
+            motionEnabled = motionEnabled,
+            onFailure = onFailure,
+            modifier = modifier,
+            extraItems = { if (visibleRows.isEmpty()) item(key = "settings-empty") {
+                androidx.compose.material3.Text(stringResource(moe.rukamori.archivetune.shared.ui.resources.Res.string.m4_empty))
+            } },
+            header = if (reference != null) { {
+                PhoneSettingsSearchHeader(searchQuery, searching, { searchQuery = it }, { searching = it }, LocalSettingsBack.current ?: {})
+            } } else null,
+        )
+    }
     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
 }

@@ -152,7 +152,8 @@ fun BottomSheetPlayer(
                     // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
                     if (!desktop && !interaction.fullscreenLyrics) {
                         PlayerIcon(
-                            PlayerSymbol.BACK, stringResource(Res.string.m5_back),
+                            if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) PlayerSymbol.DOWN else PlayerSymbol.BACK,
+                            stringResource(Res.string.m5_back),
                             { actions.onAction(PlayerAction.COLLAPSE) },
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
                                 .testTag("player-close"),

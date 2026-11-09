@@ -1,8 +1,8 @@
 # iOS UI audit (r3)
 
 Scope: `iosApp` (SwiftUI/UIKit shell) and `shared-ui` `iosMain`/`commonMain`, against the
-Android `:app` host and the `:desktopApp` host. The shared Compose tree owns every screen, the
-shell chrome, the player and the lyrics on all three platforms; SwiftUI is limited to the iOS
+Android `:app` host and the `:desktopApp` host. iOS and desktop render the shared Compose screens, shell chrome, player and lyrics;
+Android keeps its own Compose screens as the presentation reference; SwiftUI is limited to the iOS
 app/scene shell per PR #80, and the one UIKit job is the root controller that reports the window's
 safe area. This is a **code audit**: `ios_compile.yml` type-checks Swift and compiles Kotlin/Native,
 but no full build, simulator run or device QA was performed here.
@@ -45,7 +45,7 @@ but no full build, simulator run or device QA was performed here.
   platform). None returns a UI-depended-on no-op. `MainViewController` is a `ComposeUIViewController`;
   the two Swift sources are compiled by the Xcode target.
 - **Dynamic type / scale.** iOS system Dynamic Type reaches Compose through `LocalDensity.fontScale`.
-  The Android-only `ui_scale` row is deliberately hidden on iOS (`AndroidOnlySettingsAnchors`) and
+  The Android-only `ui_scale` row stays visible and disabled on iOS with the shared availability description, and
   the iOS root never builds a scaled `Density`, so a stored value cannot produce a divergent layout;
   the shared root's font choice is restart-scoped. Haptics use `LocalHapticFeedback` in common code.
   Scroll physics/overscroll are Compose defaults shared with Android; there is no platform-specific
@@ -116,6 +116,18 @@ Tests added:
 - **Dynamic Type extremes.** `LocalDensity.fontScale` is honored by `sp` text, but very large
   accessibility sizes were not laid out on a device; fixed `dp` artwork/chrome sizes stay fixed by
   design, as on Android.
-- The audit found **no** wrong insets, no Android-only UI leaking onto iOS, and no missing
+- The baseline audit found **no** wrong insets and no missing
   expect/actual no-op that the UI depends on. Those conclusions are code-level; the baseline iOS
   source-contract suite (24 tests) and `check_repository.py --worktree` pass after the fix.
+
+## Android presentation follow-up (2026-11-09)
+
+The new user decision retains Android-only controls as disabled rows rather
+than hiding them. `IosSettingsScreen` supplies shared phone reference metadata
+and an availability policy; desktop keeps its PC presentation. Ordinary
+settings editors/dialogs and launcher-icon selection now render in commonMain.
+UIKit remains responsible for applying alternate icons and system pickers.
+See [the screen inventory](ios-android-ui-gap.md) for the source changes and
+remaining visual/runtime limits. These changes have only lightweight repository
+and Python contract evidence; exact-head CI and device/pixel evidence remain
+unverified.
