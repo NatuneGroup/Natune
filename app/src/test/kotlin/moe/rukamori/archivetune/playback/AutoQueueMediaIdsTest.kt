@@ -5,8 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The automotive queue ids stay stable enough for a car to cache: a tap resolves against the
- * stamped position first, then falls back to the song id when the queue moved.
+ * The automotive queue ids stay stable enough for a car to cache: a tap resolves only while the
+ * stamped position still holds the song, so a moved duplicate never selects another occurrence.
  */
 class AutoQueueMediaIdsTest {
     @Test
@@ -46,9 +46,18 @@ class AutoQueueMediaIdsTest {
     }
 
     @Test
-    fun resolvePosition_fallsBackToFirstSongIdMatch() {
+    fun resolvePosition_rejectsAMovedEntryInsteadOfRemappingIt() {
         val entry = AutoQueueMediaIds.QueueEntry(position = 2, songMediaId = "s")
-        assertEquals(0, AutoQueueMediaIds.resolvePosition(entry, listOf("s", "b", "other")))
+        assertNull(AutoQueueMediaIds.resolvePosition(entry, listOf("s", "b", "other")))
+    }
+
+    @Test
+    fun resolvePosition_aTapFilteredOutOfItsStampedPositionNeverSelectsAnEarlierDuplicate() {
+        val live = listOf("online", "A", "partial", "A")
+        val filtered = live.filter { it == "A" }
+        val staleTap = AutoQueueMediaIds.parse(AutoQueueMediaIds.mediaIdFor(3, "A"))!!
+        assertNull(AutoQueueMediaIds.resolvePosition(staleTap, filtered))
+        assertEquals(3, AutoQueueMediaIds.resolvePosition(staleTap, live))
     }
 
     @Test

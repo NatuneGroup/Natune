@@ -26,6 +26,12 @@ internal class AutoBrowseChildrenCache<T>(
     suspend fun children(
         parentId: String,
         load: suspend () -> List<T>,
+    ): List<T> = children(parentId, cacheEmpty = true, load = load)
+
+    suspend fun children(
+        parentId: String,
+        cacheEmpty: Boolean,
+        load: suspend () -> List<T>,
     ): List<T> {
         var owner = false
         var snapshot: List<T>? = null
@@ -65,7 +71,7 @@ internal class AutoBrowseChildrenCache<T>(
             // Invalidation detaches this folder's pending load. Its older callers can finish,
             // but it cannot overwrite a fresh snapshot or remove a newer in-flight request.
             if (inFlight[parentId] === pending) {
-                entries[parentId] = loaded
+                if (cacheEmpty || loaded.isNotEmpty()) entries[parentId] = loaded
                 inFlight.remove(parentId)
             }
         }
@@ -73,6 +79,9 @@ internal class AutoBrowseChildrenCache<T>(
         pending.complete(loaded)
         return loaded
     }
+
+    /** The committed snapshot, if any, without starting a load. */
+    fun snapshot(parentId: String): List<T>? = synchronized(lock) { entries[parentId] }
 
     fun clear() {
         synchronized(lock) {
