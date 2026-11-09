@@ -34,7 +34,12 @@ artifact names use `N<yyyyMMddHHmm>` in UTC (for example, `N202611091123`). The 
 version there and the allocated build code as `CFBundleVersion`. A
 nightly build gets its own immutable release and tag; occupied minute tags are
 bumped forward until unused. Only a rerun of the same commit and build code may
-replace its own release. After each successful nightly publish, the newest five
+replace its own release. If the published `nightly.json` already offers that
+release, the rerun leaves the release and the feed unchanged and publishes
+nothing; if the manifest cannot be read or parsed, the rerun refuses to replace
+the release. When `dev` advances while a release is being published, that
+release is removed again unless `nightly.json` offers it. After each successful
+nightly publish, the newest five
 `N<digits>` releases are kept, ordered by publish time, along with this run's tag
 and the release referenced by the published `nightly.json`; older unprotected
 releases are deleted together with their tags. If the feed cannot be read or
