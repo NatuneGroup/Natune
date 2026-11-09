@@ -33,7 +33,7 @@ fun UnavailablePhoneSettings(controller: SettingsController, onFailure: () -> Un
 }
 
 @Composable
-fun JioSaavnSettings(controller: SettingsController, onFailure: () -> Unit, scrollTo: String? = null) {
+fun SharedJioSaavnSettings(controller: SettingsController, onFailure: () -> Unit, scrollTo: String? = null) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot ?: run { CircularProgressIndicator(); return }
     SettingsPage(listOf(

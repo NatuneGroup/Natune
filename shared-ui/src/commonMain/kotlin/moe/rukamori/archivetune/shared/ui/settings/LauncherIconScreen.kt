@@ -827,10 +827,6 @@ private fun IconScreenMessage(
     }
 }
 
-
-@Composable
-private fun Modifier: Modifier = this
-
 private const val AppIconContentType = "app_icon"
 private const val CurrentIconContentKey = "current_icon"
 private const val CurrentIconContentType = "current_icon_summary"

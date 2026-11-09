@@ -131,7 +131,7 @@ internal fun IosLaneSettingsPage(
             NavigationBarSettingsPage(
                 owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
             )
-        "settings/jiosaavn" -> moe.rukamori.archivetune.shared.ui.settings.JioSaavnSettings(owners.controller, onFailure, scrollTo)
+        "settings/jiosaavn" -> moe.rukamori.archivetune.shared.ui.settings.SharedJioSaavnSettings(owners.controller, onFailure, scrollTo)
         "settings/content" -> IosLaneContentSettingsPage(owners.controller, onFailure, scrollTo)
         "settings/applemusic" -> AppleMusicSettings(
             owners.controller, onFailure, scrollTo,
