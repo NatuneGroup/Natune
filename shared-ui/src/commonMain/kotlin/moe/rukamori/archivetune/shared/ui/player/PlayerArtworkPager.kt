@@ -21,12 +21,14 @@ internal class PlayerArtworkPagerState(val pager: PagerState) {
     var cancelledDragGeneration by mutableIntStateOf(0)
 }
 
+internal fun artworkPageIndex(state: PlayerState): Int = state.occurrenceIds.indexOf(state.displayedOccurrenceId)
+
 /** One synchronizer above look/orientation branches; only genuine user settles select an occurrence. */
 @Composable
 internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerActions): PlayerArtworkPagerState {
     val ids=state.occurrenceIds
-    val current=state.playback?.occurrenceId
-    val pager=rememberPagerState(initialPage=ids.indexOf(current).coerceAtLeast(0),pageCount={ ids.size })
+    val current=state.displayedOccurrenceId
+    val pager=rememberPagerState(initialPage=artworkPageIndex(state).coerceAtLeast(0),pageCount={ ids.size })
     val sync=remember(pager) { PlayerArtworkPagerState(pager) }
     val latestState by rememberUpdatedState(state)
     val latestActions by rememberUpdatedState(actions)
@@ -41,7 +43,7 @@ internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerAction
     }
     // Cancellation can unblock a follow whose occurrence keys already changed while dragging.
     LaunchedEffect(current,ids,sync.cancelledDragGeneration) {
-        val target=ids.indexOf(current)
+        val target=artworkPageIndex(state)
         if(target>=0 && target!=pager.currentPage && !sync.dragged) {
             sync.programmatic=true
             try { pager.scrollToPage(target) } finally { sync.programmatic=false }
@@ -51,7 +53,7 @@ internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerAction
         snapshotFlow { Triple(pager.isScrollInProgress,pager.settledPage,sync.programmatic) }
             .collectLatest { (scrolling,page,programmatic) ->
                 if(!scrolling && !programmatic && sync.dragged) {
-                    val target=settledArtworkOccurrence(latestState.occurrenceIds,latestState.playback?.occurrenceId,
+                    val target=settledArtworkOccurrence(latestState.occurrenceIds,latestState.displayedOccurrenceId,
                         page,programmatic,sync.dragged)
                     sync.dragged=false
                     if(target!=null) latestActions.selectOccurrence(target)
@@ -73,7 +75,7 @@ internal fun artworkSnapThreshold(swipeSensitivity: Float): Float =
 internal fun PlayerArtworkPager(c: PlayerRenderContext,modifier: Modifier=Modifier,vertical: Boolean=false) {
     val ids=c.state.occurrenceIds
     if(ids.isEmpty()) {
-        c.slots.artwork(c.state.playback?.occurrenceId,modifier.aspectRatio(1f))
+        c.slots.artwork(c.state.displayedOccurrenceId,modifier.aspectRatio(1f))
         return
     }
     val enabled=c.preferences.swipeArtwork && c.state.repeat!=PlayerRepeat.ONE && ids.size>1
