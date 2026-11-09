@@ -124,15 +124,14 @@ fun DesktopTitleBar(
                 .height(DesktopShellMetrics.titleBarHeight)
                 .testTag("desktop-title-bar"),
     ) {
-        BoxWithConstraints(
-            Modifier.fillMaxSize().padding(horizontal = DesktopShellMetrics.titleBarPadding),
-        ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
             // Read here, once: the layout scopes below are nested, and a layout-scope member is not
             // reachable
             // implicitly from inside another one.
+            // Metrics and the native hit test take the full window width; the row spends padding once.
             val titleBarWidth = maxWidth
             Row(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().padding(horizontal = DesktopShellMetrics.titleBarPadding),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.titleBarSearchGap),
             ) {
