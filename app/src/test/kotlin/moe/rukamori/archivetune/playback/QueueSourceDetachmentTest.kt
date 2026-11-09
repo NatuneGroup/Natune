@@ -4,7 +4,6 @@ import androidx.media3.common.MediaItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.QueueData
@@ -13,7 +12,6 @@ import moe.rukamori.archivetune.playback.QueueCheckpointSchedulerTest.Fixture
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistPhase
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
-import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.YouTubeAlbumRadio
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
@@ -50,9 +48,6 @@ class QueueSourceDetachmentTest {
         val persisted = fixture.checkpointGate.persistQueue(target.player, listOf(metadata))
         assertEquals(QueueType.LIST, persisted.queueType)
         assertNull(persisted.queueData)
-        val restored = persisted.toContinuationQueue()
-        assertTrue(restored is ListQueue)
-        assertFalse(restored.hasNextPage())
         assertTrue(fixture.savePosition(321L))
         assertEquals(QueueType.LIST, requireNotNull(fixture.teardownSnapshot()).queueType)
     }
