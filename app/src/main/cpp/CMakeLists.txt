@@ -29,6 +29,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-ffunction-sections -fdata-sections)
 add_link_options("-Wl,--gc-sections")
 
+# Each JNI library owns its STL objects; only JNI primitives/arrays cross its boundary.
+# Hide archive symbols when statically linking the STL so dlopen cannot interpose another
+# library's allocator/exception runtime. Optional prebuilt SDK variants use c++_shared.
+if(ANDROID_STL STREQUAL "c++_static")
+    add_link_options("-Wl,--exclude-libs,ALL")
+endif()
+
 add_library(archivetune_analysis SHARED
     ${ARCHIVETUNE_NATIVE_DIR}/analyzer/audio_analysis.cpp
     ${ARCHIVETUNE_NATIVE_DIR}/analyzer/tempo_analysis.cpp

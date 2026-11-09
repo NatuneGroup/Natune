@@ -94,7 +94,7 @@ credits below.
 | [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | Studio Master Clarity, adapted stage for stage from `lastwave/DspProcessor.cpp` into `:shared-domain` (`dsp/clarity/ClarityPreset.kt` and `ClarityStage.kt`: the six-section contour, the shelf slope and the named design trims), and `app/src/main/kotlin/com/lastwave/app/playback/UsbDacMonitor.kt`. |
 | [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt` and the audio-output inspector (`app/src/main/kotlin/tf/monochrome/`). |
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
-| [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Pinned at 1.11.0 and still declared in the app build; no native target links it since the LastWave engine went. |
+| [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Historical 1.11.0 dependency, removed in the APK-size pass after the LastWave engine retired; credit and [full upstream notice](../shared-ui/src/commonMain/composeResources/files/notices/Google-Oboe-Apache-2.0.txt) retained in the bundled About licenses. |
 
 The removed native work went with its notices: the LastWave engine library
 (`app/src/main/cpp/lastwave`) and the SoX Resampler 0.1.3 subset it vendored
