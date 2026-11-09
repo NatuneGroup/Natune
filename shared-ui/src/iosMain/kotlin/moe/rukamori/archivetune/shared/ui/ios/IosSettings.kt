@@ -578,7 +578,8 @@ private fun IosSettingsRouteBody(
                 onChannelChanged = { owners.update.checker.markSelectionChanged() },
                 // iOS has no shared notification scheduler or UNUserNotificationCenter delivery yet.
                 onNotificationChanged = null,
-                installOffer = { offer -> openIosUri(offer.htmlUrl, host::report) },
+                // OPEN_URL captures the resolved release page in UpdateOffer.downloadUrl.
+                installOffer = { offer -> openIosUri(offer.downloadUrl, host::report) },
                 loadCommits = owners.update::loadCommits,
                 commitAvatar = { _, _ -> },
                 onOpenCommit = { url -> openIosUri(url, host::report) },
