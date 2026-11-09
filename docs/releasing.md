@@ -274,6 +274,13 @@ exact-head packaging run — Blacksmith for every host, with
   producer verifies the FFmpeg tarball against the pinned release fingerprint
   inside a short-lived temporary `GNUPGHOME` (macOS caps unix socket paths, so the
   keyring cannot live under the deep work tree) and prints the gpg log on failure.
+  The IPA build appends `-Xmx20g` and `natune.androidSdk=false` to the user-home
+  `gradle.properties`. That file reaches the Gradle run inside Xcode's script
+  phase, which does not see the job's blank `ANDROID_HOME`, so the release
+  framework link gets a 13.3 GiB ParallelGC old generation and `:app` never
+  configures or installs the NDK there. `xcodebuild -hideShellScriptEnvironment`
+  keeps Xcode from printing every build setting, credentials included, into the
+  public log, where Xcode's escaping (`=` becomes `\=`) defeats GitHub's masking.
   This is not yet a successful device-link/package result.
 
 Nightly preparation runs `scripts.test_release_workflow`,
