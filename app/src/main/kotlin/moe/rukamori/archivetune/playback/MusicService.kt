@@ -568,6 +568,7 @@ class MusicService :
     private lateinit var connectivityManager: ConnectivityManager
     lateinit var connectivityObserver: NetworkConnectivityObserver
     val waitingForNetworkConnection = MutableStateFlow(false)
+    private val autoOfflineAvailability by lazy { AutoOfflineAvailability { connectivityObserver.isCurrentlyConnected() } }
     private val isNetworkConnected = MutableStateFlow(false)
 
     private val audioQuality by enumPreference(
@@ -918,7 +919,10 @@ class MusicService :
      * setPlayWhenReady() calls, so [OutputFadingPlayer] applies the click-free fade with the
      * true intent. Rebuilt with the metadata projection after player promotion.
      */
-    private fun sessionFacingPlayer(): Player = NowPlayingMetadataPlayer(OutputFadingPlayer(player, outputFades), queueMetadataUpdates::sessionMetadata)
+    private fun recoveringPlayer(): Player = ErrorRecoveringPlayer(player, mediaLibrarySessionCallback.autoOfflineSongs) {
+        waitingForNetworkConnection.value = false; recoveryRetry.cancelPending()
+    }
+    private fun sessionFacingPlayer(): Player = NowPlayingMetadataPlayer(OutputFadingPlayer(recoveringPlayer(), outputFades), queueMetadataUpdates::sessionMetadata)
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
     // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
@@ -1539,7 +1543,17 @@ class MusicService :
         lastAudioOutputDeviceSignature = currentAudioOutputDeviceSignature()
         audioOutputResolver.refresh()
 
+        connectivityManager = getSystemService()!!
+        connectivityObserver = NetworkConnectivityObserver(this)
         mediaLibrarySessionCallback.apply {
+            autoOfflineSongs = AutoOfflineSongs(
+                isOffline = autoOfflineAvailability::isOffline,
+                // Module downloads use their existing progressive/HLS/DASH offline factory (format itag -1).
+                isDownloaded = { id -> moduleDownloadUtil.downloads.value[id]?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED &&
+                    (autoOfflineSongs.knownSong(id)?.format?.itag == -1 || isFullyCachedForAuto(id)) },
+                isFullyCached = { song -> isFullyCachedForAuto(song) },
+                isFullyCachedId = { id -> isFullyCachedForAuto(id) },
+            )
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
             toggleLibrary = ::toggleLibrary
@@ -1594,12 +1608,12 @@ class MusicService :
             }
         }
 
-        connectivityManager = getSystemService()!!
-        connectivityObserver = NetworkConnectivityObserver(this)
-
         scope.launch {
             connectivityObserver.networkStatus.collect { isConnected ->
                 isNetworkConnected.value = isConnected
+                val availabilityChanged = autoOfflineAvailability.onConnectivityChanged(isConnected)
+                if (autoOfflineAvailability.isOffline()) retainOfflineQueue(player, mediaLibrarySessionCallback.autoOfflineSongs)
+                if (availabilityChanged) mediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(mediaSession)
                 if (isConnected && waitingForNetworkConnection.value) {
                     waitingForNetworkConnection.value = false
                     if (player.currentMediaItem != null && player.playWhenReady &&
@@ -5285,11 +5299,11 @@ class MusicService :
          * too many errors come up too quickly. Pause to show player "stopped" state
          */
         consecutivePlaybackErr += 2
-        val nextWindowIndex = player.nextMediaItemIndex
+        val transport = recoveringPlayer()
+        val nextWindowIndex = transport.nextMediaItemIndex
 
         if (consecutivePlaybackErr <= MAX_CONSECUTIVE_ERR && nextWindowIndex != C.INDEX_UNSET) {
-            player.seekTo(nextWindowIndex, C.TIME_UNSET)
-            player.prepare()
+            transport.seekToNextMediaItem()
             player.play()
             return
         }
@@ -8064,6 +8078,10 @@ class MusicService :
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
         val isLocalMedia = currentMediaId.isLocalMediaId()
+        val isConnectionError = error.isNetworkPlaybackFailure()
+        if (!isLocalMedia && isConnectionError && autoOfflineAvailability.onConnectionFailure()) {
+            mediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(mediaSession)
+        }
 
         val librespotFailure = generateSequence(error as Throwable) { it.cause }.take(16)
             .filterIsInstance<SpotifyLibrespotAudioException>().firstOrNull()
@@ -8105,31 +8123,23 @@ class MusicService :
                     }
                 }.getOrDefault(false)
 
-        val isConnectionError =
-            (error.cause?.cause is PlaybackException) &&
-                (error.cause?.cause as PlaybackException).errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
-
-        // Offline bypass: if we have ANY cached data for this mediaId (a
-        // complete download, or even partial cached spans under the bare or
-        // source-prefixed keys), do NOT call `waitOnNetworkError()` — the
-        // cache resolver in `resolveCachedDataSpec` will serve the cached
-        // bytes on the next prepare(). Calling `waitOnNetworkError()` here
-        // would freeze playback indefinitely even though the song is fully
-        // available locally.
-        if (!isLocalMedia && !isFullyDownloadedMedia && !hasAnyCachedData &&
-            (!isNetworkConnected.value || isConnectionError)
-        ) {
+        val availableOffline = mediaLibrarySessionCallback.autoOfflineSongs.canPlayId(currentMediaId)
+        if (!isLocalMedia && !availableOffline && autoOfflineAvailability.isOffline()) {
+            // Continue only with a complete/local successor and the existing shared recovery budget.
+            val transport = recoveringPlayer()
+            if (transport.nextMediaItemIndex != C.INDEX_UNSET && playbackErrorRecovery.shouldAdvancePast(
+                    error.asPlaybackFailure(currentMediaId, findStreamHttpFailure(error)?.responseCode), player.currentPosition.coerceAtLeast(0L))) {
+                transport.seekToNextMediaItem()
+                if (player.playWhenReady) player.play()
+                return
+            }
             waitOnNetworkError()
             return
         }
 
-        // If we have cached data but the player still errored (typically
-        // because the resolver tried the network first and failed), force a
-        // re-prepare so the cache resolver gets a chance to serve the bytes.
-        // This handles the case where the initial resolvePlaybackDataSpec
-        // call fell through to the YouTube resolver before the cache was
-        // consulted, and the YouTube resolver failed because we're offline.
-        if (!isLocalMedia && hasAnyCachedData && (!isNetworkConnected.value || isConnectionError)) {
+        // Partial spans cannot fund an offline retry; eligibility is the resolver's full-file lookup.
+        if (!isLocalMedia && availableOffline && autoOfflineAvailability.isOffline()) {
+            retainOfflineQueue(player, mediaLibrarySessionCallback.autoOfflineSongs)
             Timber.tag("MusicService").i(
                 "Offline playback recovery for %s (fullyCached=%b, hasSpans=%b); re-preparing to force cache read",
                 currentMediaId,
@@ -8401,7 +8411,8 @@ class MusicService :
 
     /** The policy-funded advance past an item no recovery could start: next queue item, honoring the play intent. */
     private fun autoAdvanceAfterFailedItem(mediaId: String) {
-        val nextWindowIndex = player.nextMediaItemIndex
+        val transport = recoveringPlayer()
+        val nextWindowIndex = transport.nextMediaItemIndex
         if (nextWindowIndex == C.INDEX_UNSET) {
             stopOnError()
             return
@@ -8409,8 +8420,7 @@ class MusicService :
         Timber.tag("PlaybackDiagnostics").i(
             "Auto-advancing past failed item %s (recovery policy funded)", mediaId,
         )
-        player.seekTo(nextWindowIndex, C.TIME_UNSET)
-        player.prepare()
+        transport.seekToNextMediaItem()
         if (player.playWhenReady) player.play()
     }
 
@@ -10647,22 +10657,6 @@ class MusicService :
     private fun rejectedPlaybackSources(mediaId: String): Set<AudioSourceType> =
         authenticityRejectedSourcesByMediaId[mediaId].orEmpty() + externalStreamRecovery.rejectedSources(mediaId)
 
-    /**
-     * Cheap check (no network) for whether an external source should be preferred for [mediaId].
-     * Gates the ephemeral YouTube player-cache short-circuit so enabling a source takes effect
-     * immediately instead of replaying previously cached YouTube bytes.
-     */
-    private fun tidalSourceApplies(
-        mediaId: String,
-        prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
-    ): Boolean {
-        if (mediaId.isLocalMediaId()) return false
-        // Any enabled source above YouTube — JioSaavn included; it resolves real streams the
-        // same as the rest — must bypass the ephemeral YouTube player cache so toggling a source
-        // on takes effect immediately instead of replaying cached YT bytes.
-        return PlaybackSourceChain.baseChain(prefs).isNotEmpty()
-    }
-
     private fun resolvePlaybackDataSpec(
         dataSpec: DataSpec,
         allowCacheShortCircuit: Boolean,
@@ -10684,25 +10678,11 @@ class MusicService :
         storedFormat?.let { format ->
             audioNormalizationFactorCache[mediaId] = resolveAudioNormalizationFactor(mediaId, storedFormat, normalizeAudio = true)
         }
-        val knownContentLength =
-            contentLengthCache[mediaId] ?: storedFormat?.contentLength?.takeIf { it > 0L } ?: runCatching {
-                downloadCache
-                    .getContentMetadata(mediaId)
-                    .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-            }.getOrNull()?.takeIf { it > 0L } ?: runCatching {
-                playerCache
-                    .getContentMetadata(mediaId)
-                    .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-            }.getOrNull()?.takeIf { it > 0L }
-
-        knownContentLength?.takeIf { it > 0L }?.let { contentLengthCache[mediaId] = it }
-
         // When any external source is enabled for this track, the ephemeral YouTube player cache
         // must not short-circuit playback (otherwise toggling a source on would keep replaying
         // the previously cached YouTube bytes). Persistent downloads of enabled sources still
         // win so offline playback and explicit downloads are unaffected.
-        val tidalApplies = !lowDataModeActive && tidalSourceApplies(mediaId, prefs)
-        val allowPlayerCacheShortCircuit = !tidalApplies
+        val allowPlayerCacheShortCircuit = lowDataModeActive || PlaybackSourceChain.cacheShortCircuitAllowed(prefs) || autoOfflineAvailability.isOffline()
 
         if (allowCacheShortCircuit) {
             resolveCachedDataSpec(
@@ -10722,32 +10702,6 @@ class MusicService :
                 )
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 return cachedDataSpec
-            }
-        }
-
-        val requiredCachedLength =
-            if (dataSpec.length >= 0) {
-                dataSpec.length
-            } else {
-                knownContentLength?.let { nonNullContentLength ->
-                    (nonNullContentLength - dataSpec.position).takeIf { it > 0L }
-                }
-            }
-
-        if (allowCacheShortCircuit &&
-            AudioSourceType.YOUTUBE in prefs.enabled &&
-            AudioSourceType.YOUTUBE !in authenticityRejectedSources &&
-            requiredCachedLength != null
-        ) {
-            val isFullyCached =
-                downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
-                    (
-                        allowPlayerCacheShortCircuit &&
-                            playerCache.isCached(mediaId, dataSpec.position, requiredCachedLength)
-                    )
-            if (isFullyCached) {
-                scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
-                return dataSpec
             }
         }
 
@@ -11025,64 +10979,14 @@ class MusicService :
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
         allowModules: Boolean = false,
     ): DataSpec? {
-        // Find the first key (enabled sources in the user's own preference order, then the
-        // itag-scoped and legacy YouTube slots while it is enabled — cacheKeyOrder) that has the
-        // requested byte range fully cached. Returning the DataSpec with the matching key is
-        // critical — without it the CacheDataSource would look up the bytes under the bare
-        // mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" / "tidal:$mediaId".
-        // A disabled source's key is left out entirely: neither its player cache nor its
-        // persistent downloads are served while the source is switched off.
-        val itagKey = PlaybackSourceChain.itagCacheKey(mediaId, youtubeItag)
-        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId, youtubeItag)
-        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
-        val transportRejectedSources = externalStreamRecovery.rejectedSources(mediaId) +
-            listOfNotNull(externalStreamRecovery.refreshSource(mediaId))
-        val (matchingKey, matchingWindow, spotifyCacheTag) =
-            candidateKeys.firstNotNullOfOrNull { key ->
-                val cacheSource = sourceForCacheKey(key, mediaId)
-                val spotifyTag = if (cacheSource == AudioSourceType.SPOTIFY) {
-                    playerCache.getContentMetadata(key).get(SpotifyAudioCache.METHOD_METADATA, null as String?)
-                } else null
-                if (cacheSource == AudioSourceType.SPOTIFY && !spotifyAudioResolver.cacheAllowed(spotifyTag, isLowDataModeActive())) {
-                    return@firstNotNullOfOrNull null
-                }
-
-                if (cacheSource != null && cacheSource in authenticityRejectedSources) {
-                    return@firstNotNullOfOrNull null
-                }
-                val transportRejected = cacheSource != null && cacheSource in transportRejectedSources
-                if (transportRejected) {
-                    // A network URL rejection says nothing about a complete saved copy. Partial spans must not
-                    // stitch old bytes into the refreshed stream, but a complete offline download still plays.
-                    val complete = runCatching {
-                        val length = downloadCache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-                        length > 0L && downloadCache.isCached(key, 0L, length)
-                    }.getOrDefault(false)
-                    if (!complete) return@firstNotNullOfOrNull null
-                }
-                val recordedLength = recordedContentLength(key, includePlayerCache && !transportRejected)
-                val keyWindow =
-                    resolveCachedReadWindow(
-                        position = dataSpec.position,
-                        requestedLength = dataSpec.length,
-                        knownContentLength =
-                            if (dataSpec.length >= 0L) null
-                            else if (key == itagKey) PlaybackSourceChain.itagCoverageLength(recordedLength, formatContentLength)
-                            else recordedLength,
-                    ) ?: return@firstNotNullOfOrNull null
-                val cachedLength =
-                    getContinuousCachedLengthForKey(
-                        key = key,
-                        position = keyWindow.position,
-                        requestedLength = keyWindow.length,
-                        includePlayerCache = includePlayerCache && !transportRejected,
-                    )
-                if (cachedLength >= keyWindow.length) Triple(key, keyWindow, spotifyTag) else null
-            } ?: return null
+        val selection = cachedPlaybackSelection(
+            mediaId, dataSpec.position, dataSpec.length, includePlayerCache, youtubeItag, formatContentLength, prefs,
+        ) ?: return null
+        val (matchingKey, matchingWindow, spotifyCacheTag) = selection
 
         sourceForCacheKey(matchingKey, mediaId)?.let { source ->
             selectedPlaybackSourceByMediaId[mediaId] = source
-            val caches = if (includePlayerCache) listOf(downloadCache, playerCache) else listOf(downloadCache)
+            val caches = if (selection.includePlayerCache) listOf(downloadCache, playerCache) else listOf(downloadCache)
             val metadata = caches.firstNotNullOfOrNull { cache ->
                 CachedAudioMetadata.read(cache.getContentMetadata(matchingKey), source)
             }
@@ -11121,56 +11025,42 @@ class MusicService :
         }
     }
 
-    private fun recordedContentLength(
-        key: String,
-        includePlayerCache: Boolean,
-    ): Long? {
-        val caches = if (includePlayerCache) listOf(downloadCache, playerCache) else listOf(downloadCache)
-        return caches
-            .mapNotNull { cache ->
-                runCatching { cache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L) }
-                    .getOrNull()
-                    ?.takeIf { it > 0L }
-            }.maxOrNull()
+    private fun isFullyCachedForAuto(song: Song): Boolean {
+        val prefs = sourcePrefsSnapshot()
+        val includePlayer = isLowDataModeActive() || PlaybackSourceChain.cacheShortCircuitAllowed(prefs) || autoOfflineAvailability.isOffline()
+        return cachedPlaybackSelection(song.id, 0L, C.LENGTH_UNSET.toLong(), includePlayer, song.format?.itag, song.format?.contentLength, prefs) != null
     }
 
-    /**
-     * Same as [getContinuousCachedLength] but for a specific cache key.
-     * Used by [resolveCachedDataSpec] to find the source-prefixed key
-     * whose cache spans fully cover the requested range.
-     */
-    private fun getContinuousCachedLengthForKey(
-        key: String,
+    private fun isFullyCachedForAuto(mediaId: String): Boolean =
+        mediaLibrarySessionCallback.autoOfflineSongs.knownSong(mediaId)?.let { isFullyCachedForAuto(it) } ?: (cachedPlaybackSelection(
+            mediaId, 0L, C.LENGTH_UNSET.toLong(), autoOfflineAvailability.isOffline(), null, null) != null)
+
+    private val cachedPlaybackLookup by lazy { CachedPlaybackLookup.fromCaches(downloadCache, playerCache) }
+
+    private fun cachedPlaybackSelection(
+        mediaId: String,
         position: Long,
         requestedLength: Long,
-        includePlayerCache: Boolean = true,
-    ): Long {
-        val playerCacheSpans =
-            if (includePlayerCache) cachedSpansOf(playerCache, key) else emptyList()
-        return continuousCachedLength(
-            spans = cachedSpansOf(downloadCache, key) + playerCacheSpans,
-            position = position,
-            requestedLength = requestedLength,
-        )
-    }
-
-    /**
-     * [Cache.getCachedSpans] as coverage windows. Holes ride along with `isCached = false` so
-     * [continuousCachedLength] can drop them: a range the index knows is missing must never be
-     * offered to ExoPlayer as cached bytes.
-     */
-    private fun cachedSpansOf(cache: Cache, key: String): List<CachedSpan> =
-        runCatching { cache.getCachedSpans(key).toList() }
-            .getOrNull()
-            .orEmpty()
-            .map { span ->
-                CachedSpan(
-                    position = span.position,
-                    length = span.length,
-                    isCached = span.isCached,
-                )
-            }
-
+        includePlayerCache: Boolean,
+        youtubeItag: Int?,
+        formatContentLength: Long?,
+        prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+    ): CachedPlaybackSelection? = cachedPlaybackLookup.find(
+        mediaId = mediaId,
+        position = position,
+        requestedLength = requestedLength,
+        includePlayerCache = includePlayerCache,
+        youtubeItag = youtubeItag,
+        formatContentLength = formatContentLength,
+        prefs = prefs,
+        authenticityRejected = authenticityRejectedSourcesByMediaId[mediaId].orEmpty(),
+        transportRejected = externalStreamRecovery.rejectedSources(mediaId) + listOfNotNull(externalStreamRecovery.refreshSource(mediaId)),
+        sourceOf = { sourceForCacheKey(it, mediaId) },
+        spotifyTagOf = { playerCache.getContentMetadata(it).get(SpotifyAudioCache.METHOD_METADATA, null as String?) },
+        spotifyCacheAllowed = { spotifyAudioResolver.cacheAllowed(it, isLowDataModeActive()) },
+        // An external format row (itag 0) cannot prove the length of legacy YouTube bytes.
+        legacyContentLength = if (youtubeItag != null && youtubeItag > 0) contentLengthCache[mediaId] ?: formatContentLength else null,
+    )
 
     private fun Uri.shouldBypassYouTubeResolver(): Boolean {
         val normalizedScheme = scheme?.lowercase(Locale.US)

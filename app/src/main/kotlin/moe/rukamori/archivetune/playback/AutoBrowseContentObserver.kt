@@ -30,6 +30,7 @@ internal fun MediaLibrarySessionCallback.observeBrowseContent(session: MediaLibr
     }
     owner.launch {
         combine(database.allSongs(), database.allPlaylistSongMapsForDownloads()) { songs, entries ->
+            autoOfflineSongs.updateSongs(songs)
             AutoBrowseSongSnapshot(songs.associate { it.id to it.autoBrowseContent() }, entries)
         }.flowOn(Dispatchers.IO).observeChanges { previous, current ->
             val memberships = (previous.entries + current.entries).groupBy { it.songId }

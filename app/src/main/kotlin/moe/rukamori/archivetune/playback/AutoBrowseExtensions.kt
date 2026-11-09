@@ -16,6 +16,15 @@ import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
+import timber.log.Timber
+
+internal fun MediaLibrarySessionCallback.notifyOfflineAvailabilityChanged(session: MediaLibrarySession) {
+    browseFolderUpdates.availabilityChanged({ session.getSubscribedControllers(it).isNotEmpty() }) { parentId ->
+        runCatching { session.notifyChildrenChanged(parentId, Int.MAX_VALUE, null) }
+            .onFailure { Timber.tag("MusicService").w(it, "Failed to refresh Auto availability for %s", parentId) }
+    }
+    runCatching { session.notifyChildrenChanged(MusicService.QUEUE, Int.MAX_VALUE, null) }
+}
 
 /**
  * The fixed top-level and Home folder items — identical whether reached as a child of
@@ -211,6 +220,21 @@ internal suspend fun MediaLibrarySessionCallback.queueEntryItem(
     }
 }
 
+internal suspend fun MediaLibrarySessionCallback.queueEntryPlayback(
+    session: MediaSession,
+    mediaId: String,
+    positionMs: Long,
+): MediaSession.MediaItemsWithStartPosition? {
+    val entry = AutoQueueMediaIds.parse(mediaId) ?: return null
+    return withContext(Dispatchers.Main) {
+        val player = session.player
+        val items = List(player.mediaItemCount) { player.getMediaItemAt(it) }
+        val position = AutoQueueMediaIds.resolvePosition(entry, items.map { it.mediaId }) ?: return@withContext null
+        val selection = autoOfflineSongs.selectItems(items, position, positionMs) ?: return@withContext null
+        MediaSession.MediaItemsWithStartPosition(selection.items, selection.startIndex, selection.startPositionMs)
+    }
+}
+
 internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistEntries(): List<AndroidAutoPinnedPlaylist> =
     AndroidAutoPinnedPlaylists.decode(
         context.dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"),
@@ -239,7 +263,7 @@ internal suspend fun MediaLibrarySessionCallback.pinnedMediaItem(mediaId: String
     val songMediaId =
         ref.songMediaId
             ?: return pinnedPlaylistItem(AndroidAutoPinnedPlaylist(ref.kind, ref.playlistId))
-    val parentId = mediaId.substringBeforeLast('/')
+    val parentId = mediaId.removeSuffix("/$songMediaId")
     return when (ref.kind) {
         AndroidAutoPinnedPlaylistKind.LOCAL ->
             database.song(songMediaId).first()?.let { song -> song.toMediaItem(parentId) }
@@ -259,7 +283,7 @@ internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistChildren(parentId
     if (ref.songMediaId != null) return emptyList()
     return when (ref.kind) {
         AndroidAutoPinnedPlaylistKind.LOCAL ->
-            playlistSongs(ref.playlistId).map { song -> song.toMediaItem(parentId) }
+            with(this) { playlistSongs(ref.playlistId).toAutoMediaItems(parentId) }
 
         AndroidAutoPinnedPlaylistKind.ONLINE ->
             onlinePlaylistSongs(ref.playlistId).map { song -> song.toMediaItem(parentId) }
@@ -274,8 +298,13 @@ internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistPlayback(
     val shufflePinned = context.dataStore.get(AndroidAutoPinnedPlaylistShuffleKey, false)
     val songs =
         when (ref.kind) {
-            AndroidAutoPinnedPlaylistKind.LOCAL ->
-                playlistSongs(ref.playlistId).map { it.toMediaItem() }
+            AndroidAutoPinnedPlaylistKind.LOCAL -> {
+                val source = playlistSongs(ref.playlistId).let { if (ref.songMediaId == null && shufflePinned) it.shuffled() else it }
+                val selection = autoOfflineSongs.select(source, ref.songMediaId, startPositionMs) ?: return null
+                return MediaSession.MediaItemsWithStartPosition(
+                    selection.items.map { it.toMediaItem() }, selection.startIndex, selection.startPositionMs,
+                )
+            }
 
             AndroidAutoPinnedPlaylistKind.ONLINE ->
                 onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem() }
@@ -284,13 +313,9 @@ internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistPlayback(
     // Pinned playlist taps honour the driving-playlist playback mode: shuffle starts a
     // shuffled list from the top while play-in-order keeps the playlist's order. A tap on
     // a specific song always starts at that song.
-    val startIndex =
-        ref.songMediaId?.let { songId ->
-            songs.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
-        } ?: 0
-    return if (ref.songMediaId == null && shufflePinned) {
-        MediaSession.MediaItemsWithStartPosition(songs.shuffled(), 0, startPositionMs)
-    } else {
-        MediaSession.MediaItemsWithStartPosition(songs, startIndex, startPositionMs)
-    }
+    val source = if (ref.songMediaId == null && shufflePinned) songs.shuffled() else songs
+    val startIndex = autoBrowseStartIndex(source, ref.songMediaId) { it.mediaId } ?: return null
+    val selection = autoOfflineSongs.selectItems(source, startIndex, startPositionMs,
+        allowFirstPlayable = ref.songMediaId == null) ?: return null
+    return MediaSession.MediaItemsWithStartPosition(selection.items, selection.startIndex, selection.startPositionMs)
 }
