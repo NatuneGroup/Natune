@@ -43,7 +43,7 @@ private val teardownPersistenceScope = CoroutineScope(SupervisorJob() + Dispatch
 internal fun MusicService.saveQueueForTeardown(): TeardownQueueSave? {
     val snapshot = runCatching {
         val enabled = dataStore.get(PersistentQueueKey, true)
-        if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount, hasQueueTimelineChanges)) {
+        if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount, hasQueueTimelineChanges, hasAcceptedEmptyCheckpoint)) {
             snapshotQueue()
         } else {
             null
@@ -96,7 +96,8 @@ internal object TeardownQueuePersistence {
         persistentQueueEnabled: Boolean,
         mediaItemCount: Int,
         hasQueueTimelineChanges: Boolean = false,
-    ): Boolean = persistentQueueEnabled && (mediaItemCount > 0 || hasQueueTimelineChanges)
+        hasAcceptedEmptyCheckpoint: Boolean = false,
+    ): Boolean = persistentQueueEnabled && (mediaItemCount > 0 || hasQueueTimelineChanges || hasAcceptedEmptyCheckpoint)
 
     /** Longer queues serialize longer, up to the ceiling that keeps teardown's wait bounded. */
     fun destroyWaitMillis(mediaItemCount: Int): Long {
