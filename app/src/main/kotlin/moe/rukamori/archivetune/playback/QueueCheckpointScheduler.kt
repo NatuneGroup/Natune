@@ -99,6 +99,7 @@ internal class QueuePersistenceState {
     val lock = Any()
     val generation = AtomicLong(0L)
     val checkpointOrder = QueueCheckpointOrder { generation.get() }
+    val teardownWrites = QueueTeardownWrites()
 
     @Volatile
     var lastQueue: PersistQueue? = null
