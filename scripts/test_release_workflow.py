@@ -131,6 +131,33 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 "--licenses", "platform-tools", "platforms;android-37.0", "build-tools;35.0.0", "ndk;30.0.16248370",
             ], arguments.read_text().splitlines())
 
+    def test_ios_ipa_build_hides_the_script_environment_and_keeps_android_out_of_xcode_gradle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            (root / "home").mkdir()
+            # The stand-in captures what the Gradle run inside Xcode's script phase would read.
+            tool(bin_dir, "xcodebuild", """
+                #!/bin/sh
+                printf '%s\\n' "$@" > "$XCODEBUILD_ARGUMENTS"
+                cp "$HOME/.gradle/gradle.properties" "$XCODEBUILD_PROPERTIES"
+                exit 3
+            """)
+            result = bash_step(
+                "Build unsigned device app and create IPA", root,
+                PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], HOME=str(root / "home"), RUNNER_TEMP=str(root),
+                XCODEBUILD_ARGUMENTS=str(root / "arguments"), XCODEBUILD_PROPERTIES=str(root / "properties"),
+                PACKAGE_VERSION="1.2.3", VERSION_CODE_OVERRIDE="1", ARCHIVETUNE_TELEGRAM_API_ID="",
+                ARCHIVETUNE_TELEGRAM_API_HASH="", ARCHIVETUNE_LISTENER_PRESENCE_URL="",
+            )
+            self.assertEqual(3, result.returncode, result.stderr)
+            self.assertEqual("-hideShellScriptEnvironment", (root / "arguments").read_text().splitlines()[0])
+            self.assertEqual([
+                "org.gradle.jvmargs=-Xmx20g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -XX:+UseParallelGC",
+                "natune.androidSdk=false",
+            ], (root / "properties").read_text().splitlines())
+
     def test_six_nightly_variants_and_the_stable_only_x86_row_resolve_the_existing_tasks(self):
         workflow = WORKFLOW.read_text()
         rows = re.search(r"(?m)^        variant:\n((?:          - [\w-]+\n)+)", workflow)[1]
