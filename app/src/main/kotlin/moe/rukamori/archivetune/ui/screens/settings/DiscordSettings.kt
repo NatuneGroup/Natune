@@ -154,8 +154,8 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         }
     }
 
-    LaunchedEffect(discordToken, discordTokenExpiresAt) {
-        val token = discordToken.trim()
+    LaunchedEffect(discordToken, discordTokenExpiresAt, currentTimeMillis) {
+        var token = discordToken.trim()
         if (token.isBlank()) {
             savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Missing
             authorizedToken = ""
@@ -169,12 +169,18 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
             authorizedToken = ""
         }
 
-        if (discordTokenExpiresAt > 0L && System.currentTimeMillis() >= discordTokenExpiresAt) {
-            savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Expired
-            return@LaunchedEffect
-        }
-
         savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Checking
+        if (discordTokenExpiresAt > 0L && System.currentTimeMillis() >= discordTokenExpiresAt) {
+            // Discord access tokens last about a week; the stored refresh token renews them without
+            // a new sign-in. Only a failed renewal means the user has to authorize again.
+            val renewed = runCatching { DiscordOAuthRepository.getValidAccessToken(context) }.getOrNull()
+            if (renewed.isNullOrBlank() || renewed == token) {
+                savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Expired
+                return@LaunchedEffect
+            }
+            // The renewed token and expiry are stored, which restarts this effect with fresh values.
+            token = renewed
+        }
         runCatching { DiscordOAuthRepository.fetchAccount(token) }
             .onSuccess {
                 savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Linked
@@ -207,8 +213,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     }
 
     val isAccessTokenExpired =
-        remember(discordToken, discordTokenExpiresAt, currentTimeMillis) {
-            discordToken.isNotBlank() && discordTokenExpiresAt > 0L && currentTimeMillis >= discordTokenExpiresAt
+        remember(discordToken, discordTokenExpiresAt, currentTimeMillis, savedAuthorizationStatus) {
+            discordToken.isNotBlank() && discordTokenExpiresAt > 0L && currentTimeMillis >= discordTokenExpiresAt &&
+                savedAuthorizationStatus != DiscordSavedAuthorizationStatus.Checking
         }
     val isLoggedIn =
         !isAccessTokenExpired &&
@@ -1179,58 +1186,6 @@ private fun DiscordAccountGroupCard(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DiscordReauthorizeWarningRow(
-    onReauthorize: () -> Unit,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer,
-    ) {
-        ListItem(
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.discord_reauthorize_required_title),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            },
-            supportingContent = {
-                Text(stringResource(R.string.discord_reauthorize_required_description))
-            },
-            leadingContent = {
-                Icon(
-                    painter = painterResource(R.drawable.error),
-                    contentDescription = null,
-                )
-            },
-            trailingContent = {
-                TextButton(
-                    onClick = onReauthorize,
-                    enabled = enabled,
-                    colors =
-                        ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        ),
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(stringResource(R.string.discord_reauthorize_action))
-                }
-            },
-            colors =
-                ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
-                    headlineColor = MaterialTheme.colorScheme.onErrorContainer,
-                    supportingColor = MaterialTheme.colorScheme.onErrorContainer,
-                    leadingIconColor = MaterialTheme.colorScheme.onErrorContainer,
-                    trailingIconColor = MaterialTheme.colorScheme.onErrorContainer,
-                ),
-        )
     }
 }
 
