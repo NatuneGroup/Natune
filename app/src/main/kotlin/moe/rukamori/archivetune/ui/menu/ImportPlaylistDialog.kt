@@ -120,7 +120,7 @@ fun ImportPlaylistDialog(
                         }
 
                         if (browseId != null) {
-                            val existing = database.playlistByBrowseId(browseId).firstOrNull()
+                            val existing = database.playlistByAnyBrowseId(browseId).firstOrNull()
                             if (existing != null) {
                                 if (existing.playlist.bookmarkedAt == null) {
                                     database.query {
