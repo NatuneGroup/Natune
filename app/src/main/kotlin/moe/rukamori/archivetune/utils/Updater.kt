@@ -257,13 +257,8 @@ object Updater {
     private fun parseReleaseSemVerOrNull(release: ReleaseInfo): SemVer? =
         parseSemVerOrNull(release.tagName) ?: parseSemVerOrNull(release.name)
 
-    // Nightly builds share a single fixed display versionName (e.g. "13.7.5"), so the version *name*
-    // can't distinguish two nightly builds. Instead each nightly build number is carried inline as a
-    // human-readable suffix: "13.7.5 (build <versionCode>)". This string is both shown in the UI and
-    // used for comparison — when it carries a build number we compare that monotonic number against
-    // the running app's BuildConfig.VERSION_CODE, which is what makes "update available" true only
-    // for a genuinely newer nightly build. The string never leaves the app (it is produced and parsed
-    // by this same Updater), so the format is free to be display-friendly.
+    // The release tag identifies the displayed Nightly build; the inline (build <versionCode>)
+    // suffix supplies the verified code used to compare it with the installed VERSION_CODE.
     private val buildNumberRegex = Regex("""\(build (\d+)\)""")
 
     internal fun buildNumberOrNull(version: String): Int? = buildNumberRegex.find(version)?.groupValues?.get(1)?.toIntOrNull()
@@ -690,18 +685,11 @@ object Updater {
             ?: release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
             ?: parseSemVerOrNull(release.name)?.patch
 
-    /**
-     * Converts a Nightly release into the same build-number form used everywhere in the updater.
-     * Never compare a Nightly release name as SemVer: names contain the commit count in the patch
-     * position, which makes an already-installed build look newer than its fixed display version.
-     */
+    /** Uses the offered release identity and its verified build code for display and comparison. */
     internal fun getPreReleaseVersionName(release: ReleaseInfo): String {
+        val base = release.tagName.ifBlank { release.name }
         val buildNumber = nightlyBuildNumber(release)
-        return if (buildNumber != null) {
-            "${BuildConfig.VERSION_NAME} (build $buildNumber)"
-        } else {
-            release.tagName.ifBlank { release.name }
-        }
+        return if (buildNumber != null) "$base (build $buildNumber)" else base
     }
 
     // Public wrappers over the shared pre-release resolution below. Nightly tracks `dev`.

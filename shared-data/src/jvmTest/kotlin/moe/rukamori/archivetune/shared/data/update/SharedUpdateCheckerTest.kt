@@ -8,12 +8,21 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import java.nio.file.Files
+import java.security.MessageDigest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.domain.settings.GitHubRateLimitedUntilKey
@@ -28,6 +37,7 @@ import moe.rukamori.archivetune.shared.domain.settings.UpdateChannelKey
 import moe.rukamori.archivetune.shared.domain.settings.UpdateFeedManifestStableJsonKey
 import moe.rukamori.archivetune.shared.domain.settings.UpdateFeedManifestStableLastCheckedAtKey
 import moe.rukamori.archivetune.shared.domain.update.ReleaseInfo
+import moe.rukamori.archivetune.shared.domain.update.UpdateDownloadState
 import moe.rukamori.archivetune.shared.domain.update.UpdateInstallMode
 import moe.rukamori.archivetune.shared.domain.update.UpdateInstallProfile
 import moe.rukamori.archivetune.shared.domain.update.encodeReleasesJson
@@ -231,6 +241,110 @@ class SharedUpdateCheckerTest {
     }
 
     @Test
+    fun goneDownloadRefreshesBothCacheTtlsAndRetriesOnceOnEitherChannel() = runTest {
+        for (channel in UpdateChannel.entries) {
+            for (status in listOf(HttpStatusCode.NotFound, HttpStatusCode.Gone)) {
+                for (retryFails in listOf(false, true)) {
+                    val store = FakeSettingsStore()
+                    val bytes = "installer fixture".encodeToByteArray()
+                    val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+                        .joinToString("") { "%02x".format(it) }
+                    val oldTag = if (channel == UpdateChannel.STABLE) "v2.0.0" else "N202611081200"
+                    val newTag = if (channel == UpdateChannel.STABLE) "v3.0.0" else "N202611091200"
+                    var publishNew = false
+                    var manifestRequests = 0
+                    val assetRequests = mutableListOf<String>()
+                    val (checker, client) = checker(store, { request ->
+                        if (request.url.host == "example") {
+                            assetRequests += request.url.toString()
+                            if (request.url.encodedPath.contains(oldTag) || retryFails) respond("gone", status)
+                            else respond(bytes)
+                        } else {
+                            manifestRequests += 1
+                            respond(stableManifest(if (publishNew) 12 else 11, if (publishNew) newTag else oldTag)
+                                .replace("\"channel\": \"stable\"", "\"channel\": \"${channel.name.lowercase()}\"")
+                                .replace(stableDigest, digest))
+                        }
+                    }, profile = stableProfile().copy(isNightlyBuild = channel == UpdateChannel.NIGHTLY))
+                    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                    val dir = Files.createTempDirectory("natune-update-recovery-test")
+                    try {
+                        val initial = checker.latestRelease(channel)!!
+                        val failedOffer = checker.eligibleOffer(initial, channel)!!
+                        // Both TTLs are still fresh when the artifact disappears.
+                        publishNew = true
+                        val installer = JvmUpdateInstaller(client, dir, 10, scope, { 1_000_000L }, checker, { "build removed" })
+                        assertTrue(installer.startDownload(failedOffer))
+                        val terminal = withTimeout(10_000L) {
+                            installer.state.first { it is UpdateDownloadState.ReadyToInstall || it is UpdateDownloadState.Failed }
+                        }
+                        val freshOffer = checker.cachedOffer(channel)!!
+                        assertEquals(newTag, freshOffer.tag)
+                        assertEquals(2, manifestRequests)
+                        assertEquals(listOf("https://example/$oldTag.deb", "https://example/$newTag.deb"), assetRequests)
+                        if (retryFails) {
+                            assertIs<UpdateDownloadState.Failed>(terminal)
+                            assertEquals(freshOffer, terminal.offer)
+                            assertEquals("build removed", terminal.message)
+                            assertTrue(Files.list(dir).use { it.findAny().isEmpty })
+                        } else {
+                            assertIs<UpdateDownloadState.ReadyToInstall>(terminal)
+                            assertEquals(freshOffer, terminal.offer)
+                            assertEquals("12", Files.readString(dir.resolve("natune-update.code")))
+                            assertEquals(freshOffer.downloadUrl, Files.readString(dir.resolve("natune-update.source")))
+                        }
+                    } finally {
+                        scope.cancel()
+                        client.close()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun goneDownloadRejectsUnchangedOfferAndChannelSwitchDuringRefresh() = runTest {
+        for (selection in listOf("unchanged", "switch", "return")) {
+            val store = FakeSettingsStore()
+            var manifestRequests = 0
+            var assetRequests = 0
+            lateinit var updateChecker: SharedUpdateChecker
+            val (checker, client) = checker(store, { request ->
+                if (request.url.host == "example") {
+                    assetRequests += 1
+                    respond("gone", HttpStatusCode.Gone)
+                } else {
+                    manifestRequests += 1
+                    if (manifestRequests > 1 && selection != "unchanged") {
+                        updateChecker.selectChannel(UpdateChannel.NIGHTLY)
+                        if (selection == "return") updateChecker.selectChannel(UpdateChannel.STABLE)
+                    }
+                    val newBuild = manifestRequests > 1 && selection != "unchanged"
+                    respond(stableManifest(if (newBuild) 12 else 11, if (newBuild) "v3.0.0" else "v2.0.0"))
+                }
+            })
+            updateChecker = checker
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val dir = Files.createTempDirectory("natune-update-selection-test")
+            try {
+                val initial = checker.latestRelease(UpdateChannel.STABLE)!!
+                val failedOffer = checker.eligibleOffer(initial, UpdateChannel.STABLE)!!
+                val installer = JvmUpdateInstaller(client, dir, 10, scope, { 1_000_000L }, checker, { "build removed" })
+                assertTrue(installer.startDownload(failedOffer))
+                val terminal = withTimeout(10_000L) { installer.state.first { it is UpdateDownloadState.Failed } }
+                assertIs<UpdateDownloadState.Failed>(terminal)
+                assertEquals(failedOffer, terminal.offer)
+                assertEquals(1, assetRequests)
+                assertEquals(2, manifestRequests)
+                assertEquals("build removed", terminal.message)
+            } finally {
+                scope.cancel()
+                client.close()
+            }
+        }
+    }
+
+    @Test
     fun nightlyManifestFeedsPrereleaseChannel() = runTest {
         val store = FakeSettingsStore()
         val (checker, client) = checker(
@@ -252,6 +366,7 @@ class SharedUpdateCheckerTest {
             val release = checker.latestRelease(UpdateChannel.NIGHTLY)
             assertEquals("N20261027", release?.tagName)
             assertEquals("NIGHTLY|N20261027|11", checker.cachedOffer(UpdateChannel.NIGHTLY)?.identity)
+            assertEquals("N20261027 (build 11)", checker.cachedOffer(UpdateChannel.NIGHTLY)?.versionName)
         } finally { client.close() }
     }
 }
