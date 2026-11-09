@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.utils.io.ByteReadChannel
 import java.nio.file.Files
@@ -56,6 +57,32 @@ class JvmUpdateInstallerTest {
                 it is UpdateDownloadState.ReadyToInstall || it is UpdateDownloadState.Failed
             }
         }
+
+    @Test
+    fun httpFailuresNeverStageAnErrorBodyOrRetryWithoutAChecker() = runBlocking {
+        for (status in listOf(HttpStatusCode.NotFound, HttpStatusCode.Gone, HttpStatusCode.InternalServerError)) {
+            val dir = tempDir()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            var requests = 0
+            val client = HttpClient(MockEngine {
+                requests += 1
+                respond("error body", status)
+            }) { expectSuccess = true }
+            val installer = JvmUpdateInstaller(client, dir, 10, scope, { 0L })
+            try {
+                assertTrue(installer.startDownload(offer(sha256 = null)))
+                val terminal = awaitTerminal(installer)
+                assertIs<UpdateDownloadState.Failed>(terminal)
+                assertEquals(1, requests)
+                assertEquals(offer(sha256 = null), terminal.offer)
+                assertEquals("Update download failed: HTTP ${status.value}", terminal.message)
+                assertTrue(Files.list(dir).use { it.findAny().isEmpty })
+            } finally {
+                scope.cancel()
+                client.close()
+            }
+        }
+    }
 
     @Test
     fun matchingDigestStagesTheArtifact() = runBlocking {

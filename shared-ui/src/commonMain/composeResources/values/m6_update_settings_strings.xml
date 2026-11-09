@@ -34,4 +34,5 @@
     <string name="m6_update_check_error_body">The update feed could not be reached. Try again.</string>
     <string name="m6_update_notification_confirm_body">Update checks read the selected channel\'s public release feed.\n\nStable releases are published from main; Nightly builds are published automatically from dev and can be unstable. Downloading directly from GitHub bypasses any additional screening performed by the store the app was originally installed from.</string>
     <string name="m6_update_notification_confirm_ack">Enable</string>
+    <string name="m6_update_build_removed">This build is no longer on GitHub. It was replaced by a newer build or removed. Check for updates again.</string>
 </resources>
