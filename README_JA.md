@@ -143,5 +143,5 @@ scripts/build_ios_native_core.sh [iphoneos|iphonesimulator|all]
 
 日本語ローマ字データ、CC-BY-SA-4.0 icon pack、Metrolist KMP、kotlin-footguns の credit と notice は [docs/CREDITS.md](docs/CREDITS.md) に記載しています。
 
-**正当な gate 解消後の予定:** `main`（Stable/default）と `dev`（integration）を設定し、元の CI/workflow の動作を private-safe に適合します。remote `main` の変更や port 用 branch の作成には別途承認が必要です。署名と package identity を保持し、より大きな versionCode とデータを保った in-place upgrade を検証する必要があります。これは未完了です。Debug `.debug` APK や署名一致だけでは upgrade の証明になりません。承認済みの private APK を手動で取得すれば検証できます。token updater や cloud service の追加は含みません。詳細は [baseline provenance](docs/engineering/kmp-baseline.md) と [AGENTS.md](AGENTS.md) の private workspace guidance を参照してください。
+**正当な gate 解消後の予定:** `main`（Stable/default）と `dev`（integration）を設定し、元の CI/workflow の動作を private-safe に適合します。remote `main` の変更や port 用 branch の作成には別途承認が必要です。署名と package identity を保持し、より大きな versionCode とデータを保った in-place upgrade を検証する必要があります。これは未完了です。Debug `.debug` APK や署名一致だけでは upgrade の証明になりません。承認済みの private APK を手動で取得すれば検証できます。token updater や cloud service の追加は含みません。詳細は [AGENTS.md](AGENTS.md) を参照してください。
 

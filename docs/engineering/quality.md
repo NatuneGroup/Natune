@@ -1,9 +1,5 @@
 # Quality gates
 
-> The code-only phase forbids local JVM/Gradle/native execution, but it does not waive the
-> bounded repository checks or the structural quality job. Final exact-candidate build/lint,
-> unit tests and native validation remain separate and are not implied by fast checks.
-
 The reusable procedure is in [fast-check](../../.factory/skills/fast-check/SKILL.md). In short:
 
 1. Cheap: repository check, scoped `git diff --check`, relevant stdlib Python tests, `bash -n`
@@ -111,8 +107,6 @@ runs from the pre-commit hook.
 
 On any formatter rewrite, CI retains a proposed `formatter.patch` generated from
 isolated copies. Review it before applying; the original checkout is unchanged.
-In constrained missions, keep full app compilation and tests on GitHub-hosted
-runners.
 
 For semantic unused-private-code checks and resolved dependency analysis, use a
 complete SDK/submodule build checkout:
@@ -131,29 +125,19 @@ for that invocation, and reports resolved external runtime artifact weights. Art
 over 20 MiB are flagged for review; project modules are not weighed. Weight alone is not
 proof that a dependency is unnecessary. Review the generated dependency advice for
 runtime/reflection use before removing anything.
-Compiler-backed analysis remains a manual authorized-host path; `dependency_health.yml`
-stays parked/inactive and is not activated by this structural job. Host-specific classpath manifests stay
+Compiler-backed analysis is a manual build-host step; `dependency_health.yml` is parked in
+`.github/inherited-workflows/` and inactive. Host-specific classpath manifests stay
 under ignored `quality/build/` and are not uploaded.
 Only the documented GMS/mobile/universal Debug app variant is enabled during this
 optional analysis invocation; normal build and release variant matrices are unchanged.
 The plugin is applied to subprojects, which inherit the root classloader scope that
 also holds AGP; the root project's aggregate report is not part of this analysis.
-In `dependency_health.yml`, manual and reusable runs compare with the `semantic_base`
-input (default `origin/dev`, through its merge-base with HEAD). Dispatching
-`Unit tests` with `extended_checks=true` forwards its `semantic_base` input to the
-dependency/semantic job. A base that contains HEAD is rejected because it compares a
-tree with itself, so an extended dev run must pass an earlier revision — for example
-`gh workflow run tests.yml --ref dev -f extended_checks=true -f semantic_base=<commit>`
-with the last validated commit (the previous release commit or the merge commit of
-the last green extended run). Scheduled runs compare with the previous commit.
 
 ## Development container and environment
 
 `.devcontainer/` supplies a digest-pinned JDK 21 image and Android SDK bootstrap.
-It targets an x86_64 Docker build host, not the constrained Termux device. Opening
-the container downloads the SDK/NDK through `scripts/setup_android.sh`; it does not
-initialize or move gitlinks. Initialize required submodules only on an authorized
-build checkout. Container configuration is not evidence that it has built or run.
+It targets an x86_64 Docker build host. Opening the container downloads the SDK/NDK
+through `scripts/setup_android.sh`; it does not initialize or move gitlinks.
 
 Debug setup requires no provider sign-in. `.env.example` lists optional build-time
 overrides and how to export them; Gradle does not implicitly load dotenv files.
@@ -205,21 +189,13 @@ not build. Build Pull Request with `desktop_app_image=true` builds the closure a
 untrimmed, so those suites execute there. The property defaults to the untrimmed task, and an exclusion is
 never a pass: a suite that is excluded has to be green in the image job.
 
-For this constrained mission, full app compilation, lint, coverage and repeated/
-semantic checks run on GitHub-hosted runners, not the smaller VPS. Open a
-validation PR to `dev` for the build/lint gate, then dispatch `Unit tests` at the
-same head. Its optional `extended_checks` input also calls the dependency,
-security and stability workflows from that exact revision, without first merging
-new workflow files into `main`. No release or branch-rule changes are needed.
-
 For proactive instability detection on a build host:
 
 ```sh
 python3 scripts/check_test_stability.py --repeat 3 --tests '*'
 ```
 
-Use repeated `--tests <filter>` options for a smaller investigation. The
-manual/weekly `test_stability.yml` job defaults to the full fork suite. Each
+Use repeated `--tests <filter>` options for a smaller investigation. Each
 iteration forces the actual test task, retains its own JUnit XML/log and records
 per-test timings. A failure remains a failure even if a later run passes.
 Skipped/missing tests, changed test discovery and missing execution reports are
@@ -254,6 +230,5 @@ unchanged. A license header cannot fix missing permission or relicense upstream 
 ## Validation evidence
 
 Use the documented build/test tasks from [AGENTS.md](../../AGENTS.md) on a suitable
-host. Keep the constrained Termux host free of Gradle/JVM/emulator work; authorized
-remote checks must identify the actual source snapshot and retain their failures.
+host. Remote checks must identify the actual source snapshot and retain their failures.
 Keep the repository's heap, KSP, cache, signing and submodule policies unchanged.

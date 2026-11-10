@@ -138,25 +138,8 @@ Local observations follow the matching local track and active device route, not
 the session wrapper's runtime type. Switching to remote Cast clears local
 observations; a remote receiver's decoded PCM and output remain unobserved.
 
-## Local verification and remaining checks
+## Device checks still needed
 
-The final 2026-10-04 serial Gradle run passed 400 unit tests and assembled both
-`gmsMobileUniversalDebug` and `gmsTvUniversalDebug`. Earlier optimized x86_64 and
-universal debug APKs were installed and precompiled in the QA emulator. These are
-build and installation results, not approval of player behavior or release
-installation on real devices. The final metadata-display checkpoint has no
-verified running-player evidence.
-
-During those earlier UI attempts, the AOSP image produced system and app ANRs.
-The ATD fallback initially returned black or unavailable captures; after enabling
-preboot drawing, a capture showed onboarding beneath an app ANR dialog. No
-completed player interaction was verified. The universal debug APK also timed out
-during launch, returned no UI hierarchy root, and produced a black capture. An app
-trace was blocked in rendering, but that does not rule out an app defect on a
-physical device.
-
-- [x] Fork unit tests and mobile/TV universal debug assembly.
-- [x] Earlier debug emulator installation and precompilation.
 - [ ] Physical mobile and TV installation, including update/signing compatibility.
 - [ ] Authenticated-provider playback, YouTube fallback, downloaded-track
   reproduction, and source rejection without losing playback position.

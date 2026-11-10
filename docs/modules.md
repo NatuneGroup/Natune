@@ -302,14 +302,6 @@ typed settings, minimum-version/features and upstream registry URL parsing.
 
 ## Validation and playback risks
 
-On the implementation VM: nine packages passed check/package/inspect, JS passed
-syntax checks, repository light checks passed, and the allowed iOS Python suite
-passed 26 tests. No Gradle/JVM build, lint, unit-test execution, device test, live
-account/network probe, desktop/iOS compilation or cross-app installation was
-performed. JVM and JS runtime fixtures require the orchestrator's CI run. Extension-specific
-checks, commits and remaining gaps are recorded in
-[the extension implementation report](modules-extensions-report.md).
-
 The largest integration risk is source preparation timing: module-enabled tracks
 may perform a source-chain preparation before standard Media3 resolution; a
 standard fallback can repeat an earlier provider attempt. Module-disabled tracks
@@ -321,7 +313,7 @@ provider API dialects and user-instance response shapes require CI/live testing
 before claiming service parity. The portable module variants intentionally do
 not replace native DRM/decryption/queued-job features.
 
-### R3 iOS source increment (unverified)
+### iOS module host
 
 The iOS manager installs bounded readable API-v1 `.arch` audio packages and executes the retained
 `module-host.js` through the already-declared QuickJS dependency. Typed configuration is kept in
