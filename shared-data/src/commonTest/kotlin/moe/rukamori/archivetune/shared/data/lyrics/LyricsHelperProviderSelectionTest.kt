@@ -117,6 +117,18 @@ class LyricsHelperProviderSelectionTest {
         }
 
     @Test
+    fun anAllResultsTimeoutIsNotCached() =
+        runTest {
+            val provider = SlowAllLyricsProvider()
+            val helper = helperOf(listOf(provider), backgroundScope)
+
+            helper.getAllLyrics(request()) {}
+            helper.getAllLyrics(request()) {}
+
+            assertEquals(2, provider.calls)
+        }
+
+    @Test
     fun aCachedAllResultsEntryFromADisabledProviderIsSkippedForTheEnabledOne() =
         runTest {
             val disabled = answering("LrcLib", PLAIN_TEXT)
@@ -135,4 +147,33 @@ class LyricsHelperProviderSelectionTest {
             assertEquals(1, disabled.calls)
             assertEquals(1, enabled.calls)
         }
+}
+
+private class SlowAllLyricsProvider : LyricsProvider {
+    override val name = "LrcLib"
+    var calls = 0
+
+    override suspend fun getLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        durationSec: Int,
+        isrc: String?,
+    ): Result<String> = Result.success(PLAIN_TEXT)
+
+    override suspend fun getAllLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        durationSec: Int,
+        isrc: String?,
+        onFailure: (Throwable) -> Unit,
+        callback: (String) -> Unit,
+    ) {
+        calls++
+        kotlinx.coroutines.delay(LyricsFetchPolicy.FAN_OUT_TIMEOUT_MS + 1)
+        callback(PLAIN_TEXT)
+    }
 }

@@ -48,46 +48,56 @@ class SimpMusicLyricsProvider(
         album: String?,
         durationSec: Int,
         isrc: String?,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        val tracks = getLyricsByVideoId(id)
-        var count = 0
-        var plain = 0
+        try {
+            val tracks = getLyricsByVideoId(id)
+            var count = 0
+            var plain = 0
 
-        val sortedTracks =
-            if (durationSec > 0) {
-                tracks.sortedBy { abs((it.duration ?: 0) - durationSec) }
-            } else {
-                tracks
-            }
+            val sortedTracks =
+                if (durationSec > 0) {
+                    tracks.sortedBy { abs((it.duration ?: 0) - durationSec) }
+                } else {
+                    tracks
+                }
 
-        sortedTracks.forEach { track ->
-            if (count <= 4) {
-                if (track.syncedLyrics != null && abs((track.duration ?: 0) - durationSec) <= 5) {
-                    count++
-                    callback(track.syncedLyrics)
-                }
-                if (track.plainLyrics != null && abs((track.duration ?: 0) - durationSec) <= 5 && plain == 0) {
-                    count++
-                    plain++
-                    callback(track.plainLyrics)
+            sortedTracks.forEach { track ->
+                if (count <= 4) {
+                    if (track.syncedLyrics != null && abs((track.duration ?: 0) - durationSec) <= 5) {
+                        count++
+                        callback(track.syncedLyrics)
+                    }
+                    if (track.plainLyrics != null && abs((track.duration ?: 0) - durationSec) <= 5 && plain == 0) {
+                        count++
+                        plain++
+                        callback(track.plainLyrics)
+                    }
                 }
             }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            onFailure(error)
         }
     }
 
-    /** Any transport, status or decode error reads as no entries, as the Android client did. */
+    /** Transport, status and decode failures are kept distinct from a successful empty response. */
     private suspend fun getLyricsByVideoId(videoId: String): List<LyricsData> =
-        suspendRunCatching {
+        run {
             val response = LyricsHttp.getWithStatus(client, BASE_URL + videoId, headers = REQUEST_HEADERS)
             val body = response.body
+            if (response.status == HttpStatusCode.TooManyRequests.value || response.status in 500..599) {
+                throw LyricsHttpStatusException(response.status)
+            }
             if (response.status != HttpStatusCode.OK.value || body == null) {
                 emptyList()
             } else {
                 val apiResponse = LyricsJson.decodeFromString<SimpMusicApiResponse>(body)
                 if (apiResponse.success) apiResponse.data else emptyList()
             }
-        }.getOrDefault(emptyList())
+        }
 
     private companion object {
         const val BASE_URL = "https://api-lyrics.simpmusic.org/v1/"
