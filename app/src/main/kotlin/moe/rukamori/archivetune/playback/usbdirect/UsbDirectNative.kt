@@ -10,6 +10,7 @@ internal object UsbDirectNative {
     external fun nativeSetPlaying(handle: Long, playing: Boolean): Int
     external fun nativeFlush(handle: Long): Int
     external fun nativePlayedFrames(handle: Long): Long
+    external fun nativePendingFrames(handle: Long): Long
     external fun nativeControl(handle: Long, input: Boolean, request: Int, value: Int, index: Int, data: ByteArray): Int
     external fun nativeClose(handle: Long)
 

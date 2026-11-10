@@ -109,6 +109,11 @@ extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_USB(nativePlayedFrames)(JNIEnv *, jo
     return output ? static_cast<jlong>(output->playedFrames()) : natune::usbdirect::kErrorClosed;
 }
 
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_USB(nativePendingFrames)(JNIEnv *, jobject, jlong handle) {
+    const auto output = find(handle);
+    return output ? static_cast<jlong>(output->pendingFrames()) : natune::usbdirect::kErrorClosed;
+}
+
 // Class request to an interface; for input requests data receives the reply.
 // Returns bytes transferred or a negative error.
 extern "C" JNIEXPORT jint JNICALL JNI_FUNC_USB(nativeControl)(

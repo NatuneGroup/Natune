@@ -140,6 +140,7 @@ internal class DirectUsbAudioSink(
 
     private fun directPending(): Boolean {
         val direct = output ?: return false
+        if (direct is DirectUsbPendingOutput) return direct.hasPendingData()
         val rate = configured?.format?.sampleRate ?: return false
         return direct.positionUs < submittedFrames * 1_000_000L / rate
     }

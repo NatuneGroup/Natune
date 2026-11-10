@@ -34,8 +34,11 @@ not implemented. There is no resampler, channel mixing, DoP or raw DSD transport
 `native/usbdirect` drives bounded isochronous USBFS URBs on one worker thread using
 an Android-authorized duplicated file descriptor. It claims only the control and
 streaming interfaces, selects the matching alternate setting, tracks completed PCM
-frames and handles explicit asynchronous feedback. Failed packets, missing feedback
-and timeouts stop the direct route; failed transfers never advance the music clock.
+frames from successful packets' actual lengths and handles explicit asynchronous
+feedback. An isolated bad packet is tolerated; URB errors, eight consecutive bad
+URBs, missing feedback and timeouts stop the direct route. Failed packets never
+advance the music clock. OUT packet lengths need not match requested lengths;
+separate accepted-frame drain accounting prevents packet loss from blocking EOF.
 Flush generations exclude cancelled pre-seek transfers. Closure cancels URBs,
 returns the interface to alternate zero, reattaches a displaced kernel driver and
 closes the descriptor before freeing transfer buffers. One device lease prevents two
@@ -92,7 +95,7 @@ installed standalone Kotlin compiler. All ten Android playback components also
 typechecked against Android API 36, the pinned Media3 1.10.1 libraries and XML-derived
 resource-ID declarations; this is bounded API coverage, not an SDK 37 app build. Host CMake
 transport tests and a host JNI build passed; the stripped host JNI library exported
-only seven entry points and had 16 KB load alignment. Those results do not establish
+only seven entry points before the drain-accounting addition (now eight JNI entry points) and had 16 KB load alignment. Those results do not establish
 Android ARM64 linkage, APK size or Android app compilation. GitHub's PR builds remain
 required. No physical DAC, USB permission UI, bus timing, rate switching, unplug
 recovery, volume keys, suspend/resume or actual bit-perfect output was verified.

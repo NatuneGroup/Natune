@@ -115,6 +115,13 @@ internal class UsbDirectAudioOutput private constructor(
         if (frames < 0) check(frames.toInt())
         return minOf(writtenFrames, frames) * 1_000_000L / config.sampleRate
     }
+    @Synchronized fun hasPendingData(): Boolean {
+        if (failure != 0) check(failure)
+        if (handle == 0L) return false
+        val pending = UsbDirectNative.nativePendingFrames(handle)
+        if (pending < 0) check(pending.toInt())
+        return pending > 0
+    }
     override fun getBufferSizeInFrames(): Long = capacity.toLong()
     override fun getSampleRate(): Int = config.sampleRate
     override fun getAudioSessionId(): Int = config.audioSessionId
@@ -195,7 +202,11 @@ internal class UsbDirectAudioOutput private constructor(
                         else -> C.ENCODING_PCM_32BIT
                     }
                     handle = 0L // Ownership passed to output.
-                    return ConvertingAudioOutput(output, config.encoding, wireEncoding, plan.format.channels, plan.format.bits, output::markInexact, output::muted)
+                    val converted = ConvertingAudioOutput(output, config.encoding, wireEncoding, plan.format.channels,
+                        plan.format.bits, output::markInexact, output::muted)
+                    return object : AudioOutput by converted, DirectUsbPendingOutput {
+                        override fun hasPendingData(): Boolean = output.hasPendingData()
+                    }
                 }
             } catch (error: Exception) {
                 timber.log.Timber.w(error, "Direct USB DAC open failed; using platform output")
