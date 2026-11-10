@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,6 +33,29 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class PlayerMotionComposeTest {
+    @Test fun transportCrossfadeDisplaysPlayPausePlayWithTheSameReplayLayerAndContent() = runComposeUiTest {
+        var playing by mutableStateOf(false)
+        setContent {
+            val content: @Composable (Boolean) -> Unit = remember {
+                { glyph -> PlayerPlayPauseGlyph(glyph, Color.White, Modifier.size(48.dp).testTag("transport")) }
+            }
+            Box(Modifier.size(48.dp).background(Color.Black)) {
+                PlayerTransportCrossfade(playing, replay = false, content = content)
+            }
+        }
+        mainClock.autoAdvance = false
+        for (target in listOf(false, true, false)) {
+            runOnUiThread { playing = target }
+            mainClock.advanceTimeBy(1_000)
+            val pixels = onNodeWithTag("transport").captureToImage().toPixelMap()
+            val centre = pixels[pixels.width / 2, pixels.height / 2].red
+            assertTrue(if (target) centre < .1f else centre > .9f,
+                "The displayed glyph must be ${if (target) "pause" else "play"}")
+            if (target) assertTrue(pixels[pixels.width / 3, pixels.height / 2].red > .9f,
+                "Pause must draw its left bar")
+        }
+    }
+
     @Test fun geometricMorphSettlesToTheLastVisualStateAfterRapidReversals() = runComposeUiTest {
         var playing by mutableStateOf(false)
         setContent {

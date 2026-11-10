@@ -5,10 +5,13 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -146,6 +149,26 @@ class PlayerControlMotion internal constructor(
 
 private val ShiftGestures =
     setOf(PlayerControlGesture.Swap, PlayerControlGesture.NudgeForward, PlayerControlGesture.NudgeBackward)
+
+private class TransportGlyphMemory<T>(initial: T) {
+    var normal by mutableStateOf(initial)
+    var replay by mutableStateOf(initial)
+}
+
+/** Keeps play/pause mounted for morphing, with a separate crossfade layer for replay. */
+@Composable
+fun <T> PlayerTransportCrossfade(
+    glyph: T,
+    replay: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable (T) -> Unit,
+) {
+    val held = remember { TransportGlyphMemory(glyph) }
+    SideEffect { if (replay) held.replay = glyph else held.normal = glyph }
+    PlayerControlCrossfade(replay, active = true, modifier = modifier) { showingReplay ->
+        content(if (showingReplay == replay) glyph else if (showingReplay) held.replay else held.normal)
+    }
+}
 
 /**
  * Remembers the motion for one control and plays the matching gesture whenever [state] changes,

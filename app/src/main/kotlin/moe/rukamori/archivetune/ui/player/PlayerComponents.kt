@@ -1441,6 +1441,7 @@ fun PlayerPlaybackControls(
                 Spacer(Modifier.width(8.dp))
 
                 Box(
+                    contentAlignment = Alignment.Center,
                     modifier =
                         Modifier
                             .size(72.dp)
@@ -1453,10 +1454,7 @@ fun PlayerPlaybackControls(
                 ) {
                     PlayerLoadingCrossfade(isLoading, {
                         CircularWavyProgressIndicator(
-                            modifier =
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .size(36.dp),
+                            modifier = Modifier.size(36.dp),
                             color = iconButtonColor,
                         )
                     }) {

@@ -28,6 +28,7 @@ import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.shared.ui.player.PlayerMotionSpecs
+import moe.rukamori.archivetune.shared.ui.player.PlayerTransportCrossfade
 import moe.rukamori.archivetune.scaleAwareSpring
 
 /** The player controls that share one motion vocabulary across every player style and the mini player. */
@@ -227,8 +228,6 @@ fun Modifier.playerControlMotion(
     state: Any?,
 ): Modifier = this.then(rememberPlayerControlMotion(kind, state).modifier)
 
-private class TransportGlyphMemory<T>(var normal: T, var replay: T)
-
 /**
  * Crossfades between two glyphs of one control (play and pause, repeat and repeat-one) when motion
  * is on, and swaps them instantly when it is off.
@@ -244,9 +243,7 @@ fun <T> PlayerControlCrossfade(
     val replay = transport == R.drawable.player_replay
     val morph = transport?.let(::playerGlyphPlaying) != null
     if ((morph || replay) && !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f) {
-        val held = remember { TransportGlyphMemory(targetState, targetState) }
-        if (replay) held.replay = targetState else held.normal = targetState
-        PlayerControlCrossfade(replay, modifier) { showingReplay -> content(if (showingReplay) held.replay else held.normal) }
+        PlayerTransportCrossfade(targetState, replay, modifier, content)
         return
     }
     if (morph || LocalAnimationsDisabled.current || LocalAnimationScale.current <= 0f) {
