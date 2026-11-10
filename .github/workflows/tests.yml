@@ -1,6 +1,6 @@
 name: Unit tests
 
-# Recreated on blacksmith runners (previously parked under .github/inherited-workflows/).
+# Runs on Blacksmith runners.
 # Runs the fork contract tests on every PR into dev/main and every dev push — release
 # assemblies never compile src/test, so without this the tests rot unnoticed.
 on:

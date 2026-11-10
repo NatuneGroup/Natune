@@ -194,5 +194,4 @@ historical release signer and package identity for a verified in-place upgrade w
 greater versionCode and preserved data, without uninstall/clearing/downgrade flags. This
 remains pending; a Debug `.debug` APK or matching signer alone is not upgrade proof.
 Authorized manual private APK download suffices for that test; no new token-updater or
-cloud service is implied. See [baseline provenance](docs/engineering/kmp-baseline.md)
-and the private operational guidance in [AGENTS.md](AGENTS.md).
+cloud service is implied. See [AGENTS.md](AGENTS.md).

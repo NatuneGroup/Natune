@@ -12,5 +12,5 @@
 - [Release procedure](../claude/RELEASES.md): signing, channels and promotion gates.
 
 Keep current procedures here, product/subsystem knowledge in `docs/claude/`, and
-reusable agent workflows in `.factory/skills/`. Keep dated reviews as evidence,
-not as competing descriptions of the current implementation.
+reusable agent workflows in `.factory/skills/`. Describe current behavior; put
+dated investigations and review notes in the PR or issue, not in a new document.

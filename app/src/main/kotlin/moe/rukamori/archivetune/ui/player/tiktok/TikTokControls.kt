@@ -10,10 +10,9 @@
  *
  * What the reference pins under the feed: the track's own progress with its
  * time labels (driven by the app's EXISTING seek callbacks — no side timer,
- * no drift). The persistent bottom navigation that used to sit under it was
- * removed per user request (2026-09-02: "remove the home, search and library
- * buttons on the bottom") — the top navigation's section tabs cover the
- * destinations, and the feed keeps its full-bleed height.
+ * no drift). There is no persistent bottom navigation under it: the top
+ * navigation's section tabs cover the destinations, and the feed keeps its
+ * full-bleed height.
  */
 
 package moe.rukamori.archivetune.ui.player.tiktok

@@ -1222,7 +1222,6 @@ class ListenTogetherClient @Inject constructor(
                 MessageTypes.JOIN_REQUEST -> {
                     val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRequestPayload ?: return
 
-                    // Check if user is blocked
                     if (isUserBlocked(payload.username)) {
                         log(LogLevel.INFO, "Join request from blocked user ignored", "User: ${payload.username}")
                         // Silently reject blocked users
@@ -1233,7 +1232,6 @@ class ListenTogetherClient @Inject constructor(
                     _pendingJoinRequests.value += payload
                     log(LogLevel.INFO, "Join request received", "User: ${payload.username}")
 
-                    // Check if auto-approval is enabled
                     val autoApprovalEnabled = context.dataStore.get(ListenTogetherAutoApprovalKey, false)
 
                     if (_role.value == RoomRole.HOST) {
@@ -1324,7 +1322,6 @@ class ListenTogetherClient @Inject constructor(
                     if (payload.newHostId == _userId.value) {
                         _role.value = RoomRole.HOST
                     } else if (_role.value == RoomRole.HOST) {
-                        // Lost host role
                         _role.value = RoomRole.GUEST
                     }
                     log(LogLevel.INFO, "Host changed", "New host: ${payload.newHostName}")
@@ -1429,7 +1426,6 @@ class ListenTogetherClient @Inject constructor(
                     val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? SuggestionReceivedPayload ?: return
                     // Only host should receive suggestions
                     if (_role.value == RoomRole.HOST) {
-                        // Check if user is blocked
                         if (isUserBlocked(payload.fromUsername)) {
                             log(LogLevel.INFO, "Suggestion from blocked user ignored", "User: ${payload.fromUsername}")
                             return

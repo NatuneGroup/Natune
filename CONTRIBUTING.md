@@ -42,8 +42,8 @@ ArchiveTune separates UI, data and playback responsibilities; preserve the concr
 
 1. **Clone the Source:**
 ```bash
-git clone --recurse-submodules https://github.com/NatuneGroup/ArchiveTune.git
-cd ArchiveTune
+git clone --recurse-submodules https://github.com/NatuneGroup/Natune.git
+cd Natune
 git switch dev
 git submodule update --init --recursive
 ```
@@ -101,14 +101,8 @@ versions and CI commands; [Android QA](docs/android-qa.md) includes an auth-free
 synthetic playback check. A [remote devcontainer](.devcontainer/devcontainer.json)
 and optional [.env.example](.env.example) document reproducible development setup.
 
-The current constrained mission prohibits local JVM/Gradle/LSP execution and defers focused
-tests/execution to final remote CI. This is mission-scoped, not a general contributor rule.
-Its current implementation is locally integrated, uncompiled and unreleased; earlier green
-`e0ada1758` does not validate it. No current device QA was run.
-
-`dev` is Nightly integration, `main` is Stable. Final Canary `C202610141722` shipped at
-`a1a04ea02`; `canary` is frozen. Use a new dev PR after review, preserve history on merge
-and verify the resulting Nightly/manifest. See [release gates](docs/claude/RELEASES.md);
+`dev` is Nightly integration, `main` is Stable. Open PRs against `dev` and verify the
+resulting Nightly and update manifest after merge. See [release gates](docs/claude/RELEASES.md);
 compilation alone is not UI, language, physical USB/DAC or listening validation.
 
 ---

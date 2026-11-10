@@ -4,10 +4,7 @@
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
- * BitChord-style home feed presentation (2026-10-08: "Redesign the entire
- * home screen, remove the current ui elements and everything else and port
- * everything like fonts, typography, dimensions, features, behaviour,
- * spacing, and everything else from bitchord repo"):
+ * BitChord-style home feed presentation:
  * SF Pro Display typography, 16dp page gutter, 150dp shelf cards (12dp
  * corners), 0.92-ratio hero cards (18dp corners), the recents shelf with its
  * list/grid view toggle, playing-bars indicator, hairline thumbnail borders

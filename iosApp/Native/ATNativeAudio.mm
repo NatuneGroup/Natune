@@ -19,7 +19,7 @@
 #include <unistd.h>
 #include <vector>
 
-/* Uses the declared realtime ABI from the SAME portable core (M8 bee7a838).
+/* Uses the declared realtime ABI from the SAME portable core.
  * A stale core/header must fail the build/link, never fall back to the waiting renderer. */
 
 struct at_audio_output;

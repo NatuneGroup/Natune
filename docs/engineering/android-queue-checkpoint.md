@@ -1,7 +1,7 @@
 # Android queue checkpoint identity
 
-PR [#99](https://github.com/NatuneGroup/Natune/pull/99) separates the requested
-`MusicService.currentQueue` from the identity used to serialize the playing queue.
+The queue checkpoint keeps the requested `MusicService.currentQueue` separate from
+the identity used to serialize the playing queue.
 The object-stream persistence format is unchanged. YouTube still resolves through
 `YTPlayerUtils` → InnerTubeX → NewPipe → Echo.
 
@@ -82,9 +82,9 @@ copies preserve the same logical queue. User insertion and removal/undo retain
 their explicit acceptance/timeline callbacks. Automatic filtering remains
 separate and never invokes external installation or user-removal acceptance.
 
-## Round 6 regressions
+## Replay, detachment and loading guards
 
-The service decision, rather than only the session wrapper, now owns the replay
+The service decision, rather than only the session wrapper, owns the replay
 exception. `ExternalQueueTimelineInstallationTest` drives the actual installation
 helper with a two-second startup backfill and a suspended first-page request. A
 same-occurrence seek leaves those jobs live and the checkpoint includes their
@@ -123,26 +123,17 @@ infinite-queue generation cleanup is unchanged. Queue loading/traversal/shuffle
 helpers live in small files; the moved shuffle and recommendation policies retain
 their previous behavior and allow MusicService to shrink.
 
-## Merge with Android Auto offline playback
-
-The round-6 fix was committed as
-`684da7ec3c82510b4c1d0f7bf848a4d913dd76a4`, then `git fetch origin` and
-`git merge --no-commit origin/dev` merged dev at
-`24df1f6720db12c3cfa47b56ca7ab2d4475b45c3` (PR #107). The result is a merge
-commit, without rebasing or force-pushing. MusicService's session factory was the
-only conflict. The rest of dev, including its automatically merged Auto callback,
-is retained.
+## Android Auto offline recovery
 
 The final session path is `NowPlayingMetadataPlayer` → `OutputFadingPlayer` →
 `ErrorRecoveringPlayer` → `SessionTimelinePlayer` → the raw service player.
-Recovery validates offline availability before its new indexed `setMediaItems`
+Recovery validates offline availability before its indexed `setMediaItems`
 call reaches the queue wrapper. The wrapper's captured target still matches the
 active raw service player. This preserves checkpoint acceptance and stale-player
 rejection for all six recovery setter overloads, including the additional setter
 inside `ErrorRecoveringPlayer.replaceItems`.
 
-`MediaLibrarySessionCallback.onSetMediaItems` keeps every offline selection path
-from dev: voice/library/local playback, retained Home/online/pinned browse
+`MediaLibrarySessionCallback.onSetMediaItems` keeps every offline selection path: voice/library/local playback, retained Home/online/pinned browse
 snapshots and indexed queue taps. It returns resolved items to Media3, whose actual
 setter uses the composed session player. Offline queue taps retain the complete
 occurrence list and use `selection.sourceIndex`, so recovery preserves hydration
@@ -155,8 +146,8 @@ position without replacing or pruning the queue.
 `OfflineSessionTimelinePlayerTest` covers the composed offline recovery path for
 all six setters, the exact duplicate occurrence during hydration/finite loading,
 and rejection of an unavailable explicit tap before checkpoint mutation. Python
-contracts check the same wrapper order, all new offline resolver paths, retained
-snapshots and stale-tap rejection. PR #107's existing tests retain their expectations:
+contracts check the same wrapper order, offline resolver paths, retained
+snapshots and stale-tap rejection. Offline protections and their tests:
 
 | Offline protection | Covering test |
 | --- | --- |
@@ -168,21 +159,10 @@ snapshots and stale-tap rejection. PR #107's existing tests retain their expecta
 | Offline navigation and automatic skipping preserve every queue entry and play intent | `ErrorRecoveringPlayerTest.offlineNextSkipsUnavailableItemsWithoutRemovingThemAndKeepsPlayIntent`; `anAutomaticTransitionOntoAnUnavailableEntrySkipsItWithoutChangingTheQueue` |
 | Recovery prepares an idle source error once and rejects reentrant/superseded navigation | `ErrorRecoveringPlayerTest.everyTransportSeekPreparesAnIdleSourceErrorExactlyOnceAndKeepsPlayIntent`; `reentrantNavigationFromRecoveryAndSeekCallbacksCannotSkipTwice`; `aQueueChangedDuringRecoveryNeverReceivesTheOldSelection` |
 
-All Kotlin files added for this task start with the package line and stay below
-1,000 lines. The over-budget service files obey both the assigned-head limit for
-round 6 and the user's new dev baseline for the merge:
+## Checkpoint protections and regression coverage
 
-| File | Assigned head | Round-6 fix | origin/dev | Merged result |
-| --- | ---: | ---: | ---: | ---: |
-| MusicService.kt | 12,779 | 12,726 | 12,667 | 12,610 |
-| MediaLibrarySessionCallback.kt | 2,078 | 2,078 | 1,937 | 1,937 |
-| ListenTogetherManager.kt | 2,393 | 2,393 | 2,393 | 2,393 |
-
-## Preserved protections and regression coverage
-
-These are the earlier checkpoint protections, with the tests that retain them.
-Kotlin tests below are source fixtures awaiting the orchestrator's compilation and
-execution; the Python contracts validate wiring only.
+Checkpoint protections, with the tests that retain them. The Python contracts
+validate wiring only.
 
 | Protection | Covering test |
 | --- | --- |
@@ -220,7 +200,7 @@ execution; the Python contracts validate wiring only.
 | Finite occurrence/manual/shuffle/position data and legacy object-stream readers remain compatible | `YouTubeFinitePlaylistRestoreTest.snapshotsAfterPageOneAndTwoResumeTo135WithoutLosingManualPositionOrShuffleOrder`; `priorRecordShapeDecodesThroughPlaybackCodecWithCompatibleDefaults`; `existingNonfiniteRecordShapesDecodeAndRadioRetainsItsQueueKind` |
 | YouTube keeps the shipped primary → InnerTubeX → NewPipe → Echo order and terminal login/cancellation behavior | `YouTubeFailsafeChainContractTest.innerTubeXSuccessSkipsNewPipeEchoAndExternalPlugin`; `networkFailureFallsThroughToNewPipeWithoutEcho`; `echoIsLastAfterNetworkAndUnavailableFailures`; `invalidLoginContextIsTerminalWithOriginalErrorAndZeroFallbackCalls`; `primaryCancellationIsTerminalBeforeAnyFallback` |
 
-Round 6 adds `ExternalQueueTimelineInstallationTest` (backfill, first-page/retry
+Also covered: `ExternalQueueTimelineInstallationTest` (backfill, first-page/retry
 retention, new-occurrence replacement and proof requirements),
 `QueueSourceDetachmentTest` (album continuation, retained nonempty source reset,
 every unresolved phase, retained finite membership and explicit/confirmed empty
@@ -228,46 +208,3 @@ detachment) and `QueueLoadingPolicyTest` (synchronous Auto/Listen Together callb
 accepted-queue evaluation, all stale ownership exits, newer publishers, whole
 actions and loading guards). Python contracts also cover the service cancellation
 decision, all reset hooks, post-mutation loading and publisher cleanup.
-
-## Regression expectations updated
-
-Existing assertions changed only where the previous blocking model was incorrect
-or the fixture needed to express the real installation/clear hook:
-
-| Existing test | Correct expectation and reason |
-| --- | --- |
-| `slowFinitePreparation_preservesThePreviousCheckpointBeforeTheInitialClear` | Requests during suspended preparation save current retained items, position and teardown under the previous identity; the later temporary empty clear still cannot erase that checkpoint |
-| `unacceptedReplacement_blocksPositionOnlyWritesWithANonemptyTimeline` (renamed) | Retained nonempty items allow position saves under the previous identity before user acceptance |
-| `emptyFilteredFinitePage_preservesThePreviousCheckpointThroughNextPageFailure` | The fixture's stop/clear invokes explicit clear acceptance, matching `stopAndClearPlayback`; changing only `currentQueue` no longer changes persistence identity |
-| `pendingRadioReplacement_preservesTheOldCheckpointPastDebounceAndAtTeardown` (renamed) | Pending radio permits current-item, position and teardown checkpoints under the previous identity; filtering a resolved ordinary list to empty may save that empty list |
-| `radioPreloadPresence_doesNotAcceptTheReplacementUntilItIsInstalled` | Preload metadata alone still cannot advance identity, but retained items remain saveable |
-| `failedRadioInitialLoad_userAdditionAcceptsACheckpointAndTeardown` | A failed uninstalled radio leaves retained items and later manual additions under their previous list identity, not the failed radio's identity |
-| `pendingRadioReplacement_userRemovalAcceptsTheEditedTimeline` | Removal edits the previous timeline and keeps its list identity |
-| `pendingRadioReplacement_clearIdentitySavesEvenWithoutATimelineEvent` | Both the pending retained timeline and the explicit identity clear can request checkpoints |
-| `startupRadioHydration_doesNotRequireAReplacementInstallation` | The fixture explicitly binds the restored identity at hydration completion, matching the service; no replacement request is required |
-| `supersededInstallation_doesNotAcceptTheNewerReplacement` | A stale install hook cannot advance identity; the retained timeline remains saveable until the newer timeline installs |
-| `anEmptyPlanKeepsThePreviousIdentityAndBacksOffWithoutRefilling` (renamed) | A rejected recommendation plan backs off and retains the previous source identity because no radio items installed |
-| `aTrulyExhaustedPageAppendsNothingAndDoesNotKeepAStalePage` | An empty recommendation page cannot attach a new radio identity; the existing retry/backoff behavior remains |
-| `queueTapReplayingTheSameOccurrences_keepsThePreviousQueueIdentityAndTitle` | Its service fixture now uses `installServiceQueueTimeline`; a replay keeps the pending requested source while preserving the previous installed identity/title. Replacing currentQueue with the previous identity would invalidate the unfinished loader |
-| Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` | The adapter now passes explicit occurrence proof to the installer; the source contract checks that routing |
-| Python `test_automatic_filtering_stays_separate_from_explicit_empty_acceptance` | Empty user removal calls the shared detachment method; assertions now follow that method rather than require duplicated field writes in the removal hook |
-| Python `test_auto_installs_are_intercepted_at_the_session_player_after_resolution` after the dev merge | The queue wrapper now lives inside `recoveringPlayer`, beneath offline recovery. The contract follows that factory while retaining the same actual-setter acceptance expectation |
-
-New Kotlin fixtures cover pending identity/title/occurrences, failed and empty
-radio followed by external installation, suspended-preload cancellation followed
-by add/remove/empty removal, thrown installation, every session setter overload,
-same-occurrence Auto replay, session edits, explicit clear, empty-removal acceptance
-followed by loader insertion/filtering, and continuation acceptance after an
-uninstalled first page. Existing unresolved
-finite-empty, manual-edit, hydration, persistence ordering and teardown tests stay.
-
-The runnable Python source contracts verify installer wiring, scoped acceptance,
-loader cleanup and the separation of filtering from explicit removal. The allowed
-repository/Python checks are structural feedback. Kotlin tests and Android
-compilation/runtime behavior require the orchestrator's separate validation;
-no Gradle, JVM, Kotlin build, lint or Kotlin tests run locally. The round-6 base is
-`12ce05f3e2258b9778123512c255ad6fe3afc8c1`. Allowed validation consists of
-`python3 scripts/check_repository.py --worktree`,
-`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'` and Git diff checks.
-Round 6 passed with 0 repository findings and 48 Python tests; the merged candidate
-passed with 0 repository findings, 52 Python tests and clean staged/worktree diffs.
