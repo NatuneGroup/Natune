@@ -21,7 +21,7 @@ internal class UsbDirectAudioOutput private constructor(
     private val config: OutputConfig,
     private val devices: UsbDirectDevices,
     private val context: Context,
-    private var handle: Long,
+    @Volatile private var handle: Long,
     val deviceId: Int,
     private val capacity: Int,
     private val frameBytes: Int,
@@ -37,6 +37,7 @@ internal class UsbDirectAudioOutput private constructor(
     private var writtenFrames = 0L
     private var exact = true
     private val control = controlFor(handle)
+    private val volumeLock = Any()
 
     private fun muted(): Boolean = playerVolume <= 0f || devices.volumeFraction() <= 0f
 
@@ -57,7 +58,7 @@ internal class UsbDirectAudioOutput private constructor(
             try {
                 do {
                     served = volumeRevision.get()
-                    synchronized(this) {
+                    synchronized(volumeLock) {
                         if (handle != 0L) {
                             val db = UsbVolume.decibels(volume.snapshot, devices.volumeFraction() * playerVolume)
                             if (volumeCanRise.get()) volume.set(control, db) else volume.setInitial(control, db)
@@ -101,9 +102,12 @@ internal class UsbDirectAudioOutput private constructor(
     @Synchronized override fun release() {
         if (handle == 0L) return
         volumeExecutor.shutdownNow()
-        runCatching { volume.restore(control) }
-        UsbDirectNative.nativeClose(handle)
-        handle = 0L
+        // Finish in-flight controls before closing their handle without holding the PCM monitor during updates.
+        synchronized(volumeLock) {
+            runCatching { volume.restore(control) }
+            UsbDirectNative.nativeClose(handle)
+            handle = 0L
+        }
         devices.closed(this)
         listeners.forEach { it.onReleased() }
         listeners.clear()

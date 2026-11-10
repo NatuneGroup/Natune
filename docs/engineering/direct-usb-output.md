@@ -49,7 +49,9 @@ it initially attenuates to at most -40 dB, then applies the lower of each channe
 original level and Android music volume multiplied by player volume, capped at 0 dB.
 Initial sink callbacks and passive settings notifications retain that ceiling;
 only subsequent volume changes may raise it. Every write is read back. Explicit mute emits silence without software gain. System
-volume changes are observed and served away from the playback thread. Original
+volume changes are observed and served away from the playback thread. Control
+transfers serialize with close on a separate lifetime lock, leaving PCM writes
+free to run while a volume transfer or read-back waits on the bus. Original
 levels are restored when the bus still works. Unsupported or unverifiable controls
 use the platform route; no fixed/full-volume opt-in is added. Unlike upstream's idle
 suspension/replay buffer, Natune retains its direct stream while paused and releases
