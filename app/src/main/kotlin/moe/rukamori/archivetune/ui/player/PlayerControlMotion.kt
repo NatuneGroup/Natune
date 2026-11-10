@@ -2,7 +2,6 @@ package moe.rukamori.archivetune.ui.player
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -124,8 +123,8 @@ class PlayerControlMotion internal constructor(
     private suspend fun animate(gesture: PlayerControlGesture) {
         coroutineScope {
             val s = springScale()
-            val settle = scaleAwareSpring<Float>(s, .78f, 500f)
-            val quick = scaleAwareSpring<Float>(s, 1f, 900f)
+            val settle = scaleAwareSpring<Float>(s, PlayerMotionSpecs.SettleDamping, PlayerMotionSpecs.SettleStiffness)
+            val quick = scaleAwareSpring<Float>(s, PlayerMotionSpecs.ResponseDamping, PlayerMotionSpecs.ResponseStiffness)
             // A gesture cancelled half way leaves its transform behind; settle whatever this one does not drive.
             if (gesture != PlayerControlGesture.Spin && rotation.value != 0f) {
                 launch {
@@ -143,7 +142,7 @@ class PlayerControlMotion internal constructor(
                         rotation.snapTo(0f)
                         rotation.animateTo(
                             360f,
-                            scaleAwareSpring(s, Spring.DampingRatioLowBouncy, Spring.StiffnessLow),
+                            scaleAwareSpring(s, PlayerMotionSpecs.BounceDamping, PlayerMotionSpecs.BounceStiffness),
                         )
                         rotation.snapTo(0f)
                     }

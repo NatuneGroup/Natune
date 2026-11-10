@@ -1,9 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.desktop
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -291,7 +289,7 @@ private fun DesktopSeekTrack(
     // Hover or a drag thickens the band and shows a knob at the playhead; both are read in the draw phase only.
     val emphasis = animateFloatAsState(
         if (seekable && (hovered || dragging)) 1f else 0f,
-        if (motion) spring(stiffness = Spring.StiffnessMediumLow) else snap(),
+        if (motion) PlayerMotionSpecs.travel() else snap(),
         label = "desktopSeekEmphasis",
     )
     val knob = MaterialTheme.colorScheme.primary

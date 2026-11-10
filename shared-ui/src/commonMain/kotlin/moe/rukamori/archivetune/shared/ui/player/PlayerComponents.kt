@@ -116,7 +116,7 @@ internal fun PlayerIcon(
     }
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val pressScale = animateFloatAsState(if (pressed && enabled && environment.active) .92f else 1f,
+    val pressScale = animateFloatAsState(if (pressed && enabled && environment.active) PlayerMotionSpecs.PressScale else 1f,
         if (environment.active) PlayerMotionSpecs.response() else snap(), label = "playerControlPress")
     val animatedShape = rememberPlayerButtonShape(symbol == PlayerSymbol.PAUSE, pressed, shape, environment.active)
     val fill by animateColorAsState(containerColor ?: Color.Transparent,

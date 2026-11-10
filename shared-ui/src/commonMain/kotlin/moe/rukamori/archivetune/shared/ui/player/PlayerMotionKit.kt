@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.MutableTransitionState
@@ -69,9 +70,20 @@ internal val LocalSystemReducedMotion = staticCompositionLocalOf { false }
 /** Same duration as the play/pause glyph crossfade, so a spinner and the glyph under it change together. */
 object PlayerMotionSpecs {
     const val FadeMillis = 160
-    fun <T> response(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 900f)
-    fun <T> settle(): FiniteAnimationSpec<T> = spring(dampingRatio = .78f, stiffness = 500f)
-    fun <T> travel(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 400f)
+    const val ResponseDamping = 1f
+    const val ResponseStiffness = 900f
+    const val SettleDamping = .78f
+    const val SettleStiffness = 500f
+    const val TravelDamping = 1f
+    const val TravelStiffness = Spring.StiffnessMediumLow
+    const val BounceDamping = Spring.DampingRatioLowBouncy
+    const val BounceStiffness = Spring.StiffnessLow
+    const val PressScale = .92f
+    const val DragThumbScale = 1.4f
+    fun <T> response(): FiniteAnimationSpec<T> = spring(dampingRatio = ResponseDamping, stiffness = ResponseStiffness)
+    fun <T> settle(): FiniteAnimationSpec<T> = spring(dampingRatio = SettleDamping, stiffness = SettleStiffness)
+    fun <T> travel(): FiniteAnimationSpec<T> = spring(dampingRatio = TravelDamping, stiffness = TravelStiffness)
+    fun <T> bounce(): FiniteAnimationSpec<T> = spring(dampingRatio = BounceDamping, stiffness = BounceStiffness)
 }
 
 @Composable

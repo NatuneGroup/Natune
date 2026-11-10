@@ -72,7 +72,7 @@ internal fun PlayerSeekSlider(
     track: (@Composable () -> Unit)? = null,
 ) {
     val dragging by source.collectIsDraggedAsState()
-    val scale = animateFloatAsState(if (dragging && enabled) 1.4f else 1f,
+    val scale = animateFloatAsState(if (dragging && enabled) PlayerMotionSpecs.DragThumbScale else 1f,
         if (motion) PlayerMotionSpecs.response() else snap(), label = "playerSeekThumb")
     Slider(
         value = progress.fraction(duration), onValueChange = onPreview, onValueChangeFinished = onCommit,

@@ -1,9 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.playerstyles
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +29,7 @@ internal fun BitChordPlayer(c: PlayerRenderContext) {
     // The sleeve shrinks back while paused, with the Android BitChord player's spring.
     val sleeveScale = animateFloatAsState(
         if (playing) 1f else .86f,
-        if (c.motionActive) spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow) else snap(),
+        if (c.motionActive) PlayerMotionSpecs.bounce() else snap(),
         label = "bitChordPauseScale",
     )
     PlayerColumn(Modifier.testTag("bitchord-content")) {
