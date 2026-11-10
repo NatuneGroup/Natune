@@ -61,6 +61,14 @@ suspension/replay buffer, Natune retains its direct stream while paused and rele
 it at end of stream, reset or service destruction. This avoids introducing a second
 pause/replay policy in the existing player.
 
+Service destruction clears the running direct-device owner and `enabled` flag.
+Every `MusicService.onCreate`, including a restart within the same process,
+waits for the bounded preference snapshot and calls `initializeBitPerfectOutput`.
+That function re-reads `DirectUsbDriverKey` and `BitPerfectUsbOutputKey` before
+setting `sinkActive` and `enabled` or constructing either player's sink. Both
+keys are in the cold-start preference mirror; no destroyed singleton flag is
+used as the stored choice for the next service instance.
+
 The native library vendors no USB dependency. It uses `-Os`, section collection,
 hidden visibility, a JNI-only version script, stripping and 16 KB load alignment.
 The old worker's libusb subset was uncommitted, LGPL-2.1-or-later, approximately
