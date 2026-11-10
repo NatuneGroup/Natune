@@ -135,7 +135,7 @@ class PlatformRenderTest {
                     LocalHostSafeArea provides insets,
                 ) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        if (name in setOf("player", "lyrics", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, phone)
+        if (name in setOf("player", "lyrics", "fullscreen-lyrics", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, phone)
                         else Box(Modifier.fillMaxSize().safeAreaPadding(insets)) {
                             if (name in AuditScreens) {
                                 if (phone) RenderAuditFixture.PhoneShell(name) else RenderAuditFixture.DesktopShellContent(name)
@@ -247,6 +247,7 @@ class PlatformRenderTest {
     @Test fun settingsLyrics() = both("settings-lyrics", "Lyrics") { RenderAuditFixture.Content("settings-lyrics", it) }
     @Test fun settingsPrivacy() = both("settings-privacy", "Privacy") { RenderAuditFixture.Content("settings-privacy", it) }
     @Test fun player() = both("player", "Now playing") { RenderAuditFixture.Content("player", it) }
+    @Test fun fullscreenLyrics() = both("fullscreen-lyrics", "Lyrics") { RenderAuditFixture.Content("fullscreen-lyrics", it) }
     @Test fun lyrics() = both("lyrics", "Lyrics") { RenderAuditFixture.Content("lyrics", it) }
     @Test fun queue() = both("queue", "Queue") { RenderAuditFixture.Content("queue", it) }
     @Test fun savedPlayerStyles() {
