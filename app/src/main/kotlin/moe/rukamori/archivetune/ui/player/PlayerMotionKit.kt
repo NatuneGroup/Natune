@@ -92,7 +92,7 @@ fun StyledPlaybackSlider(sliderStyle: SliderStyle, value: Float, valueRange: Clo
     val motion = !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f
     val previous = remember { floatArrayOf(value) }
     val discontinuity = kotlin.math.abs(previous[0] - value) > 2_000f
-    previous[0] = value
+    SideEffect { previous[0] = value }
     val progress = animateFloatAsState(value,
         if (scrubbing || dragging || !motion || !isPlaying || discontinuity) snap()
         else tween(100, easing = LinearEasing), label = "playerSeekProgress")
@@ -129,10 +129,11 @@ fun <T> PlayerTrackTextTransition(targetState: T, modifier: Modifier = Modifier,
     content: @Composable (T) -> Unit) {
     val index = LocalPlayerConnection.current?.player?.currentMediaItemIndex ?: -1
     val previous = remember { intArrayOf(index, 1) }
-    if (index != previous[0]) {
-        previous[1] = if (index < previous[0]) -1 else 1
+    val direction = if (index != previous[0]) { if (index < previous[0]) -1 else 1 } else previous[1]
+    SideEffect {
+        previous[1] = direction
         previous[0] = index
     }
     moe.rukamori.archivetune.shared.ui.player.PlayerMetadataTransition(targetState,
-        !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f, previous[1], modifier, content)
+        !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f, direction, modifier, content)
 }

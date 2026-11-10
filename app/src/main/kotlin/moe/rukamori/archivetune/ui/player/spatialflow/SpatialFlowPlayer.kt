@@ -33,6 +33,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -47,6 +48,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +58,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.LocalBlurPolicy
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import androidx.compose.foundation.layout.width
@@ -113,6 +118,8 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.ui.AspectRatioFrameLayout
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
+import moe.rukamori.archivetune.ui.player.PlayerTransportIcon
 import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
@@ -141,6 +148,8 @@ import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.PlayerWindowLayout
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
+import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 
 
 // Blurred canvas backdrop (behind the controls) — Apple Music player recipe.
@@ -210,7 +219,7 @@ fun SpatialFlowPlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val presentation = LocalPlayerPresentation.current
-    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
+    val animationsDisabled = LocalAnimationsDisabled.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
@@ -347,7 +356,7 @@ fun SpatialFlowPlayerContent(
         if (lyricsModeEnabled) {
             canvasPlayingForLyrics = false
             canvasSurfacesForLyrics = true
-            if (!animationsDisabled) moe.rukamori.archivetune.scaledDelay(SfLyricsBackdropMorphMs.toLong())
+            if (!animationsDisabled) scaledDelay(SfLyricsBackdropMorphMs.toLong())
             canvasSurfacesForLyrics = false
         } else {
             canvasPlayingForLyrics = true
@@ -356,10 +365,9 @@ fun SpatialFlowPlayerContent(
     }
     val lyricsBackdropProgress by animateFloatAsState(
         targetValue = if (lyricsModeEnabled) 1f else 0f,
-        animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsDisabled) snap() else tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
         label = "SfLyricsCanvasFade",
     )
-
     // Sharp-stage bound: the stage's bottom edge tracks the song-title row's
     // top edge (measured from the content Column below) so the sharp canvas
     // always ends around the title text — the same structural split the Apple
@@ -371,7 +379,6 @@ fun SpatialFlowPlayerContent(
         titleTopInRootY?.let { top ->
             with(density) { (top - playerRootTopY).coerceAtLeast(0f).toDp() }
         }
-
     // BoxWithConstraints: the artwork slot and its top offset below are sized against this box.
     BoxWithConstraints(
         modifier =
@@ -388,7 +395,6 @@ fun SpatialFlowPlayerContent(
             withScrim = !canvasAvailable,
             modifier = Modifier.matchParentSize(),
         )
-
         if (canvasAvailable) {
             // 1) Frosted twin (Apple Music's cheap blurred-canvas backdrop):
             // the SAME canvas, decoded at 1/6 scale with a 72/6 = 12dp blur on
@@ -396,7 +402,7 @@ fun SpatialFlowPlayerContent(
             // height of the player so the same canvas keeps playing, blurred,
             // behind the bottom controls — and fades out + stops rendering
             // while the lyrics overlay is up. Skipped entirely without blur.
-            if (moe.rukamori.archivetune.LocalBlurPolicy.current.any && !presentation.sharedBackground) Box(
+            if (LocalBlurPolicy.current.any && !presentation.sharedBackground) Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -476,7 +482,6 @@ fun SpatialFlowPlayerContent(
         MaterialTheme(typography = rememberSpatialFlowTypography()) {
                 // The square that fits this box (see PlayerWindowLayout), not 90% of the screen.
                 val artSize = PlayerWindowLayout.stackedArtwork(maxWidth, maxHeight)
-
                 // SpatialFlow's exact top offset: the artwork slot is centered
                 // by formula, not by flexible spacers — `((playerHeight -
                 // artSize) / 2f - 220.dp).coerceAtLeast(statusBar + 68.dp)`
@@ -486,16 +491,13 @@ fun SpatialFlowPlayerContent(
                 val statusBarTopDp = LocalStableSystemBarsTopPadding.current
                 val minTopOffset = statusBarTopDp + 68.dp
                 val topOffset = ((maxHeight - artSize) / 2f - 220.dp).coerceAtLeast(minTopOffset)
-
                 var lyricsButtonCenterInRoot by remember { mutableStateOf<Offset?>(null) }
                 val lyricsRevealProgress by animateFloatAsState(
                     targetValue = if (lyricsModeEnabled) 1f else 0f,
-                    animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = 340, easing = FastOutSlowInEasing),
+                    animationSpec = if (animationsDisabled) snap() else tween(durationMillis = 340, easing = FastOutSlowInEasing),
                     label = "LyricsCircularReveal",
                 )
-
                 val lyricsContentReady = lyricsRevealProgress > 0.8f
-
                 Column(
                     modifier =
                         Modifier
@@ -876,7 +878,7 @@ fun SpatialFlowPlayerContent(
                                         containerColor = contentColor.copy(alpha = if (isDark) 0.08f else 0.06f),
                                         contentColor = contentColor,
                                     ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                contentPadding = PaddingValues(0.dp),
                                 enabled = canSkipPrevious,
                             ) {
                                 Box(
@@ -928,19 +930,19 @@ fun SpatialFlowPlayerContent(
                                         containerColor = dynamicAccentColor,
                                         contentColor = if (isDark) Color(0xFF1C1B1F) else Color.White,
                                     ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                contentPadding = PaddingValues(0.dp),
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxSize(),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade(isLoading && !isPlaying, {
+                                    PlayerLoadingCrossfade(isLoading && !isPlaying, {
                                         CircularWavyProgressIndicator(modifier = Modifier.size(42.dp))
                                     }) {
                                         PlayerControlCrossfade(
                                             if (isPlaying) R.drawable.spatialflow_ic_pause else R.drawable.spatialflow_ic_play,
                                         ) { playGlyph ->
-                                            moe.rukamori.archivetune.ui.player.PlayerTransportIcon(
+                                            PlayerTransportIcon(
                                                 iconRes = playGlyph,
                                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                                 modifier = Modifier.size(42.dp).then(playPauseMotion.modifier),
@@ -981,7 +983,7 @@ fun SpatialFlowPlayerContent(
                                         containerColor = contentColor.copy(alpha = if (isDark) 0.08f else 0.06f),
                                         contentColor = contentColor,
                                     ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                contentPadding = PaddingValues(0.dp),
                                 enabled = canSkipNext,
                             ) {
                                 Box(
@@ -999,12 +1001,10 @@ fun SpatialFlowPlayerContent(
                         menuContent = {},
                     )
                 }
-
                 Spacer(modifier = Modifier.height(16.dp))
-
                 val (swipeUpToOpenQueue) =
-                    moe.rukamori.archivetune.utils.rememberPreference(
-                        moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey,
+                    rememberPreference(
+                        SwipeUpToOpenQueueKey,
                         defaultValue = true,
                     )
                 Box(

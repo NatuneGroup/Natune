@@ -27,7 +27,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.*
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,14 +43,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.player.LocalPlayerControlMotion
+import moe.rukamori.archivetune.shared.ui.player.LocalPlayerTrackMotion
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerControlMotionEnvironment
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
+import moe.rukamori.archivetune.shared.ui.player.PlayerInteractionState
+import moe.rukamori.archivetune.shared.ui.player.PlayerProgress
 import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
+import moe.rukamori.archivetune.shared.ui.player.PlayerSeekSlider
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.PlayerState
+import moe.rukamori.archivetune.shared.ui.player.PlayerSurfaceTransition
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
-import moe.rukamori.archivetune.shared.ui.player.*
+import moe.rukamori.archivetune.shared.ui.player.PlayerTextSwap
+import moe.rukamori.archivetune.shared.ui.player.PlayerTrackSwap
+import moe.rukamori.archivetune.shared.ui.player.fades
+import moe.rukamori.archivetune.shared.ui.player.moves
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerMotionLevel
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerProgress
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerTrackMotion
 import moe.rukamori.archivetune.shared.ui.player.tabularFigures
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatTrackDuration
@@ -181,7 +194,6 @@ internal fun DesktopExpandedPlayerTransition(
     content: @Composable (ContentOccurrence) -> Unit,
 ) {
     PlayerSurfaceTransition(current, rememberPlayerMotionLevel(motion), content = content)
-
 }
 
 @Composable
@@ -318,5 +330,4 @@ private fun DesktopExpandedTime(progress: PlayerProgress, duration: Long) {
         Text(formatTrackDuration(duration) ?: "0:00", style = MaterialTheme.typography.labelSmall.tabularFigures(),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-
 }
