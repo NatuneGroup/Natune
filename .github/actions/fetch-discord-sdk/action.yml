@@ -26,7 +26,7 @@ runs:
           exit 1
         fi
         mkdir -p "$(dirname "$SDK_PATH")"
-        curl --fail --silent --show-error --location --retry 3 \
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 10 \
           -H "Authorization: Bearer $DISCORD_SDK_TOKEN" \
           -H "Accept: application/vnd.github.raw" \
           --output "$SDK_PATH" \

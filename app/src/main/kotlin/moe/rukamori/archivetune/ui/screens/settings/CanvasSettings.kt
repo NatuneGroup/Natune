@@ -32,14 +32,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,9 +75,7 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.canvas.CanvasHealth
 import moe.rukamori.archivetune.canvas.CanvasSource
-import moe.rukamori.archivetune.viewmodels.CanvasCacheOption
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsAction
-import moe.rukamori.archivetune.viewmodels.CanvasSettingsDialog
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsState
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsUiModel
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsViewModel
@@ -98,7 +93,10 @@ fun CanvasSettings(
             Unit
         }
     }
-    CanvasSettingsContent(state = state, onAction = onAction, onBack = onBack)
+    val onOpenStorage: () -> Unit = remember(navController) {
+        { navController.navigate("${SettingsAnchorScreens.STORAGE}?scrollTo=max_cache_size") }
+    }
+    CanvasSettingsContent(state = state, onAction = onAction, onBack = onBack, onOpenStorage = onOpenStorage)
 }
 
 @Composable
@@ -106,6 +104,7 @@ private fun CanvasSettingsContent(
     state: CanvasSettingsState,
     onAction: (CanvasSettingsAction) -> Unit,
     onBack: () -> Unit,
+    onOpenStorage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -131,7 +130,7 @@ private fun CanvasSettingsContent(
             CanvasSettingsState.Loading -> Box(contentModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is CanvasSettingsState.Success -> CanvasSettingsBody(state.model, onAction, contentModifier)
+            is CanvasSettingsState.Success -> CanvasSettingsBody(state.model, onAction, onOpenStorage, contentModifier)
             CanvasSettingsState.Empty -> CanvasSettingsFailure(R.string.canvas_settings_load_failed, onAction, contentModifier)
             is CanvasSettingsState.Error -> CanvasSettingsFailure(state.messageRes, onAction, contentModifier)
         }
@@ -142,13 +141,12 @@ private fun CanvasSettingsContent(
 private fun CanvasSettingsBody(
     model: CanvasSettingsUiModel,
     onAction: (CanvasSettingsAction) -> Unit,
+    onOpenStorage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val onEnabled: (Boolean) -> Unit = remember(onAction) { { onAction(CanvasSettingsAction.SetEnabled(it)) } }
     val onWifiOnly: (Boolean) -> Unit = remember(onAction) { { onAction(CanvasSettingsAction.SetWifiOnly(it)) } }
     val onRefresh = remember(onAction) { { onAction(CanvasSettingsAction.RefreshHealth) } }
-    val onCacheLimit = remember(onAction) { { onAction(CanvasSettingsAction.ShowCacheLimit) } }
-    val onClear = remember(onAction) { { onAction(CanvasSettingsAction.ShowClearCache) } }
     val sources = remember { CanvasSource.entries.toList() }
     Column(
         modifier = modifier
@@ -208,9 +206,8 @@ private fun CanvasSettingsBody(
             )
         }
         CanvasHealthSection(model = model, onRefresh = onRefresh)
-        CanvasCacheSection(model = model, onCacheLimit = onCacheLimit, onClear = onClear)
+        CanvasCacheSection(model = model, onOpenStorage = onOpenStorage)
     }
-    CanvasSettingsDialogs(model, onAction)
 }
 
 /**
@@ -432,12 +429,7 @@ private fun CanvasHealthRow(title: String, health: CanvasHealth, @DrawableRes ic
 }
 
 @Composable
-private fun CanvasCacheSection(model: CanvasSettingsUiModel, onCacheLimit: () -> Unit, onClear: () -> Unit) {
-    val limitLabel = when (model.configuration.cacheLimitMb) {
-        0 -> stringResource(R.string.disable)
-        -1 -> stringResource(R.string.unlimited)
-        else -> model.cacheLimit
-    }
+private fun CanvasCacheSection(model: CanvasSettingsUiModel, onOpenStorage: () -> Unit) {
     Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionHeaderBottomPadding) }) {
         CanvasSectionHeader(title = stringResource(R.string.canvas_cache))
         Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap) }) {
@@ -482,21 +474,11 @@ private fun CanvasCacheSection(model: CanvasSettingsUiModel, onCacheLimit: () ->
                 }
             }
             CanvasActionRow(
-                title = stringResource(R.string.max_cache_size),
-                subtitle = limitLabel,
+                title = stringResource(R.string.canvas_cache_settings),
+                subtitle = stringResource(R.string.canvas_cache_settings_desc),
                 iconRes = R.drawable.storage,
-                shape = CanvasSectionShapes.middle,
-                enabled = !model.busy,
-                onClick = onCacheLimit,
-            )
-            CanvasActionRow(
-                title = stringResource(R.string.clear_canvas_cache),
-                subtitle = null,
-                iconRes = R.drawable.delete,
                 shape = CanvasSectionShapes.bottom,
-                enabled = !model.busy,
-                onClick = onClear,
-                destructive = true,
+                onClick = onOpenStorage,
             )
         }
     }
@@ -508,17 +490,13 @@ private fun CanvasActionRow(
     subtitle: String?,
     @DrawableRes iconRes: Int,
     shape: Shape,
-    enabled: Boolean,
     onClick: () -> Unit,
-    destructive: Boolean = false,
 ) {
-    val accent = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     Surface(
         onClick = onClick,
-        enabled = enabled,
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
             modifier = remember {
@@ -528,7 +506,7 @@ private fun CanvasActionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
         ) {
-            CanvasSectionIcon(iconRes = iconRes, tint = accent)
+            CanvasSectionIcon(iconRes = iconRes, tint = MaterialTheme.colorScheme.primary)
             Column(modifier = remember { Modifier.weight(1f) }) {
                 Text(title, style = MaterialTheme.typography.bodyLarge)
                 if (subtitle != null) {
@@ -547,7 +525,6 @@ private fun CanvasActionRow(
         }
     }
 }
-
 @Composable
 private fun CanvasSectionIcon(@DrawableRes iconRes: Int, tint: Color) {
     Surface(
@@ -583,46 +560,6 @@ private object CanvasSectionShapes {
         index == 0 -> top
         index == count - 1 -> bottom
         else -> middle
-    }
-}
-
-@Composable
-private fun CanvasSettingsDialogs(model: CanvasSettingsUiModel, onAction: (CanvasSettingsAction) -> Unit) {
-    val onDismiss = remember(onAction) { { onAction(CanvasSettingsAction.DismissDialog) } }
-    val onConfirmClear = remember(onAction) { { onAction(CanvasSettingsAction.ClearCache) } }
-    when (model.dialog) {
-        CanvasSettingsDialog.CACHE_LIMIT -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.max_cache_size)) },
-            text = {
-                LazyColumn(modifier = remember { Modifier.heightIn(max = 420.dp).selectableGroup() }) {
-                    items(model.cacheOptions.values, key = CanvasCacheOption::limitMb, contentType = { "cache_limit" }) { option ->
-                        val onSelect = remember(onAction, option.limitMb) {
-                            { onAction(CanvasSettingsAction.SetCacheLimit(option.limitMb)) }
-                        }
-                        CanvasChoiceRow(
-                            title = when (option.limitMb) {
-                                0 -> stringResource(R.string.disable)
-                                -1 -> stringResource(R.string.unlimited)
-                                else -> option.formattedSize
-                            },
-                            selected = model.configuration.cacheLimitMb == option.limitMb,
-                            enabled = !model.busy,
-                            onClick = onSelect,
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-        )
-        CanvasSettingsDialog.CLEAR_CACHE -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.clear_canvas_cache)) },
-            text = { Text(stringResource(R.string.clear_canvas_cache_dialog)) },
-            confirmButton = { TextButton(onClick = onConfirmClear, enabled = !model.busy) { Text(stringResource(android.R.string.ok)) } },
-            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-        )
-        null -> Unit
     }
 }
 

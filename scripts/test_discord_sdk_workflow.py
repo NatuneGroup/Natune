@@ -86,6 +86,14 @@ class FetchActionTest(unittest.TestCase):
                           + env["SDK_COMMIT"], args)
             self.assertIn("Authorization: Bearer token", args)
 
+    def test_download_retries_dropped_transfers(self):
+        # Plain --retry skips transport failures such as an HTTP/2 stream reset (exit 92).
+        with tempfile.TemporaryDirectory() as directory:
+            run_action(Path(directory), "token", b"x")
+            args = (Path(directory) / "curl-args").read_text().split("\n")
+            self.assertIn("--retry-all-errors", args)
+            self.assertIn("--retry", args)
+
 
 class ApkCheckTest(unittest.TestCase):
     def check(self, names):

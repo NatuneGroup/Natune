@@ -51,12 +51,6 @@ sealed interface CanvasSettingsState {
 }
 
 @Immutable
-data class CanvasCacheOption(val limitMb: Int, val formattedSize: String)
-
-@Immutable
-data class CanvasCacheOptions(val values: List<CanvasCacheOption>)
-
-@Immutable
 data class CanvasSettingsUiModel(
     val configuration: CanvasConfiguration,
     val health: CanvasHealthStatus,
@@ -64,22 +58,13 @@ data class CanvasSettingsUiModel(
     val cacheSize: String,
     val cacheLimit: String,
     val cacheProgress: Float,
-    val cacheOptions: CanvasCacheOptions,
-    val dialog: CanvasSettingsDialog?,
     val busy: Boolean,
 )
-
-enum class CanvasSettingsDialog { CACHE_LIMIT, CLEAR_CACHE }
 
 sealed interface CanvasSettingsAction {
     data class SetEnabled(val enabled: Boolean) : CanvasSettingsAction
     data class SelectSource(val source: CanvasSource) : CanvasSettingsAction
     data class SetWifiOnly(val wifiOnly: Boolean) : CanvasSettingsAction
-    data class SetCacheLimit(val limitMb: Int) : CanvasSettingsAction
-    data object ShowCacheLimit : CanvasSettingsAction
-    data object ShowClearCache : CanvasSettingsAction
-    data object DismissDialog : CanvasSettingsAction
-    data object ClearCache : CanvasSettingsAction
     data object RefreshHealth : CanvasSettingsAction
     data object Retry : CanvasSettingsAction
 }
@@ -90,7 +75,6 @@ class CanvasSettingsViewModel @Inject constructor(
     private val useCases: CanvasSettingsUseCases,
 ) : ViewModel() {
     private data class Controls(
-        val dialog: CanvasSettingsDialog? = null,
         val busy: Boolean = false,
         @param:StringRes val error: Int? = null,
     )
@@ -98,9 +82,6 @@ class CanvasSettingsViewModel @Inject constructor(
     private val controls = MutableStateFlow(Controls())
     private val refresh = MutableStateFlow(0L)
     private var actionJob: Job? = null
-    private val options = CanvasCacheOptions(CanvasSettingsUseCases.CACHE_LIMITS.map { limit ->
-        CanvasCacheOption(limit, formatFileSize(limit.coerceAtLeast(0) * 1024L * 1024L))
-    })
     private val health = useCases.policy
         .map { it.copy(configuration = it.configuration.copy(cacheLimitMb = 0)) }
         .distinctUntilChanged()
@@ -134,8 +115,6 @@ class CanvasSettingsViewModel @Inject constructor(
                             cacheSize = formatFileSize(bytes),
                             cacheLimit = formatFileSize(limit.coerceAtLeast(0)),
                             cacheProgress = if (limit > 0) (bytes.toDouble() / limit).toFloat().coerceIn(0f, 1f) else 0f,
-                            cacheOptions = options,
-                            dialog = controls.dialog,
                             busy = controls.busy,
                         ),
                     )
@@ -150,9 +129,6 @@ class CanvasSettingsViewModel @Inject constructor(
 
     fun onAction(action: CanvasSettingsAction) {
         when (action) {
-            CanvasSettingsAction.DismissDialog -> controls.update { it.copy(dialog = null) }
-            CanvasSettingsAction.ShowCacheLimit -> controls.update { it.copy(dialog = CanvasSettingsDialog.CACHE_LIMIT) }
-            CanvasSettingsAction.ShowClearCache -> controls.update { it.copy(dialog = CanvasSettingsDialog.CLEAR_CACHE) }
             CanvasSettingsAction.RefreshHealth -> {
                 if ((state.value as? CanvasSettingsState.Success)?.model?.canRefreshHealth == true) refresh.update { it + 1 }
             }
@@ -166,15 +142,13 @@ class CanvasSettingsViewModel @Inject constructor(
 
     private fun update(action: CanvasSettingsAction) {
         if (actionJob?.isActive == true) return
-        controls.update { it.copy(busy = true, dialog = null, error = null) }
+        controls.update { it.copy(busy = true, error = null) }
         actionJob = viewModelScope.launch {
             try {
                 when (action) {
                     is CanvasSettingsAction.SetEnabled -> useCases.setEnabled(action.enabled)
                     is CanvasSettingsAction.SelectSource -> useCases.setSource(action.source)
                     is CanvasSettingsAction.SetWifiOnly -> useCases.setWifiOnly(action.wifiOnly)
-                    is CanvasSettingsAction.SetCacheLimit -> useCases.setCacheLimit(action.limitMb)
-                    CanvasSettingsAction.ClearCache -> useCases.clearCache()
                     else -> Unit
                 }
             } catch (error: CancellationException) {
