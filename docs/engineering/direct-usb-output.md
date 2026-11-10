@@ -2,8 +2,21 @@
 
 Natune's **Bit-perfect USB output** switch (`BitPerfectUsbOutputKey`) keeps its
 Android platform route. The **Direct USB driver (experimental)** sub-option
-(`DirectUsbDriverKey`) is default OFF and enabled only under the parent switch.
-Both use the same restart prompt. With the sub-option off, startup installs no
+(`DirectUsbDriverKey`) is default OFF and restart-scoped.
+On Android 14+, the direct-driver switch requires the parent to be selected. On
+older versions, it can be enabled first, then makes the parent available. The
+native library must load successfully in either case; otherwise the driver switch
+is disabled with an unavailable-library reason. The driver remains experimental
+and untested on hardware.
+
+Settings availability, checked state, search dependencies and prospective restart
+values use the saved driver preference, rather than the running service's startup
+snapshot. Android 14+ always offers the platform route. Older versions offer
+bit-perfect output only with the direct preference on and its native library
+available. Turning the driver off there keeps the stored parent value, but the
+parent is effectively off after restart. Both switches use the same restart prompt;
+selecting the driver alone does not prompt until the parent makes an output active.
+With the sub-option off, startup installs no
 USB receiver, requests no USB permission and creates no direct sink wrapper;
 pre-Android-14 support semantics stay the same as dev. The existing exclusions
 for DSP, normalization, offload, crossfade and automix remain authoritative.
@@ -51,7 +64,11 @@ Hardware feature-unit volume is mandatory. Startup never raises an existing leve
 it initially attenuates to at most -40 dB, then applies the lower of each channel's
 original level and Android music volume multiplied by player volume, capped at 0 dB.
 Initial sink callbacks and passive settings notifications retain that ceiling;
-only subsequent volume changes may raise it. Every write is read back. Explicit mute emits silence without software gain. System
+player fades and ducking never authorize raising the DAC above it. The startup
+ceiling releases only when audible Android music volume, mapped without player
+gain, is at or below every channel's original level. System mute and player
+attenuation cannot release it. After release, later system-volume increases may
+raise the DAC. Every write is read back. Explicit mute emits silence without software gain. System
 volume changes are observed and served away from the playback thread. Control
 transfers serialize with close on a separate lifetime lock, leaving PCM writes
 free to run while a volume transfer or read-back waits on the bus. Original
@@ -100,12 +117,25 @@ No physical DAC has been exercised. The complete hardware-unverified list is:
 - Kernel detach, noisy-broadcast ordering and any pause caused by opening the driver.
 - Real unplug, direct failure recovery, speaker routing and kernel-interface restoration.
 - Initial hardware volume, per-channel ceilings, read-back and restoration on actual DACs.
-- Physical volume keys, mute and later user changes that raise hardware volume.
+- Physical volume keys, mute, fades/ducking and startup-ceiling release before later volume increases.
 - Pause/resume, seek flushes and same-format gapless playback on hardware.
 - Service restart, system suspend/resume and reconnect on hardware.
 - Actual bit-perfect samples at the DAC output.
 
 Validation commands are targeted and every Gradle invocation uses the shared lock:
+
+The settings regression suites can run without an Android SDK:
+
+```sh
+flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
+  :shared-domain:jvmTest \
+  --tests '*SettingsRestartPromptPolicyTest' --tests '*PlaybackConflictsTest' \
+  --offline -Pnatune.androidSdk=false --console=plain --max-workers=2 \
+  -Dorg.gradle.jvmargs=-Xmx2g -Pkotlin.daemon.jvmargs=-Xmx1536m
+flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew --stop
+```
+
+Android compilation and device-hosted tests still need the SDK/NDK:
 
 ```sh
 flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
@@ -117,10 +147,17 @@ flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
   -Dorg.gradle.jvmargs=-Xmx2g -Pkotlin.daemon.jvmargs=-Xmx1536m
 ```
 
-The local Gradle attempt (offline to avoid large downloads) failed before compilation:
-no Android SDK/NDK is configured and the checkout's uninitialized `lyrics` submodule
-leaves `lyrics/betterlyrics` missing. Gradle was stopped under the lock. The 32
-focused Kotlin JUnit tests (including startup-volume ceilings and PCM short writes,
+The first local shared Gradle attempt failed before compilation because the
+uninitialized `lyrics` submodule left `lyrics/betterlyrics` missing. Initializing
+its pinned commit from the existing local Git cache required no network download.
+The 25 shared settings/restart tests then passed through Gradle, which was stopped
+under the lock. They also passed standalone Kotlin JUnit, alongside 16 app
+settings/restart tests using extracted production policies, actual preference-key
+declarations and XML-derived resource IDs. These cover pre-14 driver-first selection,
+driver on/off, unavailable native code, Android 14+ and preserved dormant parent values.
+No Android SDK/NDK is configured locally; Android Gradle tasks were not run.
+
+Earlier, the 32 focused Kotlin JUnit tests (including startup-volume ceilings and PCM short writes,
 flush and mute) passed with the installed standalone Kotlin compiler. Eight of these
 use fake sinks/outputs to cover seek retention, matching/changing formats, trim/maps,
 packet-loss drain and successful/failed fallback. They run as plain JUnit tests;
