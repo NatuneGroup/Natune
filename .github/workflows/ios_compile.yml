@@ -50,7 +50,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-compile-${{ github.event.pull_request.number || github.ref }}
+  group: ios-compile-${{ github.event.pull_request.number || (inputs.render_audit && github.sha || github.ref) }}
   cancel-in-progress: true
 
 jobs:
@@ -370,7 +370,7 @@ jobs:
 
   ios-render:
     if: ${{ inputs.render_audit }}
-    runs-on: macos-26
+    runs-on: blacksmith-12vcpu-macos-26
     timeout-minutes: 40
     env:
       ANDROID_HOME: ""
@@ -406,7 +406,18 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           echo "NATUNE_SIMULATOR_DEVICE_ID=$device" >> "$GITHUB_ENV"
           mkdir -p outputs/ui-renders/ios-native
+      - name: Compile iOS render test sources
+        run: >-
+          ./gradlew :shared-ui:compileTestKotlinIosSimulatorArm64
+          -Pnatune.androidSdk=false --console=plain --max-workers=2
+          -Dorg.gradle.jvmargs=-Xmx4g -Pkotlin.daemon.jvmargs=-Xmx2g
+      - name: Link the simulator render test
+        run: >-
+          ./gradlew :shared-ui:linkDebugTestIosSimulatorArm64
+          -Pnatune.androidSdk=false --console=plain --max-workers=2
+          -Dorg.gradle.jvmargs=-Xmx4g -Pkotlin.daemon.jvmargs=-Xmx2g
       - name: Render shared UI using native iOS Skia
+        timeout-minutes: 6
         shell: bash
         run: |
           set -euo pipefail
