@@ -1,6 +1,4 @@
 <resources>
-    <string name="m6_qq_enabled">Enable QQ Music</string>
-    <string name="m6_qq_enabled_desc">Try QQ Music for a track before falling through to the sources below it.</string>
     <string name="m6_qq_quality">Preferred audio quality</string>
     <string name="m6_qq_quality_lossless">Lossless (FLAC)</string>
     <string name="m6_qq_quality_high">High (320 kbps)</string>

@@ -28,10 +28,8 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.CanvasSourceKey
 import moe.rukamori.archivetune.constants.CanvasWifiOnlyKey
-import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.utils.dataStore
-import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -91,10 +89,6 @@ class CanvasSettingsRepository @Inject constructor(
         context.dataStore.edit { it[CanvasWifiOnlyKey] = wifiOnly }
     }
 
-    suspend fun setCacheLimit(limitMb: Int) {
-        context.dataStore.edit { it[MaxCanvasCacheSizeKey] = limitMb }
-    }
-
     suspend fun initializeCache() = withContext(Dispatchers.IO) {
         // The fork's cache takes its location from init and its budget separately, and it
         // starts on a default budget, so the stored limit is applied right after.
@@ -108,10 +102,6 @@ class CanvasSettingsRepository @Inject constructor(
 
     suspend fun cacheBytes(): Long = withContext(Dispatchers.IO) {
         CanvasArtworkPlaybackCache.byteSize()
-    }
-
-    suspend fun clearCache() = withContext(Dispatchers.IO) {
-        if (!CanvasArtworkPlaybackCache.clearAndPersist()) throw IOException("Canvas cache could not be cleared")
     }
 
     suspend fun isHealthy(source: CanvasSource): Boolean = withContext(Dispatchers.IO) {

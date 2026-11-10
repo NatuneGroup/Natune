@@ -52,6 +52,7 @@ ALIASES = {
     'auto_skip_next_on_error': ['auto_skip_error'], 'stop_music_on_task_clear': ['stop_task_clear'], 'audio_sources': ['preferred_sources'],
     'you_might_like_source': ['playlist_suggestion_source'],
     'top_length': ['top_size'], 'settings_behavior_title': ['privacy'],
+    'spotify_account': ['spotify'],
 }
 
 

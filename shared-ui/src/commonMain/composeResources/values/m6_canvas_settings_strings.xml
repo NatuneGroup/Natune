@@ -21,7 +21,6 @@
     <string name="m6_canvas_health_wifi_required">Waiting for Wi-Fi</string>
     <string name="m6_canvas_health_low_data">Paused by low data mode</string>
     <string name="m6_canvas_cache">Canvas cache</string>
-    <string name="m6_canvas_cache_desc">Videos play offline. Oldest videos are removed when the cache is full.</string>
     <string name="m6_canvas_cache_used">Cache used</string>
     <string name="m6_canvas_cache_unmeasured">Not measured yet</string>
     <string name="m6_canvas_cache_settings">Cache size and clearing</string>
