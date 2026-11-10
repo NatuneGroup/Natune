@@ -2,6 +2,11 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 import moe.rukamori.archivetune.shared.ui.resources.*
 
+// Android keeps these subpages in the search index and under their parent settings page.
+internal val phoneSettingsHomeBrowseHidden = setOf("appearance_extras", "aod", "navigation_bar", "liquid_glass",
+    "lyrics_animations", "sources", "jiosaavn", "amazon", "qqmusic", "spotify_streaming", "deezer", "lyrics",
+    "lyrics_providers", "lyrics_romanisation", "discord_experimental", "ai_integration", "po_token")
+
 /** The phone settings index keeps the Android group and entry order. */
 internal val PhoneSettingsHomeReference = PhoneSettingsReference(Res.string.m4_settings, listOf(
     PhoneSettingReference("group_settings", Res.string.m6_settings_home_group_settings, null, PhoneSettingKind.HEADER),

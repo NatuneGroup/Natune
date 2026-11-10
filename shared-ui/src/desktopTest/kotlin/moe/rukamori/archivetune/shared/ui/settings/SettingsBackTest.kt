@@ -52,6 +52,44 @@ class SettingsBackTest {
         onNodeWithTag("setting:appearance").assertIsDisplayed()
     }
 
+    @Test fun phoneRootSeparatesHeadingAndSearchAndKeepsSubpageAnchorsSearchable() = runComposeUiTest {
+        val store = Store()
+        val controller = SettingsController(store, store.snapshots.value, false)
+        val routes = mutableListOf<String>()
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalPhoneSettingsReference provides phoneSettingsReference("settings")) {
+                    SettingsHomePage(controller, routes::add, onFailure = { error("Edit failed") })
+                }
+            }
+        }
+        val title = onNodeWithText("Settings").fetchSemanticsNode().boundsInRoot
+        val search = onNodeWithTag("settings-search").fetchSemanticsNode().boundsInRoot
+        assertTrue(title.bottom < search.top)
+        onNodeWithTag("setting:account").assertIsDisplayed()
+        onNodeWithTag("setting:playback").assertIsDisplayed()
+        onNodeWithTag("setting:appearance_extras").assertDoesNotExist()
+        onNodeWithTag("settings-search").performTextInput("Appearance extras")
+        onNodeWithTag("setting:appearance_extras").assertIsDisplayed().performClick()
+        runOnIdle {
+            assertEquals(listOf("settings/appearance/extras"), routes)
+            assertEquals(PreferenceSnapshot.EMPTY, store.snapshots.value)
+        }
+    }
+
+    @Test fun phoneRootStillAcceptsAnAnchorForASearchOnlySubpage() = runComposeUiTest {
+        val store = Store()
+        val controller = SettingsController(store, store.snapshots.value, false)
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalPhoneSettingsReference provides phoneSettingsReference("settings")) {
+                    SettingsHomePage(controller, {}, onFailure = { error("Edit failed") }, scrollTo = "lyrics")
+                }
+            }
+        }
+        onNodeWithTag("setting:lyrics").assertIsDisplayed()
+    }
+
     @Test fun aHostWithoutBackKeepsThePageHeaderless() = runComposeUiTest {
         val store = Store()
         val controller = SettingsController(store, store.snapshots.value, false)
