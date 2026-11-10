@@ -1722,7 +1722,7 @@ class MusicService :
                             lyrics = lyricsResult.lyrics,
                             providerName = lyricsResult.providerName,
                         )
-                    } else {
+                    } else if (lyricsResult.isConclusive) {
                         replaceLyricsIfAbsentOrNotFound(
                             id = mediaMetadata.id,
                             lyrics = lyricsResult.lyrics,

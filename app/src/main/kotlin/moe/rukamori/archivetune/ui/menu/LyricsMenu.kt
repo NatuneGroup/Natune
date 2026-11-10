@@ -171,9 +171,7 @@ fun LyricsMenu(
 ) {
     val context = LocalContext.current
 
-    var showEditDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
+    var showEditDialog by rememberSaveable { mutableStateOf(false) }
 
     var showTranslateDialog by rememberSaveable { mutableStateOf(false) }
     var showLyricsSyncOffsetDialog by rememberSaveable { mutableStateOf(false) }
@@ -181,7 +179,8 @@ fun LyricsMenu(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(viewModel) {
-        viewModel.refetchCompletionEvents.collect {
+        viewModel.refetchCompletionEvents.collect { result ->
+            result.messageResId?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
             onDismiss()
         }
     }
