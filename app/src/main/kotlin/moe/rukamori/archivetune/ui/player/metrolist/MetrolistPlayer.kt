@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.ui.player.metrolist
 
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
+import moe.rukamori.archivetune.ui.player.PlayerTransportIcon
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -405,6 +409,8 @@ private fun MetrolistTransport(
     textBackgroundColor: Color,
     playerConnection: PlayerConnection,
 ) {
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
     val onPlayPauseClick = {
         if (playbackState == Player.STATE_ENDED) {
             playerConnection.player.seekTo(0, 0)
@@ -422,14 +428,14 @@ private fun MetrolistTransport(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
-            onClick = { playerConnection.seekToPrevious() },
+            onClick = previousMotion.onClick { playerConnection.seekToPrevious() },
             enabled = canSkipPrevious,
         ) {
             Icon(
                 painter = painterResource(R.drawable.player_skip_previous),
                 contentDescription = null,
                 tint = textBackgroundColor,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(32.dp).then(previousMotion.modifier),
             )
         }
 
@@ -439,27 +445,21 @@ private fun MetrolistTransport(
             modifier =
                 Modifier
                     .size(64.dp)
-                    .clip(if (vintage) CircleShape else RoundedCornerShape(20.dp))
+                    .playerPressFeedback()
+                    .clip(moe.rukamori.archivetune.ui.player.rememberPlayerPlayShape(isPlaying, if (vintage) CircleShape else RoundedCornerShape(20.dp)))
                     .background(textButtonColor)
                     .clickable(onClick = onPlayPauseClick),
             contentAlignment = Alignment.Center,
         ) {
-            if (isLoading) {
+            PlayerLoadingCrossfade(isLoading, {
                 CircularProgressIndicator(
                     modifier = Modifier.size(28.dp),
                     color = iconButtonColor,
                     strokeWidth = 2.dp,
                 )
-            } else {
-                Icon(
-                    painter =
-                        painterResource(
-                            if (isPlaying) {
-                                R.drawable.player_pause
-                            } else {
-                                R.drawable.player_play
-                            },
-                        ),
+            }) {
+                PlayerTransportIcon(
+                    iconRes = if (isPlaying) R.drawable.player_pause else R.drawable.player_play,
                     contentDescription = null,
                     tint = iconButtonColor,
                     modifier = Modifier.size(32.dp),
@@ -468,14 +468,14 @@ private fun MetrolistTransport(
         }
 
         IconButton(
-            onClick = { playerConnection.seekToNext() },
+            onClick = nextMotion.onClick { playerConnection.seekToNext() },
             enabled = canSkipNext,
         ) {
             Icon(
                 painter = painterResource(R.drawable.player_skip_next),
                 contentDescription = null,
                 tint = textBackgroundColor,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(32.dp).then(nextMotion.modifier),
             )
         }
     }

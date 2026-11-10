@@ -7,6 +7,7 @@
 
 package moe.rukamori.archivetune.ui.player.looper
 
+import moe.rukamori.archivetune.ui.player.PlayerTransportIcon
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -91,6 +92,7 @@ import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.utils.isLocalMediaId
+import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.playerControlMotion
@@ -430,15 +432,15 @@ fun LooperPlayerContent(
                                 },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (isLoading) {
+                        PlayerLoadingCrossfade(isLoading, {
                             CircularWavyProgressIndicator(
                                 color = if (isPlaying) Color.White else Color.Black,
                                 modifier = Modifier.size(32.dp),
                             )
-                        } else {
+                        }) {
                             PlayerControlCrossfade(if (isPlaying) R.drawable.player_pause else R.drawable.player_play) { playGlyph ->
-                                Icon(
-                                    painter = painterResource(playGlyph),
+                                PlayerTransportIcon(
+                        iconRes = playGlyph,
                                     contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                                     tint = if (isPlaying) Color.White else Color.Black,
                                     modifier = Modifier.size(28.dp).then(playPauseMotion.modifier),

@@ -384,7 +384,7 @@ fun V10PlayerContent(
                     contentColor = field
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        if (isLoading && !isPlaying) {
+                        PlayerLoadingCrossfade(isLoading && !isPlaying, {
                             LoadingIndicator(
                                 modifier = Modifier.size(36.dp),
                                 color = field,
@@ -395,7 +395,7 @@ fun V10PlayerContent(
                                     MaterialShapes.Sunny
                                 )
                             )
-                        } else {
+                        }) {
                             AnimatedContent(
                                 targetState = isPlaying,
                                 label = "EditorialPlayWord"

@@ -1867,13 +1867,13 @@ private fun AppleMusicControlsColumn(
                     .size(playPauseIconSize + 20.dp)
                     .clip(CircleShape),
         ) {
-            if (isLoading) {
+            PlayerLoadingCrossfade(isLoading, {
                 CircularProgressIndicator(
                     color = Color.White,
                     modifier = Modifier.size(AppleMusicPlayPauseSpinnerSize),
                     strokeWidth = 3.dp,
                 )
-            } else {
+            }) {
                 AppleMusicTransportButton(
                     iconRes = if (isPlaying) R.drawable.pause_applemusic else R.drawable.play_applemusic,
                     enabled = true,
@@ -2058,7 +2058,7 @@ private fun AppleMusicTransportButton(
         contentAlignment = Alignment.Center,
         modifier =
             Modifier
-                .size(iconSize + 20.dp)
+                .size(iconSize + 20.dp).playerPressFeedback()
                 .clip(CircleShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -2071,8 +2071,8 @@ private fun AppleMusicTransportButton(
                 ),
     ) {
         PlayerControlCrossfade(iconRes) { glyph ->
-            Icon(
-                painter = painterResource(glyph),
+            PlayerTransportIcon(
+                        iconRes = glyph,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f),
                 modifier =

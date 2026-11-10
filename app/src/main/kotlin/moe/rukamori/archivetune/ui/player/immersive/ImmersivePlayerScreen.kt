@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.player.immersive
 
+import moe.rukamori.archivetune.ui.player.PlayerTransportIcon
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -89,6 +90,7 @@ import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
+import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
@@ -710,16 +712,16 @@ private fun TransportControls(
             onClick = { onAction(ImmersivePlayerAction.TogglePlayPause) },
             modifier = Modifier.size(88.dp),
         ) {
-            if (isBuffering) {
+            PlayerLoadingCrossfade(isBuffering, {
                 CircularProgressIndicator(
                     color = ImmersiveContentColor,
                     strokeWidth = 3.dp,
                     modifier = Modifier.size(52.dp),
                 )
-            } else {
+            }) {
                 PlayerControlCrossfade(if (isPlaying) R.drawable.pause else R.drawable.play) { playGlyph ->
-                    Icon(
-                        painter = painterResource(playGlyph),
+                    PlayerTransportIcon(
+                        iconRes = playGlyph,
                         contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                         tint = ImmersiveContentColor,
                         modifier = Modifier.size(68.dp).then(playPauseMotion.modifier),

@@ -546,8 +546,8 @@ private fun MiniPlayerTransportButton(
                         else -> 20.dp
                     }
                 PlayerControlCrossfade(currentIcon) { glyph ->
-                    Icon(
-                        painter = painterResource(glyph),
+                    PlayerTransportIcon(
+                        iconRes = glyph,
                         contentDescription = contentDescription,
                         modifier = Modifier.size(iconSize).then(motion?.modifier ?: Modifier),
                     )
@@ -560,7 +560,7 @@ private fun MiniPlayerTransportButton(
         FilledIconButton(
             onClick = handleClick,
             shapes = IconButtonDefaults.shapes(),
-            modifier = modifier.size(buttonSize),
+            modifier = modifier.size(buttonSize).playerPressFeedback(),
             enabled = enabled,
             colors = buttonColors,
             content = content,
@@ -569,7 +569,7 @@ private fun MiniPlayerTransportButton(
         IconButton(
             onClick = handleClick,
             shapes = IconButtonDefaults.shapes(),
-            modifier = modifier.size(buttonSize),
+            modifier = modifier.size(buttonSize).playerPressFeedback(),
             enabled = enabled,
             colors = buttonColors,
             content = content,

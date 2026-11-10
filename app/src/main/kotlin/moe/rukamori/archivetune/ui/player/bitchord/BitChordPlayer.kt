@@ -1506,7 +1506,7 @@ fun BitChordPlayerContent(
                 )
                 // While the stream URL resolves and buffers, the play glyph
                 // would be a lie — show progress instead.
-                if (isLoading) {
+                moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade(isLoading, {
                     // Same footprint as TransportGlyph(72.dp) — a smaller box
                     // here would shunt everything below it on every load.
                     Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
@@ -1516,7 +1516,7 @@ fun BitChordPlayerContent(
                             modifier = Modifier.size(38.dp),
                         )
                     }
-                } else {
+                }) {
                     TransportGlyph(
                         icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",

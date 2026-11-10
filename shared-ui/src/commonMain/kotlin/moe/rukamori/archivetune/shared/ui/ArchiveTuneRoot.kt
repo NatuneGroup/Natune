@@ -199,6 +199,7 @@ private fun ArchiveTuneLoadedRoot(
         // The desktop columns: rail labels, the two docked panes and the expanded player. Phone hosts never read it.
         val desktopShellState = remember { DesktopShellState() }
         var expanded by remember { mutableStateOf(false) }
+        val expandedTransition = remember { androidx.compose.animation.core.MutableTransitionState(false) }
         var shortcutsVisible by remember { mutableStateOf(false) }
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
         // consumed, so returning to the tab later does not take focus from the user.
@@ -466,9 +467,12 @@ private fun ArchiveTuneLoadedRoot(
                                     )
                                 },
                                 playerBar = {
-                                    if (current != null) {
+                                    Box(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight)) {
+                                    PlayerSurfaceTransition(current, rememberPlayerMotionLevel(policy.motion)) { shown ->
                                         DesktopPlayerBar(
-                                            current = current,
+                                            current = shown,
+                                            playOrder = queue.playOrder,
+                                            active = active && !desktopShellState.expandedPlayer,
                                             playback = currentPlayback,
                                             nativeState = nativeState,
                                             artwork = host.artwork,
@@ -480,18 +484,19 @@ private fun ArchiveTuneLoadedRoot(
                                             onAction = ::desktopPlayerAction,
                                             onVolumeChange = ::setVolume,
                                         )
-                                    } else {
-                                        // An empty queue keeps the bar's slot, so the page never jumps.
-                                        Spacer(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight))
+                                    }
                                     }
                                 },
                                 queuePane = { paneModifier -> slots.queue(paneModifier) },
                                 lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
                                 content = { pageModifier -> page(pageSource.then(pageModifier)) },
                             )
-                            if (desktopShellState.expandedPlayer && current != null) {
+                            DesktopExpandedPlayerTransition(
+                                current = current.takeIf { desktopShellState.expandedPlayer },
+                                motion = policy.motion,
+                            ) { shown ->
                                 DesktopExpandedPlayer(
-                                    state = desktopPlayerState(current, currentPlayback, nativeState, policy.motion),
+                                    state = desktopPlayerState(shown, currentPlayback, nativeState, policy.motion).copy(occurrenceIds = queue.playOrder, active = active),
                                     slots = slots,
                                     onClose = { desktopShellState.expandedPlayer = false },
                                     onPlayPause = ::playPause,
@@ -506,10 +511,13 @@ private fun ArchiveTuneLoadedRoot(
                             Box(Modifier.weight(1f).fillMaxWidth()) {
                                 ArchiveTuneShell(navigation, preferences,
                                 onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
-                                television = television, contentModifier = pageSource, chromeVisible = !expanded,
+                                television = television, contentModifier = pageSource, chromeVisible = !expanded || (rememberPlayerMotionLevel(policy.motion).fades && !expandedTransition.currentState),
                                 miniPlayer = {
-                                    if (current != null) ArchiveMiniPlayer(
-                                        current = current,
+                                    PlayerSurfaceTransition(current, rememberPlayerMotionLevel(policy.motion), mini = true) { shown ->
+                                    ArchiveMiniPlayer(
+                                        current = shown,
+                                        playOrder = queue.playOrder,
+                                        active = active && !expanded,
                                         playback = currentPlayback,
                                         nativeState = nativeState,
                                         artwork = host.artwork,
@@ -522,6 +530,7 @@ private fun ArchiveTuneLoadedRoot(
                                         onAction = ::desktopPlayerAction,
                                         onVolumeChange = ::setVolume,
                                     )
+                                    }
                                     },
                                 ) { page(Modifier) }
                             }
@@ -530,7 +539,8 @@ private fun ArchiveTuneLoadedRoot(
                     }
                     // A player that must paint the strips itself draws outside the root's padding and reserves the
                     // host's inset around its own controls through LocalHostSafeArea.
-                    if (!desktopShell && expanded && current != null) BoundBottomSheetPlayer(
+                    PlayerSurfaceTransition(current.takeIf { !desktopShell && expanded }, rememberPlayerMotionLevel(policy.motion),
+                        Modifier.fillMaxSize(), transitionState = expandedTransition) { _ -> BoundBottomSheetPlayer(
                         queue = host.queue,
                         settings = host.settings,
                         actionScope = host.actionScope,
@@ -543,7 +553,7 @@ private fun ArchiveTuneLoadedRoot(
                         onLyricsVisibility = { interaction.fullscreenLyrics = it },
                         modifier = Modifier.fillMaxSize(),
                         interaction = interaction,
-                    )
+                    ) }
                     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
                     }
                 }

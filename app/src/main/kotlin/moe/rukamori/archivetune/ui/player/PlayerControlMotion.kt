@@ -6,7 +6,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +27,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.ui.player.PlayerMotionSpecs
 import moe.rukamori.archivetune.scaleAwareSpring
 
 /** The player controls that share one motion vocabulary across every player style and the mini player. */
@@ -90,10 +89,10 @@ class PlayerControlMotion internal constructor(
 
     val modifier: Modifier =
         Modifier.graphicsLayer {
-            rotationZ = rotation.value
-            scaleX = scale.value
-            scaleY = scale.value
-            translationX = shift.value * size.width
+            rotationZ = if (enabled()) rotation.value else 0f
+            scaleX = if (enabled()) scale.value else 1f
+            scaleY = if (enabled()) scale.value else 1f
+            translationX = if (enabled()) shift.value * size.width else 0f
         }
 
     /** Plays the tap gesture; call it from the button's onClick before acting. */
@@ -114,11 +113,18 @@ class PlayerControlMotion internal constructor(
         job = scope.launch { animate(gesture) }
     }
 
+    internal suspend fun reset() {
+        job?.cancel()
+        rotation.snapTo(0f)
+        scale.snapTo(1f)
+        shift.snapTo(0f)
+    }
+
     private suspend fun animate(gesture: PlayerControlGesture) {
         coroutineScope {
             val s = springScale()
-            val settle = scaleAwareSpring<Float>(s, Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
-            val quick = scaleAwareSpring<Float>(s, Spring.DampingRatioNoBouncy, Spring.StiffnessHigh)
+            val settle = scaleAwareSpring<Float>(s, .78f, 500f)
+            val quick = scaleAwareSpring<Float>(s, 1f, 900f)
             // A gesture cancelled half way leaves its transform behind; settle whatever this one does not drive.
             if (gesture != PlayerControlGesture.Spin && rotation.value != 0f) {
                 launch {
@@ -166,6 +172,7 @@ class PlayerControlMotion internal constructor(
                 }
                 PlayerControlGesture.NudgeForward, PlayerControlGesture.NudgeBackward -> {
                     val target = if (gesture == PlayerControlGesture.NudgeForward) 0.2f else -0.2f
+                    launch { scale.animateTo(.9f, quick); scale.animateTo(1f, settle) }
                     shift.animateTo(target, quick)
                     shift.animateTo(0f, settle)
                 }
@@ -205,10 +212,10 @@ fun rememberPlayerControlMotion(
             )
         }
     val last = remember(motion) { arrayOf(state) }
-    LaunchedEffect(motion, state) {
+    LaunchedEffect(motion, state, disabled, animationScale) {
         val before = last[0]
         last[0] = state
-        playerControlGesture(kind, before, state)?.let(motion::play)
+        if (disabled || animationScale <= 0f) motion.reset() else playerControlGesture(kind, before, state)?.let(motion::play)
     }
     return motion
 }
@@ -220,6 +227,8 @@ fun Modifier.playerControlMotion(
     state: Any?,
 ): Modifier = this.then(rememberPlayerControlMotion(kind, state).modifier)
 
+private class TransportGlyphMemory<T>(var normal: T, var replay: T)
+
 /**
  * Crossfades between two glyphs of one control (play and pause, repeat and repeat-one) when motion
  * is on, and swaps them instantly when it is off.
@@ -230,13 +239,23 @@ fun <T> PlayerControlCrossfade(
     modifier: Modifier = Modifier,
     content: @Composable (T) -> Unit,
 ) {
-    if (LocalAnimationsDisabled.current || LocalAnimationScale.current <= 0f) {
+    // The play/pause node stays mounted across intent changes; only replay gets a separate fade layer.
+    val transport = targetState as? Int
+    val replay = transport == R.drawable.player_replay
+    val morph = transport?.let(::playerGlyphPlaying) != null
+    if ((morph || replay) && !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f) {
+        val held = remember { TransportGlyphMemory(targetState, targetState) }
+        if (replay) held.replay = targetState else held.normal = targetState
+        PlayerControlCrossfade(replay, modifier) { showingReplay -> content(if (showingReplay) held.replay else held.normal) }
+        return
+    }
+    if (morph || LocalAnimationsDisabled.current || LocalAnimationScale.current <= 0f) {
         Box(modifier, contentAlignment = Alignment.Center) { content(targetState) }
     } else {
         Crossfade(
             targetState = targetState,
             modifier = modifier,
-            animationSpec = tween(durationMillis = 160),
+            animationSpec = tween(durationMillis = PlayerMotionSpecs.FadeMillis),
             label = "playerControlGlyph",
         ) {
             Box(contentAlignment = Alignment.Center) { content(it) }
@@ -265,8 +284,8 @@ fun PlayerPlayPauseIcon(
             else -> R.drawable.player_play
         }
     PlayerControlCrossfade(glyph, modifier) {
-        Icon(
-            painter = painterResource(it),
+        PlayerTransportIcon(
+            iconRes = it,
             contentDescription = contentDescription,
             modifier = Modifier.size(iconSize).then(motion.modifier),
             tint = tint,
