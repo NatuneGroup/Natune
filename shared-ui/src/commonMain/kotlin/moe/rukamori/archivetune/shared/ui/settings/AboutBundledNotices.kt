@@ -14,6 +14,12 @@ object AboutBundledNotices {
     val entries: List<AboutLicenseEntry> =
         listOf(
             AboutLicenseEntry(
+                name = "ArchiveTune / BitChord / Mornye direct USB output (Android)",
+                version = "38670c8",
+                license = "GPL-3.0 / LGPL-3.0",
+                noticeResource = "files/notices/Direct-USB-GPL-LGPL-3.0.txt",
+            ),
+            AboutLicenseEntry(
                 name = "Google Oboe (historical dependency)",
                 version = "1.11.0",
                 license = "Apache License 2.0",
