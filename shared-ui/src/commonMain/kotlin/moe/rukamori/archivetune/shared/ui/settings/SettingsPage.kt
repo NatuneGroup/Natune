@@ -98,6 +98,10 @@ fun SettingsPage(
                         return@itemsIndexed
                     }
                     if (row is SettingsRow.Header) {
+                        if (LocalPhoneSettingsRoot.current) {
+                            if (index > 0) Spacer(Modifier.height(12.dp))
+                            return@itemsIndexed
+                        }
                         Text(
                             stringResource(row.title),
                             style =

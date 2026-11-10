@@ -531,7 +531,7 @@ class IosSourceContractsTest(unittest.TestCase):
         player = (UI_COMMON / "player/BottomSheetPlayer.kt").read_text()
         self.assertIn('FullscreenLyricsChrome(c)', player)
         root = (UI_COMMON / "ArchiveTuneRoot.kt").read_text()
-        self.assertIn('chromeVisible = current == null || phoneSheet.progress < 1f', root)
+        self.assertIn('chromeVisible = current == null || (!expanded && !phoneSheet.visible)', root)
         self.assertIn('PhonePlayerSheet(', root)
         shell = (UI_COMMON / "navigation/ArchiveTuneShell.kt").read_text()
         self.assertIn('if (chromeVisible) Box', shell)

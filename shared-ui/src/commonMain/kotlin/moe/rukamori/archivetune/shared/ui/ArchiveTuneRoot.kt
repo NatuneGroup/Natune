@@ -508,7 +508,7 @@ private fun ArchiveTuneLoadedRoot(
                                 ArchiveTuneShell(navigation, preferences,
                                 onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                                 television = television, contentModifier = pageSource,
-                                chromeVisible = current == null || phoneSheet.progress < 1f,
+                                chromeVisible = current == null || (!expanded && !phoneSheet.visible),
                                 miniPlayer = {
                                     if (current != null) ArchiveMiniPlayer(
                                         current = current,
