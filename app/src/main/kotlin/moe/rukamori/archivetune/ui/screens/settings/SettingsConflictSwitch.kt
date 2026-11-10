@@ -47,7 +47,7 @@ internal fun settingsSwitchDisabledReason(
             RejectSuspectedUpscaledAudioKey) && bitPerfect -> R.string.settings_processing_bypassed_bit_perfect
         key == SkipSilenceKey && preferences[AudioOffload] == true -> R.string.settings_processing_unavailable_offload
         key == AudioOffload && preferences[RejectSuspectedUpscaledAudioKey] == true -> R.string.settings_offload_unavailable_authenticity
-        key == DirectUsbDriverKey && (!bitPerfect || !BitPerfectUsbOutput.isSupported) ->
+        key == DirectUsbDriverKey && (!preferences.sharedSnapshot().bitPerfectOutputSelected() || !BitPerfectUsbOutput.isSupported) ->
             R.string.direct_usb_driver_requires_bit_perfect
         key == CrossfadeGaplessKey && preferences[CrossfadeEnabledKey] != true -> R.string.settings_crossfade_required
         key == EnablePipModeKey && preferences[EnableVideoPlaybackKey] != true -> R.string.settings_video_required
