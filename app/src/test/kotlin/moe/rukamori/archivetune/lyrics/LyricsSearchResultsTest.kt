@@ -1,13 +1,21 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import org.robolectric.RuntimeEnvironment
 import kotlinx.coroutines.test.runTest
+import moe.rukamori.archivetune.modules.ModuleLyricsProviders
+import moe.rukamori.archivetune.utils.NetworkConnectivityObserver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.IOException
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [28])
 class LyricsSearchResultsTest {
     @Test
     fun aReturnedFailureKeepsSuccessfulSiblingResultsOutOfTheCache() = runTest {
@@ -67,12 +75,70 @@ class LyricsSearchResultsTest {
     }
 
     @Test
+    fun noLyricsFailureCallbackAndSuccessfulSiblingRemainCacheable() = runTest {
+        val miss = TestProvider(Result.failure(IllegalStateException("No lyrics")))
+        val sibling = TestProvider(Result.success("[00:01.00]Found"), name = "sibling")
+        val helper = helperFor(listOf(miss, sibling))
+        val emitted = mutableListOf<LyricsResult>()
+        try {
+            helper.getAllLyrics("id", "Track", "Artist", null, 180, forceRefresh = true, callback = emitted::add)
+
+            assertEquals(listOf(LyricsResult("sibling", "[00:01.00]Found")), emitted)
+            assertEquals(1, miss.calls)
+            assertEquals(1, sibling.calls)
+
+            val replayed = mutableListOf<LyricsResult>()
+            helper.getAllLyrics("id", "Track", "Artist", null, 180, callback = replayed::add)
+            assertEquals(emitted, replayed)
+            assertEquals(1, miss.calls)
+            assertEquals(1, sibling.calls)
+        } finally {
+            helper.clearCache()
+            helper.providerOverrideForTests = null
+            helper.networkAvailableForTests = null
+        }
+    }
+
+    @Test
+    fun transientProviderFailureDoesNotCacheSuccessfulSiblingResults() = runTest {
+        val unavailable = TestProvider(Result.failure(IOException("network timeout")))
+        val sibling = TestProvider(Result.success("[00:01.00]Found"), name = "sibling")
+        val helper = helperFor(listOf(unavailable, sibling))
+        try {
+            val emitted = mutableListOf<LyricsResult>()
+            helper.getAllLyrics("id", "Track", "Artist", null, 180, forceRefresh = true, callback = emitted::add)
+            assertEquals(listOf(LyricsResult("sibling", "[00:01.00]Found")), emitted)
+
+            val retried = mutableListOf<LyricsResult>()
+            helper.getAllLyrics("id", "Track", "Artist", null, 180, callback = retried::add)
+            assertEquals(emitted, retried)
+            assertEquals(2, unavailable.calls)
+            assertEquals(2, sibling.calls)
+        } finally {
+            helper.clearCache()
+            helper.providerOverrideForTests = null
+            helper.networkAvailableForTests = null
+        }
+    }
+
+    @Test
     fun anEmptySearchIsNotCached() {
         assertNull(LyricsSearchResults().cacheableResults())
     }
 
-    private class TestProvider(var answer: Result<String>) : LyricsProvider {
-        override val name = "test provider"
+    private fun helperFor(providers: List<LyricsProvider>): LyricsHelper {
+        val context = RuntimeEnvironment.getApplication()
+        val moduleRepository = moe.rukamori.archivetune.modules.ModuleRepository(context)
+        return LyricsHelper(context, NetworkConnectivityObserver(context), ModuleLyricsProviders(moduleRepository)).apply {
+            providerOverrideForTests = providers
+            networkAvailableForTests = true
+        }
+    }
+
+    private class TestProvider(
+        var answer: Result<String>,
+        override val name: String = "test provider",
+    ) : LyricsProvider {
         var calls = 0
         override fun isEnabled(context: Context) = true
         override suspend fun getLyrics(id: String, title: String, artist: String, album: String?, duration: Int): Result<String> {
