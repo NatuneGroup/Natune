@@ -29,14 +29,19 @@ internal class UsbDirectDevices(private val context: Context, private val onChan
     private val lease = AtomicBoolean(false)
     @Volatile private var active: UsbDirectAudioOutput? = null
     @Volatile private var musicVolume = readVolumeFraction()
-    private fun volumeChanged() { musicVolume = readVolumeFraction(); active?.refreshVolume() }
+    private fun volumeChanged(userChange: Boolean = false) {
+        val next = readVolumeFraction()
+        val changed = next != musicVolume
+        musicVolume = next
+        active?.refreshVolume(userChange && changed)
+    }
     private val volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) { volumeChanged() }
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "android.media.VOLUME_CHANGED_ACTION" || intent.action == "android.media.STREAM_MUTE_CHANGED_ACTION") {
-                if (intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) == AudioManager.STREAM_MUSIC) volumeChanged()
+                if (intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) == AudioManager.STREAM_MUSIC) volumeChanged(userChange = true)
                 return
             }
             val device = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java) ?: return
