@@ -21,6 +21,7 @@ class DirectUsbAudioSinkTest {
         var opens = 0
         var releases = 0
         var flushes = 0
+        var plays = 0
         var normalConfigurations = 0
         var playedUs = 0L
         var failWrite = false
@@ -44,6 +45,7 @@ class DirectUsbAudioSinkTest {
                     if (failWrite) throw AudioOutput.WriteException(-5, true)
                     (args!![0] as ByteBuffer).position((args[0] as ByteBuffer).limit()); true
                 }
+                "play" -> { plays++; null }
                 "release" -> { releases++; null }
                 "flush" -> { flushes++; playedUs = 0L; null }
                 "getPositionUs" -> playedUs
@@ -60,8 +62,10 @@ class DirectUsbAudioSinkTest {
     @Test fun seekFlushRetainsTheDeviceAndResetsItsTimeline() {
         val h = Harness()
         h.open()
+        h.sink.play()
         h.sink.flush()
         assertEquals(1, h.flushes)
+        assertEquals(2, h.plays)
         assertEquals(0, h.releases)
         assertTrue(h.write(5_000_000L))
         assertEquals(1, h.opens)
