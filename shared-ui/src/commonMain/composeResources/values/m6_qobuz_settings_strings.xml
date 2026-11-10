@@ -1,7 +1,5 @@
 <resources>
     <string name="m6_qobuz_title">Qobuz</string>
-    <string name="m6_qobuz_enable">Enable Qobuz source</string>
-    <string name="m6_qobuz_enable_description">Use Qobuz proxy instances for playback</string>
     <string name="m6_qobuz_audio_quality">Audio quality</string>
     <string name="m6_qobuz_quality_flac">FLAC (CD 16-bit)</string>
     <string name="m6_qobuz_quality_hires">Hi-Res (up to 96 kHz)</string>

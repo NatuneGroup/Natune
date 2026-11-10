@@ -874,7 +874,6 @@
     <string name="set_source_priority">Drag to set source priority</string>
     <string name="tidal_specific">Tidal</string>
     <string name="qobuz_specific">Qobuz</string>
-    <string name="manage_in_integration">Log in, tokens &amp; instances — in Integration</string>
     <string name="tidal_account_first">Use my account first</string>
     <string name="tidal_account_first_description">Prefer your own Tidal account over the public instances.</string>
 
