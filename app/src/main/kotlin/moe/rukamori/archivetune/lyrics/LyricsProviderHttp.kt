@@ -56,6 +56,9 @@ internal object LyricsProviderHttp {
             isLenient = true
         }
 
+    @Volatile
+    private var clientOverride: HttpClient? = null
+
     private val client by lazy {
         HttpClient(OkHttp) {
             engine {
@@ -73,6 +76,12 @@ internal object LyricsProviderHttp {
         }
     }
 
+    internal fun setClientForTests(client: HttpClient?) {
+        clientOverride = client
+    }
+
+    private fun activeClient(): HttpClient = clientOverride ?: client
+
     /** An answered request: [body] is only read for a 2xx [status]. */
     class Response(
         val status: Int,
@@ -82,17 +91,17 @@ internal object LyricsProviderHttp {
     suspend fun get(
         url: String,
         headers: Map<String, String> = emptyMap(),
-        client: HttpClient = this.client,
-    ): String? = getWithStatus(url, headers, client).body
+        client: HttpClient? = null,
+    ): String? = getWithStatus(url, headers, client ?: activeClient()).body
 
     /** Keeps non-retryable statuses; transport and retryable HTTP failures reach the caller. */
     suspend fun getWithStatus(
         url: String,
         headers: Map<String, String> = emptyMap(),
-        client: HttpClient = this.client,
+        client: HttpClient? = null,
     ): Response {
         val response =
-            client.get(url) {
+            (client ?: activeClient()).get(url) {
                 var sentAgent = false
                 headers.forEach { (name, value) ->
                     header(name, value)
