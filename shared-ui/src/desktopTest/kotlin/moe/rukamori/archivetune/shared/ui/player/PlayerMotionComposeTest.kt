@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,13 +27,56 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.settings.PlayerBackgroundStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.desktop.DesktopExpandedPlayerTransition
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class PlayerMotionComposeTest {
+    @Test fun hiddenPlayerStopsMotionAndCrossfadesUntilItsSurfaceReturns() = runComposeUiTest {
+        val interaction = PlayerInteractionState()
+        val slots = playerSlots()
+        val callbacks = PlayerTestActions().callbacks
+        lateinit var environment: PlayerControlMotionEnvironment
+        mainClock.autoAdvance = false
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(400.dp, 740.dp)) {
+                    BottomSheetPlayer(
+                        playerFixture().copy(reducedMotion = false), callbacks,
+                        PreferenceSnapshot.of(PlayerDesignStyleKey to "V2", PlayerBackgroundStyleKey to "CUSTOM"),
+                        PlayerSlots(
+                            artwork = slots.artwork, canvas = slots.canvas,
+                            customBackground = { _, modifier ->
+                                val current = LocalPlayerControlMotion.current
+                                SideEffect { environment = current }
+                                Box(modifier)
+                            },
+                            lyrics = slots.lyrics, compactLyrics = slots.compactLyrics, queue = slots.queue,
+                        ), true, interaction = interaction,
+                    )
+                }
+            }
+        }
+        runOnIdle { assertTrue(environment.active); assertTrue(environment.fades) }
+        runOnIdle { interaction.fullscreenLyrics = true }
+        mainClock.advanceTimeByFrame()
+        runOnIdle { assertFalse(environment.active); assertFalse(environment.fades) }
+        for (panel in listOf(PlayerPanel.LYRICS, PlayerPanel.QUEUE)) {
+            runOnIdle { interaction.fullscreenLyrics = false; interaction.panel = panel }
+            mainClock.advanceTimeByFrame()
+            runOnIdle { assertFalse(environment.active); assertFalse(environment.fades) }
+        }
+        runOnIdle { interaction.panel = PlayerPanel.ARTWORK }
+        mainClock.advanceTimeByFrame()
+        runOnIdle { assertTrue(environment.active); assertTrue(environment.fades) }
+    }
+
     @Test fun transportCrossfadeDisplaysPlayPausePlayWithTheSameReplayLayerAndContent() = runComposeUiTest {
         var playing by mutableStateOf(false)
         setContent {
