@@ -19,7 +19,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.FrameLayout
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -263,29 +262,28 @@ internal fun SpotifyLoginSheet(
         }
     }
 
-    BackHandler(enabled = webView != null) {
-        val activeWebView = webView
-        val rootWebView = mainWebView
-        when {
-            activeWebView?.canGoBack() == true -> {
-                activeWebView.goBack()
-            }
-
-            activeWebView != null && rootWebView != null && activeWebView !== rootWebView -> {
-                activeWebView.destroySpotifyLoginWebView()
-                webView = rootWebView
-            }
-
-            else -> {
-                onDismiss()
-            }
-        }
-    }
-
     AuthWebViewSheet(
         title = title ?: stringResource(R.string.spotify_login_title),
         subtitle = stringResource(R.string.spotify_waiting_for_login),
         onDismiss = onDismiss,
+        onBack = {
+            val activeWebView = webView
+            val rootWebView = mainWebView
+            when {
+                activeWebView?.canGoBack() == true -> {
+                    activeWebView.goBack()
+                }
+
+                activeWebView != null && rootWebView != null && activeWebView !== rootWebView -> {
+                    activeWebView.destroySpotifyLoginWebView()
+                    webView = rootWebView
+                }
+
+                else -> {
+                    onDismiss()
+                }
+            }
+        },
     ) {
         AndroidView(
             modifier =
