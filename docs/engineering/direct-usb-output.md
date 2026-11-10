@@ -27,7 +27,10 @@ only while both switches are enabled. Denial retains ordinary playback without
 repeated dialogs. Descriptor parsing accepts one configuration, UAC1 discrete or
 continuous rates and UAC2 terminal clock references. Implicit-feedback, raw-DSD
 quirks and unsupported descriptors fall back. Native code verifies UAC1 endpoint
-rate read-back or the UAC2 clock's current rate. Full/high-speed USB supports up to
+rate read-back or the UAC2 clock's current rate. Unlike Linux's tolerant UAC1
+handling, a DAC that stalls sampling-frequency `GET_CUR` is rejected by the
+direct driver and uses the platform fallback. Rate read-back is mandatory here;
+this compatibility restriction does not relax feature-unit volume verification. Full/high-speed USB supports up to
 eight PCM channels; SuperSpeed companion descriptors and clock selector graphs are
 not implemented. There is no resampler, channel mixing, DoP or raw DSD transport.
 
