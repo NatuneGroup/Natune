@@ -88,4 +88,20 @@ class PhonePlayerSheetTest {
         onNodeWithTag("phone-player-sheet").performTouchInput { swipeDown() }
         runOnIdle { assertFalse(expanded); assertEquals(0f, state.progress) }
     }
+
+    @Test fun clearingTheQueueDropsThePreviousSheetPosition() = runComposeUiTest {
+        var current by mutableStateOf(true)
+        var expanded by mutableStateOf(true)
+        lateinit var state: PhonePlayerSheetState
+        setContent {
+            state = rememberPhonePlayerSheetState()
+            LaunchedEffect(current) { if (!current) { expanded = false; state.reset() } }
+            Box(Modifier.requiredSize(393.dp, 740.dp)) {
+                if (current) PhonePlayerSheet(expanded, { expanded = it }, false, state) { Box(Modifier.fillMaxSize()) }
+            }
+        }
+        runOnIdle { assertEquals(1f, state.progress); current = false }
+        runOnIdle { assertEquals(0f, state.progress); current = true }
+        onNodeWithTag("phone-player-sheet").assertDoesNotExist()
+    }
 }

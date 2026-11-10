@@ -51,7 +51,7 @@ class IosPlatformRenderTest {
                             LocalHostSafeArea provides insets,
                         ) {
                             Surface(Modifier.fillMaxSize().testTag("audit-root"), color = MaterialTheme.colorScheme.background) {
-                                if (name in setOf("player", "lyrics", "fullscreen-lyrics", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, true)
+                                if (name in setOf("player", "lyrics", "fullscreen-lyrics", "transport-glyphs", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, true)
                                 else Box(Modifier.fillMaxSize().safeAreaPadding(insets)) { RenderAuditFixture.PhoneShell(name) }
                             }
                         }

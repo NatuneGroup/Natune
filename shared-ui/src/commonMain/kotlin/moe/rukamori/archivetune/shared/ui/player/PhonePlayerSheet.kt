@@ -35,6 +35,13 @@ internal class PhonePlayerSheetState(private val scope: CoroutineScope) {
 
     init { position.updateBounds(0f, 1f) }
 
+    suspend fun reset() {
+        animation?.cancel()
+        dragging = false
+        fling = false
+        position.snapTo(0f)
+    }
+
     suspend fun animate(expanded: Boolean, motion: Boolean) {
         val stiffness = if (fling) Spring.StiffnessMediumLow else Spring.StiffnessLow
         fling = false
@@ -97,8 +104,9 @@ internal fun PhonePlayerSheet(
 
 internal fun Modifier.phonePlayerExpandDrag(onExpand: () -> Unit): Modifier = composed {
     val threshold = with(LocalDensity.current) { 24.dp.toPx() }
+    val flingThreshold = with(LocalDensity.current) { 250.dp.toPx() }
     var distance by remember { mutableFloatStateOf(0f) }
     draggable(rememberDraggableState { distance += it }, Orientation.Vertical,
         onDragStarted = { distance = 0f },
-        onDragStopped = { velocity -> if (distance < -threshold || velocity < -250f) onExpand() })
+        onDragStopped = { velocity -> if (distance < -threshold || velocity < -flingThreshold) onExpand() })
 }

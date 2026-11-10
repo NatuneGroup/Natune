@@ -225,6 +225,7 @@ private fun ArchiveTuneLoadedRoot(
         LaunchedEffect(expanded, desktopShellState.expandedPlayer, current == null) {
             if (current == null) {
                 expanded = false
+                phoneSheet.reset()
                 desktopShellState.expandedPlayer = false
             }
         }
