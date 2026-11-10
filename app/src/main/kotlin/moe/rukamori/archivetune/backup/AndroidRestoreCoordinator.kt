@@ -364,7 +364,7 @@ internal object AndroidRestoreCoordinator {
             RecoveryOutcome.ROLLED_BACK -> callbacks.cleanup(ready)
 
             RecoveryOutcome.COMMITTED -> {
-                runCatching { callbacks.deletePendingQueue() }
+                if (ready == null || ready.changesLiveData()) runCatching { callbacks.deletePendingQueue() }
                 runCatching { callbacks.cleanup(ready) }
             }
 
@@ -397,7 +397,7 @@ internal object AndroidRestoreCoordinator {
         }
         when (outcome) {
             RecoveryOutcome.COMMITTED -> {
-                deletePendingQueue(context)
+                if (ready.changesLiveData()) deletePendingQueue(context)
                 cleanupSafely(context, ready)
             }
 
@@ -433,7 +433,7 @@ internal object AndroidRestoreCoordinator {
         ops: RestoreFileOps,
         ready: ReadyMarker,
     ) {
-        if (!BackupPreferenceSelection.changesLiveData(ready.library, ready.settingsKind, ready.fontEntries.size)) {
+        if (!ready.changesLiveData()) {
             cleanupSafely(context, ready)
             return
         }
@@ -855,4 +855,7 @@ internal data class ReadyMarker(
     val settingsKind: SettingsKind,
     val fontEntries: List<AndroidRestoreFont>,
     val previousSettingsPresent: Boolean,
-)
+) {
+    fun changesLiveData(): Boolean =
+        BackupPreferenceSelection.changesLiveData(library, settingsKind, fontEntries.size)
+}
