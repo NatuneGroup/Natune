@@ -176,6 +176,13 @@ private val acknowledgements = listOf(
         profileUrl = "https://github.com/mostafaalagamy",
         links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/mostafaalagamy")),
     ),
+    AboutCredit(
+        name = "Boidushya",
+        position = Res.string.m6_about_position_boidushya,
+        avatarUrl = "https://avatars.githubusercontent.com/u/26746725?v=4",
+        profileUrl = "https://github.com/boidushya",
+        links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/boidushya")),
+    ),
 )
 
 /**
