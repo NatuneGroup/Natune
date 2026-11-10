@@ -36,6 +36,13 @@ internal class LyricsSearchResults {
         hadProviderFailure.set(true)
     }
 
+    fun recordFailure(error: Throwable): ProviderLyricsAnswer {
+        if (error is CancellationException) throw error
+        val answer = error.toProviderLyricsAnswer()
+        if (answer == ProviderLyricsAnswer.FAILED) failed()
+        return answer
+    }
+
     fun cacheableResults(): List<LyricsResult>? = synchronized(results) {
         results.takeIf { it.isNotEmpty() && !hadProviderFailure.get() }?.toList()
     }
