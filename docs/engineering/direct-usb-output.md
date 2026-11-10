@@ -119,11 +119,12 @@ flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
 
 The local Gradle attempt (offline to avoid large downloads) failed before compilation:
 no Android SDK/NDK is configured and the checkout's uninitialized `lyrics` submodule
-leaves `lyrics/betterlyrics` missing. Gradle was stopped under the lock. The 24
+leaves `lyrics/betterlyrics` missing. Gradle was stopped under the lock. The 32
 focused Kotlin JUnit tests (including startup-volume ceilings and PCM short writes,
-flush and mute) passed with the installed standalone Kotlin compiler. Eight
-Robolectric sink tests cover seek retention, matching/changing formats, trim/maps,
-packet-loss drain and successful/failed fallback; these require CI. The direct-output Android playback components also
+flush and mute) passed with the installed standalone Kotlin compiler. Eight of these
+use fake sinks/outputs to cover seek retention, matching/changing formats, trim/maps,
+packet-loss drain and successful/failed fallback. They run as plain JUnit tests;
+physical-device and full-app behavior still require hardware and CI. The direct-output Android playback components also
 typechecked against Android API 36, the pinned Media3 1.10.1 libraries and XML-derived
 resource-ID declarations; this is bounded API coverage, not an SDK 37 app build. Host CMake
 transport tests and a host JNI build passed; the stripped host JNI library exported
