@@ -16,5 +16,5 @@ internal fun newBitPerfectAudioSink(context: Context): AudioSink {
         .setEnableAudioTrackPlaybackParams(false)
         .setAudioOutputProvider(BitPerfectAudioOutputProvider(context, AudioTrackAudioOutputProvider.Builder(context).build()))
         .build()
-    return DirectUsbAudioSink(context, platform)
+    return if (BitPerfectUsbOutput.directEnabled) DirectUsbAudioSink(context, platform) else platform
 }

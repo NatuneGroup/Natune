@@ -46,6 +46,7 @@ import moe.rukamori.archivetune.constants.AppleMusicSettingsMigratedKey
 import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.constants.AutomixEnabledKey
 import moe.rukamori.archivetune.constants.BitPerfectUsbOutputKey
+import moe.rukamori.archivetune.constants.DirectUsbDriverKey
 import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CustomFontUriKey
 import moe.rukamori.archivetune.constants.FontPreferenceKey
@@ -349,6 +350,7 @@ internal val startupPreferenceTags: Map<String, Char> =
         SmartTrimmerKey.name to 'b',
         MaxSongCacheSizeKey.name to 'i',
         BitPerfectUsbOutputKey.name to 'b',
+        DirectUsbDriverKey.name to 'b',
         CrossfadeEnabledKey.name to 'b',
         AutomixEnabledKey.name to 'b',
         UsbExclusiveAudioKey.name to 'b',

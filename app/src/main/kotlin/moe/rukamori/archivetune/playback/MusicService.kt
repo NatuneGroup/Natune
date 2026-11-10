@@ -1420,17 +1420,7 @@ class MusicService :
             reportException(e)
         }
 
-        // The sink is fixed for the life of this player, so a default read before the first
-        // settings snapshot lands would silently ignore the switch until the next restart.
-        // Bounded (1.5 s), and on every API level because the USB exclusive switch exists on all.
-        moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
-        bitPerfectOutputActive =
-            BitPerfectUsbOutput.isSupported &&
-            dataStore.get(BitPerfectUsbOutputKey, false) &&
-            !dataStore.get(CrossfadeEnabledKey, false) &&
-            !dataStore.get(AutomixEnabledKey, false)
-        BitPerfectUsbOutput.sinkActive = bitPerfectOutputActive
-        BitPerfectUsbOutput.setEnabled(this, bitPerfectOutputActive)
+        bitPerfectOutputActive = initializeBitPerfectOutput(this)
         if (bitPerfectOutputActive) registerBitPerfectDeviceCallback()
         // The bit-perfect sink owns the DAC when it is on; the exclusive route lives in the
         // standard sink only.

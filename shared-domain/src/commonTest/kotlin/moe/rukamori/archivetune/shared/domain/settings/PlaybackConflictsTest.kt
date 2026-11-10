@@ -114,4 +114,16 @@ class PlaybackConflictsTest {
         assertTrue(audioNormalizationApplies(true, false))
         assertFalse(audioNormalizationApplies(false, false))
     }
+    @Test fun directDriverRequiresItsParentAndPreservesOtherSelections() {
+        val editor = PreferenceSnapshot.EMPTY.toEditor()
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, true)
+        assertNull(editor[DirectUsbDriverKey])
+        editor.setPlaybackOutputPreference(BitPerfectUsbOutputKey, true)
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, true)
+        assertEquals(true, editor[BitPerfectUsbOutputKey])
+        assertEquals(true, editor[DirectUsbDriverKey])
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, false)
+        assertEquals(true, editor[BitPerfectUsbOutputKey])
+    }
+
 }

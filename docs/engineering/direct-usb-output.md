@@ -1,9 +1,12 @@
 # Android direct USB bit-perfect output
 
-Natune's existing **Bit-perfect USB output** switch (`BitPerfectUsbOutputKey`) now
-prefers a direct USB transport. No extra switch, DAC-volume setting, format override
-or settings page is introduced. The existing restart flow and exclusions for DSP,
-normalization, offload, crossfade and automix remain authoritative.
+Natune's **Bit-perfect USB output** switch (`BitPerfectUsbOutputKey`) keeps its
+Android platform route. The **Direct USB driver (experimental)** sub-option
+(`DirectUsbDriverKey`) is default OFF and enabled only under the parent switch.
+Both use the same restart prompt. With the sub-option off, startup installs no
+USB receiver, requests no USB permission and creates no direct sink wrapper;
+pre-Android-14 support semantics stay the same as dev. The existing exclusions
+for DSP, normalization, offload, crossfade and automix remain authoritative.
 
 The port follows upstream ArchiveTune `38670c8b6ecef127d9d5a059986b9635fce2023a`.
 The read-only reference's later commits through `e7eb6db` contain no USB fixes.
@@ -20,7 +23,7 @@ status explicitly distinguishes rounded float from exact integer PCM. Nonidentit
 channel maps and gapless trim metadata use the platform route.
 
 `UsbManager` enumerates audio streaming interfaces and requests Android permission
-only while the existing switch is enabled. Denial retains ordinary playback without
+only while both switches are enabled. Denial retains ordinary playback without
 repeated dialogs. Descriptor parsing accepts one configuration, UAC1 discrete or
 continuous rates and UAC2 terminal clock references. Implicit-feedback, raw-DSD
 quirks and unsupported descriptors fall back. Native code verifies UAC1 endpoint

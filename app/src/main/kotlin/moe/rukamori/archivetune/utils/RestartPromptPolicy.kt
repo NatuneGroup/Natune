@@ -26,9 +26,10 @@ fun restartSettingValues(preferences: Preferences, bitPerfectSupported: Boolean)
     val bitPerfect = bitPerfectSupported &&
         preferences[BitPerfectUsbOutputKey] == true &&
         preferences[CrossfadeEnabledKey] != true && preferences[AutomixEnabledKey] != true
+    val direct = bitPerfect && preferences[DirectUsbDriverKey] == true
     val exclusive = !bitPerfect && preferences[UsbExclusiveAudioKey] == true
     return restartSettingValues(settings) + mapOf(
-        RestartReason.USB_OUTPUT to "$bitPerfect|$exclusive",
+        RestartReason.USB_OUTPUT to "$bitPerfect|$exclusive|$direct",
         RestartReason.REGION to (preferences[YouTubeMusicRegionKey] ?: SYSTEM_DEFAULT),
     )
 }
