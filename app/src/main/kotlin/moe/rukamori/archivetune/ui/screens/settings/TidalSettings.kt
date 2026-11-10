@@ -430,9 +430,11 @@ fun TidalSettings(navController: NavController, scrollTo: String? = null) {
                         withContext(Dispatchers.IO) {
                             TidalAccountManager
                                 .refreshAccessToken(refreshToken, TidalAccountManager.FLOW_OAUTH)
+                                .token
                                 ?.let { it to TidalAccountManager.FLOW_OAUTH }
                                 ?: TidalAccountManager
                                     .refreshAccessToken(refreshToken, TidalAccountManager.FLOW_PKCE)
+                                    .token
                                     ?.let { it to TidalAccountManager.FLOW_PKCE }
                         }
 

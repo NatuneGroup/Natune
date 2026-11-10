@@ -37,16 +37,38 @@ class BackupPreferenceSelectionTest {
 
     @Test
     fun deviceBoundValuesNeverTravel() {
-        listOf("poolTidalAccounts", "poolAccountsLastRefreshAtMillis", "secure_store_youtube").forEach { key ->
+        // The Spotify Connect device id is bound to another install's registration, so it stays out of
+        // both categories, exactly as the shared backup policy already excludes it.
+        listOf(
+            "poolTidalAccounts",
+            "poolAccountsLastRefreshAtMillis",
+            "secure_store_youtube",
+            "spotifyStreamDeviceId",
+        ).forEach { key ->
             assertFalse(key, BackupPreferenceSelection.includes(key, settings = true, account = true))
+            assertFalse(key, BackupPreferenceSelection.includes(key, settings = false, account = true))
+            assertFalse(key, BackupPreferenceSelection.includes(key, settings = true, account = false))
         }
     }
 
     @Test
-    fun onlyAFullPreferencesSelectionMayReplaceTheLiveFile() {
-        assertTrue(BackupPreferenceSelection.replacesWholeFile(settings = true, account = true))
-        assertFalse(BackupPreferenceSelection.replacesWholeFile(settings = false, account = true))
-        assertFalse(BackupPreferenceSelection.replacesWholeFile(settings = true, account = false))
+    fun protobufPayloadsAlwaysMergeThroughXmlInsteadOfReplacingTheFile() {
+        // Even a full selection excludes device-bound and secure-store values, so a raw install is never safe.
+        assertTrue(BackupPreferenceSelection.needsConversion(SettingsKind.PB))
+        assertFalse(BackupPreferenceSelection.needsConversion(SettingsKind.XML))
+        assertFalse(BackupPreferenceSelection.needsConversion(SettingsKind.NONE))
+        assertFalse(BackupPreferenceSelection.isConsistent(settings = true, account = true, kind = SettingsKind.PB))
+        assertFalse(BackupPreferenceSelection.isConsistent(settings = false, account = true, kind = SettingsKind.PB))
+        assertFalse(BackupPreferenceSelection.isConsistent(settings = true, account = false, kind = SettingsKind.PB))
+    }
+
+    @Test
+    fun anAccountOnlyBackupWithoutSignInsStagesASuccessfulNoOp() {
+        assertTrue(BackupPreferenceSelection.isAccountOnlyNoOp(settings = false, account = true, kind = SettingsKind.NONE))
+        // A settings selection with no payload is still a missing backup, not a no-op.
+        assertFalse(BackupPreferenceSelection.isAccountOnlyNoOp(settings = true, account = true, kind = SettingsKind.NONE))
+        assertFalse(BackupPreferenceSelection.isAccountOnlyNoOp(settings = false, account = true, kind = SettingsKind.XML))
+        assertFalse(BackupPreferenceSelection.isAccountOnlyNoOp(settings = false, account = false, kind = SettingsKind.NONE))
     }
 
     @Test
@@ -55,8 +77,6 @@ class BackupPreferenceSelectionTest {
         // An account-only backup made before any sign-in stages no preferences at all.
         assertTrue(BackupPreferenceSelection.isConsistent(settings = false, account = true, kind = SettingsKind.NONE))
         assertFalse(BackupPreferenceSelection.isConsistent(settings = true, account = false, kind = SettingsKind.NONE))
-        assertFalse(BackupPreferenceSelection.isConsistent(settings = false, account = true, kind = SettingsKind.PB))
-        assertTrue(BackupPreferenceSelection.isConsistent(settings = true, account = true, kind = SettingsKind.PB))
         assertEquals(false, BackupPreferenceSelection.isConsistent(settings = false, account = false, kind = SettingsKind.XML))
     }
 }

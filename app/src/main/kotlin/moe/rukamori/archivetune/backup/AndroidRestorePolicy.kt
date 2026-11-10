@@ -86,6 +86,8 @@ internal object BackupPreferenceSelection {
     /**
      * The shared pool cache is sealed with a non-exportable Keystore key, so on any other install it is
      * unreadable ciphertext, and a restored refresh time would hold back the refetch that replaces it.
+     * A Spotify Connect device id belongs to the install that registered it, so a restored copy would
+     * make this device answer for another.
      */
     val DEVICE_BOUND_KEYS: Set<String> =
         setOf(
@@ -95,6 +97,7 @@ internal object BackupPreferenceSelection {
             "poolAppleMusicAccounts",
             "poolAmazonAccounts",
             "poolAccountsLastRefreshAtMillis",
+            "spotifyStreamDeviceId",
         )
 
     fun isAccountKey(name: String): Boolean =
@@ -110,14 +113,24 @@ internal object BackupPreferenceSelection {
             else -> settings
         }
 
-    /** A raw preferences file may only replace the live one when the selection filters nothing out. */
-    fun replacesWholeFile(settings: Boolean, account: Boolean): Boolean = settings && account
+    /**
+     * A protobuf payload must merge through XML, never replace the live file: even a full selection
+     * excludes device-bound and secure-store values whose destination copy has to survive, and a raw
+     * replace would additionally wipe the unselected categories' local values.
+     */
+    fun needsConversion(kind: SettingsKind): Boolean = kind == SettingsKind.PB
+
+    /** An account-only selection whose payload carried no account key restores nothing, successfully. */
+    fun isAccountOnlyNoOp(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
+        account && !settings && kind == SettingsKind.NONE
 
     fun isConsistent(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
         when (kind) {
             SettingsKind.NONE -> !settings
             SettingsKind.XML -> carriesPreferences(settings, account)
-            SettingsKind.PB -> replacesWholeFile(settings, account)
+            // This version converts every protobuf payload before writing a marker, so such a marker
+            // can only be stale; installing the raw file would bypass [includes].
+            SettingsKind.PB -> false
         }
 }
 

@@ -25,6 +25,20 @@ object LegacyDataStorePreferences {
         }
         return PreferenceSnapshot.of(*result.values.toTypedArray())
     }
+
+    /**
+     * [snapshot] narrowed to the keys [includeKey] accepts. Legacy payload readers share this filter, so
+     * values the selection excludes (device-bound caches, secure-store blobs, unselected categories)
+     * never reach a live store.
+     */
+    fun filtered(snapshot: PreferenceSnapshot, includeKey: (String) -> Boolean): PreferenceSnapshot =
+        PreferenceSnapshot.of(
+            *snapshot.keys
+                .filter { includeKey(it.name) }
+                .mapNotNull { key -> snapshot[key]?.let { value -> key to value } }
+                .toTypedArray(),
+        )
+
     private fun parseValue(name: String, value: Proto): Pair<PreferenceKey<*>, Any> {
         require(!value.done())
         val entry: Pair<PreferenceKey<*>, Any> = when (value.varint()) {
