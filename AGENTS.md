@@ -29,6 +29,8 @@ There are only these two channels; Canary is retired (see
 - Docs: product knowledge in [docs/claude/](docs/claude/), engineering procedures in
   [docs/engineering/](docs/engineering/), subsystem references in `docs/`, reusable
   agent workflows in [.factory/skills/](.factory/skills/).
+- Subsystem docs: [TV](docs/tv.md), [instance racing](docs/instance-racing.md),
+  [native Telegram](docs/telegram-native.md).
 
 ## Invariants
 
@@ -44,6 +46,7 @@ There are only these two channels; Canary is retired (see
   `audiosource/` (`AudioSourceConfig.DEFAULT_ORDER`). Resolution goes through
   `resolveMultiSourceDataSpec` in `playback/MusicService.kt`; `tidal-dash://` and
   `telegram://` are routed there. Do not rewire playback around this chain.
+- **Rejected playback attempts** must not reuse their cached URL, discard the playback position or bypass the established source chain, and must keep the bit-perfect bypass and caller cancellation.
 - **YouTube extractor tiers.** `YTPlayerUtils` → InnerTubeX → NewPipe →
   `EchoStreamResolver`, run by `playback/stream/YouTubeFailsafeChain`. The order lives
   only in `ResolveAudioStreamUseCase.shippedFallbackTiers`. Echo stays last.
@@ -58,7 +61,7 @@ There are only these two channels; Canary is retired (see
   token, and stands down when both sign-ins are the same account. See
   [Spotify streaming](docs/spotify-streaming.md).
 - **Pool credentials** stay in their own Keystore-encrypted cache, behind the Playback
-  Pool toggle, and never overwrite personal sign-ins.
+  Pool toggle, and never overwrite personal sign-ins. Empty or failed Pool feed attempts stay throttled across restarts.
 - **Listen Together** uses LAN plus exactly the servers in
   `listentogether/ListenTogetherServers.kt` (vivi's JSON server on `hf.space` and the
   protobuf-only Meowery server). The retired `onrender.com` host is accepted only in
@@ -83,8 +86,9 @@ There are only these two channels; Canary is retired (see
   are the only system-surface exceptions, and they never render app content. See
   [iOS shell](docs/engineering/ios-swiftui-parity.md).
 - **Enhanced lyrics** on Android follow upstream ArchiveTune's renderer, with
-  `NatuneLyricsEnhanced` supplying providers and settings. Do not restore custom sweeps
-  or scroll springs to it. See [lyrics](docs/lyrics.md).
+  `NatuneLyricsEnhanced` supplying providers and settings. Do not restore custom sweeps,
+  activation leads, scroll springs or draw-position projection to Android Enhanced. See
+  [lyrics](docs/lyrics.md).
 - **Audio analysis** (authenticity check, acoustic graph, automix features) is opt-in,
   bounded and cancellable. It reports suspicion or unknown, never proof, and never
   changes playback resolution or the queue. ONNX models ship only with `-Pautomix=true`.
@@ -155,6 +159,8 @@ behavior; keep build and test gates separate.
 - Before editing, trace real callers, resources, navigation, manifest entries,
   variants and native entry points; an import search is not enough.
 - Never force-push shared branches. Do not push `dev` or `main` directly.
+- Do not suppress Kotlin metadata checks.
+- No paid Blacksmith overage is authorized; batch heavy CI runs rather than rerunning the full matrix.
 - Report checks you ran, checks that failed and checks you skipped. Missing build or
   device evidence stays unverified. Use the
   [incident runbook](docs/engineering/incident-runbook.md) for playback or release
