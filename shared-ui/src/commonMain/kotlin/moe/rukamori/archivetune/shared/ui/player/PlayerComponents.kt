@@ -138,7 +138,7 @@ private fun PlayerSymbol.controlKind(): PlayerControlKind? = when (this) {
 
 @Composable
 internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, selected: Boolean?, modifier: Modifier) {
-    val drawable = when (symbol) {
+    val drawable = transportDrawable(symbol, LocalPlayerGlyphStyle.current) ?: when (symbol) {
         PlayerSymbol.PREVIOUS -> Res.drawable.solar_skip_previous_linear
         PlayerSymbol.NEXT -> Res.drawable.solar_skip_next_linear
         PlayerSymbol.PLAY -> Res.drawable.solar_play_linear
@@ -148,12 +148,12 @@ internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, s
         PlayerSymbol.REPEAT -> if (LocalPlayerControlMotion.current.repeat == PlayerRepeat.ONE)
             Res.drawable.solar_repeat_one else Res.drawable.solar_repeat
         PlayerSymbol.HEART -> if (selected == true) Res.drawable.solar_heart_bold else Res.drawable.solar_heart_linear
-        PlayerSymbol.SHARE -> Res.drawable.solar_share_linear
+        PlayerSymbol.SHARE -> Res.drawable.reference_player_share
         PlayerSymbol.MORE -> Res.drawable.solar_more
         PlayerSymbol.SLEEP, PlayerSymbol.BEDTIME -> Res.drawable.solar_sleep
         PlayerSymbol.DOWN -> Res.drawable.solar_down
         PlayerSymbol.LYRICS -> Res.drawable.solar_lyrics
-        PlayerSymbol.QUEUE -> Res.drawable.solar_queue_music_linear
+        PlayerSymbol.QUEUE -> Res.drawable.reference_player_queue_music
         PlayerSymbol.BACK -> Res.drawable.solar_arrow_left_linear
         PlayerSymbol.EXPAND -> Res.drawable.solar_fullscreen_linear
         PlayerSymbol.OUTPUT -> Res.drawable.solar_cast
@@ -261,28 +261,48 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
         }
     }
     Column(Modifier.fillMaxWidth().testTag("seek-${style.name}")) {
+        val colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color,
+            activeTickColor = color, inactiveTrackColor = color.copy(alpha = when (style) {
+                PlayerSliderStyle.Thick -> .28f
+                PlayerSliderStyle.Simple -> .15f
+                else -> .22f
+            }))
         Slider(value = fraction, onValueChange = { c.interaction.preview(it,c.state) },
             interactionSource = interactionSource,
             onValueChangeFinished = { c.interaction.commit(c.state,c.actions.seekTo) },
             enabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true,
+            colors = colors,
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
-            track = {
-                Canvas(Modifier.fillMaxWidth().height(if(style==PlayerSliderStyle.Thick) 12.dp else 5.dp)) {
-                    val h = size.height
-                    drawLine(color.copy(alpha=.2f),Offset(0f,h/2),Offset(size.width,h/2),h,StrokeCap.Round)
-                    val buffered = c.state.playback?.bufferedPositionMs
-                    if(duration!=null && buffered!=null) drawLine(color.copy(alpha=.3f),Offset(0f,h/2),
-                        Offset(size.width*(buffered.toDouble()/duration).toFloat().coerceIn(0f,1f),h/2),h,StrokeCap.Round)
-                    if(style==PlayerSliderStyle.Wavy) {
-                        val path=Path()
-                        for(i in 0..80) {
-                            val x=size.width*fraction*i/80f
-                            val y=h/2 + sin(x/12f*PI.toFloat())*3.dp.toPx()
-                            if(i==0) path.moveTo(x,y) else path.lineTo(x,y)
-                        }
-                        drawPath(path,color,style=Stroke(2.dp.toPx()))
-                    } else drawLine(color,Offset(0f,h/2),Offset(size.width*fraction,h/2),h,StrokeCap.Round)
-                    if(style==PlayerSliderStyle.Circular) drawCircle(color,8.dp.toPx(),Offset(size.width*fraction,h/2),style=Stroke(2.dp.toPx()))
+            thumb = {
+                if (style != PlayerSliderStyle.Thick && style != PlayerSliderStyle.Simple)
+                    SliderDefaults.Thumb(interactionSource, colors = colors,
+                        enabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true)
+            },
+            track = { sliderState ->
+                if (style == PlayerSliderStyle.Standard) {
+                    SliderDefaults.Track(sliderState, colors = colors,
+                        enabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true)
+                } else {
+                    val trackHeight = when (style) {
+                        PlayerSliderStyle.Thick -> 12.dp
+                        PlayerSliderStyle.Simple -> 3.dp
+                        else -> 6.dp
+                    }
+                    Canvas(Modifier.fillMaxWidth().height(trackHeight)) {
+                        val cy = size.height / 2
+                        val h = trackHeight.toPx()
+                        drawLine(colors.inactiveTrackColor, Offset(0f, cy), Offset(size.width, cy), h, StrokeCap.Round)
+                        if (style == PlayerSliderStyle.Wavy || style == PlayerSliderStyle.Circular) {
+                            val path = Path()
+                            val amplitude = if (c.motionActive && c.state.playback?.playWhenReady == true) 2.dp.toPx() else 0f
+                            for (i in 0..80) {
+                                val x = size.width * fraction * i / 80f
+                                val y = cy + sin(x / 12.dp.toPx() * PI.toFloat()) * amplitude
+                                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                            }
+                            drawPath(path, color, style = Stroke(h, cap = StrokeCap.Round))
+                        } else drawLine(color, Offset(0f, cy), Offset(size.width * fraction, cy), h, StrokeCap.Round)
+                    }
                 }
             })
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
