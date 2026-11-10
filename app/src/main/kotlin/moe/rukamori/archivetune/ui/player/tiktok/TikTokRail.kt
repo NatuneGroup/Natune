@@ -21,9 +21,7 @@
  *
  * While the inline lyrics pane owns the page, EVERY rail action — profile,
  * like, the lyrics toggle, bookmark, share, the overflow more — fades out
- * and the rail leaves the page to the lyrics (user reports 2026-09-02:
- * "when I open lyrics the like button, share, profile, overflow icon etc
- * only should hide", then "the lyrics icon should disable too"). The
+ * and the rail leaves the page to the lyrics. The
  * pane's own controls live in the caption row instead: a close (X) chip
  * and the horizontal-dots overflow button right of the queue chip (see
  * TikTokSongInfo) — the reference's inline caption actions.
@@ -201,8 +199,7 @@ internal fun TikTokRail(
         // Toggles the Apple Music inline lyrics pane in place of the
         // artwork; the red accent while open is the rail's own active colour
         // (the same one the liked heart uses). Hides with every other rail
-        // action while the pane is open (user request 2026-09-02: "when I
-        // click on lyrics icon the lyrics icon should disable too") — the
+        // action while the pane is open — the
         // pane closes from the caption row's X instead, and reopens from
         // this bubble the moment the pane is closed.
         AnimatedVisibility(
@@ -238,14 +235,12 @@ internal fun TikTokRail(
         }
 
         // ── Download ──
-        // Removed from the rail per user request (2026-09-02: "remove the
-        // download icon"). The song menu — the rail's more button, the queue
+        // Not on the rail. The song menu — the rail's more button, the queue
         // sheet, the library — still carries the full download/remove action
         // for whoever needs it.
 
         // ── Share ──
-        // Hides with the other song actions while the lyrics pane is open
-        // ("share ... only should hide").
+        // Hides with the other song actions while the lyrics pane is open.
         AnimatedVisibility(
             visible = !lyricsActive,
             enter = fadeIn(tween(TIKTOK_RAIL_FADE_MS)),
@@ -274,9 +269,7 @@ internal fun TikTokRail(
 
         // ── More ── While the inline lyrics pane owns the page, this opens the LYRICS overflow
         // menu — the same anchored, frosted-blur popup the Apple Music style shows from its own
-        // lyrics view, opening from the top-right below the top navigation (user reports
-        // 2026-09-02: "the exact same popup for lyrics overflow menu from Apple music style; also
-        // it opens on the downside.
+        // lyrics view, opening from the top-right below the top navigation.
         AnimatedVisibility(
             visible = !lyricsActive,
             enter = fadeIn(tween(TIKTOK_RAIL_FADE_MS)),

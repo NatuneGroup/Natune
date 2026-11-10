@@ -117,7 +117,7 @@ class PlaybackSourceChainTest {
 
     @Test
     fun directQobuzPickWithQobuzDisabledGivesTheBaseChain() {
-        // Regression (D4): an exact Qobuz pick used to bypass the toggle and keep playing Qobuz
+        // Regression: an exact Qobuz pick used to bypass the toggle and keep playing Qobuz
         // after the user turned the source off.
         val disabled = snapshot("TIDAL,QOBUZ,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
 
@@ -258,7 +258,7 @@ class PlaybackSourceChainTest {
 
         assertTrue(PlaybackSourceChain.cacheShortCircuitAllowed(onlyYouTube))
 
-        // Regression (D7): JioSaavn resolves real streams and must bypass the ephemeral
+        // Regression: JioSaavn resolves real streams and must bypass the ephemeral
         // YouTube player cache like the lossless sources do.
         val onlyJioSaavn = snapshot("TIDAL,QOBUZ,YOUTUBE", AudioSourceType.JIOSAAVN, AudioSourceType.YOUTUBE)
 

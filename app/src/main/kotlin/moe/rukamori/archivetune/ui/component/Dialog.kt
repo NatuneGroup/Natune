@@ -388,7 +388,6 @@ fun TextFieldDialog(
      */
     masked: Boolean = false,
     onDone: (String) -> Unit = {},
-    // new multi-field support
     textFields: List<Pair<String, TextFieldValue>>? = null,
     onTextFieldsChange: ((Int, TextFieldValue) -> Unit)? = null,
     onDoneMultiple: ((List<String>) -> Unit)? = null,

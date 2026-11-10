@@ -161,8 +161,7 @@ CI packaging and the embedding patches.
   with the playback position preserved, subject to its existing retry budget.
 
 CI is wired to compile the native library for each shipped ABI with NDK
-30.0.16248370, Rust 1.97.1, rustls/WebPKI and 16 KiB ELF alignment. This branch has
-not run that compilation or produced a verified APK. The active Android build
+30.0.16248370, Rust 1.97.1, rustls/WebPKI and 16 KiB ELF alignment. The active Android build
 workflow is `build_pull_request.yml` (there is no active `build.yml`);
 `nightly.yml` and `release.yml` call `_release-artifacts.yml` for shipping APKs.
 All call `.github/actions/build-librespot`, as does emulator QA.
@@ -183,7 +182,7 @@ All call `.github/actions/build-librespot`, as does emulator QA.
   Librespot. The APK audit confirms JNI is absent. A green APK build can therefore
   represent **Librespot unavailable**; check the action's `available` output and
   summary before claiming native success. Kotlin compilation/unit tests need no JNI.
-- PR Debug and emulator QA now receive the same public
+- PR Debug and emulator QA receive the same public
   `ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID` repository variable as shipping/candidate
   APKs. Its presence and registered redirect/account access remain unverified;
   an empty value still disables sign-in.
@@ -192,31 +191,25 @@ There is no JVM playback dependency or bundled second decoder/output backend.
 The upstream MIT notice ships in Android assets. Actual APK size, CI build time,
 compilation, minified JNI linkage, seeking and playback need CI/device evidence.
 
-Desktop Librespot remains OAuth-only. The core/metadata cdylib is a plausible JVM
-host build, but it has not been compiled for Linux/macOS/Windows. Android's Kotlin
-JNI owner depends on Android Context/DataStore/Media3 and is not a desktop adapter.
-Desktop already has a native AES-CTR/FFmpeg byte recipe for Echo that could be
-reused with a librespot-provided key; it still needs a portable JNI owner, the
-catalog-bound OAuth session lifecycle, an `AudioProviderRepository` adapter and
-per-OS/architecture library staging in the installers. That is a separate host
-integration, so `DesktopSpotifySource` continues to report Librespot unavailable
-and use the configured source fallback.
+Desktop reuses the same cdylib and the shared `SpotifyLibrespotNative` JNI object.
+`DesktopLibrespotLibrary` loads the packaged host library, and
+`DesktopSpotifyLibrespotAudio` resolves tracks for `DesktopSpotifySource` with the
+existing native AES-CTR/FFmpeg byte recipe. `.github/actions/build-desktop-librespot`
+builds linux-x64, linux-arm64 and windows-x64 libraries; macOS and failed native
+builds ship without one, and `DesktopSpotifySource` then reports Librespot
+unavailable and uses the configured source fallback. Desktop playback is unverified.
 
-iOS remains OAuth-only, with no implementation change here. It needs a C/Swift
+iOS remains OAuth-only. It needs a C/Swift
 bridge, device/simulator static-library packaging and an AVFoundation byte/range
-transport; JNI does not supply that. Neither host gains audio from this Android
-binding. The Android adapter also falls through for SOCKS or
+transport; JNI does not supply that. The Android adapter also falls through for SOCKS or
 credentialed HTTP proxies, whose settings the native AP transport cannot honor;
 it never silently bypasses them.
 
 ### Evidence still needed
 
 Source inspection confirms the five JNI symbol names and the pinned upstream
-AP OAuth, metadata, audio-key and CDN APIs used by the bridge. The continuation's
-local checks report **0 repository findings** and **26 passing iOS Python fixtures**.
-These checks do not compile or exercise the audio bridge. No local Gradle/JVM,
-Rust build, lint, emulator or Spotify playback test was run, and no workflow was
-dispatched for this feature branch.
+AP OAuth, metadata, audio-key and CDN APIs used by the bridge. Repository checks
+do not compile or exercise the audio bridge.
 
 Still required: Rust builds for all shipped ABIs; Android/shared Kotlin compilation
 and tests; native availability and library contents in Debug and minified Nightly
@@ -225,7 +218,7 @@ decoding and nonzero/near-end seeks; cached replay; reconnect after network loss
 and token rotation; immediate sign-out/account replacement cleanup; source fallback;
 low-data mode and concurrent prefetch. Successful source wiring does not establish
 audible playback on an eligible account. There is no verified device playback
-result on this branch yet.
+result yet.
 
 **Current upstream restriction:** the
 [November 7 warning](https://github.com/librespot-org/librespot/blob/15e02e86c72d96dd39d548e3749f00abe39ffdde/README.md)

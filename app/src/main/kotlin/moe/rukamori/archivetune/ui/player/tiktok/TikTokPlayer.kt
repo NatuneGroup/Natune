@@ -187,9 +187,7 @@ fun TikTokPlayerContent(
     // True while the feed plays an engine-initiated swipe (song end,
     // notification skip). The outgoing page suppresses its paused glyph for
     // the duration, so the advance reads as a hand-swipe instead of a
-    // pause flash followed by a jump (user report 2026-09-02: "when the
-    // song ends it pauses and the next song plays without the swipe
-    // animation").
+    // pause flash followed by a jump.
     var autoAdvancing by remember { mutableStateOf(false) }
 
     // ── Feed → engine ──
@@ -236,9 +234,7 @@ fun TikTokPlayerContent(
     // notification, another screen, or the song simply ENDING — the feed
     // follows. A single-step move plays the feed's own swipe (the animated
     // scroll the user sees when they flick the page themselves), so a song
-    // that ends on its own advances exactly like a hand-swiped one (user
-    // request 2026-09-02: "when the song ends the song should swipe
-    // automatically and the swipe animation should also play"); multi-page
+    // that ends on its own advances exactly like a hand-swiped one; multi-page
     // jumps snap — the queue sheet's far taps should land, not tour the pages.
     // When the change came from the feed itself the indices already match and
     // this is a no-op.
@@ -316,8 +312,7 @@ fun TikTokPlayerContent(
     // ── Inline queue (the Apple Music treatment) ── The queue chip in the caption row opens the
     // queue IN PLACE — the same [AppleMusicQueueSheet] the Apple Music style morphs to (the pill
     // row, the "Queue" header with its edit-lock, the reorderable glassy rows) — instead of leaving
-    // the feed for the player's bottom-sheet queue (user request 2026-09-03: "Add the inline queue
-    // of apple music style to Tiktok style").
+    // the feed for the player's bottom-sheet queue.
     var queueOpen by rememberSaveable { mutableStateOf(false) }
 
     // ── Lyrics overflow (the Apple Music anchored popup) ──
@@ -403,7 +398,7 @@ fun TikTokPlayerContent(
     // ── The queue's backdrop blur (the Apple Music treatment) ── The Apple Music style renders its
     // queue sheet over the artwork blurred at 72dp (AppleMusicPlayer's Modifier.blur(72.dp) canvas
     // backdrop) — the sheet's translucent glassy rows are designed for that frosted field, not for
-    // a sharp cover (user report 2026-09-03: "the background is transparent.
+    // a sharp cover, so the feed blurs to match while the queue is open.
     val canBlurFeed = moe.rukamori.archivetune.LocalBlurPolicy.current.renderEffect
     val feedBlur by animateDpAsState(
         targetValue = if (queueOpen && canBlurFeed) TIKTOK_QUEUE_FEED_BLUR else 0.dp,
@@ -417,10 +412,8 @@ fun TikTokPlayerContent(
 
     // The popup's anchor: the horizontal-dots overflow button in the current
     // page's caption row (right of the "Recently played" chip), reported live
-    // from that button's own onGloballyPositioned (user request 2026-09-02:
-    // "one more three dots horizontally that opens lyrics overflow menu ...
-    // the lyrics animation should play attached with the three horizontal
-    // dots"). The reported rect is in composition-root space; the popup
+    // from that button's own onGloballyPositioned, so the popup animates out
+    // of those dots. The reported rect is in composition-root space; the popup
     // renders as a child of THIS root Box, so the rect is translated by the
     // root Box's own origin into the popup's parent space — correct wherever
     // the player sheet sits, not just when it fills the window.
@@ -502,8 +495,7 @@ fun TikTokPlayerContent(
                 // While the stream is loading or the feed is playing an
                 // engine-initiated swipe, the current page is not "paused"
                 // — buffering and auto-advance must not flash the play
-                // glyph (user report 2026-09-02: "when the song ends it
-                // pauses").
+                // glyph.
                 suppressPauseOverlay = isLoading || autoAdvancing,
                 playerConnection = playerConnection,
                 queueTitle = queueTitle,

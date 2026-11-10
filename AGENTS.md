@@ -1,227 +1,161 @@
-# AGENTS.md — ArchiveTune (vossgraves fork of 4nx3b/ArchiveTune)
+# AGENTS.md — Natune
 
-Active development is on `dev`, the integration branch (feature PRs land there
-first; it builds the Nightly channel, and `main` is Stable). Canary is retired: there
-are only the Stable and Nightly channels. The fork tracks both upstreams, `4nx3b/ArchiveTune` and
-`rukamori/ArchiveTune`, at `4nx3b/dev` and `rukamori/dev`. Any agent working here
-must preserve the invariants below.
+Natune (`NatuneGroup/Natune`) is a Kotlin Multiplatform music player. It grew out of
+ArchiveTune and keeps that lineage: the Android host still uses the
+`moe.rukamori.archivetune` package. Audio comes from Tidal, Qobuz, Deezer, Apple Music,
+Amazon, QQ Music, JioSaavn, Telegram, optional modules and an opt-in Spotify streaming
+source, with YouTube as the final fallback. Spotify also supplies catalog metadata.
 
-## Fork invariants — never break
+`dev` is the integration branch and builds the Nightly channel. `main` is Stable.
+There are only these two channels; Canary is retired (see
+[RELEASES](docs/claude/RELEASES.md)). Open PRs against `dev`.
 
-- **Presentation**: Material 3 Expressive is the default interface style. The player and lyrics three-dot menu is the one default exception: it defaults to Apple Music, with Material 3 as an explicit `player_menu_style` option, and its effective style is the Apple menus surface. An unchosen menu style belongs to the default presentation, so a fresh install still reads Material 3 Expressive; a stored choice counts toward the indicator. Only explicitly applying the overall Apple Music preset coordinates player, library, menus, search field, default accent and tab bar in one atomic edit. Album and playlist detail pages always use the standard artwork-backed Material hero; presets must not replace it. Every individual Apple Music option changes only its own surface and never activates or locks the others; derive the experience indicator from the actual selections, showing Custom / mixed when they differ. Migrate old experience overrides once, then honor independent preferences. Playback providers and source selection remain independent. Compact mini-player and bottom-pill layouts are optional; the Apple Music tab bar itself is always the one-row layout (Library circle, mini player, Search circle). Bottom search and scroll-hidden navigation are optional; preserve settings and search anchors.
-- **Tidal source**: `app/src/main/kotlin/moe/rukamori/archivetune/tidal/` (`TidalAudioProvider`, `TidalAccountManager`, `TidalInstanceHealthManager`, `TidalDns`, `TidalArtworkProvider`), Tidal settings/login UI, `utils/tidal/`; instance racing documented in `docs/instance-racing.md`. Live progressive-DASH streams use the `tidal-dash://` scheme routed in `MusicService`.
-- **Multi-source audio**: providers live in top-level packages `tidal/`, `deezer/` (DeezerCrypto + Media3 decrypting DataSource), `qobuz/` (+ `QobuzBackupProvider` via the kouzu.in mirror), `spotify/`; shared contract (`DirectStream`, `TitleMatch`, source priority) in `audiosource/`. Playback resolution goes through `resolveMultiSourceDataSpec` in `playback/MusicService.kt`; YouTube is the final fallback. Do not rewire playback around this.
-- **Audio authenticity**: decoded PCM analysis is opt-in and bounded. It reports spectral suspicion, never proof of studio provenance; missing, short, silent or inconclusive evidence remains unknown. Evidence uses reported sample rates, never quality-tier guesses, and cached evidence stays source-bound. Observed decoded PCM and Media3 AudioTrack configurations are track-scoped, not measurements of physical device/DAC output; custom bit-perfect output conversion remains unobserved. Preserve bit-perfect bypass and caller cancellation. A rejected attempt must not reuse its cached URL, discard playback position or bypass the established source chain.
-- **Compact transitions**: `playback/automix/` supplies bounded local feature analysis to the existing smart-transition path. Standard packages contain neither ONNX models nor ONNX native libraries; `-Pautomix=true` explicitly includes the optional models/runtime. Keep analysis cancellation and source-aware cache bounds; do not add bundled Python.
-- **Spotify catalog and Spotify streaming are two accounts**: `spotifycore/` + app `spotify/` provide metadata, artwork, search, playlist import and track-to-YouTube identification on the catalog account (`SpotifySpDcKey`, the global `Spotify.accessToken`). The experimental `AudioSourceType.SPOTIFY` source (ported from 4nx3b: `spotify/SpotifyWebStreamer` web-player/Widevine method, `spotify/echo/` desktop PlayPlay method) runs only on a separate streaming account (`SpotifyStream*` keys, `SpotifyStreamingAccount`) signed in through its own WebView profile. Streaming code must never read the catalog token or cookie for anything but the same-account refusal, never set `Spotify.accessToken`, and must stand down when both sign-ins are the same account. The source sits in `AudioSourceConfig.DEFAULT_ORDER` like every other source (just above YouTube, default off, and enabled only while a streaming account is signed in), goes through `resolveMultiSourceDataSpec` like every other source, and is not a download source. See `docs/spotify-streaming.md`.
-- **Playback client policy**: `AutoChoosePlaybackClientKey` + `YTPlayerUtils` own bounded YouTube client selection/fallback and video-scoped PO tokens, and two extractor tiers are live behind them for playback and downloads: YouTube resolves shipped `YTPlayerUtils` → InnerTubeX → NewPipe → `EchoStreamResolver`, via `playback/stream/YouTubeFailsafeChain` (each tier bounded, one `PlaybackDiagnostics` line per tier; see `docs/extraction.md`). The extractor-tier order lives in `ResolveAudioStreamUseCase.shippedFallbackTiers` and nowhere else. Echo stays the very last resort — keep it there. Login/confirmation failures (`InvalidPlaybackLoginContextException`, `LoginRequiredForPlaybackException`) skip every fallback tier. Manual mode must remain available.
-- **Telegram streaming**: `telegram/` (TDLib wrapper + `TelegramDataSource`), browse/settings/login UI. Playback routed by the `telegram://` branch in `MusicService`'s `SchemeRoutingDataSource`, independent of the multi-source chain. Channels materialise as local playlists (`LPtg<chatId>`); artwork via the Coil `tgart://` fetcher. api_id/hash via `BuildConfig` with public Telegram Desktop fallback.
-- **Pool credentials**: the Playback Pool toggle gates account feeds, Pool discovery, reports and provider-local Pool caches independently of personal credentials. Empty or failed feed attempts remain throttled across restarts. Pool credentials stay in their separate Keystore-encrypted cache and must never overwrite personal sign-in preferences. An APK-delivery key is extractable and must never be reused as a server administrator, session or database secret.
-- **Discord presence**: the Android route is the official Discord Social SDK with OAuth PKCE, scope `sdk.social_layer_presence`, and no user-token login or Gateway IDENTIFY. The public Natune application id defaults to `1569030685010821170`; CI reads the `DISCORD_APPLICATION_ID` repository variable. The SDK is enabled with `-Pnatune.discordSdk=true` when the licensed prefab AAR exists at `third_party/discord-social-sdk/android/discord_partner_sdk.aar`. Stable, Nightly and signed-candidate Android builds always bundle it: `.github/actions/fetch-discord-sdk` downloads the AAR from the private `NatuneGroup/discord-social-sdk` mirror at a pinned commit and SHA-256 using the `DISCORD_SDK_TOKEN` secret, and `scripts/check_discord_sdk_apk.py` fails the build when a shipping APK lacks the presence libraries. Pull-request and debug builds stay SDK-free and must never receive `DISCORD_SDK_TOKEN`. The signed-candidate size gate is 28,000,000 bytes (the app plus the bundled SDK). An SDK-enabled variant adds the AAR, AndroidX Browser 1.8.0, a conditional JNI target and a manifest overlay that removes the SDK `ForegroundService`; it must never remove app permissions (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE_MICROPHONE`, Bluetooth) that Natune's own features need. Builds without the SDK keep the no-op backend and browser OAuth account linking. Never embed a confidential client secret. See [Social SDK setup](docs/discord-social-sdk.md).
-- **CI signing**: release/nightly and release-shaped CI builds sign only when all four GitHub Secrets `KEYSTORE`/`KEY_ALIAS`/`KEYSTORE_PASSWORD`/`KEY_PASSWORD` are configured, using the existing (historical) release keystore — same signing identity as all prior builds, so signed updates keep installing in place. Missing or incomplete signing configuration leaves explicitly unsigned APKs that still build, upload and publish, with a release-note warning; unsigned artifacts do not prove update-over-install compatibility. The opt-in artifact-only ARM64 candidate in `Build Pull Request` (`android_release_candidate`, same-repository manual dispatch only) is the one exception: it requires all four secrets and fails before building, because an unsigned or debug-key file must never be labelled a candidate. No workflow may fall back to a committed `app/persistent-debug.keystore`; the file was removed from the tree and must not be restored (the key material remains public in git history — accepted residual risk, maintainer decision 2026-08-26; do NOT rotate to a fresh key without an explicit user-facing migration announcement, it force-reinstalls every user). Local debug builds use AGP's default debug keystore.
-- **Listen Together**: LAN plus exactly the public servers listed in `listentogether/ListenTogetherServers.kt` (vivi's JSON "Hugging Face Sync" at `devilmi-vivi-music-listen-together.hf.space` and Metrolist's protobuf-only The Meowery at `metroserverx.meowery.eu`) — nothing else. The retired `vivimusic-listen-together.onrender.com` is never contacted; it is only accepted as an invite-link host so old links still open. No koiverse REST/WS path and no `*.koiverse.cloud` / `raw.githubusercontent.com/koiverse/*` call anywhere in the tree. The Meowery never takes a JSON frame: the codec is pre-negotiated per host, the app sends no `client_capabilities` frame, `buffer_ready` is the catch-up mechanism, and the host has no chat relay (chat is JSON-server-only). Connection and room-request waits are bounded; stale socket callbacks must not alter a newer connection. Server hosting restrictions must be shown, never bypassed.
-- **Protected files**: `applicationId` (`moe.rukamori.archivetune`) is fork identity — never adopt upstream changes to it. `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`, `DataServer.txt` were removed and must never be restored.
-- **Enhanced lyrics**: Android's Enhanced renderer follows `rukamori/ArchiveTune` `dev` at `8f25a9e21` (including `f71c0c086` frame-paced sync), with upstream Accompanist versions. Keep its scrolling, word timing and animation intact. `NatuneLyricsEnhanced` supplies existing providers, parser results, settings and romanization; unaligned AI readings remain line captions. `LyricsAlternate` preserves Spotify and compact TikTok behavior. Shared desktop/iOS lyrics retain their shared renderer. Do not restore custom sweeps, activation leads, scroll springs or draw-position projection to Android Enhanced.
+## Layout
 
-## Source modules
+- `:app`: Android host. Kotlin sources live in
+  `app/src/main/kotlin/moe/rukamori/archivetune/`.
+- `:shared-domain`, `:shared-data`, `:shared-ui`: the KMP shared layers used by
+  Android, desktop and iOS. `shared/` is an inactive foundation module (its build file
+  is `shared/build.gradle.kts.reference`); do not add it to `settings.gradle.kts`.
+- `:desktopApp` (+ `:desktopApp:tdlight-jvm`): the JVM desktop app.
+- `iosApp/`: the Xcode project, the SwiftUI shell and the native audio/Telegram bridges.
+- Library modules: `:spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit
+  :modules` and `:lyrics:*`.
+- Git submodules: `core` → `vossgraves/core`, `lyrics` → `4nx3b/lyrics`,
+  `IconPack` → `NatuneGroup/IconPack`, `deobfuscator` → `rukamori/morideobfuscator`.
+  Commit and push inside a submodule before you move its gitlink; never leave a dirty
+  or unpushed pointer. Never point `core` at a `rukamori/core` revision: its
+  `NetworkGatekeeper` blocks every request by default.
+- Docs: product knowledge in [docs/claude/](docs/claude/), engineering procedures in
+  [docs/engineering/](docs/engineering/), subsystem references in `docs/`, reusable
+  agent workflows in [.factory/skills/](.factory/skills/).
 
-- `:modules` is the Android-only ArchiveTune API-v1 host from upstream `8f25a9e21`;
-  preserve readable `.arch` compatibility, format/API versions and JS host APIs.
-  Modules are opt-in and sit in the existing playback/download source order;
-  YouTube's extractor tiers and native DRM/decryption routes remain unchanged.
-- Never restore `NetworkGatekeeper` or `8SM1.` hardcoded-key envelope decryption.
-  Minimum app compatibility uses the explicit upstream contract floor 15.1.0,
-  independently of Natune's release name. Advance it only with reviewed host changes.
-- `addons/modules` carries provider packages and both upstream/fork attribution.
-  No bundled credentials. Update branch-based catalog download URLs after merge.
-  Architecture, differences and validation limits: [modules](docs/modules.md).
+## Invariants
 
-## Modules & submodules
+- **Identity and signing.** `applicationId` stays `moe.rukamori.archivetune`. Release
+  builds sign only when all four secrets `KEYSTORE`, `KEY_ALIAS`, `KEYSTORE_PASSWORD`
+  and `KEY_PASSWORD` exist, using the historical release keystore so updates install
+  in place. Without them the APKs stay explicitly unsigned. The manual ARM64 release
+  candidate in `Build Pull Request` is the exception: it fails without signing. Never
+  restore a committed debug keystore, `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`
+  or `DataServer.txt`. Do not rotate the release key or read secret values.
+- **Multi-source playback.** Providers live in `tidal/`, `deezer/`, `qobuz/`,
+  `spotify/`, `telegram/`, `audiosource/` and `:modules`; the shared contract and source order live in
+  `audiosource/` (`AudioSourceConfig.DEFAULT_ORDER`). Resolution goes through
+  `resolveMultiSourceDataSpec` in `playback/MusicService.kt`; `tidal-dash://` and
+  `telegram://` are routed there. Do not rewire playback around this chain.
+- **YouTube extractor tiers.** `YTPlayerUtils` → InnerTubeX → NewPipe →
+  `EchoStreamResolver`, run by `playback/stream/YouTubeFailsafeChain`. The order lives
+  only in `ResolveAudioStreamUseCase.shippedFallbackTiers`. Echo stays last.
+  Login failures (`InvalidPlaybackLoginContextException`,
+  `LoginRequiredForPlaybackException`) skip every fallback tier. Manual client choice
+  stays available. No Python or bundled yt-dlp: the external YTDLnis plugin is the only
+  yt-dlp route. See [extraction](docs/extraction.md).
+- **Two Spotify accounts.** The catalog account (`SpotifySpDcKey`,
+  `Spotify.accessToken`) serves metadata, search and import. The experimental
+  `AudioSourceType.SPOTIFY` source uses a separate streaming account (`SpotifyStream*`
+  keys, `SpotifyStreamingAccount`). Streaming code never reads or sets the catalog
+  token, and stands down when both sign-ins are the same account. See
+  [Spotify streaming](docs/spotify-streaming.md).
+- **Pool credentials** stay in their own Keystore-encrypted cache, behind the Playback
+  Pool toggle, and never overwrite personal sign-ins.
+- **Listen Together** uses LAN plus exactly the servers in
+  `listentogether/ListenTogetherServers.kt` (vivi's JSON server on `hf.space` and the
+  protobuf-only Meowery server). The retired `onrender.com` host is accepted only in
+  old invite links and is never contacted. No koiverse endpoints anywhere.
+- **Discord presence** uses the official Social SDK with OAuth PKCE and no user-token
+  login. It is built in only with `-Pnatune.discordSdk=true` and the licensed AAR at
+  `third_party/discord-social-sdk/android/discord_partner_sdk.aar`. Release builds
+  fetch it through `.github/actions/fetch-discord-sdk`, and
+  `scripts/check_discord_sdk_apk.py` fails a shipping APK without it. PR and debug
+  builds stay SDK-free and never receive `DISCORD_SDK_TOKEN`. Never embed a client
+  secret. See [Discord Social SDK](docs/discord-social-sdk.md).
+- **Modules.** `:modules` hosts ArchiveTune API-v1 `.arch` modules. Keep format/API
+  compatibility; the minimum compatible app version is the upstream contract floor
+  `15.1.0`, not Natune's version. Never restore `NetworkGatekeeper` or hardcoded-key
+  envelope decryption. See [modules](docs/modules.md).
+- **Presentation.** Material 3 Expressive is the default style. Each Apple Music option
+  changes only its own surface; only the full Apple Music preset changes several at
+  once. Album and playlist pages keep the artwork-backed Material hero. Keep all saved
+  player styles, their order and meaning, and every setting and search anchor.
+- **One UI renderer.** Shared Compose owns every screen on Android, desktop and iOS.
+  SwiftUI is only the iOS app/scene shell. The WidgetKit widgets and the CarPlay scene
+  are the only system-surface exceptions, and they never render app content. See
+  [iOS shell](docs/engineering/ios-swiftui-parity.md).
+- **Enhanced lyrics** on Android follow upstream ArchiveTune's renderer, with
+  `NatuneLyricsEnhanced` supplying providers and settings. Do not restore custom sweeps
+  or scroll springs to it. See [lyrics](docs/lyrics.md).
+- **Audio analysis** (authenticity check, acoustic graph, automix features) is opt-in,
+  bounded and cancellable. It reports suspicion or unknown, never proof, and never
+  changes playback resolution or the queue. ONNX models ship only with `-Pautomix=true`.
+- **Removed code stays removed.** Read
+  [removed components](docs/REMOVED_UPSTREAM_COMPONENTS.md) before restoring anything
+  it lists. Delete live source only with maintainer sign-off.
+- **Licensing.** New `.kt` files start with the package line, with no licence banner.
+  The KMP modules carry no banners; their lineage is in [credits](docs/CREDITS.md).
+  Keep existing banners elsewhere and any third-party notice a licence requires. Use
+  Metrolist and other GPL sources as behavior references, not verbatim copies.
 
-- Gradle modules: `:app :modules :core :spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit :deobfuscator :lyrics:*`.
-- Submodules: `core` → **vossgraves/core** (NewPipeExtractor-based InnerTube client; a fork of rukamori/core that deliberately carries no `NetworkGatekeeper`, pinned on `feat/podcast-port` for the podcast models), `lyrics` → **4nx3b/lyrics**, `IconPack` → **NatuneGroup/IconPack** (fork of rukamori/IconPack; the icon-switcher pack), `deobfuscator` → **rukamori/morideobfuscator** (the media obfuscator; the upstream repository keeps its own name and the gitlink is unchanged). Commit + push inside a submodule first, then pin the gitlink; never leave a dirty or unpushed pointer. Never move `core` to a `rukamori/core` revision — its `NetworkGatekeeper` defaults to `connectionBlocked = true` and throws on every request.
+## Build and test
 
-## Build & test
+Toolchain: JDK 21, Gradle wrapper 9.6.1, AGP 9.2.1, Kotlin 2.4.21, compile/target SDK
+37, min SDK 24, NDK 30.0.16248370 (generated details in
+[toolchain](docs/engineering/toolchain.md)). Flavors combine `gms|foss`, `mobile|tv`
+and an ABI.
 
-- JDK 21, Android SDK (compileSdk 37), Gradle wrapper 9.6.1.
-- Flavors include gms/foss, mobile/tv and ABI choices; not every combination ships. PR coverage is GMS/mobile/universal Debug assembly (arm64-v8a + x86_64) plus lint. Nightly retains six shipping variants; Stable retains seven and its existing reproducibility job.
-- Fork contract tests (`app/src/test/`): `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. Keep `Build Pull Request` / `build` separate from `Unit tests` / `Compile and run unit tests`, running concurrently on the exact integrated head. Do not substitute APK assembly for test compilation. In constrained continuations, no local Gradle/JVM/LSP or per-feature CI: focused tests follow integration.
-- Preserve GitHub-hosted PR runners, PR read-only caches and trusted cache producers. Use plain streaming diagnostics and local profiles/reports, not external build scans; do not change heap/KSP/configuration-cache policies without evidence.
-- For this constrained readiness mission, run full app builds, lint, coverage, repeated tests and compiler-backed analysis on GitHub-hosted runners. Keep the authorized VPS to lighter checks; do not retry full CI builds there.
-- New `.kt` files carry no license header and start with the package line. The KMP
-  modules (`shared`, `shared-domain`, `shared-data`, `shared-ui`, `desktopApp`,
-  `iosApp`) carry no banners; their lineage and credits are in `docs/CREDITS.md`.
-  Outside them, existing banners stay unchanged, and header automation must never
-  rewrite existing attribution. Third-party notices a licence requires stay in place.
+```sh
+./gradlew assembleGmsMobileUniversalDebug
+./gradlew :app:lintGmsMobileUniversalDebug
+./gradlew :app:testGmsMobileUniversalDebugUnitTest
+```
 
-## Lightweight quality and maintained documentation
+Cheap checks that need no Gradle, JVM or network:
 
-- Run `python3 scripts/check_repository.py --worktree` without Gradle/JVM/network
-  work. It checks maintained docs/skills, CI command consistency, dependency drift,
-  source/module boundaries, file budgets and copyright preservation.
-- Use the bounded [fast-check](.factory/skills/fast-check/SKILL.md) procedure for
-  pre-build feedback; it never substitutes for the final exact-candidate gates.
-- Install the lightweight staged-content hook as documented in
-  [quality gates](docs/engineering/quality.md); preserve an existing user hook setup.
-- Kotlin/Java types use PascalCase, functions/properties camelCase, Compose UI
-  functions PascalCase, constants UPPER_SNAKE_CASE and packages lowercase.
-  Preserve serialized/public legacy names rather than renaming them as cleanup.
-- Product knowledge stays in `docs/claude/`; engineering procedures stay in
-  `docs/engineering/`; reusable agent workflows stay in `.factory/skills/`.
-  Update only affected docs and add tests only for meaningful behavior/regressions.
-- Use the [incident runbook](docs/engineering/incident-runbook.md) for playback or
-  release failures. Missing build/device evidence must remain explicitly unverified.
+```sh
+python3 scripts/check_repository.py --worktree
+python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 -m unittest discover -s iosApp/tests -p 'test_*.py'
+git diff --check
+```
 
-## Current local follow-up boundaries
+`check_repository.py` validates links in maintained docs, skill frontmatter, the Gradle
+tasks above against the workflows, dependency drift, module boundaries and file
+budgets. The optional hook is in `.githooks/pre-commit` (see
+[quality](docs/engineering/quality.md)).
 
-- Stable/Nightly are explicit choices on every build; build identity supplies only the unset default. Migrate stored Canary once without overriding a later Stable choice. Keep channel-bound candidates and no-downgrade checks.
-- Settings descriptions use finite automatic marquee only for visible/resumed overflowing text with motion enabled. Keep page snapshots and running startup latches; one shared post-commit Restart now/Later modal owns restart actions, not per-row effects or timers.
-- The acoustic graph in Developer (`settings/misc`, `acoustic_quality`) and shared player/song menus runs only after Run. Keep bounded, cancellable, source-bound memory-only results, ordinary seekable file/content and clear current-source support, stale-result rejection and heuristic/unknown language. Never mutate playback resolution, queue or source rejection settings for an audit.
-- The unused Oboe dependency was removed in the user-authorized APK-size pass (2026-11); its historical credit/notice stays. The two independent Android JNI audio libraries use a hidden static STL in standard packages; optional Discord SDK/ONNX variants retain the shared STL. Librespot release optimization keeps panic unwinding for its JNI catch_unwind boundary. The maintainer approved one dead-code pass (2026-11): it removed the unreachable libusb 1.0.30 USB Audio Class driver (`monochrome_usb`, `usb1.0`), the Signalsmith Linear 0.6.5 / Stretch 1.4.0 pitch shifter (`monochrome_stretch`), the never-enabled sinc-varispeed and pitch stages, `UsbAudioRouter`, `BypassVolumeController`, `BitPerfectGateProcessor` and the orphan USB-pin/wire publishers with the rows that read them. The same approval retired the whole engine layer once the shared chain took the standard route: the Tryptify `tf.monochrome.*` bus and its `monochrome_dsp` target, the LastWave `com.lastwave.*` engine with `lastwave_audio` and its vendored soxr 0.1.3, the float-DSP half of `archivetune_dsp`, and the router that chose between them. `archivetune_dsp` still builds the AAudio exclusive stream. No new output engine/default/preset policy.
-- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes; the same rule kept both USB output routes through the 2026-11 dead-code pass, which touched the unreachable Tryptify USB island, not them. Keep the decent module's MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
-- Unicode/phonetics, SimpMusic parity, AI/cache and lifecycle corrections are locally integrated. Preserve semantic joiners/raw text, conservative script-family exclusions, aligned provider words or honest line fallback, full-settings AI eligibility and changed-target invalidation on every translation surface. DeepL is translation-only; failed/partial AI responses are not success caches. Downloader staging is request-owned, delayed room retries are generation-bound, and Spotify account mutations share the refresh lock.
-- Japanese data uses one persisted best-effort foreground consideration for primary system-device locale region JP. Wi-Fi/cellular are allowed; offline consumes the consideration but manual retry remains. Explicit off/removal prevents automatic reinstall; no IP lookup, continuous watcher or startup wait. Keep pinned data/digest, IO validation and manual install/cancel/remove.
-- The earlier release is complete: PR #198 merged at `643a35fd09888769a4a2d588324398d68f0d6fb5` and published Nightly `N202610151104` / build 6833 after separate green build/tests (835 passed, 0 failed, 0 skipped). Inherited permissive lint was not lint-clean. No device QA is claimed; Canary stays frozen.
-- The current YouTube follow-up is local, uncompiled source; focused tests, independent changed-path review and exact-head remote BUILD/TESTS are pending. Ordinary playlists use finite browse queues, occurrence-aware persistence and conservative unknown legacy recovery; strict whole-list completion gates insertion/import/sync and complete-list client shuffle (not exact server shuffle). Unknown/failed tails cannot seed radio. Preserve manual additions, repeat/filter/source policies and explicit RD/Mix/radio behavior.
-- Login-only Music install recovery makes one guarded same-WebView official HTTPS return for the observed embedded `net::ERR_UNKNOWN_URL_SCHEME`, not a proven renderer crash. Preserve DOM storage/current jar; logout is YouTube-scoped. Keep candidates memory-only through private reusable-client final-context verification, then atomically commit owned identity/context. Stale attempts/refreshes must not overwrite newer sessions; no global playback-client staging or account-slot migration.
-- InnerTubeX is the anonymous MetrolistGroup `v0.11.2` pin on every host, source `c863ddf15be01a1abfa4630329bdc0a1e95f1531`, GPL-3.0 unchanged, not the login/pagination fix. Its cipher is the pure-Kotlin QuackJS library; the anonymous tier keeps `UnavailableTokenProvider`, direct-audio capability guards and terminal auth errors. During this constrained follow-up gitlinks stay uninitialized/unchanged; no local JVM/build/device QA, per-feature CI or unrelated cleanup.
+CI on pull requests to `dev`: `Build Pull Request` (`build`: assemble + lint
+GmsMobileUniversalDebug and KMP compile; `desktop-compile`), `Unit tests`
+(`Compile and run unit tests`, `Shared KMP and desktop suites`), `iOS compile`
+(path-filtered) and `Android emulator QA`. A push to `dev` publishes Nightly; a push
+to `main` publishes Stable. `Kotlin quality` and the release candidate are manual.
+Workflows under `.github/inherited-workflows/` and `.github/private-workflows/` are
+parked and inactive. Debug builds do not prove release shrinking, signing or device
+behavior; keep build and test gates separate.
 
 ## Dependency gotchas
 
-- `settings.gradle.kts` declares a GCS mirror of Maven Central **before** `mavenCentral()` — do not reorder (Maven Central 429-rate-limits CI).
-- JitPack is scoped via `exclusiveContent` to an allow-list of `com.github.*` groups (TeamNewPipe, PRDownloader, jaudiotagger, MetrolistGroup…). A new `com.github.*` dependency fails until its group is added.
-- The embedded Python/yt-dlp layer (Chaquopy) was removed on 2026-08-26: no Python is bundled, and nothing in the resolution path may grow a dependency on it. YouTube stream resolution runs in-process through the compiled InnerTube core in `YTPlayerUtils` (BotGuard/QuickJS PO tokens), then the InnerTubeX and NewPipe tiers, with `EchoStreamResolver` the last resort (`docs/extraction.md`). The external YTDLnis yt-dlp plugin APK is the only yt-dlp route, and never bundled. Upstream still carries Chaquopy — expect merge conflicts in `app/build.gradle.kts`, `gradle/libs.versions.toml`, and `playback/stream/*` on sync; resolve them by keeping the fork's Python-free shape.
+- `settings.gradle.kts` lists a GCS mirror of Maven Central before `mavenCentral()`.
+  Keep that order; Maven Central rate-limits CI.
+- JitPack is scoped with `exclusiveContent` to an allow-list of `com.github.*`
+  groups. A new JitPack dependency fails until its group is added.
+- On a host without the Android SDK (`natune.androidSdk=false`), the Android-only
+  modules are skipped; shared and desktop builds still work.
+- Upstream has no sync automation. Port changes by reading `4nx3b/dev` or
+  `rukamori/dev` directly; never tree-replace a branch, which would restore the
+  removed keystore, Python layer and other deliberate divergences.
 
-## Upstream sync (state as of 2026-09-27)
+## Working rules
 
-- **There is no automation.** `upstream-sync.yml`, `upstream-sync-merge.yml`, `mirror-4nx3b.yml` and the scripts they drove (`scripts/upstream_sync.sh`, `scripts/ai_resolve.py`, `docs/UPSTREAM_SYNC.md`) were deleted in 2026-09 (commit `699d1e390` and the mirror removal), so nothing merges or mirrors branches. The unused `SYNC_PAT`, `AI_API_KEY` and `API_BEARER_TOKEN` secrets were deleted from the repository; the in-app updater needs no key.
-- Upstream changes land by **manual comparison**: the rukamori line shares no merge base, so read the upstream tree directly (`git show 4nx3b/dev:<path>`, `git show rukamori/dev:<path>`) and port the behaviour onto `dev`'s current code instead of pasting files over it.
-- If any automation is ever put back, it must not tree-replace a branch: that would re-commit `app/persistent-debug.keystore` (still present in 4nx3b's tree), resurrect main's committed-keystore signing fallback, and wipe every deliberate fork divergence (yt-dlp removal, keystore removal, UI rework). Direction decision (merge-based 4nx3b sync vs release-tag mirroring only) is pending with the maintainer. When a fork feature or protected file changes, update the invariants in this file — it is the only description of sync policy left.
-
-## Agent hygiene
-
-- Never commit credentials, tokens, keystores or agent session state (`.swarm/`, `.opencode/`, `.jcode/` stay untracked).
-- Local working notes (`ARCHIVETUNE_SESSION_NOTES.md`, `ARCHIVETUNE_CODE_MAP.md`) are scratch memory — never ship them.
-
-## KMP workspace guidance (public NatuneGroup/Natune)
-
-These instructions supersede conflicting historical bootstrap CI/branch and
-constrained-checkout instructions above, in `CLAUDE.md`, and in inherited docs
-for this KMP repository. Original source guidance and all application/fork
-invariants remain unchanged.
-
-- **Current repository:** **NatuneGroup/Natune** is public. `main` is Stable/default
-  and `dev` is integration. Work in isolated worktrees based on the orchestrator's
-  assigned `integ/*` snapshot. Push assigned feature branches only; do not open PRs,
-  dispatch workflows or push `dev`, `main` or `integ/*` without explicit authorization.
-  Heavy validation remains orchestrator-controlled, with separate exact-head BUILD
-  and TESTS. The active workflow set is in `.github/workflows/`; `readiness.yml` is
-  no longer the only active workflow.
-- **Bootstrap provenance (2026-10-25):** remote `main` and `dev` initially pointed at
-  the independent parentless foundation `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48`.
-  The port history is rooted at the approved NatuneGroup/ArchiveTune `dev` baseline
-  `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70` and retains both histories. Earlier
-  shared-module/desktop checks and the desktop window rendered under Xvfb `:99`
-  are historical evidence, not validation of the current candidate, Android/iOS,
-  signing, upgrades or physical audio. The full KMP port remains incomplete; see
-  [baseline provenance](docs/engineering/kmp-baseline.md).
-- **iOS presentation boundary:** one shared Compose UI owns every screen, the shell chrome,
-  the player and the lyrics on Android, iOS and desktop. SwiftUI is only the iOS app/scene
-  shell, the Compose controller representable and URL/user-activity handling; the one UIKit
-  job is the root controller that reports the window's safe area to Compose, which reserves
-  it once inside the app theme. Do not add a second renderer: no SwiftUI-rendered app content,
-  no `UIHostingController`, no parallel UIKit screens, chrome or lyric surface. The user-authorized R3 WidgetKit extension and CarPlay CPTemplate scene are documented
-  system-only exceptions: they read credential-free shared-host snapshots and dispatch to its
-  existing queue/player. They never render ordinary app content. ActivityKit still requires an
-  explicit, documented system-only exception. Keep the shared clock, one-host lifetime, adaptive layouts and MediaPlayer
-  transport; the `native_ios_interface` preference stays stored but inert. See
-  [iOS shell comparison](docs/engineering/ios-swiftui-parity.md).
-- **Remote foundation constraints (merged 2026-10-25):**
-  - The foundation's `:shared` module is not in `settings.gradle.kts`. Its files stay
-    under `shared/`, and its build script is renamed to `shared/build.gradle.kts.reference`
-    so it is neither a live Gradle module nor a checked build file.
-  - Its `PlaybackSnapshot` clock differs materially from `:shared-domain`: it has a 1 s
-    extrapolation cap, returns null on epoch mismatch, gates on visibility and saturates
-    on overflow. The approved `:shared-domain` contract stays active. Reconciling the two
-    is an orchestrator decision; neither is silently replaced.
-  - Its manual matrix readiness workflow is parked as
-    `.github/inherited-workflows/foundation-readiness.yml`, not activated. Its desktop
-    `nativeDistributions` settings (Deb, Msi, Dmg; package `Natune`, version
-    0.1.0) are not in the port's `desktopApp` build. M8 and M10 decide packaging.
-  - Foundation CI runs (Linux `40152191476` and Windows `40152422286` passed; macOS
-    `40152783751` failed) tested the foundation only. They are not port coverage.
-  - Foundation guidance says "Only genuinely independent secret-free source is eligible
-    for this repository." The inherited port history does not meet that wording. The
-    merge is a policy conflict for the owner and security reviewer, not a waiver.
-  - Foundation rules still in force: no fake clocks, no-op parity or advancing synthetic
-    engine stand-ins; native-host builds are not physical audio, peripheral, account,
-    signing or upgrade QA; dead code is removed only with recorded maintainer sign-off
-    (the 2026-11 DSP pass carries it), and characterization stays distinct from bug
-    fixes; do not suppress Kotlin metadata checks.
-  - Superseded foundation settings: its 768 MiB Kotlin daemon ceiling and daemon-off,
-    one-worker properties give way to the mission's 1536 MiB caps and the command-line
-    `--max-workers=1 --no-daemon` flags. Its product invariants still apply: providers,
-    library, downloads, podcasts, Telegram, DSP, USB, bit-perfect, transitions, social
-    features, Listen Together, scrobbling, backup and Android system integrations. The
-    full foundation text stays in commit `c047a20`.
-  - No source deletion outside a recorded maintainer sign-off (the 2026-11 DSP dead-code
-    pass is one). New Kotlin starts with the package line, without a banner. User-visible
-    strings belong in Compose resource XML.
-- **Branch/CI boundaries:** preserve the adapted active workflows and independent
-  exact-head BUILD and TESTS. Do not import source `main` or change protected gates.
-  Workflows still parked in `.github/inherited-workflows/` remain inactive; this
-  documentation update does not move, enable or dispatch them. Do not newly activate
-  the unused Telethon deployment helper or external notifications. Public artifacts,
-  logs and feed links must not expose credentials, private data or agent session state.
-- Publication and merge approval are not security waivers. The earlier denied import
-  is historical security evidence; any unresolved findings require legitimate
-  human/security disposition. Do not disable/bypass scanning, retry a denied import
-  unchanged through another history/transport/upload path, automatically waive findings
-  or remove required provider features to get past a gate. Authorized branch updates
-  are normal fast-forwards, never force-pushes. Never push this work to the separate
-  NatuneGroup/ArchiveTune repository or change its protected gates.
-- **Pending upgrade goal:** retain historical release signing material through
-  authorized secret configuration using `KEYSTORE`, `KEY_ALIAS`,
-  `KEYSTORE_PASSWORD`, `KEY_PASSWORD`. Presence/material/certificate are unverified;
-  do not read values, generate/rotate a key, recover removed-history keys or restore
-  a committed keystore. No secret access or signing occurs in this update.
-- Same signer alone is insufficient: keep `moe.rukamori.archivetune`, compatible
-  certificate/legitimate lineage, schema/legacy queue/settings/files, and a greater
-  versionCode. Later use one absolute increasing code above a trusted upgrade
-  floor across signed workflows, not fallback 1500, new-root count or per-workflow
-  run numbers. Debug's `.debug` package cannot prove update-over-install. Verify
-  release-shaped installation without uninstall, clearing or downgrade flags.
-- Authorized manual APK download suffices for the requested upgrade test.
-  No new GitHub-token updater, embedded PAT, credential-cloud service or server is
-  automatically authorized. Preserve updater/source/account/provider features and
-  no-downgrade behavior; do not turn planning suggestions into new requirements.
-- The user reports **3,000 free equivalent Blacksmith minutes remaining** and the
-  app installed for all organization repositories. **No paid overage is authorized**;
-  this is not a verified provider-enforced billing cap. No CI is run in this update.
-- Later heavy checks are orchestrator-controlled **coherent batches**, never a
-  Blacksmith run for each small edit. Use high/max CPU, serialized reserved free
-  batches, short whole-job timeouts, headroom and actual-duration reconciliation.
-  Documented maxima: Linux/Windows 32 vCPU, macOS 12 vCPU; equivalent-minute
-  multipliers: Linux x64 16x, Windows 32x, macOS 40x. Security/compute/storage
-  access must not silently enable paid features or claim unavailable checks green.
-- No additional routine questions while the user sleeps. Stop at human-only gates
-  and report gaps rather than inventing success or weakening approved scope.
-- No local full JVM/Gradle builds, lint, tests or unbounded semantic indexing.
-  Do not install hooks, alter global configuration, or mutate the offered VPS.
-- The four submodules are initialized at the unchanged baseline gitlinks in this
-  isolated workspace; this overrides the old uninitialized-checkout note.
-  Use their existing public origins read-only. No child pushes or pin changes.
-- Before implementation edits, trace actual callers, resource/navigation/manifest,
-  variant, generated, reflection/serialization and native entry points as applicable,
-  plus downstream behavior. An import search alone is insufficient.
-- Preserve signing/application identity, protected-file restrictions, separate
-  catalog/streaming accounts, source gates, database/schema/legacy readers, storage
-  formats, all settings and menus, all 17 saved player-style meanings/order/selections,
-  V4 player default, Material 3 Expressive interface default and liquid glass.
-  Licenses and third-party credits stay for everything that still ships; when a vendored
-  third-party component is removed with sign-off, its notice, license text and credit go
-  with it in the same change. KMP-module banners are replaced by the lineage in
-  `docs/CREDITS.md`, and banners outside the KMP modules stay.
-- The approved full feature-preserving shared domain/data/UI and native-adapter
-  port retains the Android host, adds Metrolist as another style and improves
-  Enhanced lyrics. These are future deliverables, not completed setup outcomes.
+- Never commit credentials, tokens, keystores, `local.properties` or agent session
+  state (`.swarm/`, `.opencode/`, `.jcode/`, scratch notes).
+- User-facing strings go in resource XML, never inline.
+- Comments explain why, not what. Keep serialized and public legacy names.
+- Kotlin naming: types and Compose functions PascalCase, functions and properties
+  camelCase, constants UPPER_SNAKE_CASE, packages lowercase.
+- Before editing, trace real callers, resources, navigation, manifest entries,
+  variants and native entry points; an import search is not enough.
+- Never force-push shared branches. Do not push `dev` or `main` directly.
+- Report checks you ran, checks that failed and checks you skipped. Missing build or
+  device evidence stays unverified. Use the
+  [incident runbook](docs/engineering/incident-runbook.md) for playback or release
+  failures.

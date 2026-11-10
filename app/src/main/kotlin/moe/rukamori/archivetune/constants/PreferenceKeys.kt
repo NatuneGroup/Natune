@@ -498,8 +498,8 @@ object DownloadSourceConfig {
      * so the caller uses the YouTube resolver, and pinning a source this path cannot resolve falls
      * back to the order. Without a pin the chain is [fetchChain].
      *
-     * When [playbackEnabled] is given, sources whose playback toggle is off are skipped (user
-     * decision 2026-10-13): the download order stays its own, but a source that playback would
+     * When [playbackEnabled] is given, sources whose playback toggle is off are skipped:
+     * the download order stays its own, but a source that playback would
      * not use is not used for downloads either, and a pin to a disabled source yields to the
      * order the way playback's stale pins do. Pass null to keep the ungated chain (tests,
      * offline exports).
@@ -723,8 +723,8 @@ val AudioQualityKey = stringPreferencesKey("audioQuality")
 
 val NetworkMeteredKey = booleanPreferencesKey("networkMetered")
 // The fork's UI flag has always been this alias (stored under "networkMetered"):
-// Low data mode ON means "treat networks as metered". The opposite defaults the
-// review flagged (UI on vs metered off) are two toggles over one persisted bit,
+// Low data mode ON means "treat networks as metered". The seemingly opposite
+// defaults (UI on vs metered off) are two toggles over one persisted bit,
 // pre-existing fork semantics — not something this port may redefine.
 val LowDataModeKey = NetworkMeteredKey
 // Preload's own data-saver flag. The preload settings repo reads/writes only

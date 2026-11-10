@@ -48,7 +48,7 @@ class AndroidRestoreCoordinatorRecoveryTest {
         ops.files[live] = byteArrayOf(1)
         ops.files[staged] = byteArrayOf(2)
 
-        // Fail during the post-COMMITTED cleanup so recovery observes the state the review found.
+        // Fail during the post-COMMITTED cleanup so recovery sees committed leftovers.
         ops.failDeletes = true
         val transaction = RestoreTransaction(ops, journal, listOf(RestoreTarget(live, staged, backup)))
         try {

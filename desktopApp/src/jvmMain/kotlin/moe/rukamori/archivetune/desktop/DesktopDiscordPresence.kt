@@ -87,7 +87,7 @@ private fun runRegistrationHelper(vararg command: String): Boolean {
 /**
  * The desktop Discord owner: PKCE OAuth against discord.com, a minimal-identify Gateway session and
  * playback-driven presence updates, exactly the contract the shared Discord settings pages expect
- * (AGENTS.md: no user token, no confidential client secret, IDENTIFY with intents=0, presence driven
+ * (no user token, no confidential client secret, IDENTIFY with intents=0, presence driven
  * by playback only — no background gateway retry loops). Every wire payload comes from the shared
  * protocol helpers, so both hosts emit the identical shapes.
  */

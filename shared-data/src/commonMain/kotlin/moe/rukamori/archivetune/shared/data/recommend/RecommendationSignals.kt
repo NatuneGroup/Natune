@@ -45,7 +45,7 @@ data class RecommendationSignalSnapshot(
 interface RecommendationSignals {
     /**
      * [recommendedRefs] is the in-memory set of tail/mix refs the host marked this session. The portable schema has no
-     * origin columns yet (no migration in this change), so the host supplies what it already tracks rather than the
+     * origin columns yet, so the host supplies what it already tracks rather than the
      * port pretending every listen was deliberate.
      */
     suspend fun snapshot(recommendedRefs: Set<ContentRef> = emptySet()): RecommendationSignalSnapshot

@@ -6,7 +6,7 @@
  */
 
 /*
- * Echo-Music stream resolution (2026-09-05 port).
+ * Echo-Music stream resolution.
  *
  * This is a port of Echo-Music's `YTPlayerUtils.playerResponseForPlayback`
  * (https://github.com/EchoMusicApp/Echo-Music, GPL-3.0, "Metrolist Project (C) 2026"),
