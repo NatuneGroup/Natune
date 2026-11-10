@@ -84,16 +84,6 @@ private fun playback(): PlaybackSnapshot? = playerFixture().playback!!.copy(
 private fun nativeState() = PlayerNativeState(songs[0].occurrenceId, 1L, true, true, true, false,
     PlayerRepeat.OFF, true, .75f, false, emptyList())
 
-private inline fun <reified T> fixtureProxy(values: Map<String, Any?> = emptyMap()): T =
-    java.lang.reflect.Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { proxy, method, args ->
-        when (method.name) {
-            "hashCode" -> System.identityHashCode(proxy)
-            "equals" -> proxy === args?.firstOrNull()
-            "toString" -> "Read-only render fixture"
-            else -> if (method.name in values) values[method.name] else error("Unexpected fixture call: ${method.name}")
-        }
-    } as T
-
 private val noActions = ContentActions({}, {}, {}, {})
 
 private class Store : SettingsStore {
@@ -200,15 +190,6 @@ class PlatformRenderTest {
             queuePane = {}, lyricsPane = {}) { m -> Box(m) { content() } }
     }
 
-    @Composable private fun Home() = HomeScreen(HomeSource.YOUTUBE, HomeSource.entries, {}, HomeFeedDesign.Classic,
-        listOf(HomeShelf("quick", "Quick picks", songs), HomeShelf("albums", "Albums for you", albums),
-            HomeShelf("mixes", "Your mixes", playlists)),
-        PagedContentState(initialized = true, items = songs), noActions, art, {}, Modifier.fillMaxSize(), accountName = "Listener")
-    @Composable private fun Search() = SearchScreen("daft punk", SearchScope.Online, {}, {}, {}, {}, {},
-        PagedContentState(initialized = true, items = listOf(playlists[3]) + songs.take(4) + albums.take(2)),
-        noActions, art, Modifier.fillMaxSize())
-    @Composable private fun Library() = LibraryScreen(LibraryFilter.LIBRARY, DefaultLibraryFilterOrder, {},
-        PagedContentState(initialized = true, items = playlists + albums.take(3)), noActions, art, {}, {}, Modifier.fillMaxSize())
     @Composable private fun Album() = AlbumScreen(albums[0].item.ref,
         AlbumPageUi(albums[0].item.copy(subtitle = "Daft Punk"), listOf(playlists[3].item), 2013, false, songs.take(6), true, emptyList()),
         AlbumLoadState.Content, emptyList(), ArtistAlbumNowPlaying(), art, host(), Modifier.fillMaxSize())
@@ -240,70 +221,9 @@ class PlatformRenderTest {
         ListenTogetherUi(RoomConnectionUi.DISCONNECTED, "Listener", "", null, true, null),
         ListenTogetherActions({}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, {}),
         art, { _, m -> Box(m.background(Color.Gray)) }, Modifier.fillMaxSize())
-    @Composable private fun SettingsHome(phone: Boolean) {
-        val store = remember { Store() }
-        CompositionLocalProvider(LocalPhoneSettingsReference provides if (phone) phoneSettingsReference("settings") else null) {
-            SettingsHomePage(remember { SettingsController(store, store.snapshots.value, false) }, {}, {}, modifier = Modifier.fillMaxSize())
-        }
-    }
-    @Composable private fun SettingsRows(route: String, phone: Boolean, rows: List<SettingsRow>) {
-        val store = remember { Store() }
-        CompositionLocalProvider(LocalPhoneSettingsReference provides if (phone) phoneSettingsReference(route) else null) {
-            SettingsPage(rows, store.snapshots.collectAsState().value, remember { SettingsController(store, store.snapshots.value, false) }, onFailure = {})
-        }
-    }
     @Composable private fun DesktopBar() = DesktopPlayerBar(
         songs[0], playback(), nativeState(), art, false, remember { DesktopShellState() }, {}, {}, {}, {}, {},
     )
-    @Composable private fun Player(phone: Boolean, panel: PlayerPanel = PlayerPanel.ARTWORK) {
-        val state = playerFixture().copy(playback = playback(), title = songs[0].item.title,
-            artist = songs[0].item.subtitle, occurrenceIds = songs.map { it.occurrenceId })
-        val slots = PlayerSlots(
-            artwork = { _, m -> art(songs[0].item, m) },
-            canvas = { _, _, m -> Box(m) },
-            customBackground = { _, m -> Box(m) },
-            lyrics = { m -> Lyrics(m) },
-            compactLyrics = { m -> Lyrics(m) },
-            queue = { m -> Queue(m) },
-        )
-        if (!phone && panel == PlayerPanel.ARTWORK) {
-            DesktopExpandedPlayer(state, slots, {}, {}, {}, {}, {}, Modifier.fillMaxSize())
-        } else {
-            BottomSheetPlayer(state, PlayerTestActions().callbacks, PreferenceSnapshot.EMPTY, slots, false,
-                Modifier.fillMaxSize(), remember { PlayerInteractionState().apply { this.panel = panel } })
-        }
-    }
-    @Composable private fun Lyrics(modifier: Modifier) {
-        val lines = listOf("Like the legend of the phoenix", "All ends with beginnings",
-            "What keeps the planet spinning", "The force from the beginning", "We've come too far",
-            "To give up who we are", "So let's raise the bar", "And our cups to the stars")
-            .mapIndexed { i, text -> SyncedLine(i * 8_000L, text, durationMs = 8_000L) }
-        LyricsFullscreenRenderer(lines, "render", remember { MutableStateFlow(playback()) },
-            remember { LyricsRomanizationState(LyricsRomanizationPresentation.off("render")) },
-            LyricsSurfaceSettings(reduceMotion = true), LyricsSurfaceActions({}, {}), modifier)
-    }
-    @Composable private fun Queue(modifier: Modifier) {
-        val scope = rememberCoroutineScope()
-        val player = remember {
-            MusicPlayerController(object : PlaybackPort {
-                override val snapshots = MutableStateFlow(playback())
-                override val failures = MutableSharedFlow<PlaybackFailure>()
-                override fun submit(command: PlaybackCommand) = error("Render fixtures are read-only")
-                override fun close() = Unit
-            }, scope)
-        }
-        DisposableEffect(player) { onDispose { player.close() } }
-        val queue = remember { fixtureProxy<QueueController>(mapOf(
-            "getPlayer" to player,
-            "getState" to MutableStateFlow(QueueState(1, songs, songs[0].occurrenceId, songs.map { it.occurrenceId })),
-        )) }
-        val edits = remember { fixtureProxy<QueueEditingCommands>(mapOf(
-            "getInfiniteQueueLoading" to MutableStateFlow(false),
-            "getQueueSource" to MutableStateFlow<ContentRequest?>(null),
-        )) }
-        PlaybackQueuePanel(queue, edits, remember { Store() }, remember { fixtureProxy<PlaylistImportLibrary>() },
-            modifier, artwork = { entry, m -> art(entry.item, m) })
-    }
 
     private fun both(name: String, title: String, content: @Composable (Boolean) -> Unit) {
         val failures = mutableListOf<Throwable>()
@@ -314,20 +234,20 @@ class PlatformRenderTest {
         if (failures.isNotEmpty()) throw failures.first()
     }
 
-    @Test fun home() = both("home", "Home") { Home() }
-    @Test fun search() = both("search", "Search") { Search() }
-    @Test fun library() = both("library", "Library") { Library() }
+    @Test fun home() = both("home", "Home") { RenderAuditFixture.Content("home", it) }
+    @Test fun search() = both("search", "Search") { RenderAuditFixture.Content("search", it) }
+    @Test fun library() = both("library", "Library") { RenderAuditFixture.Content("library", it) }
     @Test fun album() = both("album", "Album") { Album() }
     @Test fun artist() = both("artist", "Artist") { Artist() }
     @Test fun playlist() = both("playlist", "Playlist") { Playlist() }
     @Test fun history() = both("history", "History") { History() }
     @Test fun statistics() = both("statistics", "Statistics") { Statistics() }
     @Test fun together() = both("listen-together", "Listen together") { Together() }
-    @Test fun settingsHome() = both("settings", "Settings") { SettingsHome(it) }
-    @Test fun settingsLyrics() = both("settings-lyrics", "Lyrics") { SettingsRows("settings/lyrics", it, lyricsSettingsRows {}) }
-    @Test fun settingsPrivacy() = both("settings-privacy", "Privacy") { SettingsRows("settings/privacy", it, privacyInlineSettingsRows()) }
-    @Test fun player() = both("player", "Now playing") { Player(it) }
-    @Test fun lyrics() = both("lyrics", "Lyrics") { Player(it, PlayerPanel.LYRICS) }
-    @Test fun queue() = both("queue", "Queue") { Player(it, PlayerPanel.QUEUE) }
-    @Test fun miniPlayer() = both("mini-player", "Home") { Home() }
+    @Test fun settingsHome() = both("settings", "Settings") { RenderAuditFixture.Content("settings", it) }
+    @Test fun settingsLyrics() = both("settings-lyrics", "Lyrics") { RenderAuditFixture.Content("settings-lyrics", it) }
+    @Test fun settingsPrivacy() = both("settings-privacy", "Privacy") { RenderAuditFixture.Content("settings-privacy", it) }
+    @Test fun player() = both("player", "Now playing") { RenderAuditFixture.Content("player", it) }
+    @Test fun lyrics() = both("lyrics", "Lyrics") { RenderAuditFixture.Content("lyrics", it) }
+    @Test fun queue() = both("queue", "Queue") { RenderAuditFixture.Content("queue", it) }
+    @Test fun miniPlayer() = both("mini-player", "Home") { RenderAuditFixture.Content("mini-player", it) }
 }

@@ -7,37 +7,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.rukamori.archivetune.shared.domain.playback.*
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportLibrary
 import moe.rukamori.archivetune.shared.domain.lyrics.SyncedLine
 import moe.rukamori.archivetune.shared.ui.lyrics.*
 import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
-import moe.rukamori.archivetune.shared.ui.SafeAreaPadding
-import moe.rukamori.archivetune.shared.ui.LocalHostSafeArea
-import moe.rukamori.archivetune.shared.ui.safeAreaPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveTuneShell
 import moe.rukamori.archivetune.shared.ui.navigation.ShellTab
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.MutableStateFlow
-import moe.rukamori.archivetune.shared.domain.library.*
+import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
+import moe.rukamori.archivetune.shared.domain.library.DefaultLibraryFilterOrder
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.desktop.*
 import moe.rukamori.archivetune.shared.ui.home.*
-import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
-import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.navigation.DesktopSearchFocus
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
-import moe.rukamori.archivetune.shared.ui.screens.artistalbum.*
 import moe.rukamori.archivetune.shared.ui.settings.*
-import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
-
-
 
 private val palette = listOf(0xff3f51b5, 0xffe91e63, 0xff009688, 0xffff9800, 0xff673ab7, 0xff795548, 0xff2196f3, 0xff8bc34a)
 private fun swatch(key: String) = Color(palette[(key.hashCode() and 0x7fffffff) % palette.size])

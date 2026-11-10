@@ -378,6 +378,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          submodules: true
           persist-credentials: false
       - uses: maxim-lobanov/setup-xcode@v1
         with:
