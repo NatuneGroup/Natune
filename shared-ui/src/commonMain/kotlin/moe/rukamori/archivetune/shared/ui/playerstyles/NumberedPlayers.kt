@@ -173,7 +173,9 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
 private fun NumberedControls(c: PlayerRenderContext, textColor: Color, modifier: Modifier) {
     val (buttonBg, buttonIcon) = numberedButtonColors(c, textColor)
     Column(modifier.verticalScroll(rememberScrollState())) {
-        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+        val titleInset = if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+            c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) 4.dp else 0.dp
+        Row(Modifier.fillMaxWidth().padding(horizontal = titleInset), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 TitleLine(c, color = textColor, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))

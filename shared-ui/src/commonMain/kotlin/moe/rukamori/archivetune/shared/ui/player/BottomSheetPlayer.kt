@@ -68,6 +68,8 @@ fun BottomSheetPlayer(
     interaction: PlayerInteractionState = remember { PlayerInteractionState() },
 ) {
     val presentation=preferences.playerPreferences()
+    val phonePresentation=moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+    val horizontalPadding=if(phonePresentation && presentation.style==PlayerDesignStyle.V4) 32.dp else 20.dp
     val artworkPager=rememberPlayerArtworkPager(state,actions)
     LaunchedEffect(state.playback?.occurrenceId,state.playback?.playbackGeneration,state.playback?.discontinuityGeneration) {
         interaction.reconcile(state.playback)
@@ -143,7 +145,7 @@ fun BottomSheetPlayer(
                             }
                         }
                     } else {
-                        Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=horizontalPadding,vertical=12.dp)) { PlayerStyleDispatch(c) }
                         if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
                             SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
                         }
