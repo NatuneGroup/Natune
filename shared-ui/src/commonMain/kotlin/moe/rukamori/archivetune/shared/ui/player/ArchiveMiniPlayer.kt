@@ -158,6 +158,14 @@ internal fun ArchiveMiniPlayer(
                             )
                         }
                     }
+                    if (phone && !compact) PlayerIcon(
+                        symbol = PlayerSymbol.PREVIOUS,
+                        label = stringResource(Res.string.m5_previous),
+                        onClick = { onAction(PlayerAction.PREVIOUS) },
+                        enabled = matching && nativeState.canPrevious,
+                        size = 36.dp, iconSize = 20.dp,
+                        modifier = Modifier.testTag("mini-player-previous"),
+                    )
                     Box(contentAlignment = Alignment.Center) {
                         PlayerIcon(
                             symbol = if (playback?.isEnded == true) PlayerSymbol.REPLAY

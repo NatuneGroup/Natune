@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -36,6 +38,31 @@ import kotlin.test.assertTrue
 class ArchiveMiniPlayerTest {
     private val item = ContentItem(ContentRef("youtube", ContentKind.SONG, "track"), "Test song", "Test artist")
     private val occurrence = ContentOccurrence("track@1", item)
+
+    @Test
+    fun thePhonePreviousButtonUsesTheExistingActionWithoutExpanding() = runComposeUiTest {
+        val actions = mutableListOf<PlayerAction>()
+        var expanded = 0
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
+                    Box(Modifier.requiredSize(393.dp, 80.dp)) {
+                        ArchiveMiniPlayer(
+                            current = occurrence, playback = playerFixture().playback,
+                            nativeState = PlayerNativeState("track@1", 1, true, true, true, false,
+                                PlayerRepeat.OFF, true, .75f, false, emptyList()),
+                            artwork = { _, m -> Box(m.background(Color.Blue)) }, motion = false,
+                            onExpand = { expanded++ }, onOpenPanel = {}, onPlayPause = {}, onSeekTo = {},
+                            onAction = { actions += it }, onVolumeChange = {},
+                        )
+                    }
+                }
+            }
+        }
+        onNodeWithTag("mini-player-previous").assertIsDisplayed().performClick()
+        assertEquals(listOf(PlayerAction.PREVIOUS), actions)
+        assertEquals(0, expanded)
+    }
 
     @Test
     fun splitViewportAndAdaptiveBreakpointsCoverFoldableAndDesktop() {
