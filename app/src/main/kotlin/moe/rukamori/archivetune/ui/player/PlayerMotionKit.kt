@@ -11,8 +11,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.animation.core.LinearEasing
@@ -22,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -114,10 +113,10 @@ fun StyledPlaybackSlider(sliderStyle: SliderStyle, value: Float, valueRange: Clo
 internal fun PlayerSeekThumb(source: MutableInteractionSource, color: Color) {
     val dragging by source.collectIsDraggedAsState()
     val motion = !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f
-    val scale = animateFloatAsState(if (dragging) 1.4f else 1f,
+    val scale = animateFloatAsState(if (dragging) 1.4f else 0f,
         if (motion) PlayerMotionSpecs.response() else snap(), label = "playerSeekThumb")
-    Box(Modifier.size(16.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }
-        .background(color, CircleShape))
+    // A zero-size layout preserves the thumb-free styles' full-width track during dragging too.
+    Box(Modifier.size(0.dp).drawBehind { drawCircle(color, radius = 8.dp.toPx() * scale.value.coerceAtLeast(0f)) })
 }
 
 @Composable
