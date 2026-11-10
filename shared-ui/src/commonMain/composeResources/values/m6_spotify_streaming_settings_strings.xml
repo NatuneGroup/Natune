@@ -8,10 +8,6 @@
     <string name="m6_spotify_stream_sign_in">Sign in with a separate account</string>
     <string name="m6_spotify_stream_sign_in_desc">Opens a private sign-in that does not share cookies with the Spotify catalog account. Used by the Unofficial engine only.</string>
     <string name="m6_spotify_stream_verifying">Checking the streaming account…</string>
-    <string name="m6_spotify_stream_enabled">Use Spotify streaming</string>
-    <string name="m6_spotify_stream_enabled_desc">Try Spotify for a track before falling through to the sources below it.</string>
-    <string name="m6_spotify_stream_needs_account">Sign in with a separate streaming account first.</string>
-    <string name="m6_spotify_stream_needs_library">Librespot needs the Spotify library account signed in.</string>
     <string name="m6_spotify_stream_engine">Streaming engine</string>
     <string name="m6_spotify_stream_engine_unofficial">Unofficial — separate account</string>
     <string name="m6_spotify_stream_engine_unofficial_desc">Web-player or desktop resolve method on the streaming account.</string>
