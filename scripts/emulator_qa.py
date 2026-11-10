@@ -158,6 +158,11 @@ def install_and_launch() -> None:
     adb("shell", "svc", "wifi", "disable", check=True)
     adb("shell", "svc", "data", "disable", check=True)
     print(adb("install", "-r", str(apks[0])).stdout.strip())
+    (OUT / "device.txt").write_text("\n".join(
+        adb("shell", *command).stdout.strip() for command in [
+            ("wm", "size"), ("wm", "density"), ("getprop", "ro.build.version.sdk"),
+        ]
+    ) + "\n")
     adb("shell", "monkey", "-p", PKG, "-c", "android.intent.category.LAUNCHER", "1")
     time.sleep(15)
 
@@ -257,16 +262,31 @@ def capture_local_player() -> None:
         wav.writeframes(b"\0\0" * 8000 * 240)
     target = "/sdcard/Music/parity-fixture.wav"
     adb("shell", "mkdir", "-p", "/sdcard/Music")
-    adb("push", str(fixture), target, check=True)
+    for name in ["parity-up-next-1.wav", "parity-up-next-2.wav", "parity-fixture.wav"]:
+        path = f"/sdcard/Music/{name}"
+        adb("push", str(fixture), path, check=True)
+        adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", f"file://{path}")
     adb("shell", "pm", "grant", PKG, "android.permission.READ_MEDIA_AUDIO")
+    # The app's local scan creates a real finite queue with upcoming entries. If the
+    # scan UI cannot be reached, the single-file intent still supplies player evidence.
+    open_route("local_songs", "parity-local-files")
+    scanned = tap_text("^settings$", "parity-local-scan-options") and tap_text("^scan device$", "parity-local-scan-start", scrolls=4)
+    if scanned:
+        time.sleep(8)
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        time.sleep(2)
+        scanned = tap_text("^parity-", "parity-play-local-queue")
+    (OUT / "parity-fixture-state.txt").write_text(
+        "local scan queue selected\n" if scanned else "single-file fallback; upcoming tracks not verified\n")
     open_route("home", "player-home")
-    adb("shell", "am", "start", "-n", f"{PKG}/{MAIN_ACTIVITY}",
-        "-a", "android.intent.action.VIEW", "-d", f"file://{target}", "-t", "audio/wav")
+    if not scanned:
+        adb("shell", "am", "start", "-n", f"{PKG}/{MAIN_ACTIVITY}",
+            "-a", "android.intent.action.VIEW", "-d", f"file://{target}", "-t", "audio/wav")
     time.sleep(8)
     adb("shell", "input", "keyevent", "KEYCODE_MEDIA_PAUSE")
     time.sleep(2)
     shot("parity-mini-player")
-    if not tap_text("parity.fixture", "expand-local-player"):
+    if not tap_text("parity-(fixture|up-next)", "expand-local-player"):
         fail("local player: fixture title not found; expanded player not captured")
         return
     shot("parity-player")
