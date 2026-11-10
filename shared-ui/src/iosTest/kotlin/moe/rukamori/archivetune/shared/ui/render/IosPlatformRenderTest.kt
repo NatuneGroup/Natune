@@ -31,6 +31,7 @@ import platform.posix.fopen
 import platform.posix.fwrite
 import platform.posix.getenv
 import kotlin.test.Test
+import kotlin.time.Duration.Companion.minutes
 
 /** Native iOS Skia images; injected insets do not verify a UIKit window or its gestures. */
 @OptIn(ExperimentalTestApi::class, ExperimentalForeignApi::class)
@@ -38,7 +39,9 @@ class IosPlatformRenderTest {
     @Test fun capturePhoneScreens() {
         val directory = getenv("NATUNE_RENDER_DIR")?.toKString() ?: return
         for (name in AuditScreens) {
-            runSkikoComposeUiTest(size = Size(1179f, 2556f), density = Density(3f)) {
+            println("NATIVE-RENDER $name")
+            runSkikoComposeUiTest(size = Size(1179f, 2556f), density = Density(3f), testTimeout = 2.minutes) {
+                mainClock.autoAdvance = false
                 setContent {
                     ArchiveTuneTheme(darkTheme = true, disableAnimations = true) {
                         val insets = SafeAreaPadding(top = 59.0, bottom = 34.0)
@@ -62,6 +65,7 @@ class IosPlatformRenderTest {
                     val data = checkNotNull(image.encodeToData(EncodedImageFormat.PNG))
                     try { writePng("$directory/$name.png", data.bytes) } finally { data.close() }
                 } finally { image.close() }
+                println("NATIVE-SAVED $name")
             }
         }
     }
