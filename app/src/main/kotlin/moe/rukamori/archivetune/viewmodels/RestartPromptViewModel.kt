@@ -62,8 +62,8 @@ class RestartPromptViewModel @Inject constructor(
                 edits.withLock {
                     val result = preferences.editAndAwait(change)
                     policy.committed(
-                        restartSettingValues(result.before, BitPerfectUsbOutput.isPlatformSupported),
-                        restartSettingValues(result.after, BitPerfectUsbOutput.isPlatformSupported),
+                        restartSettingValues(result.before, BitPerfectUsbOutput.isSupported),
+                        restartSettingValues(result.after, BitPerfectUsbOutput.isSupported),
                         runningAppearance + mapOf(
                             // These describe the actual service's fixed sinks, not app-start preferences.
                             RestartReason.USB_OUTPUT to "${BitPerfectUsbOutput.sinkActive}|${UsbExclusiveAudioOutputProvider.installed}",

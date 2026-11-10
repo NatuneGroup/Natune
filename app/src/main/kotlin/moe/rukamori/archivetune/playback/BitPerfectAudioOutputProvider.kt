@@ -16,7 +16,6 @@ import androidx.media3.exoplayer.audio.ForwardingAudioOutput
 import androidx.media3.exoplayer.audio.ForwardingAudioOutputProvider
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.roundToLong
 
 /**
  * Wraps the stock AudioTrack provider so each AudioTrack can be negotiated for bit-perfect USB
@@ -87,6 +86,9 @@ internal class ConvertingAudioOutput(
     private val inputEncoding: Int,
     private val outputEncoding: Int,
     channelCount: Int,
+    private val validBits: Int = BitPerfectAudioOutputProvider.bytesPerSample(outputEncoding) * 8,
+    private val onInexact: () -> Unit = {},
+    private val muted: () -> Boolean = { false },
 ) : ForwardingAudioOutput(output) {
     private val inner = output
     private val inFrameSize = BitPerfectAudioOutputProvider.bytesPerSample(inputEncoding) * channelCount
@@ -108,7 +110,7 @@ internal class ConvertingAudioOutput(
         }
         val out =
             pending ?: run {
-                val frames = buffer.remaining() / inFrameSize
+                val frames = minOf(buffer.remaining() / inFrameSize, 4096)
                 if (frames == 0) return true
                 val converted = convert(buffer, frames)
                 pending = converted
@@ -116,6 +118,7 @@ internal class ConvertingAudioOutput(
                 pendingSourceStart = buffer.position()
                 converted
             }
+        if (muted()) for (index in out.position() until out.limit()) out.put(index, 0)
         inner.write(out, encodedAccessUnitCount, presentationTimeUs)
         val framesDone = out.position() / outFrameSize
         buffer.position(pendingSourceStart + framesDone * inFrameSize)
@@ -153,51 +156,16 @@ internal class ConvertingAudioOutput(
         val input = source.duplicate().order(ByteOrder.nativeOrder())
         val sampleCount = frames * (inFrameSize / BitPerfectAudioOutputProvider.bytesPerSample(inputEncoding))
         repeat(sampleCount) {
-            writeSample(out, readSample(input))
+            val before = input.position()
+            val sample = PcmSamples.read(input, BitPerfectAudioOutputProvider.bytesPerSample(inputEncoding) * 8,
+                inputEncoding == C.ENCODING_PCM_FLOAT, validBits)
+            if (inputEncoding == C.ENCODING_PCM_FLOAT && input.getFloat(before) != (sample.toDouble() / 2147483648.0).toFloat()) onInexact()
+            PcmSamples.write(out, sample, BitPerfectAudioOutputProvider.bytesPerSample(outputEncoding) * 8,
+                outputEncoding == C.ENCODING_PCM_FLOAT)
         }
         out.flip()
         out.limit(needed)
         return out
     }
 
-    /** Reads one sample as a left-justified signed 32-bit value. */
-    private fun readSample(input: ByteBuffer): Int =
-        when (inputEncoding) {
-            C.ENCODING_PCM_16BIT -> input.short.toInt() shl 16
-            C.ENCODING_PCM_24BIT -> {
-                val b0 = input.get().toInt() and 0xFF
-                val b1 = input.get().toInt() and 0xFF
-                val b2 = input.get().toInt()
-                ((b2 shl 16) or (b1 shl 8) or b0) shl 8
-            }
-            C.ENCODING_PCM_32BIT -> input.int
-            else -> floatToInt32(input.float)
-        }
-
-    private fun writeSample(
-        out: ByteBuffer,
-        sample: Int,
-    ) {
-        when (outputEncoding) {
-            C.ENCODING_PCM_16BIT -> out.putShort((sample shr 16).toShort())
-            C.ENCODING_PCM_24BIT -> {
-                val v = sample shr 8
-                out.put((v and 0xFF).toByte())
-                out.put(((v shr 8) and 0xFF).toByte())
-                out.put(((v shr 16) and 0xFF).toByte())
-            }
-            C.ENCODING_PCM_32BIT -> out.putInt(sample)
-            else -> out.putFloat((sample.toDouble() / FULL_SCALE).toFloat())
-        }
-    }
-
-    private fun floatToInt32(value: Float): Int {
-        if (value.isNaN()) return 0
-        val scaled = (value.toDouble() * FULL_SCALE).roundToLong()
-        return scaled.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
-    }
-
-    private companion object {
-        const val FULL_SCALE = 2147483648.0
-    }
 }

@@ -720,8 +720,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             title = { Text(stringResource(R.string.bit_perfect_usb_title)) },
                             description = bitPerfectDescription,
                             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = bitPerfectUsb && BitPerfectUsbOutput.isPlatformSupported,
-                            isEnabled = BitPerfectUsbOutput.isPlatformSupported,
+                            checked = bitPerfectUsb && BitPerfectUsbOutput.isSupported,
+                            isEnabled = BitPerfectUsbOutput.isSupported,
                             onCheckedChange = { enabled ->
                                 setPlaybackOutputPreference(
                                     restartPrompt, prefs, bitPerfectContext, BitPerfectUsbOutputKey, enabled,
