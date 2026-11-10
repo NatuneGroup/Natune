@@ -124,6 +124,10 @@ internal object BackupPreferenceSelection {
     fun isAccountOnlyNoOp(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
         account && !settings && kind == SettingsKind.NONE
 
+    /** A stage with no database, settings or fonts must not commit: commit cleanup drops the saved queue. */
+    fun changesLiveData(library: Boolean, kind: SettingsKind, fontCount: Int): Boolean =
+        library || kind != SettingsKind.NONE || fontCount > 0
+
     fun isConsistent(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
         when (kind) {
             SettingsKind.NONE -> !settings

@@ -72,6 +72,14 @@ class BackupPreferenceSelectionTest {
     }
 
     @Test
+    fun aNoOpStageNeverCommitsSoTheSavedQueueSurvives() {
+        assertFalse(BackupPreferenceSelection.changesLiveData(library = false, kind = SettingsKind.NONE, fontCount = 0))
+        assertTrue(BackupPreferenceSelection.changesLiveData(library = true, kind = SettingsKind.NONE, fontCount = 0))
+        assertTrue(BackupPreferenceSelection.changesLiveData(library = false, kind = SettingsKind.XML, fontCount = 0))
+        assertTrue(BackupPreferenceSelection.changesLiveData(library = false, kind = SettingsKind.NONE, fontCount = 1))
+    }
+
+    @Test
     fun readyMarkerConsistencyAcceptsAccountOnlyMerges() {
         assertTrue(BackupPreferenceSelection.isConsistent(settings = false, account = true, kind = SettingsKind.XML))
         // An account-only backup made before any sign-in stages no preferences at all.

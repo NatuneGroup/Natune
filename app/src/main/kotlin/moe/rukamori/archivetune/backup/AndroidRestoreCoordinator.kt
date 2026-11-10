@@ -433,6 +433,10 @@ internal object AndroidRestoreCoordinator {
         ops: RestoreFileOps,
         ready: ReadyMarker,
     ) {
+        if (!BackupPreferenceSelection.changesLiveData(ready.library, ready.settingsKind, ready.fontEntries.size)) {
+            cleanupSafely(context, ready)
+            return
+        }
         val root = restoreRoot(context)
         val journal = File(root, JOURNAL_FILE)
         val targets = try {
