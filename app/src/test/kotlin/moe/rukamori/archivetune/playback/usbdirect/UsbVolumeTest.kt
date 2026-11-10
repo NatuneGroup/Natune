@@ -84,4 +84,19 @@ class UsbVolumeTest {
         }
     }
 
+    @Test fun initialVolumePreservesEachChannelsOwnCeiling() {
+        val channels = mapOf(1 to Control(current = -20 * 256), 2 to Control(current = -70 * 256))
+        val control = UsbControl { input, request, value, index, data ->
+            channels.getValue(value and 255).transfer(input, request, value, index, data)
+        }
+        val volume = UsbVolume.Volume.open(control, UsbVolume.Feature(2, 0, false, listOf(1, 2)))
+        volume.setInitial(control, UsbVolume.decibels(volume.snapshot, 1f))
+        assertEquals(-20 * 256, channels.getValue(1).current)
+        assertEquals(-70 * 256, channels.getValue(2).current)
+        volume.set(control, 0.0)
+        assertEquals(0, channels.getValue(2).current)
+        volume.restore(control)
+        assertEquals(-70 * 256, channels.getValue(2).current)
+    }
+
 }
