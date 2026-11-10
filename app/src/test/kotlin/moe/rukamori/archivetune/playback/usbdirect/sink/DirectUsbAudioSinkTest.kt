@@ -25,12 +25,19 @@ class DirectUsbAudioSinkTest {
         var normalConfigurations = 0
         var playedUs = 0L
         var failWrite = false
+        var failPosition = false
+        var failConfiguration = false
+        var reportedError: Exception? = null
         var pendingFrames = true
         val format = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_RAW)
             .setSampleRate(48000).setChannelCount(2).setPcmEncoding(C.ENCODING_PCM_16BIT).build()
         val normal = Proxy.newProxyInstance(AudioSink::class.java.classLoader, arrayOf(AudioSink::class.java)) { _, method, args ->
             when (method.name) {
-                "configure" -> { normalConfigurations++; null }
+                "configure" -> {
+                    normalConfigurations++
+                    if (failConfiguration) throw AudioSink.ConfigurationException("unsupported fallback", args!![0] as Format)
+                    null
+                }
                 "hasPendingData", "getSkipSilenceEnabled" -> false
                 "isEnded", "supportsFormat" -> true
                 "getFormatSupport" -> AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
@@ -51,13 +58,20 @@ class DirectUsbAudioSinkTest {
                 "release" -> { releases++; null }
                 "flush" -> { flushes++; playedUs = 0L; null }
                 "hasPendingData" -> pendingFrames
-                "getPositionUs" -> playedUs
+                "getPositionUs" -> { if (failPosition) throw AudioOutput.WriteException(-5, true); playedUs }
                 "getSampleRate" -> 48000
                 "getBufferSizeInFrames" -> 1024L
                 else -> null
             }
         } as AudioOutput
         val sink = DirectUsbAudioSink(normal, { true }, { _, _, _ -> opens++; output })
+        init {
+            val listener = Proxy.newProxyInstance(AudioSink.Listener::class.java.classLoader, arrayOf(AudioSink.Listener::class.java)) { _, method, args ->
+                if (method.name == "onAudioSinkError") reportedError = args!![0] as Exception
+                null
+            } as AudioSink.Listener
+            sink.setListener(listener)
+        }
         fun write(timeUs: Long = 0L): Boolean = sink.handleBuffer(ByteBuffer.allocateDirect(4), timeUs, 1)
         fun open() { sink.configure(format, 0, null); assertTrue(write()) }
     }
@@ -123,6 +137,46 @@ class DirectUsbAudioSinkTest {
         assertEquals(0L, h.playedUs)
         assertTrue(h.sink.isEnded)
         assertEquals(1, h.releases)
+    }
+
+    @Test fun aFailedDirectWriteFallsBackAndRetriesTheSameBuffer() {
+        val h = Harness()
+        h.open()
+        h.failWrite = true
+        val buffer = ByteBuffer.allocateDirect(4)
+        assertFalse(h.sink.handleBuffer(buffer, 20L, 1))
+        assertEquals(0, buffer.position())
+        assertEquals(1, h.releases)
+        assertEquals(1, h.normalConfigurations)
+        assertTrue(h.sink.handleBuffer(buffer, 20L, 1))
+        assertEquals(4, buffer.position())
+        assertEquals(1, h.opens)
+    }
+
+    @Test fun failedFallbackConfigurationIsReportedAsASinkWriteError() {
+        val h = Harness()
+        h.open()
+        h.failWrite = true
+        h.failConfiguration = true
+        val error = runCatching { h.write() }.exceptionOrNull()
+        assertTrue(error is AudioSink.WriteException)
+        assertTrue(error!!.cause is AudioSink.ConfigurationException)
+        assertSame(error, h.reportedError)
+        assertFalse(h.sink.isEnded)
+    }
+
+    @Test fun pollingDefersFailedFallbackToTheNextWriteOrDrain() {
+        for (pollPosition in listOf(false, true)) {
+            val h = Harness()
+            h.open()
+            h.sink.playToEndOfStream()
+            h.failPosition = true
+            h.failConfiguration = true
+            if (pollPosition) h.sink.getCurrentPositionUs(false) else assertFalse(h.sink.isEnded)
+            assertTrue(h.reportedError is AudioSink.WriteException)
+            assertTrue(runCatching { h.write() }.exceptionOrNull() is AudioSink.WriteException)
+            assertTrue(runCatching { h.sink.playToEndOfStream() }.exceptionOrNull() is AudioSink.WriteException)
+        }
     }
 
 }

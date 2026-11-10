@@ -55,6 +55,7 @@ internal class DirectUsbAudioSink(
     private var advancingReported = false
     private var forceFallback = false
     private var lastPositionUs = Long.MIN_VALUE
+    private var sinkError: AudioSink.WriteException? = null
 
     private fun wantsDirect(format: Format): Boolean = !forceFallback &&
         requestedParameters == PlaybackParameters.DEFAULT && !skipSilence &&
@@ -67,6 +68,7 @@ internal class DirectUsbAudioSink(
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
         forceFallback = false
+        sinkError = null
         pending = Config(inputFormat, specifiedBufferSize, outputChannels)
         ended = false
         endOfStreamRequested = false
@@ -97,10 +99,10 @@ internal class DirectUsbAudioSink(
         if (canUseDirect(config)) {
             output = createOutput(format, attributes, sessionId)
         }
-        if (output == null) normal.configure(config.format, config.bufferSize, config.outputChannels)
+        if (output == null) configureNormal(config)
         resetTimeline()
         pending = null
-        if (playing) { output?.play() ?: normal.play() }
+        if (playing && sinkError == null) { output?.play() ?: normal.play() }
         output?.setVolume(volume)
         return true
     }
@@ -112,8 +114,10 @@ internal class DirectUsbAudioSink(
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        sinkError?.let { throw it }
         try {
             if (!selectOutput()) return false
+            sinkError?.let { throw it }
             val direct = output ?: return normal.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
             val format = checkNotNull(configured).format
             val frameBytes = Util.getPcmFrameSize(format.pcmEncoding, format.channelCount)
@@ -134,6 +138,7 @@ internal class DirectUsbAudioSink(
             return complete
         } catch (error: AudioOutput.WriteException) {
             fallback()
+            sinkError?.let { throw it }
             return false
         }
     }
@@ -149,29 +154,44 @@ internal class DirectUsbAudioSink(
         closeOutput()
         forceFallback = true
         configured = pending ?: configured
-        configured?.let { normal.configure(it.format, it.bufferSize, it.outputChannels) }
+        configured?.let { configureNormal(it) }
         pending = null
+        if (sinkError != null) return
         normal.setPlaybackParameters(requestedParameters)
         normal.setSkipSilenceEnabled(skipSilence)
         if (playing) normal.play()
         listener?.onPositionDiscontinuity()
     }
 
+    private fun configureNormal(config: Config) {
+        try {
+            normal.configure(config.format, config.bufferSize, config.outputChannels)
+        } catch (error: AudioSink.ConfigurationException) {
+            val failure = AudioSink.WriteException(-1002, config.format, false)
+            failure.initCause(error)
+            sinkError = failure
+            listener?.onAudioSinkError(failure)
+        }
+    }
+
     override fun playToEndOfStream() {
+        sinkError?.let { throw it }
         try {
             if (!selectOutput()) return
+            sinkError?.let { throw it }
             endOfStreamRequested = true
             if (output == null) { normal.playToEndOfStream(); return }
             if (!directPending()) { closeOutput(); ended = true }
-        } catch (error: AudioOutput.WriteException) { fallback() }
+        } catch (error: AudioOutput.WriteException) { fallback(); sinkError?.let { throw it } }
     }
-    override fun hasPendingData(): Boolean = pending != null || try {
+    override fun hasPendingData(): Boolean = sinkError != null || pending != null || try {
         if (output != null) directPending() else !ended && normal.hasPendingData()
     } catch (error: AudioOutput.WriteException) { fallback(); false }
-    override fun isEnded(): Boolean = pending == null && (ended || try {
+    override fun isEnded(): Boolean = sinkError == null && pending == null && (ended || try {
         if (output != null) endOfStreamRequested && !directPending() else normal.isEnded
     } catch (error: AudioOutput.WriteException) { fallback(); false })
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+        if (sinkError != null) return lastPositionUs
         val direct = output ?: return if (ended) lastPositionUs else normal.getCurrentPositionUs(sourceEnded)
         if (startTimeUs == C.TIME_UNSET) return Long.MIN_VALUE
         return try {
@@ -204,7 +224,7 @@ internal class DirectUsbAudioSink(
         resetTimeline()
     }
     override fun reset() {
-        closeOutput(); normal.reset(); pending = null; configured = null; ended = false; resetTimeline()
+        closeOutput(); normal.reset(); pending = null; configured = null; ended = false; sinkError = null; resetTimeline()
     }
     override fun release() { reset(); normal.release() }
     override fun handleDiscontinuity() { discontinuity = true; if (output == null) normal.handleDiscontinuity() }
