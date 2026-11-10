@@ -136,7 +136,8 @@ tasks.withType<KotlinNativeSimulatorTest>().configureEach {
         providers.environmentVariable("NATUNE_SIMULATOR_DEVICE_ID").orNull?.let { device.set(it) }
         val directory = providers.gradleProperty("natune.renderDir")
             .getOrElse(rootProject.layout.projectDirectory.dir("outputs/ui-renders/ios-native").asFile.absolutePath)
-        environment("NATUNE_RENDER_DIR", directory)
+        // simctl forwards only SIMCTL_CHILD_* variables into its spawned process.
+        environment("SIMCTL_CHILD_NATUNE_RENDER_DIR", directory)
         outputs.upToDateWhen { false }
     } else {
         filter.excludeTestsMatching("*IosPlatformRenderTest*")
