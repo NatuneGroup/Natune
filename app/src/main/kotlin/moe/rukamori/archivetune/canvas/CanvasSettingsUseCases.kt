@@ -74,14 +74,7 @@ class CanvasSettingsUseCases @Inject constructor(
     suspend fun setSource(source: CanvasSource) = repository.setSource(source)
     suspend fun setWifiOnly(wifiOnly: Boolean) = repository.setWifiOnly(wifiOnly)
 
-    suspend fun setCacheLimit(limitMb: Int) {
-        require(limitMb in CACHE_LIMITS)
-        repository.setCacheLimit(limitMb)
-        repository.applyCacheLimit(limitMb)
-    }
-
     suspend fun cacheBytes(): Long = repository.cacheBytes()
-    suspend fun clearCache() = repository.clearCache()
 
     fun pendingHealth(policy: CanvasPolicy, spotifyConnected: Boolean): CanvasHealthStatus = CanvasHealthStatus(
         betterLyrics = healthAvailability(policy, CanvasSource.BETTER_LYRICS),
@@ -124,9 +117,5 @@ class CanvasSettingsUseCases @Inject constructor(
         policy.configuration.wifiOnly && !policy.connectivity.wifi -> CanvasHealth.WIFI_REQUIRED
         policy.configuration.lowDataMode && policy.connectivity.metered -> CanvasHealth.LOW_DATA_MODE
         else -> CanvasHealth.CHECKING
-    }
-
-    companion object {
-        val CACHE_LIMITS: List<Int> = listOf(0, 64, 128, 256, 512, 1024, 2048, 4096, 8192, -1)
     }
 }

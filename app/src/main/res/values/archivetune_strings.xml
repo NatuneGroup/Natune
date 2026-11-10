@@ -644,6 +644,8 @@
     <string name="canvas_cache">Canvas Cache</string>
     <string name="clear_canvas_cache">Clear canvas cache</string>
     <string name="clear_canvas_cache_dialog">Are you sure you want to clear all cached canvas?</string>
+    <string name="canvas_cache_settings">Cache size and clearing</string>
+    <string name="canvas_cache_settings_desc">The cache limit and the clear action live with the other caches in Storage.</string>
     <string name="disable">Disable</string>
     <string name="not_logged_in_youtube">Not logged in to YouTube</string>
     <string name="default_links">Open supported links</string>
