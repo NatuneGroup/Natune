@@ -11,6 +11,7 @@ package moe.rukamori.archivetune.utils
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.*
+import moe.rukamori.archivetune.shared.domain.settings.bitPerfectOutputSupported
 
 enum class RestartReason { UI_SCALE, FONT, TABLET_MODE, GLASS, NAVIGATION_GLASS, USB_OUTPUT, STORAGE, REGION }
 
@@ -21,9 +22,13 @@ internal fun MutablePreferences.setCustomFont(uri: String, name: String) {
 }
 
 /** Effective values, not raw-key existence: writing a default or migrating a font is not an edit. */
-fun restartSettingValues(preferences: Preferences, bitPerfectSupported: Boolean): Map<RestartReason, String> {
+fun restartSettingValues(
+    preferences: Preferences,
+    bitPerfectSupported: Boolean,
+    directUsbDriverAvailable: Boolean = false,
+): Map<RestartReason, String> {
     val settings = RestartScopedSettings.from(preferences)
-    val bitPerfect = bitPerfectSupported &&
+    val bitPerfect = bitPerfectOutputSupported(bitPerfectSupported, preferences[DirectUsbDriverKey] == true, directUsbDriverAvailable) &&
         preferences[BitPerfectUsbOutputKey] == true &&
         preferences[CrossfadeEnabledKey] != true && preferences[AutomixEnabledKey] != true
     val direct = bitPerfect && preferences[DirectUsbDriverKey] == true

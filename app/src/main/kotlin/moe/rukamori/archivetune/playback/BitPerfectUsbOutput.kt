@@ -107,7 +107,10 @@ object BitPerfectUsbOutput {
 
     fun configureDirect(value: Boolean) { directEnabled = value }
 
-    val isSupported: Boolean get() = isPlatformSupported || (directEnabled && UsbDirectNative.available)
+    fun supportedWith(directPreference: Boolean): Boolean =
+        isPlatformSupported || (directPreference && UsbDirectNative.available)
+
+    val isSupported: Boolean get() = supportedWith(directEnabled)
 
     @Volatile private var devices: UsbDirectDevices? = null
     @Volatile private var directDeviceId: Int? = null

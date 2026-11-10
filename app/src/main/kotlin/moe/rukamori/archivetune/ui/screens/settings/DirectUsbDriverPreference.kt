@@ -17,19 +17,20 @@ import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun DirectUsbDriverPreference(parentEnabled: Boolean, modifier: Modifier) {
+internal fun DirectUsbDriverPreference(modifier: Modifier) {
     val prefs = LocalSettingsPreferenceSnapshot.current
     val restartPrompt = LocalRestartPrompt.current
     val context = LocalContext.current
     val (enabled) = prefs.state(DirectUsbDriverKey, defaultValue = false)
+    val reason = settingsSwitchDisabledReason(DirectUsbDriverKey, prefs.current, BitPerfectUsbOutput.sinkActive,
+        blurSupported = true)
     Column(modifier) {
         SwitchPreference(
             title = { Text(stringResource(R.string.direct_usb_driver_title)) },
-            description = stringResource(if (parentEnabled) R.string.direct_usb_driver_desc
-                else R.string.direct_usb_driver_requires_bit_perfect),
+            description = stringResource(reason ?: R.string.direct_usb_driver_desc),
             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
             checked = enabled,
-            isEnabled = parentEnabled && BitPerfectUsbOutput.isSupported,
+            isEnabled = reason == null,
             onCheckedChange = { value ->
                 setPlaybackOutputPreference(restartPrompt, prefs, context, DirectUsbDriverKey, value)
             },

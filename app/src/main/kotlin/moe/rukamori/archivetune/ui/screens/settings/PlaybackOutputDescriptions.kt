@@ -6,9 +6,9 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 
 @Composable
-internal fun bitPerfectOutputDescription(selected: Boolean, status: BitPerfectUsbOutput.Status): String {
+internal fun bitPerfectOutputDescription(selected: Boolean, status: BitPerfectUsbOutput.Status, supported: Boolean): String {
     val description = when {
-        !BitPerfectUsbOutput.isSupported -> stringResource(R.string.bit_perfect_usb_unsupported)
+        !supported -> stringResource(R.string.bit_perfect_usb_unsupported)
         !selected -> stringResource(R.string.bit_perfect_usb_desc)
         !BitPerfectUsbOutput.sinkActive -> stringResource(R.string.bit_perfect_usb_restart)
         else -> when (status) {
@@ -26,6 +26,6 @@ internal fun bitPerfectOutputDescription(selected: Boolean, status: BitPerfectUs
             else -> stringResource(R.string.bit_perfect_usb_desc)
         }
     }
-    return if (BitPerfectUsbOutput.isSupported) description + "\n" + stringResource(R.string.settings_usb_exclusions)
+    return if (supported) description + "\n" + stringResource(R.string.settings_usb_exclusions)
     else description
 }

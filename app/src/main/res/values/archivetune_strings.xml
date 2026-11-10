@@ -1126,11 +1126,12 @@
     <string name="bit_perfect_usb_direct_failed">Direct USB could not sustain verified PCM output. Using the platform route.</string>
     <string name="bit_perfect_usb_direct_permission">Allow USB access to use the direct DAC driver. Playback uses the platform route meanwhile.</string>
     <string name="direct_usb_driver_title">Direct USB driver (experimental)</string>
-    <string name="direct_usb_driver_desc">Try the direct DAC driver with verified hardware volume. Off by default; requires an app restart.</string>
+    <string name="direct_usb_driver_desc">Try the direct DAC driver with verified hardware volume. Experimental and untested on hardware. Off by default; requires an app restart.</string>
     <string name="direct_usb_driver_requires_bit_perfect">Enable Bit-perfect USB output first</string>
+    <string name="direct_usb_driver_unavailable">The experimental direct USB driver is unavailable because its native library could not be loaded</string>
     <string name="bit_perfect_usb_title">Bit-perfect USB output</string>
-    <string name="bit_perfect_usb_desc">Android 14+. Sends each song to a USB DAC in its own format with nothing mixed or processed. Turns off crossfade, automix, offload, normalization and the equalizer.</string>
-    <string name="bit_perfect_usb_unsupported">Needs Android 14 or newer</string>
+    <string name="bit_perfect_usb_desc">Uses Android 14+ or the experimental direct USB driver on older versions. Sends each song to a USB DAC in its own format with nothing mixed or processed. Turns off crossfade, automix, offload, normalization and the equalizer.</string>
+    <string name="bit_perfect_usb_unsupported">Needs Android 14 or newer, or the experimental direct USB driver enabled on older versions</string>
     <string name="bit_perfect_usb_restart">Takes effect the next time the app starts</string>
     <string name="bit_perfect_usb_no_device">On · plug in a USB DAC</string>
     <string name="bit_perfect_usb_ready">On · %1$s connected, engages on the next song</string>

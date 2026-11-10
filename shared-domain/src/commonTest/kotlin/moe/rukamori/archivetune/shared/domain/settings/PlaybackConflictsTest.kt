@@ -119,11 +119,47 @@ class PlaybackConflictsTest {
         editor.setPlaybackOutputPreference(DirectUsbDriverKey, true)
         assertNull(editor[DirectUsbDriverKey])
         editor.setPlaybackOutputPreference(BitPerfectUsbOutputKey, true)
-        editor.setPlaybackOutputPreference(DirectUsbDriverKey, true)
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, true, directUsbDriverAvailable = true)
         assertEquals(true, editor[BitPerfectUsbOutputKey])
         assertEquals(true, editor[DirectUsbDriverKey])
         editor.setPlaybackOutputPreference(DirectUsbDriverKey, false)
         assertEquals(true, editor[BitPerfectUsbOutputKey])
+    }
+
+    @Test fun olderPlatformsCanSelectTheDirectDriverBeforeBitPerfectWithoutChangingOtherModes() {
+        val editor = PreferenceSnapshot.of(UsbExclusiveAudioKey to true).toEditor()
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, true, false, true)
+        assertEquals(true, editor[DirectUsbDriverKey])
+        assertNull(editor[BitPerfectUsbOutputKey])
+        assertEquals(true, editor[UsbExclusiveAudioKey])
+        assertTrue(bitPerfectOutputSupported(false, editor[DirectUsbDriverKey, false], true))
+        editor.setPlaybackOutputPreference(BitPerfectUsbOutputKey, true)
+        assertTrue(editor.snapshot().bitPerfectOutputSelected())
+        assertEquals(false, editor[UsbExclusiveAudioKey])
+        editor.setPlaybackOutputPreference(DirectUsbDriverKey, false, false, true)
+        assertEquals(true, editor[BitPerfectUsbOutputKey])
+        assertFalse(bitPerfectOutputSupported(false, editor[DirectUsbDriverKey, false], true))
+    }
+
+    @Test fun directDriverAndParentAvailabilityUsePlatformAndNativeCapabilities() {
+        for (platform in listOf(false, true)) {
+            for (native in listOf(false, true)) {
+                for (parent in listOf(false, true)) {
+                    val preferences = PreferenceSnapshot.of(BitPerfectUsbOutputKey to parent)
+                    assertEquals(native && (parent || !platform), preferences.directUsbDriverSelectable(platform, native))
+                    for (direct in listOf(false, true)) {
+                        assertEquals(platform || (direct && native), bitPerfectOutputSupported(platform, direct, native))
+                    }
+                    val editor = preferences.toEditor()
+                    editor.setPlaybackOutputPreference(DirectUsbDriverKey, true, platform, native)
+                    assertEquals(if (native && (parent || !platform)) true else null, editor[DirectUsbDriverKey])
+                    assertEquals(parent, editor[BitPerfectUsbOutputKey])
+                }
+            }
+        }
+        val conflicting = PreferenceSnapshot.of(BitPerfectUsbOutputKey to true, CrossfadeEnabledKey to true)
+        assertFalse(conflicting.directUsbDriverSelectable(true, true))
+        assertTrue(conflicting.directUsbDriverSelectable(false, true))
     }
 
 }
