@@ -120,18 +120,7 @@ fun SpotifyStreamingSettings(
             ))
         }
         add(SettingsRow.Header("spotify_stream_playback", Res.string.m6_integration_spotify_streaming))
-        val toggleDescription = when {
-            sessionPresent -> Res.string.m6_spotify_stream_enabled_desc
-            binding == SpotifyStreamAccountBinding.LIBRARY -> Res.string.m6_spotify_stream_needs_library
-            else -> Res.string.m6_spotify_stream_needs_account
-        }
-        add(SettingsRow.Toggle(
-            "spotify_stream_enabled", Res.string.m6_spotify_stream_enabled, SpotifyStreamEnabledKey, false,
-            description = toggleDescription,
-            enabled = sessionPresent || preferences[SpotifyStreamEnabledKey, false],
-            read = { it.spotifyStreamingEnabledForSettings() },
-            write = { setSpotifyStreamingEnabled(it) },
-        ))
+        // The enable switch lives on Sources with the other source switches, next to the row that opens this page.
         add(SettingsRow.Choice(
             "spotify_stream_engine", Res.string.m6_spotify_stream_engine,
             SpotifyStreamEngineKey, SpotifyStreamEngine.Default.name, streamEngineOptions(preferences),

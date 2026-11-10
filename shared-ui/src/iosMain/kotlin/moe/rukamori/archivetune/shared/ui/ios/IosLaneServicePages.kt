@@ -143,8 +143,7 @@ internal fun IosLaneServiceSettingsPage(
                 providerProbes = probeStates,
                 refreshHealth = { providers -> iosLaneRefreshCanvasHealth(owners.graph.http, probes, providers) },
                 cacheBytes = canvasBytes,
-                applyCacheLimit = { owners.graph.canvasStore.applyLimitMb(it) },
-                clearCache = { owners.graph.canvasStore.clear() },
+                navigate = navigate,
                 onFailure = onFailure,
             )
         }

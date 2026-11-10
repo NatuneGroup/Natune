@@ -44,7 +44,7 @@ fun JioSaavnSettings(
     scrollTo: String?,
 ) = DesktopRowsPage(controller, { preferences ->
     buildList {
-        add(SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false))
+        // The source switch lives on Sources; this page keeps the quality the account streams with.
         add(
             SettingsRow.Choice(
                 "jiosaavn_audio_quality", Res.string.m6_audio_quality, SaavnAudioQualityKey, "QUALITY_320",

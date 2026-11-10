@@ -866,6 +866,7 @@
     <string name="spotify_loading_library">Loading Spotify library</string>
     <string name="spotify_no_sources">No Spotify playlists found</string>
     <string name="spotify_account">Spotify account</string>
+    <string name="spotify_catalog_entry_desc">Sign in to import playlists and read Spotify metadata.</string>
     <string name="spotify_playlists">Spotify Playlist</string>
     <string name="spotify_waiting_for_login">Waiting for Spotify login</string>
     <string name="spotify_show_playlist">Show Spotify in Library</string>

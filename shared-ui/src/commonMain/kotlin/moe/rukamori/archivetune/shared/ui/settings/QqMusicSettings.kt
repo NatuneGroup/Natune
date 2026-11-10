@@ -100,10 +100,7 @@ fun QqMusicSettings(
     }
     val rows: List<SettingsRow> = listOf(
         SettingsRow.Header("qq_music_group", Res.string.m6_source_qq),
-        SettingsRow.Toggle(
-            "qq_music_enabled", Res.string.m6_qq_enabled, QqMusicEnabledKey, false,
-            description = Res.string.m6_qq_enabled_desc,
-        ),
+        // The source switch lives on Sources; signing in and the quality stay on this page.
         SettingsRow.Choice(
             "qq_music_quality", Res.string.m6_qq_quality,
             QqMusicAudioQualityKey, QqAudioQuality.Default.name, qualityOptions,

@@ -41,7 +41,8 @@ private val routes = mapOf(
     "crash_logs" to "settings/crash_logs",
     "ai_integration" to "settings/ai_integration", "language_packs" to "settings/language_packs",
     "po_token" to "settings/po_token", "update" to "settings/update", "changelog" to "settings/changelog",
-    "spotify_streaming" to "settings/spotify_streaming", "qqmusic" to "settings/qqmusic",
+    "spotify_streaming" to "settings/spotify_streaming", "spotify_catalog" to "settings/spotify",
+    "qqmusic" to "settings/qqmusic",
     "canvas" to "settings/canvas", "android_auto" to "settings/android_auto",
 )
 
@@ -69,6 +70,20 @@ private val crossPageOwners = buildMap {
     own("appearance_player", "lyrics", "lyrics_background_style")
     own("listen_together", "integration", "listen_together", "listen_together_screen")
     own("device_connect", "integration", "device_connect")
+    // The catalog account has its own page now; the hub only links to it.
+    own("spotify_catalog", "integration",
+        "spotify", "external_sources", "spotify_show_playlists", "spotify_sync_history", "spotify_reload", "spotify_logout")
+    // ListenBrainz is a scrobbler, so it sits with Last.fm.
+    own("lastfm", "integration", "listenbrainz", "listenbrainz_token")
+    // The pool switch gates the sources, so it sits on the Sources page.
+    own("sources", "integration", "use_pool_accounts")
+    // A source's own switch lives on the Sources page; the quality pickers stay on the service page that owns
+    // the account, so a search result follows the row to its new page.
+    own("qobuz", "sources", "qobuz_audio_quality")
+    own("jiosaavn", "sources", "jiosaavn_audio_quality")
+    own("sources", "jiosaavn", "jiosaavn_enable")
+    // The Canvas cache limit and clear action live with the other caches in Storage.
+    own("storage", "canvas", "max_cache_size", "clear_canvas_cache")
     own("discord_experimental", "lyrics", "translate_lyrics", "enable_translator")
     own("sources", "playback",
         "preferred_sources", "auto_choose_playback_client", "player_stream_client", "check_source", "spotify_catalog_source",
