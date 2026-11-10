@@ -1119,9 +1119,15 @@
     <string name="automix_state_refining">analysed, refining…</string>
     <string name="automix_state_waiting">waiting</string>
     <string name="automix_state_failed">failed</string>
+    <string name="bit_perfect_usb_direct_inexact_active">Direct USB to %1$s · %2$s</string>
+    <string name="bit_perfect_usb_direct_rounded">Direct USB · float PCM rounded to the DAC depth</string>
+    <string name="bit_perfect_usb_direct_format">%1$d-bit / %2$d Hz (direct USB)</string>
+    <string name="bit_perfect_usb_direct_unavailable">Direct USB requires a matching PCM format and verified hardware volume. Playing through Android.</string>
+    <string name="bit_perfect_usb_direct_failed">Direct USB could not sustain verified PCM output. Using the platform route.</string>
+    <string name="bit_perfect_usb_direct_permission">Allow USB access to use the direct DAC driver. Playback uses the platform route meanwhile.</string>
     <string name="bit_perfect_usb_title">Bit-perfect USB output</string>
-    <string name="bit_perfect_usb_desc">Android 14+. Sends each song to a USB DAC in its own format with nothing mixed or processed. Turns off crossfade, automix, offload, normalization and the equalizer.</string>
-    <string name="bit_perfect_usb_unsupported">Needs Android 14 or newer</string>
+    <string name="bit_perfect_usb_desc">Sends each song directly to a supported USB DAC in its own PCM format, with hardware volume control. Falls back to the Android route when direct USB is unavailable; Android 14+ can also request platform bit-perfect output. Turns off crossfade, automix, offload, normalization and the equalizer.</string>
+    <string name="bit_perfect_usb_unsupported">Direct USB driver unavailable; platform bit-perfect needs Android 14 or newer</string>
     <string name="bit_perfect_usb_restart">Takes effect the next time the app starts</string>
     <string name="bit_perfect_usb_no_device">On · plug in a USB DAC</string>
     <string name="bit_perfect_usb_ready">On · %1$s connected, engages on the next song</string>
