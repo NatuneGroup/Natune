@@ -76,17 +76,18 @@ internal class LyricsProviderCalls(
 
     /**
      * Streams one provider's all-results callback. A failure is reported and dropped, while a
-     * timeout is treated as silence, as on Android.
+     * timeout marks the overall search incomplete so it is not cached.
      */
     suspend fun streamAll(
         provider: LyricsProvider,
         request: LyricsRequest,
         timeoutMs: Long,
         emit: (LyricsResult) -> Unit,
+        onFailure: (Throwable) -> Unit,
     ) {
         suspendRunCatching {
             LyricsFetchPolicy.providerPermits.withPermit {
-                withTimeoutOrNull(timeoutMs) {
+                val completed = withTimeoutOrNull(timeoutMs) {
                     provider.getAllLyrics(
                         id = request.mediaId,
                         title = request.title,
@@ -94,14 +95,41 @@ internal class LyricsProviderCalls(
                         album = request.album,
                         durationSec = request.durationSec,
                         isrc = request.isrc,
+                        onFailure = { error ->
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            if (error.isTransientLyricsFailure()) {
+                                onFailure(error)
+                                reportFailure(provider.name, error)
+                            }
+                        },
                     ) { lyrics ->
                         val normalized = LyricsDetection.lyricsOrNotFound(lyrics)
                         if (normalized != LyricsSentinels.NOT_FOUND) {
                             emit(LyricsResult(provider.name, normalized))
                         }
                     }
+                    true
+                }
+                if (completed == null) {
+                    val timeout = io.ktor.utils.io.errors.IOException("${provider.name} lyrics search timed out")
+                    onFailure(timeout)
+                    reportFailure(provider.name, timeout)
                 }
             }
-        }.onFailure { reportFailure(provider.name, it) }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            if (it.isTransientLyricsFailure()) {
+                onFailure(it)
+                reportFailure(provider.name, it)
+            }
+        }
     }
 }
+
+internal fun Throwable.isTransientLyricsFailure(): Boolean =
+    generateSequence(this) { it.cause }.take(8).any {
+        it is io.ktor.utils.io.errors.IOException ||
+            (it is LyricsHttpStatusException && (it.status == 429 || it.status in 500..599)) ||
+            (it is io.ktor.client.plugins.ResponseException &&
+                (it.response.status.value == 429 || it.response.status.value in 500..599))
+    }

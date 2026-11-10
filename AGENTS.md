@@ -21,7 +21,7 @@ There are only these two channels; Canary is retired (see
 - `iosApp/`: the Xcode project, the SwiftUI shell and the native audio/Telegram bridges.
 - Library modules: `:spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit
   :modules` and `:lyrics:*`.
-- Git submodules: `core` → `vossgraves/core`, `lyrics` → `4nx3b/lyrics`,
+- Git submodules: `core` → `vossgraves/core`, `lyrics` → `NatuneGroup/lyrics` (upstream `4nx3b/lyrics`),
   `IconPack` → `NatuneGroup/IconPack`, `deobfuscator` → `rukamori/morideobfuscator`.
   Commit and push inside a submodule before you move its gitlink; never leave a dirty
   or unpushed pointer. Never point `core` at a `rukamori/core` revision: its

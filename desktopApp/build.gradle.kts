@@ -104,10 +104,8 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         filter { line: String ->
             when {
                 line == "import android.content.Context" || line.contains("override fun isEnabled(context:") -> ""
-                line.trim() == "onFailure: (Throwable) -> Unit," -> ""
                 line.startsWith("package ") -> line + "\n\nimport moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider"
                 else -> line.replace("duration: Int,", "durationSec: Int, isrc: String?,").replace("album, duration)", "album, durationSec)")
-                    .replace(".onFailure(onFailure)", "")
             }
         }
     }
