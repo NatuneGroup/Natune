@@ -2,7 +2,9 @@ package moe.rukamori.archivetune.lyrics
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -63,6 +65,60 @@ class LyricsProviderHttpTest {
     }
 
     @Test
+    fun realLrcRedProviderDistinguishesMissAndTransientHttpFailure() = runBlocking {
+        withResponse(body = "{\"hits\":[]}") { client ->
+            LyricsProviderHttp.setClientForTests(client)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    LrcRedLyricsProvider.getLyrics("id", "title", "artist", null, 180)
+                }
+                assertEquals(ProviderLyricsAnswer.MISSING, result.exceptionOrNull()!!.toProviderLyricsAnswer())
+            } finally {
+                LyricsProviderHttp.setClientForTests(null)
+            }
+        }
+
+        withResponse(503, "temporary failure") { client ->
+            LyricsProviderHttp.setClientForTests(client)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    LrcRedLyricsProvider.getLyrics("id", "title", "artist", null, 180)
+                }
+                assertEquals(ProviderLyricsAnswer.FAILED, result.exceptionOrNull()!!.toProviderLyricsAnswer())
+            } finally {
+                LyricsProviderHttp.setClientForTests(null)
+            }
+        }
+    }
+
+    @Test
+    fun realBiniProviderDistinguishesMissAndTransientHttpFailure() = runBlocking {
+        withResponse(body = "{\"results\":[]}") { client ->
+            LyricsProviderHttp.setClientForTests(client)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    BiniLyricsProvider.getLyrics("id", "title", "artist", null, 180)
+                }
+                assertEquals(ProviderLyricsAnswer.MISSING, result.exceptionOrNull()!!.toProviderLyricsAnswer())
+            } finally {
+                LyricsProviderHttp.setClientForTests(null)
+            }
+        }
+
+        withResponse(429, "rate limited") { client ->
+            LyricsProviderHttp.setClientForTests(client)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    BiniLyricsProvider.getLyrics("id", "title", "artist", null, 180)
+                }
+                assertEquals(ProviderLyricsAnswer.FAILED, result.exceptionOrNull()!!.toProviderLyricsAnswer())
+            } finally {
+                LyricsProviderHttp.setClientForTests(null)
+            }
+        }
+    }
+
+    @Test
     fun anAnsweredRequestKeepsLyricsAndNonRetryableStatuses() = runBlocking {
         withResponse(body = "[00:01.00]Hello") { client ->
             assertEquals("[00:01.00]Hello", lookup(client).getOrThrow())
@@ -76,9 +132,13 @@ class LyricsProviderHttpTest {
         }
     }
 
-    private suspend fun lookup(client: HttpClient): Result<String> = runCatching {
-        LyricsProviderHttp.get(URL, client = client)?.let(LyricsPayload::toLyrics)
-            ?: throw IllegalStateException("No lyrics")
+    private suspend fun lookup(client: HttpClient): Result<String> {
+        LyricsProviderHttp.setClientForTests(client)
+        return try {
+            LrcRedLyricsProvider.getLyrics("id", "title", "artist", null, 180, isrc = "USAAA1234567")
+        } finally {
+            LyricsProviderHttp.setClientForTests(null)
+        }
     }
 
     private suspend fun withResponse(
