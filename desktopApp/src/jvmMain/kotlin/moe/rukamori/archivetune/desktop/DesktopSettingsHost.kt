@@ -54,6 +54,7 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalDeviceLink
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
+import moe.rukamori.archivetune.shared.domain.settings.UsePoolAccountsKey
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
@@ -83,6 +84,7 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsTwoPane
+import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogSettings
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
@@ -297,7 +299,7 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
 internal val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
     "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute, TidalLoginRoute,
-    "settings/integrations/device_connect", "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
+    "settings/integrations/device_connect", "settings/spotify_streaming", "settings/spotify", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
     "settings/lyrics/providers", DesktopQueueRoute,
     "settings/ai_integration", "settings/amazon", "settings/applemusic", "settings/canvas", "settings/changelog",
@@ -439,25 +441,11 @@ private fun DesktopSettingsRouteBody(
             }
             "login" -> DesktopYouTubeLoginPage(owners.youTube, navigation)
             "settings/integration" -> {
-                val spotifyAccount by owners.spotify.catalog.collectAsState()
-                val spotifyError by owners.spotify.catalogError.collectAsState()
                 var showImport by remember { mutableStateOf(false) }
                 val importer = remember(graph, owners.spotify) { DesktopCrossServiceImport(graph, owners.spotify) }
-                LaunchedEffect(Unit) { owners.spotify.restore() }
                 IntegrationSettings(
                     controller = owners.controller,
-                    poolConfigured = graph.playbackPool.configured,
-                    spotifyAccount = spotifyAccount,
-                    spotifyError = spotifyError,
                     navigate = navigate,
-                    onConnectSpotify = {
-                        owners.spotify.connectCatalog()
-                        show(DesktopStrings["spotify_login_window_hint"])
-                    },
-                    onReloadSpotifyPlaylists = owners.spotify::reloadPlaylists,
-                    onLogoutSpotify = owners.spotify::logOutCatalog,
-                    onDismissSpotifyError = owners.spotify::dismissCatalogError,
-                    onPoolAccountsChanged = graph.playbackPool::onEnabledChanged,
                     onOpenCrossServiceImport = { showImport = true },
                     onFailure = onFailure,
                     scrollTo = scrollTo,
@@ -469,6 +457,25 @@ private fun DesktopSettingsRouteBody(
                         onDismiss = { showImport = false },
                     )
                 }
+            }
+            "settings/spotify" -> {
+                val spotifyAccount by owners.spotify.catalog.collectAsState()
+                val spotifyError by owners.spotify.catalogError.collectAsState()
+                LaunchedEffect(Unit) { owners.spotify.restore() }
+                SpotifyCatalogSettings(
+                    controller = owners.controller,
+                    account = spotifyAccount,
+                    error = spotifyError,
+                    onConnect = {
+                        owners.spotify.connectCatalog()
+                        show(DesktopStrings["spotify_login_window_hint"])
+                    },
+                    onReloadPlaylists = owners.spotify::reloadPlaylists,
+                    onLogout = owners.spotify::logOutCatalog,
+                    onDismissError = owners.spotify::dismissCatalogError,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
             }
             "settings/spotify_streaming" -> {
                 val signingIn by owners.spotify.streamingSignInInProgress.collectAsState()
@@ -670,8 +677,7 @@ private fun DesktopSettingsRouteBody(
                     providerProbes = probes,
                     refreshHealth = owners.services::refreshCanvasHealth,
                     cacheBytes = canvasBytes,
-                    applyCacheLimit = owners.services::applyCanvasCacheLimit,
-                    clearCache = owners.services::clearCanvasCache,
+                    navigate = navigate,
                     onFailure = onFailure,
                 )
             }
@@ -787,6 +793,16 @@ private fun DesktopSettingsRouteBody(
                 if (preferences == null) {
                     CircularProgressIndicator()
                 } else {
+                    // The pool switch lives on this page now: mirror a change into the pool the host owns.
+                    val poolEnabled = preferences[UsePoolAccountsKey, true]
+                    var lastPoolEnabled by remember { mutableStateOf<Boolean?>(null) }
+                    LaunchedEffect(poolEnabled) {
+                        val previous = lastPoolEnabled
+                        lastPoolEnabled = poolEnabled
+                        if (previous != null && previous != poolEnabled && graph.playbackPool.configured) {
+                            graph.playbackPool.onEnabledChanged(poolEnabled)
+                        }
+                    }
                     SourceSettings(
                         controller = owners.controller,
                         spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),

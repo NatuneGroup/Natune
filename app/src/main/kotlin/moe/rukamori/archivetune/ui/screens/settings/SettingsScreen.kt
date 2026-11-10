@@ -100,6 +100,21 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         )
         own("tidal", "integration", "tidal_account", "tidal_instances")
         own("qobuz", "integration", "qobuz_account", "qobuz_tokens", "qobuz_instances")
+        // The catalog account has its own page now; the hub only links to it.
+        own(
+            "spotify_catalog", "integration",
+            "spotify", "external_sources", "spotify_show_playlists", "spotify_sync_history",
+            "spotify_reload", "spotify_logout",
+        )
+        // ListenBrainz is a scrobbler, so it sits with Last.fm.
+        own("lastfm", "integration", "listenbrainz", "listenbrainz_token")
+        // The pool switch gates the sources, so it sits on the Sources page.
+        own("sources", "integration", "use_pool_accounts")
+        // A source's own switch lives on the Sources page; the quality pickers stay on the service page that
+        // owns the account, so a search result follows the row to its new page.
+        own("qobuz", "sources", "qobuz_audio_quality")
+        own("jiosaavn", "sources", "jiosaavn_audio_quality")
+        own("sources", "jiosaavn", "jiosaavn_enable")
         own(
             "telegram", "integration",
             "telegram_login", "telegram_browse_channels", "telegram_lossless_only",
@@ -206,6 +221,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
             "content" -> "settings/content"
             "behavior" -> "settings/privacy"
             "integration" -> "settings/integration"
+            "spotify_catalog" -> "settings/spotify"
             "listen_together" -> "settings/integrations/listen_together"
             "device_connect" -> "settings/integrations/device_connect"
             "internet" -> "settings/internet"

@@ -158,10 +158,8 @@ fun QobuzSettings(
 
     val rows = buildList<SettingsRow> {
         add(SettingsRow.Header("qobuz_account", Res.string.m6_qobuz_title))
-        add(SettingsRow.Toggle(
-            "qobuz_enable", Res.string.m6_qobuz_enable, QobuzEnabledKey, false,
-            description = Res.string.m6_qobuz_enable_description,
-        ))
+        // The source switch lives on Sources with the other switches it is ordered with; this page owns the
+        // account, its tokens and the quality it streams with.
         add(SettingsRow.Choice(
             "qobuz_audio_quality", Res.string.m6_qobuz_audio_quality, QobuzAudioQualityKey, "FLAC",
             listOf(

@@ -67,10 +67,6 @@ import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.spotify.rememberSpotifyPlaybackExtensionAvailable
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
-import moe.rukamori.archivetune.constants.SaavnAudioQuality
-import moe.rukamori.archivetune.constants.SaavnAudioQualityKey
-import moe.rukamori.archivetune.constants.QobuzAudioQuality
-import moe.rukamori.archivetune.constants.QobuzAudioQualityKey
 import moe.rukamori.archivetune.constants.QobuzEnabledKey
 import moe.rukamori.archivetune.constants.QobuzBackupEnabledKey
 import moe.rukamori.archivetune.constants.TidalAccountFirstKey
@@ -92,6 +88,7 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.utils.rememberEnumPreference
+import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import sh.calvin.reorderable.ReorderableItem
@@ -144,6 +141,8 @@ internal fun PlaybackSourceSections(
 
     val (sourceOrderRaw, onSourceOrderChange) = rememberPreference(AudioSourceOrderKey, "")
     val (tidalEnabled, onTidalEnabledChange) = rememberPreference(TidalEnabledKey, true)
+    val (usePoolAccounts, onUsePoolAccountsChange) = rememberPreference(UsePoolAccountsKey, true)
+    val poolConfigured = PoolAccountManager.isEnabled
     val (qobuzEnabled, onQobuzEnabledChangeRaw) = rememberPreference(QobuzEnabledKey, false)
     val (deezerEnabled, onDeezerEnabledChangeRaw) = rememberPreference(DeezerEnabledKey, false)
     val (appleMusicEnabled, onAppleMusicEnabledChangeRaw) = rememberPreference(AppleMusicSourceEnabledKey, false)
@@ -160,8 +159,6 @@ internal fun PlaybackSourceSections(
 
     // YouTube is a normal toggleable source now; default ON to preserve historical behaviour.
     val (youTubeEnabled, onYouTubeEnabledChange) = rememberPreference(YouTubeSourceEnabledKey, true)
-    val (saavnQuality, onSaavnQualityChange) =
-        rememberEnumPreference(SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
     val (defaultMetadataSource, onDefaultMetadataSourceChange) =
         rememberEnumPreference(DefaultMetadataSourceKey, MetadataSource.YOUTUBE)
     val (defaultSearchSource, onDefaultSearchSourceChange) =
@@ -228,8 +225,6 @@ internal fun PlaybackSourceSections(
         if (playerStreamClient in playerStreamClients) playerStreamClient
         else PlayerStreamClient.WEB_REMIX
 
-    val (qobuzQuality, onQobuzQualityChange) =
-        rememberEnumPreference(QobuzAudioQualityKey, QobuzAudioQuality.FLAC)
     val (qobuzBackupEnabled, onQobuzBackupEnabledChange) = rememberPreference(QobuzBackupEnabledKey, false)
     val (appleMusicQuality, onAppleMusicQualityChange) =
         rememberEnumPreference(AppleMusicQualityKey, AppleMusicQuality.LOSSLESS)
@@ -311,6 +306,30 @@ internal fun PlaybackSourceSections(
                 description = preferred.displayName(context),
                 icon = { Icon(painterResource(preferred.iconRes()), null) },
                 onClick = { showOrderDialog = true },
+            )
+        }
+
+        // The pool switch moved here from the Integrations hub: it only decides whether the shared accounts of
+        // the sources below are used, so it sits with them instead of on a second page that wrote the same key.
+        item {
+            SwitchPreference(
+                modifier = positions.modifierFor("use_pool_accounts"),
+                title = { Text(stringResource(R.string.use_pool_accounts)) },
+                description =
+                    if (poolConfigured) {
+                        stringResource(R.string.source_pool_enabled_description)
+                    } else {
+                        stringResource(R.string.source_pool_unavailable_description)
+                    },
+                icon = { Icon(painterResource(R.drawable.group), null) },
+                checked = poolConfigured && usePoolAccounts,
+                onCheckedChange = {
+                    if (poolConfigured) {
+                        onUsePoolAccountsChange(it)
+                        PoolAccountManager.setPoolAccountsEnabled(it)
+                    }
+                },
+                isEnabled = poolConfigured,
             )
         }
     }
@@ -491,9 +510,8 @@ internal fun PlaybackSourceSections(
             PreferenceEntry(
                 modifier = positions.modifierFor("tidal_manage_instances"),
                 title = { Text(stringResource(R.string.tidal_manage_instances)) },
-                description = stringResource(R.string.manage_in_integration),
                 icon = { Icon(painterResource(R.drawable.integration), null) },
-                onClick = { navController.navigate("settings/integration") },
+                onClick = { navController.navigate("settings/tidal") },
             )
         }
 
@@ -514,31 +532,14 @@ internal fun PlaybackSourceSections(
             )
         }
 
-        item {
-            EnumListPreference(
-                modifier = positions.modifierFor("qobuz_audio_quality"),
-                title = { Text(stringResource(R.string.qobuz_audio_quality)) },
-                icon = { Icon(painterResource(R.drawable.play), null) },
-                selectedValue = qobuzQuality,
-                onValueSelected = onQobuzQualityChange,
-                isEnabled = qobuzEnabled,
-                valueText = { quality ->
-                    when (quality) {
-                        QobuzAudioQuality.FLAC -> stringResource(R.string.qobuz_quality_flac)
-                        QobuzAudioQuality.HI_RES -> stringResource(R.string.qobuz_quality_hires)
-                        QobuzAudioQuality.MAX -> stringResource(R.string.qobuz_quality_max)
-                    }
-                },
-            )
-        }
+        // The Qobuz quality picker lives on the Qobuz page, with the account it belongs to.
 
         item {
             PreferenceEntry(
                 modifier = positions.modifierFor("qobuz_manage_instances"),
                 title = { Text(stringResource(R.string.qobuz_manage_instances)) },
-                description = stringResource(R.string.manage_in_integration),
                 icon = { Icon(painterResource(R.drawable.integration), null) },
-                onClick = { navController.navigate("settings/integration") },
+                onClick = { navController.navigate("settings/qobuz") },
             )
         }
 
@@ -736,15 +737,14 @@ internal fun PlaybackSourceSections(
             )
         }
 
+        // The quality picker lives on the JioSaavn page, with the account it belongs to.
         item {
-            EnumListPreference(
-                modifier = positions.modifierFor("jiosaavn_audio_quality"),
-                title = { Text(stringResource(R.string.jiosaavn_audio_quality)) },
+            PreferenceEntry(
+                modifier = positions.modifierFor("jiosaavn_settings"),
+                title = { Text(stringResource(R.string.jiosaavn_settings)) },
+                description = stringResource(R.string.jiosaavn_audio_quality),
                 icon = { Icon(painterResource(R.drawable.play), null) },
-                selectedValue = saavnQuality,
-                onValueSelected = onSaavnQualityChange,
-                isEnabled = jioSaavnEnabled,
-                valueText = { quality -> quality.toLabel() },
+                onClick = { navController.navigate("settings/jiosaavn") },
             )
         }
 

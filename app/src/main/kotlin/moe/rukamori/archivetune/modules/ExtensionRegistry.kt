@@ -51,7 +51,7 @@ class ExtensionRegistry @Inject constructor(
     }
 
     val nativeExtensions: List<NativeExtension> = listOf(
-        BuiltIn(NativeExtensionIds.SPOTIFY_METADATA, ModuleKind.METADATA, R.string.extensions_spotify_metadata, "settings/integration?scrollTo=spotify"),
+        BuiltIn(NativeExtensionIds.SPOTIFY_METADATA, ModuleKind.METADATA, R.string.extensions_spotify_metadata, "settings/spotify?scrollTo=spotify"),
         BuiltIn(NativeExtensionIds.SPOTIFY_ALTERNATE, ModuleKind.PLAYBACK, R.string.extensions_spotify_alternate, "settings/spotify_streaming?scrollTo=extension_alternate"),
         BuiltIn(NativeExtensionIds.SPOTIFY_OFFICIAL, ModuleKind.PLAYBACK, R.string.extensions_spotify_official, "settings/spotify_streaming?scrollTo=extension_official"),
     )

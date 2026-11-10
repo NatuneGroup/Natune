@@ -18,4 +18,7 @@ internal val PhoneLastFMSettingsReference = PhoneSettingsReference(Res.string.m6
     PhoneSettingReference("scrobble_min_track_duration", Res.string.m6_scrobble_min_track_duration, null, PhoneSettingKind.ACTION, setOf("scrobble_min_track_duration"), null, setOf(Res.string.m6_scrobble_min_track_duration), false),
     PhoneSettingReference("scrobble_delay_percent", Res.string.m6_scrobble_delay_percent, null, PhoneSettingKind.ACTION, setOf("scrobble_delay_percent"), null, setOf(Res.string.m6_scrobble_delay_percent), false),
     PhoneSettingReference("scrobble_delay_minutes", Res.string.m6_scrobble_delay_minutes, null, PhoneSettingKind.ACTION, setOf("scrobble_delay_minutes"), null, setOf(Res.string.m6_scrobble_delay_minutes), false),
+    PhoneSettingReference("group:scrobbling", Res.string.m6_integration_scrobbling, null, PhoneSettingKind.HEADER, setOf("scrobbling"), null, setOf(Res.string.m6_integration_scrobbling), false),
+    PhoneSettingReference("listenbrainz", Res.string.m6_integration_listenbrainz, Res.drawable.phone_reference_token, PhoneSettingKind.TOGGLE, setOf("listenbrainz_scrobbling"), "listenbrainz_enabled", setOf(Res.string.m6_integration_listenbrainz), false),
+    PhoneSettingReference("listenbrainz_token", Res.string.m6_integration_listenbrainz_token_set, Res.drawable.phone_reference_token, PhoneSettingKind.ACTION, setOf("set_listenbrainz_token"), null, setOf(Res.string.m6_integration_listenbrainz_token_set), false),
 ))

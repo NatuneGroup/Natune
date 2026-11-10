@@ -135,6 +135,7 @@ import moe.rukamori.archivetune.ui.screens.settings.PoTokenScreen
 import moe.rukamori.archivetune.ui.screens.settings.PrivacySettings
 import moe.rukamori.archivetune.ui.screens.settings.SettingsScreen
 import moe.rukamori.archivetune.ui.screens.settings.SourceSettings
+import moe.rukamori.archivetune.ui.screens.settings.SpotifyCatalogSettings
 import moe.rukamori.archivetune.ui.screens.settings.ModulesSettings
 import moe.rukamori.archivetune.ui.screens.settings.StorageSettings
 import moe.rukamori.archivetune.ui.screens.settings.DownloadsSettings
@@ -702,6 +703,12 @@ fun NavGraphBuilder.navigationBuilder(
         arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
         IntegrationScreen(navController, it.savedStateHandle["scrollTo"])
+    }
+    composable(
+        route = "settings/spotify?scrollTo={scrollTo}",
+        arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) {
+        SpotifyCatalogSettings(navController, it.savedStateHandle["scrollTo"])
     }
     composable(route = "settings/integrations/listen_together") {
         ListenTogetherSettings(navController, scrollBehavior)

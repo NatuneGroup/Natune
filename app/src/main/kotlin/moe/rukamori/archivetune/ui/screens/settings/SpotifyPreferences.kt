@@ -91,10 +91,13 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
     onSyncHistoryChange: (Boolean) -> Unit,
     onReloadClick: () -> Unit,
     onLogoutClick: () -> Unit,
+    /** Position anchor per row, so the settings search can scroll to a row on the page that owns it. */
+    modifierFor: (String) -> Modifier = { Modifier },
 ) {
     if (!state.isAuthenticated) {
         item {
             PreferenceEntry(
+                modifier = modifierFor("spotify"),
                 title = { Text(stringResource(R.string.spotify_connect)) },
                 description = stringResource(R.string.spotify_not_connected),
                 icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
@@ -115,6 +118,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
 
     item {
         PreferenceEntry(
+            modifier = modifierFor("spotify"),
             title = {
                 Text(
                     text =
@@ -148,6 +152,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
 
     item {
         SwitchPreference(
+            modifier = modifierFor("spotify_show_playlists"),
             title = { Text(stringResource(R.string.spotify_show_playlist)) },
             description = stringResource(R.string.spotify_show_playlist_desc),
             icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
@@ -159,6 +164,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
 
     item {
         SwitchPreference(
+            modifier = modifierFor("spotify_sync_history"),
             title = { Text(stringResource(R.string.spotify_sync_history)) },
             description = stringResource(R.string.spotify_sync_history_desc),
             icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
@@ -170,6 +176,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
 
     item {
         PreferenceEntry(
+            modifier = modifierFor("spotify_reload"),
             title = { Text(stringResource(R.string.spotify_reload_playlist)) },
             description = stringResource(R.string.spotify_reload_playlist_desc),
             icon = { Icon(painterResource(R.drawable.sync), null) },
@@ -180,6 +187,7 @@ internal fun PreferenceGroupScope.spotifyAccountPreferences(
 
     item {
         PreferenceEntry(
+            modifier = modifierFor("spotify_logout"),
             title = { Text(stringResource(R.string.action_logout)) },
             icon = { Icon(painterResource(R.drawable.logout), null) },
             onClick = onLogoutClick,

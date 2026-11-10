@@ -79,10 +79,7 @@ fun AmazonSettings(
         else stringResource(Res.string.m6_amazon_bypass_token_set, bypass.takeLast(4))
     val rows = buildList<SettingsRow> {
         add(SettingsRow.Header("amazon_source", Res.string.m6_source_amazon))
-        add(SettingsRow.Toggle(
-            "amazon_source_enable", Res.string.m6_source_amazon, AmazonEnabledKey, false,
-            description = Res.string.m6_source_enabled,
-        ))
+        // The source switch lives on Sources; this page owns the quality, the instances and the authorization.
         add(SettingsRow.Choice(
             "amazon_audio_quality", Res.string.m6_amazon_audio_quality, AmazonAudioQualityKey,
             AmazonAudioQuality.Default.name, amazonQualityOptions, enabled = sourceEnabled,

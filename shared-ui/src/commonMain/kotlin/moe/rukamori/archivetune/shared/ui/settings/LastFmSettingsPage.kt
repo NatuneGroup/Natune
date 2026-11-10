@@ -87,6 +87,20 @@ fun LastFmSettingsPage(
             LastFmDefaults.DEFAULT_SCROBBLE_DELAY_SECONDS, LastFmDefaults.DELAY_SECONDS_RANGE,
             unit = SettingsUnit.SECONDS,
         ),
+        // ListenBrainz is a scrobbler, so it sits here with Last.fm instead of on the Integrations hub.
+        SettingsRow.Toggle(
+            "listenbrainz", Res.string.m6_integration_listenbrainz, ListenBrainzEnabledKey, false,
+            description = Res.string.m6_integration_listenbrainz_desc,
+        ),
+        // The token is a credential, so the editor masks it and the vault route keeps it out of ordinary storage.
+        SettingsRow.Text(
+            "listenbrainz_token", Res.string.m6_integration_listenbrainz_token_edit, ListenBrainzTokenKey,
+            masked = true, valid = { it.isNotEmpty() },
+            titleFor = { stored ->
+                if (stored[ListenBrainzTokenKey, ""].isBlank()) Res.string.m6_integration_listenbrainz_token_set
+                else Res.string.m6_integration_listenbrainz_token_edit
+            },
+        ),
     )
     Column(modifier.fillMaxSize()) {
         authorizationPrompt()

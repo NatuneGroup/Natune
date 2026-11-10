@@ -37,7 +37,7 @@ fun SharedJioSaavnSettings(controller: SettingsController, onFailure: () -> Unit
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot ?: run { CircularProgressIndicator(); return }
     SettingsPage(listOf(
-        SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false),
+        // The source switch lives on Sources; this page keeps the quality the account streams with.
         SettingsRow.Choice("jiosaavn_audio_quality", Res.string.m6_audio_quality, SaavnAudioQualityKey, "QUALITY_320",
             listOf(SettingsRow.Option("QUALITY_320", Res.string.m6_quality_320),
                 SettingsRow.Option("QUALITY_160", Res.string.m6_quality_160), SettingsRow.Option("QUALITY_96", Res.string.m6_quality_96)),
