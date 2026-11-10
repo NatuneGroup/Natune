@@ -17,7 +17,24 @@ import kotlin.math.abs
 
 /** Selects direct USB before DefaultAudioSink converts high-resolution integer PCM to float. */
 @androidx.annotation.OptIn(UnstableApi::class)
-internal class DirectUsbAudioSink(private val context: Context, private val normal: AudioSink) : ForwardingAudioSink(normal) {
+internal class DirectUsbAudioSink(
+    private val normal: AudioSink,
+    private val directSupported: (Format) -> Boolean,
+    private val createOutput: (Format, AudioAttributes, Int) -> AudioOutput?,
+) : ForwardingAudioSink(normal) {
+    constructor(context: Context, normal: AudioSink) : this(
+        normal,
+        { UsbDirectAudioOutput.supports(context, it.sampleRate, it.channelCount, it.pcmEncoding) },
+        { format, attributes, sessionId ->
+            val config = OutputConfig.Builder()
+                .setSampleRate(format.sampleRate)
+                .setEncoding(format.pcmEncoding)
+                .setChannelMask(Util.getAudioTrackChannelConfig(format.channelCount))
+                .setBufferSize(format.sampleRate / 4 * Util.getPcmFrameSize(format.pcmEncoding, format.channelCount))
+                .setAudioAttributes(attributes).setAudioSessionId(sessionId).build()
+            UsbDirectAudioOutput.open(context, config)
+        },
+    )
     private data class Config(val format: Format, val bufferSize: Int, val outputChannels: IntArray?)
     private var output: AudioOutput? = null
     private var pending: Config? = null
@@ -42,7 +59,7 @@ internal class DirectUsbAudioSink(private val context: Context, private val norm
     private fun wantsDirect(format: Format): Boolean = !forceFallback &&
         requestedParameters == PlaybackParameters.DEFAULT && !skipSilence &&
         format.sampleMimeType == MimeTypes.AUDIO_RAW && format.encoderDelay == 0 && format.encoderPadding == 0 &&
-        UsbDirectAudioOutput.supports(context, format.sampleRate, format.channelCount, format.pcmEncoding)
+        directSupported(format)
 
     override fun supportsFormat(format: Format): Boolean = wantsDirect(format) || normal.supportsFormat(format)
     override fun getFormatSupport(format: Format): Int = if (wantsDirect(format))
@@ -71,13 +88,7 @@ internal class DirectUsbAudioSink(private val context: Context, private val norm
         val identityMapping = mapping == null ||
             (mapping.size == format.channelCount && (0 until mapping.size).all { mapping[it] == it })
         if (identityMapping && wantsDirect(format)) {
-            val outConfig = OutputConfig.Builder()
-                .setSampleRate(format.sampleRate)
-                .setEncoding(format.pcmEncoding)
-                .setChannelMask(Util.getAudioTrackChannelConfig(format.channelCount))
-                .setBufferSize(format.sampleRate / 4 * Util.getPcmFrameSize(format.pcmEncoding, format.channelCount))
-                .setAudioAttributes(attributes).setAudioSessionId(sessionId).build()
-            output = UsbDirectAudioOutput.open(context, outConfig)
+            output = createOutput(format, attributes, sessionId)
         }
         if (output == null) normal.configure(config.format, config.bufferSize, config.outputChannels)
         resetTimeline()
@@ -167,9 +178,13 @@ internal class DirectUsbAudioSink(private val context: Context, private val norm
         try { output?.pause() ?: normal.pause() } catch (error: AudioOutput.WriteException) { fallback() }
     }
     override fun flush() {
-        closeOutput()
+        try {
+            output?.flush()
+        } catch (error: AudioOutput.WriteException) {
+            fallback()
+        }
         normal.flush()
-        pending = configured
+        if (output == null) pending = pending ?: configured
         ended = false
         resetTimeline()
     }
