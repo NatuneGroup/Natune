@@ -47,6 +47,8 @@ internal fun settingsSwitchDisabledReason(
             RejectSuspectedUpscaledAudioKey) && bitPerfect -> R.string.settings_processing_bypassed_bit_perfect
         key == SkipSilenceKey && preferences[AudioOffload] == true -> R.string.settings_processing_unavailable_offload
         key == AudioOffload && preferences[RejectSuspectedUpscaledAudioKey] == true -> R.string.settings_offload_unavailable_authenticity
+        key == DirectUsbDriverKey && (!bitPerfect || !BitPerfectUsbOutput.isSupported) ->
+            R.string.direct_usb_driver_requires_bit_perfect
         key == CrossfadeGaplessKey && preferences[CrossfadeEnabledKey] != true -> R.string.settings_crossfade_required
         key == EnablePipModeKey && preferences[EnableVideoPlaybackKey] != true -> R.string.settings_video_required
         key == SmartTrimmerKey && preferences[MaxSongCacheSizeKey] == 0 && preferences[MaxImageCacheSizeKey] == 0 ->
@@ -72,7 +74,7 @@ internal fun ConflictAwareSearchSwitch(key: Preferences.Key<Boolean>, defaultVal
             when (key) {
                 in navigationTreatmentKeys -> setNavigationTreatment(restartPrompt, prefs, key, enabled)
                 LiquidGlassEnabledKey, TabletModeEnabledKey -> restartPrompt.edit(prefs) { this[key] = enabled }
-                CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey ->
+                CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey, DirectUsbDriverKey ->
                     setPlaybackOutputPreference(restartPrompt, prefs, context, key, enabled)
                 AppleMusicMenusKey -> setMenuStyle(if (enabled) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3)
                 else -> setValue(enabled)

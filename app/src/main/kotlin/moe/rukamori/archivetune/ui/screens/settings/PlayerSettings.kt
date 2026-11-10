@@ -187,11 +187,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val (swipeUpToOpenQueue, onSwipeUpToOpenQueueChange) =
         prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
-    val (bitPerfectUsb) =
-        prefs.state(
-            BitPerfectUsbOutputKey,
-            defaultValue = false,
-        )
+    val (bitPerfectUsb) = prefs.state(BitPerfectUsbOutputKey, defaultValue = false)
     val bitPerfectStatus by BitPerfectUsbOutput.status.collectAsState()
     val bitPerfectContext = LocalContext.current
     val (audioProcessing, onAudioProcessingChange) =
@@ -730,6 +726,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                         )
                     }
                 }
+
+                item { DirectUsbDriverPreference(bitPerfectUsb, positions.modifierFor("direct_usb_driver")) }
 
                 item {
                     Column(modifier = positions.modifierFor("usb_exclusive_audio")) {

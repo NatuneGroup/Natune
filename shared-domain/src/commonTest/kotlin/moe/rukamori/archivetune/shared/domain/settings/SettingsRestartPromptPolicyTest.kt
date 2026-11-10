@@ -138,18 +138,18 @@ class SettingsRestartPromptPolicyTest {
     @Test
     fun usbUsesTheSupportedEffectiveChoiceAndTheActualRunningSinkFacts() {
         val enabled = PreferenceSnapshot.of(BitPerfectUsbOutputKey to true)
-        assertEquals("false|false", restartSettingValues(enabled, false)[RestartReason.USB_OUTPUT])
-        assertEquals("true|false", restartSettingValues(enabled, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|false|false", restartSettingValues(enabled, false)[RestartReason.USB_OUTPUT])
+        assertEquals("true|false|false", restartSettingValues(enabled, true)[RestartReason.USB_OUTPUT])
 
         val conflicts = enabled.toEditor().apply { this[CrossfadeEnabledKey] = true }.snapshot()
-        assertEquals("false|false", restartSettingValues(conflicts, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|false|false", restartSettingValues(conflicts, true)[RestartReason.USB_OUTPUT])
 
         val exclusive = PreferenceSnapshot.of(UsbExclusiveAudioKey to true)
-        assertEquals("false|true", restartSettingValues(exclusive, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|true|false", restartSettingValues(exclusive, true)[RestartReason.USB_OUTPUT])
 
         val policy = RestartPromptPolicy()
         // The sink may have started after the activity. Disabling it differs from that real sink.
-        val actualRunning = running + (RestartReason.USB_OUTPUT to "true|false")
+        val actualRunning = running + (RestartReason.USB_OUTPUT to "true|false|false")
         policy.committed(restartSettingValues(enabled, true), restartSettingValues(conflicts, true), actualRunning)
         assertEquals(setOf(RestartReason.USB_OUTPUT), policy.reasons)
         assertTrue(policy.visible)
@@ -168,4 +168,12 @@ class SettingsRestartPromptPolicyTest {
         assertEquals(setOf(RestartReason.REGION), policy.reasons)
         assertTrue(policy.visible)
     }
+    @Test
+    fun directUsbDriverIsRestartScopedOnlyUnderItsParent() {
+        val off = PreferenceSnapshot.of(DirectUsbDriverKey to true)
+        assertEquals("false|false|false", restartSettingValues(off, true)[RestartReason.USB_OUTPUT])
+        val on = PreferenceSnapshot.of(BitPerfectUsbOutputKey to true, DirectUsbDriverKey to true)
+        assertEquals("true|false|true", restartSettingValues(on, true)[RestartReason.USB_OUTPUT])
+    }
+
 }

@@ -102,7 +102,12 @@ object BitPerfectUsbOutput {
     val isPlatformSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
-    val isSupported: Boolean get() = isPlatformSupported || UsbDirectNative.available
+    @Volatile var directEnabled: Boolean = false
+        private set
+
+    fun configureDirect(value: Boolean) { directEnabled = value }
+
+    val isSupported: Boolean get() = isPlatformSupported || (directEnabled && UsbDirectNative.available)
 
     @Volatile private var devices: UsbDirectDevices? = null
     @Volatile private var directDeviceId: Int? = null
@@ -147,7 +152,7 @@ object BitPerfectUsbOutput {
             clear(context)
             _status.value = Status.Off
         } else {
-            if (UsbDirectNative.available) directDevices(context).watch()
+            if (directEnabled && UsbDirectNative.available) directDevices(context).watch()
             refreshDeviceStatus(context)
         }
     }
@@ -158,7 +163,7 @@ object BitPerfectUsbOutput {
             _status.value = Status.Off
             return
         }
-        if (UsbDirectNative.available) {
+        if (directEnabled && UsbDirectNative.available) {
             val usb = directDevices(context)
             val attached = usb.audioDevices()
             if (directDeviceId != null && usb.hasActiveOutput() && attached.any { it.deviceId == directDeviceId }) return
@@ -190,7 +195,7 @@ object BitPerfectUsbOutput {
 
     /** True when a USB audio output is attached right now. */
     fun hasUsbOutput(context: Context): Boolean = findUsbOutput(context) != null ||
-        (UsbDirectNative.available && directDevices(context).audioDevices().isNotEmpty())
+        (directEnabled && UsbDirectNative.available && directDevices(context).audioDevices().isNotEmpty())
 
     /**
      * Decides how the AudioTrack for [config] should be created. Returns the encoding to create it
@@ -203,9 +208,9 @@ object BitPerfectUsbOutput {
     ): Plan? {
         if (!enabled) return null
         if (!isPlatformSupported) {
-            val device = if (UsbDirectNative.available) directDevices(context).audioDevices().firstOrNull() else null
+            val device = if (directEnabled && UsbDirectNative.available) directDevices(context).audioDevices().firstOrNull() else null
             _status.value = if (device != null) Status.Fallback(device.productName.orEmpty(),
-                context.getString(R.string.bit_perfect_usb_direct_unavailable)) else if (UsbDirectNative.available) Status.NoDevice else Status.Unsupported
+                context.getString(R.string.bit_perfect_usb_direct_unavailable)) else if (directEnabled && UsbDirectNative.available) Status.NoDevice else Status.Unsupported
             return null
         }
         if (config.isOffload || config.isTunneling || !isLinearPcm(config.encoding)) return null

@@ -66,7 +66,7 @@ class RestartPromptViewModel @Inject constructor(
                         restartSettingValues(result.after, BitPerfectUsbOutput.isSupported),
                         runningAppearance + mapOf(
                             // These describe the actual service's fixed sinks, not app-start preferences.
-                            RestartReason.USB_OUTPUT to "${BitPerfectUsbOutput.sinkActive}|${UsbExclusiveAudioOutputProvider.installed}",
+                            RestartReason.USB_OUTPUT to "${BitPerfectUsbOutput.sinkActive}|${UsbExclusiveAudioOutputProvider.installed}|${BitPerfectUsbOutput.sinkActive && BitPerfectUsbOutput.directEnabled}",
                             RestartReason.REGION to runningRegion,
                         ),
                     )

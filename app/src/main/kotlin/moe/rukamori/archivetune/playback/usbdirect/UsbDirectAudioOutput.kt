@@ -140,7 +140,7 @@ internal class UsbDirectAudioOutput private constructor(
         }
 
         fun supports(context: Context, sampleRate: Int, channels: Int, encoding: Int): Boolean {
-            if (!BitPerfectUsbOutput.enabled || !UsbDirectNative.available || sourceBits(encoding) == 0) return false
+            if (!BitPerfectUsbOutput.enabled || !BitPerfectUsbOutput.directEnabled || !UsbDirectNative.available || sourceBits(encoding) == 0) return false
             val devices = BitPerfectUsbOutput.directDevices(context)
             return runCatching { devices.audioDevices().any { device ->
                 devices.raw(device)?.let { raw -> UsbDescriptors.plans(raw, sampleRate, channels, sourceBits(encoding)).any { plan ->
@@ -150,6 +150,7 @@ internal class UsbDirectAudioOutput private constructor(
         }
 
         fun open(context: Context, config: OutputConfig): AudioOutput? {
+            if (!BitPerfectUsbOutput.enabled || !BitPerfectUsbOutput.directEnabled) return null
             val devices = BitPerfectUsbOutput.directDevices(context)
             if (!devices.acquire()) return null
             var handle = 0L

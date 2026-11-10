@@ -115,15 +115,15 @@ class RestartPromptPolicyTest {
     @Test
     fun usbUsesSupportedEffectiveChoiceAndActualRunningSinkFacts() {
         val enabled = mutablePreferencesOf(BitPerfectUsbOutputKey to true)
-        assertEquals("false|false", restartSettingValues(enabled, false)[RestartReason.USB_OUTPUT])
-        assertEquals("true|false", restartSettingValues(enabled, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|false|false", restartSettingValues(enabled, false)[RestartReason.USB_OUTPUT])
+        assertEquals("true|false|false", restartSettingValues(enabled, true)[RestartReason.USB_OUTPUT])
         val conflicts = enabled.toMutablePreferences().apply { this[CrossfadeEnabledKey] = true }
-        assertEquals("false|false", restartSettingValues(conflicts, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|false|false", restartSettingValues(conflicts, true)[RestartReason.USB_OUTPUT])
         val exclusive = mutablePreferencesOf(UsbExclusiveAudioKey to true)
-        assertEquals("false|true", restartSettingValues(exclusive, true)[RestartReason.USB_OUTPUT])
+        assertEquals("false|true|false", restartSettingValues(exclusive, true)[RestartReason.USB_OUTPUT])
         val policy = RestartPromptPolicy()
         // The sink may have started after the activity. Disabling it differs from that real sink.
-        val actualRunning = running + (RestartReason.USB_OUTPUT to "true|false")
+        val actualRunning = running + (RestartReason.USB_OUTPUT to "true|false|false")
         policy.committed(restartSettingValues(enabled, true), restartSettingValues(conflicts, true), actualRunning)
         assertEquals(setOf(RestartReason.USB_OUTPUT), policy.reasons)
         assertTrue(policy.visible)

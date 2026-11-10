@@ -5,9 +5,10 @@ val audioProcessingPreferenceKeys = setOf(AudioProcessingEnabledKey)
 
 /** Baseline RestartPreferenceActions: output choices and their exclusions commit together. */
 fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enabled: Boolean) {
-    require(key in playbackOutputPreferenceKeys)
+    require(key in playbackOutputPreferenceKeys || key == DirectUsbDriverKey)
     // Also guard a stale dialog/search action. Never silently turn off the user's rejection policy.
     if (key == AudioOffload && enabled && this[RejectSuspectedUpscaledAudioKey, false]) return
+    if (key == DirectUsbDriverKey && enabled && !snapshot().bitPerfectOutputSelected()) return
     this[key] = enabled
     if (!enabled) return
     when (key) {
