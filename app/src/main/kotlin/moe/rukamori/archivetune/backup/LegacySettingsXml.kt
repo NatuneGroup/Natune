@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.*
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.StringReader
+import moe.rukamori.archivetune.shared.data.persistence.LegacyDataStorePreferences
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceKind
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.normalizeRestoredSettings
@@ -90,8 +91,9 @@ internal fun writeLegacySettingsXml(
     serializer.startDocument(Charsets.UTF_8.name(), true)
     serializer.startTag(null, "ArchiveTuneBackup")
     serializer.startTag(null, "Settings")
-    snapshot.keys.filter { includeKey(it.name) }.forEach { key ->
-        val value = snapshot[key] ?: return@forEach
+    val included = LegacyDataStorePreferences.filtered(snapshot, includeKey)
+    included.keys.forEach { key ->
+        val value = included[key] ?: return@forEach
         val tag = when (key.kind) {
             PreferenceKind.BOOLEAN -> "boolean"
             PreferenceKind.INT -> "int"

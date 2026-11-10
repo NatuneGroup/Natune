@@ -195,8 +195,9 @@ internal object AndroidRestoreCoordinator {
             require(seen.isNotEmpty()) { "Empty restore archive" }
             require(!includeLibrary || hasDb) { "Backup missing database" }
             require(!includeSettings || settingsKind != SettingsKind.NONE) { "Backup missing settings" }
-            if (settingsKind == SettingsKind.PB && !BackupPreferenceSelection.replacesWholeFile(includeSettings, includeAccount)) {
-                // Replacing the live file would also overwrite the categories the user left unselected.
+            if (BackupPreferenceSelection.needsConversion(settingsKind)) {
+                // A raw install would bypass the per-key filter and carry in device-bound, secure-store
+                // and unselected values; merging through XML keeps every excluded local value.
                 convertPbToXml(File(pbStage, SETTINGS_PB), File(stagedDir, SETTINGS_XML), includeKey)
                 deleteTree(pbStage)
                 settingsKind = SettingsKind.XML
@@ -209,7 +210,8 @@ internal object AndroidRestoreCoordinator {
                     settingsKind = SettingsKind.NONE
                 }
             }
-            require(includeLibrary || settingsKind != SettingsKind.NONE) { "Backup has nothing to restore" }
+            val noOp = BackupPreferenceSelection.isAccountOnlyNoOp(includeSettings, includeAccount, settingsKind)
+            require(includeLibrary || settingsKind != SettingsKind.NONE || noOp) { "Backup has nothing to restore" }
 
             val fontEntries = fontStage.listFiles()
                 ?.filter { it.isFile }
@@ -255,8 +257,6 @@ internal object AndroidRestoreCoordinator {
             if (includeLibrary) preflightDatabase(File(stagedDir, InternalDatabase.DB_NAME))
             if (settingsKind == SettingsKind.XML) {
                 preflightXml(File(stagedDir, SETTINGS_XML), includeKey)
-            } else if (settingsKind == SettingsKind.PB) {
-                preflightPb(File(pbStage, SETTINGS_PB))
             }
             require(StatFs(root.path).availableBytes >= AndroidRestoreLimits.MIN_FREE_BYTES) {
                 "Not enough free space for restore staging"
@@ -537,16 +537,6 @@ internal object AndroidRestoreCoordinator {
                 stagedRequired = false,
             )
         }
-        if (ready.settingsKind == SettingsKind.PB) {
-            val settingsDir = File(context.filesDir, "datastore")
-            val staged = File(File(settingsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}")
-            val previous = File(File(settingsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}")
-            targets += RestoreTarget(
-                livePath = File(settingsDir, SETTINGS_PB).path,
-                stagedPath = File(staged, SETTINGS_PB).path,
-                backupPath = File(previous, SETTINGS_PB).path,
-            )
-        }
         if (ready.settings) {
             val fontsDir = File(context.filesDir, BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME)
             val staged = File(File(fontsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}")
@@ -614,12 +604,6 @@ internal object AndroidRestoreCoordinator {
         }
     }
 
-    private fun preflightPb(file: File) {
-        require(file.isFile && file.length() > 0L) { "Restore settings missing" }
-        val snapshot = LegacyDataStorePreferences.read(file.readBytes())
-        require(snapshot.keys.isNotEmpty()) { "Restore settings are empty" }
-    }
-
     private fun hasRequiredStage(context: Context, ready: ReadyMarker): Boolean {
         val staged = File(stageRoot(context, ready), "staged")
         if (ready.library && !File(staged, InternalDatabase.DB_NAME).isFile) return false
@@ -627,11 +611,6 @@ internal object AndroidRestoreCoordinator {
         if (ready.settingsKind == SettingsKind.XML) {
             val snapshotPresent = File(stageRoot(context, ready), SETTINGS_PREVIOUS_FILE).isFile
             if (ready.previousSettingsPresent != snapshotPresent) return false
-        }
-        if (ready.settingsKind == SettingsKind.PB &&
-            !File(File(context.filesDir, "datastore/$RESTORE_PENDING_DIR/$STAGE_PREFIX${ready.stageId}"), SETTINGS_PB).isFile
-        ) {
-            return false
         }
         if (ready.settings) {
             val fonts = File(
