@@ -3,7 +3,7 @@
         url = https://github.com/vossgraves/core.git
 [submodule "lyrics"]
         path = lyrics
-        url = https://github.com/4nx3b/lyrics.git
+        url = https://github.com/NatuneGroup/lyrics.git
 [submodule "IconPack"]
         path = IconPack
         url = https://github.com/NatuneGroup/IconPack
