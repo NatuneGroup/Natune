@@ -41,4 +41,10 @@ class SettingsConflictReasonsTest {
             miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.LIQUID_GLASS, false, true, false))
         assertNull(miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.THEME, true, false, false))
     }
+    @Test fun directUsbSearchRequiresTheStoredParentEvenWhileItsOldSinkIsRunning() {
+        val preferences = mutablePreferencesOf()
+        assertEquals(R.string.direct_usb_driver_requires_bit_perfect,
+            settingsSwitchDisabledReason(DirectUsbDriverKey, preferences, true, true))
+    }
+
 }
