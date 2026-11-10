@@ -714,7 +714,8 @@ object PoolAccountManager {
 
     private suspend fun cached(context: Context, key: androidx.datastore.preferences.core.Preferences.Key<String>): String? {
         val raw = context.dataStore.getAsync(key)?.takeIf { it.isNotBlank() } ?: return null
-        return PoolCacheCrypto.decrypt(raw) ?: raw
+        // Ciphertext sealed by another install's Keystore key is no cache at all, so allow an immediate refetch.
+        return PoolCacheCrypto.decrypt(raw) ?: raw.takeUnless { it.startsWith("enc:1:") }.also { if (it == null) lastRefreshAtMillis = 0L }
     }
 
     /**

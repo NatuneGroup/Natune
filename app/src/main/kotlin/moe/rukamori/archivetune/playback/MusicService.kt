@@ -9562,8 +9562,8 @@ class MusicService :
                     .onFailure { Timber.tag("MusicService").w(it, "Tidal token refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
-                Timber.tag("MusicService").w("Tidal token refresh failed; flagging re-login and falling back to public instances")
-                markTidalNeedsRelogin()
+                Timber.tag("MusicService").w("Tidal token refresh failed (rejected=%s); falling back to public instances", TidalAccountManager.lastRefreshRejected)
+                if (TidalAccountManager.lastRefreshRejected) markTidalNeedsRelogin()
                 return@synchronized null
             }
             persistRefreshedTidalToken(refreshed)
@@ -9648,8 +9648,8 @@ class MusicService :
                     .onFailure { Timber.tag("MusicService").w(it, "Force refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
-                Timber.tag("MusicService").w("Force refresh failed; account needs re-login")
-                markTidalNeedsRelogin()
+                Timber.tag("MusicService").w("Force refresh failed (rejected=%s)", TidalAccountManager.lastRefreshRejected)
+                if (TidalAccountManager.lastRefreshRejected) markTidalNeedsRelogin()
                 return@synchronized null
             }
             persistRefreshedTidalToken(refreshed)

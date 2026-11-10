@@ -25,13 +25,15 @@ object BackupPreferencePolicy {
         "tidalCookie", "qobuzTokens",
         "spotifyStreamSpDc", "spotifyStreamSpKey", "spotifyStreamAccessToken", "spotifyStreamAccessTokenExpiresAt",
         "spotifyStreamUserId", "spotifyStreamAccountName", "spotifyStreamProduct", "spotifyStreamProductCheckedAt",
-        "innerTubeOAuthToken", "innerTubeOAuthRefreshToken",
+        "innerTubeOAuthToken", "innerTubeOAuthRefreshToken", "innerTubeOAuthExpiresAt",
         "accountImageUrl", "savedAccounts", "deezerArl", "deezerAccountName", "deezerAccountPremium",
         "amazonTurnstileJwt", "amazonTurnstileJwtExpiryMs", "amazonBypassToken", "paxsenixApiKey", "ai_api_key",
         "deeplApiKey", "openRouterApiKey", "telegramAccountName", "telegramAccountPhone",
         // Logical vault secrets for Apple Music, QQ Music and Listen Together. They must stay ACCOUNT-only
         // so a SETTINGS-only export can never carry them, even though they are ordinary preference names.
         "appleMusicMediaUserToken", "appleMusicDevToken", "qqMusicMusickey", "qqMusicCredential",
+        // The ticket is unusable without the account number it was issued to.
+        "qqMusicUin", "qqMusicNickname",
         "listenTogetherSessionToken",
     )
     private val deviceKeys = setOf("scheduledBackupEnabled", "scheduledBackupDirectoryUri", "scheduledBackupDirectoryName",
