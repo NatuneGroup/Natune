@@ -193,6 +193,7 @@ internal class DirectUsbAudioSink(
     override fun flush() {
         try {
             output?.flush()
+            if (playing) output?.play()
         } catch (error: AudioOutput.WriteException) {
             fallback()
         }
