@@ -24,4 +24,6 @@
     <string name="m6_canvas_cache_desc">Videos play offline. Oldest videos are removed when the cache is full.</string>
     <string name="m6_canvas_cache_used">Cache used</string>
     <string name="m6_canvas_cache_unmeasured">Not measured yet</string>
+    <string name="m6_canvas_cache_settings">Cache size and clearing</string>
+    <string name="m6_canvas_cache_settings_desc">The cache limit and the clear action live with the other caches in Storage.</string>
 </resources>

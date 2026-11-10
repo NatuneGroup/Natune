@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
+import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInFailure
 import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInKind
 import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInOutcome
@@ -373,7 +374,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/account", YouTubeAccountRoute, YouTubeLoginRoute, IosYouTubeOAuthRoute,
-    "settings/integration", "settings/integrations/device_connect", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
+    "settings/integration", "settings/spotify", "settings/integrations/device_connect", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
 
@@ -589,6 +590,15 @@ private fun IosSettingsRouteBody(
             )
             }
             "settings/integration" -> {
+                IntegrationSettings(
+                    controller = owners.controller,
+                    navigate = navigate,
+                    onOpenCrossServiceImport = { showCrossServiceImport = true },
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/spotify" -> {
                 val spotifyAccount by owners.spotifyCatalog.state.collectAsState()
                 val spotifyErrorKind by owners.spotifyCatalog.error.collectAsState()
                 val spotifyError = spotifyErrorKind?.let { kind ->
@@ -600,19 +610,15 @@ private fun IosSettingsRouteBody(
                     )
                 }
                 LaunchedEffect(Unit) { owners.spotifyCatalog.restore() }
-                IntegrationSettings(
+                SpotifyCatalogSettings(
                     controller = owners.controller,
-                    poolConfigured = owners.poolConfigured,
                     // The catalog account signs in here; the separate streaming sign-in lives on its own page.
-                    spotifyAccount = spotifyAccount,
-                    spotifyError = spotifyError,
-                    navigate = navigate,
-                    onConnectSpotify = owners.spotifyCatalog::connect,
-                    onReloadSpotifyPlaylists = owners.spotifyCatalog::reload,
-                    onLogoutSpotify = owners.spotifyCatalog::logOut,
-                    onDismissSpotifyError = owners.spotifyCatalog::dismissError,
-                    onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
-                    onOpenCrossServiceImport = { showCrossServiceImport = true },
+                    account = spotifyAccount,
+                    error = spotifyError,
+                    onConnect = owners.spotifyCatalog::connect,
+                    onReloadPlaylists = owners.spotifyCatalog::reload,
+                    onLogout = owners.spotifyCatalog::logOut,
+                    onDismissError = owners.spotifyCatalog::dismissError,
                     onFailure = onFailure,
                     scrollTo = scrollTo,
                 )

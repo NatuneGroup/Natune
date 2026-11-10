@@ -71,7 +71,6 @@
   <string name="phone_reference_experimental_features">Experimental Features</string>
   <string name="phone_reference_extensions_lyrics_first">Prefer lyrics extensions</string>
   <string name="phone_reference_extensions_lyrics_manage">Lyrics extensions</string>
-  <string name="phone_reference_extensions_spotify_metadata">Spotify Metadata</string>
   <string name="phone_reference_extensions_spotify_official">Spotify Playback (official, librespot)</string>
   <string name="phone_reference_external_downloader_package">Downloader App Package</string>
   <string name="phone_reference_font_preference">Font</string>

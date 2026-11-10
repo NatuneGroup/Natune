@@ -92,7 +92,6 @@ fun aiSettingsRows(
         )))
     }
     add(SettingsRow.Action("ai_test_api", Res.string.m6_test_api, testApi, enabled = config.canTestConfiguration() && !busy))
-    add(SettingsRow.Toggle("hide_ai_mix", Res.string.m6_hide_ai_mix, HideAiMixKey, false))
     add(SettingsRow.Action("target_language", Res.string.m6_target_language, showTargetLanguages))
     add(SettingsRow.Toggle("auto_translate_lyrics", Res.string.m6_auto_translate, AutoTranslateLyricsKey, false, enabled = config.canCallApi))
     if (preferences[AutoTranslateLyricsKey, false])
