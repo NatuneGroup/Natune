@@ -92,7 +92,7 @@ fun BottomSheetPlayer(
         val handoff=rememberPlayerHandoff(state,optical.motion && motionLevel.moves)
         val content=slots(preferences,surfaces).withHandoff(handoff).withTrackMotion(motionLevel.takeIf { surfaces.artwork } ?: PlayerMotionLevel.None)
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical,
-            LocalSystemReducedMotion.current, motionLevel)
+            LocalSystemReducedMotion.current, motionLevel.takeIf { optical.motion } ?: PlayerMotionLevel.None)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)
         DisposableEffect(showingLyrics) {
