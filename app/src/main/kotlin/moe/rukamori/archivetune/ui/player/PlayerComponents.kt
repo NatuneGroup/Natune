@@ -1002,7 +1002,7 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(width = sideButtonWidth, height = sideButtonHeight)
-                                .playerPressFeedback().clip(rememberPlayerPlayShape(isPlaying, RoundedCornerShape(32.dp))),
+                                .playerPressFeedback().clip(RoundedCornerShape(32.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.player_skip_previous),
@@ -1055,7 +1055,7 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(width = sideButtonWidth, height = sideButtonHeight)
-                                .playerPressFeedback().clip(rememberPlayerPlayShape(isPlaying, RoundedCornerShape(32.dp))),
+                                .playerPressFeedback().clip(RoundedCornerShape(32.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.player_skip_next),
