@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -85,6 +86,16 @@ fun AuthWebViewScreen(
         subtitle = subtitle,
         modifier = modifier,
         onDismiss = { onDismiss?.invoke() ?: run { navController.navigateUp() } },
+        // canGoBack() is polled at press time because it changes during in-page navigation
+        // without recomposing.
+        onBack = {
+            val view = webView
+            if (navigateBackInWebView && view?.canGoBack() == true) {
+                view.goBack()
+            } else {
+                onDismiss?.invoke() ?: run { navController.navigateUp() }
+            }
+        },
         statusContent = statusContent,
     ) {
         AndroidView(
@@ -107,17 +118,6 @@ fun AuthWebViewScreen(
             },
         )
     }
-
-    // Enabled purely on presence: canGoBack() is polled at press time because it changes during
-    // in-page navigation without recomposing, so keying `enabled` on it goes stale either way.
-    BackHandler(enabled = webView != null) {
-        val view = webView
-        if (navigateBackInWebView && view?.canGoBack() == true) {
-            view.goBack()
-        } else {
-            onDismiss?.invoke() ?: run { navController.navigateUp() }
-        }
-    }
 }
 
 /** Shared by the routed sign-ins and both Spotify profiles, including their popup container. */
@@ -127,6 +127,7 @@ internal fun AuthWebViewSheet(
     title: String,
     subtitle: String,
     onDismiss: () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     statusContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -142,7 +143,11 @@ internal fun AuthWebViewSheet(
         // A WebView scroll is a page drag, not a sheet drag: letting the sheet take vertical
         // swipes both stole scrolling from the form and dismissed in-progress sign-ins.
         sheetGesturesEnabled = false,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
     ) {
+        // The sheet is its own dialog window, so back presses only reach handlers registered
+        // inside it; the sheet's own back-dismiss is off so the WebView can go back first.
+        BackHandler(onBack = onBack)
         AuthWebViewLayout(
             modifier = Modifier
                 .fillMaxWidth()

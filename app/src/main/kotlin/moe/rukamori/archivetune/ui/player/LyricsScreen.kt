@@ -339,7 +339,7 @@ fun LyricsScreen(
                             id = mediaMetadata.id,
                             providerName = lyricsResult.providerName,
                         )
-                    } else {
+                    } else if (lyricsResult.isConclusive) {
                         replaceLyricsIfAbsentOrNotFound(
                             id = mediaMetadata.id,
                             lyrics = lyricsResult.lyrics,

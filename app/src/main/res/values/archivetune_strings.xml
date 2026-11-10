@@ -960,7 +960,9 @@
     <string name="about_position_yuki">dummy reze | admin</string>
     <string name="about_position_mo_agamy">Base Framework | Metrolist</string>
     <string name="about_position_zion_huang">Creator of InnerTune · Foundation for Metrolist, ArchiveTune, and other forks</string>
+    <string name="about_position_boidushya">Creator of BetterLyrics Provider</string>
     <string name="about_content_desc_github">GitHub</string>
+    <string name="about_content_desc_website">Website</string>
     <string name="about_content_desc_discord">Discord</string>
     <string name="about_content_desc_telegram">Telegram</string>
     <string name="about_content_desc_donate">Donate</string>
@@ -1362,4 +1364,5 @@
     <string name="queue_selection_count">%1$d selected</string>
     <string name="queue_save_failed">Could not save the queue. Try again.</string>
     <string name="lyrics_searching_lyrics_providers">Searching lyrics providers…</string>
+    <string name="lyrics_refetch_failed">Couldn\'t refresh lyrics. Check your connection and try again.</string>
 </resources>

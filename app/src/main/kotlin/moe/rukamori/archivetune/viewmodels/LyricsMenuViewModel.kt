@@ -40,11 +40,13 @@ import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.shared.domain.lyrics.LrcTranslationMerge
 import moe.rukamori.archivetune.lyrics.LyricsHelper
+import moe.rukamori.archivetune.lyrics.LyricsRefetchResult
 import moe.rukamori.archivetune.lyrics.LyricsResult
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.displayLyricsText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
+import moe.rukamori.archivetune.lyrics.toRefetchResult
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.utils.NetworkConnectivityObserver
@@ -107,8 +109,8 @@ class LyricsMenuViewModel
         val lyricsSearchState: StateFlow<LyricsSearchScreenState> = _lyricsSearchState.asStateFlow()
         private val _isRefetching = MutableStateFlow(false)
         val isRefetching: StateFlow<Boolean> = _isRefetching.asStateFlow()
-        private val _refetchCompletionEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-        val refetchCompletionEvents: SharedFlow<Unit> = _refetchCompletionEvents.asSharedFlow()
+        private val _refetchCompletionEvents = MutableSharedFlow<LyricsRefetchResult>(extraBufferCapacity = 1)
+        val refetchCompletionEvents: SharedFlow<LyricsRefetchResult> = _refetchCompletionEvents.asSharedFlow()
         val isAiTranslating = MutableStateFlow(false)
         private val _translationUndo = MutableStateFlow<LyricsTranslationUndoSnapshot?>(null)
         val translationUndo: StateFlow<LyricsTranslationUndoSnapshot?> = _translationUndo.asStateFlow()
@@ -212,22 +214,39 @@ class LyricsMenuViewModel
             if (!_isRefetching.compareAndSet(expect = false, update = true)) return
 
             viewModelScope.launch(Dispatchers.IO) {
+                var outcome = LyricsRefetchResult.Unavailable
                 try {
                     val result = lyricsHelper.getLyricsWithProvider(mediaMetadata, forceRefresh = true)
-                    database.withTransaction {
-                        replaceLyrics(
-                            id = mediaMetadata.id,
-                            lyrics = result.lyrics,
-                            source = LyricsEntity.Source.REMOTE.value,
-                            providerName = result.providerName,
-                        )
+                    outcome = result.toRefetchResult()
+                    // Only a found result may replace what is stored: a miss would otherwise wipe
+                    // lyrics the user already has, edits and embedded lyrics included.
+                    when (outcome) {
+                        LyricsRefetchResult.Updated ->
+                            database.withTransaction {
+                                replaceLyrics(
+                                    id = mediaMetadata.id,
+                                    lyrics = result.lyrics,
+                                    source = LyricsEntity.Source.REMOTE.value,
+                                    providerName = result.providerName,
+                                )
+                            }
+                        LyricsRefetchResult.NotFound ->
+                            database.withTransaction {
+                                replaceLyricsIfAbsentOrNotFound(
+                                    id = mediaMetadata.id,
+                                    lyrics = result.lyrics,
+                                    providerName = result.providerName,
+                                )
+                            }
+                        LyricsRefetchResult.Unavailable -> Unit
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
+                    outcome = LyricsRefetchResult.Unavailable
                 } finally {
                     _isRefetching.value = false
-                    _refetchCompletionEvents.tryEmit(Unit)
+                    _refetchCompletionEvents.tryEmit(outcome)
                 }
             }
         }
