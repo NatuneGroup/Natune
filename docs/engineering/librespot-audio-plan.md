@@ -1,7 +1,6 @@
 # Librespot audio implementation plan
 
-Research completed 2026-11-08, within the 25-minute research budget. Base:
-`integration/r3`, `1f93faac`. Scope: the audio engine and its source-chain adapter;
+Scope: the audio engine and its source-chain adapter;
 Spotify catalog/home/library/playlist mapping and Modules settings stay outside this change.
 
 ## Decision and current evidence
@@ -9,9 +8,9 @@ Spotify catalog/home/library/playlist mapping and Modules settings stay outside 
 Use **Rust librespot core + metadata through a small JNI library**, compiled per
 Android ABI on CI. Media3 remains the player, decoder, cache and output owner.
 Do not embed librespot's player, a second output engine, or its discovery stack.
-Desktop and iOS native packaging are follow-ups, documented below.
+Desktop reuses the same cdylib through JNI; iOS packaging is a follow-up (see below).
 
-Evidence read online on 2026-11-08:
+Upstream evidence behind the decision (librespot pin `15e02e86`):
 
 - [Rust repository](https://github.com/librespot-org/librespot) is active; the
   reviewed `dev` head is `15e02e86c72d96dd39d548e3749f00abe39ffdde`, dated November 7.
@@ -110,24 +109,20 @@ select only each build's ABIs.
 Expected native size is several MiB per ABI; **actual APK/library size and build
 minutes must be measured in CI**, not asserted from source. Kotlin-only unit-test
 jobs need no native library. After successful native preparation, APK assembly
-requires the selected ABI libraries and CI audits their packaged bytes. The
-continuation request explicitly permits native-toolchain failure: without an exact
-valid cache, remove partial JNI, warn, and assemble an APK with this optional source
-unavailable. A green APK job alone is not native-build evidence.
+requires the selected ABI libraries and CI audits their packaged bytes. Native-toolchain
+failure is tolerated: without an exact valid cache, remove partial JNI, warn, and
+assemble an APK with this optional source unavailable. A green APK job alone is not native-build evidence.
 
-Desktop would need JNI library staging for Linux/macOS/Windows and a portable
-OAuth-owned JNI/source adapter. Its existing native AES-CTR/FFmpeg recipe can
-potentially consume the returned key, but the Android Context/DataStore/Media3
-owner cannot be reused as a JVM host adapter. This Rust choice intentionally does not
-pretend the JVM branch now plays; retain source-unavailable fallback and document it.
+Desktop loads the same cdylib through the shared `SpotifyLibrespotNative` JNI object
+(`DesktopLibrespotLibrary`), and `DesktopSpotifyLibrespotAudio` adapts it to the desktop
+source chain with the existing native AES-CTR/FFmpeg byte recipe. `.github/actions/build-desktop-librespot`
+runs `native/librespot/build-desktop.sh` for linux-x64, linux-arm64 and windows-x64; other hosts
+(macOS) and failed native builds ship without the library and fall back to the configured sources.
 iOS needs a C/Swift bridge, per-target static libraries and AVFoundation byte transport;
-JNI is not an iOS solution. Existing OAuth on both hosts stays intact.
+JNI is not an iOS solution, so iOS keeps OAuth sign-in only and reports Librespot unavailable.
 
 ## Validation and outstanding evidence
 
-Local execution is limited to `python3 scripts/check_repository.py --worktree` and
-`python3 -m unittest discover -s iosApp/tests -p 'test_*.py'`, plus source/diff inspection.
-No local Gradle/JVM, lint, Kotlin/Rust build, emulator, Spotify login or playback probe.
 CI must compile Rust for all shipped ABIs and Android/shared Kotlin tests, then
 assemble release-shaped APKs and measure their closure. Device QA must cover the
 registered OAuth app, an eligible Premium account and an affected #1649 account,
@@ -135,14 +130,7 @@ registered OAuth app, an eligible Premium account and an affected #1649 account,
 logout/account replacement, source fallback, low-data mode and concurrent prefetch.
 A green compiler or fixture result is not device playback evidence.
 
-
-## Implemented source and file map
-
-The plan was committed as `40a35e37`; native core/policy work as `30f9e5fc`;
-Android routing/packaging as `7fd33083`; queued-session/cache admission and native
-request-policy fixes as `b4e53650`, all pushed on `feat/r3-librespot-audio`.
-No PR or per-feature CI was created. This is source implementation evidence,
-not a compiled or device-tested playback result.
+## Source file map
 
 | Area | Files / behavior |
 |---|---|
@@ -153,6 +141,7 @@ not a compiled or device-tested playback result.
 | Source-chain adapter/cache | [SpotifyAudioResolver](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioResolver.kt), [SpotifyAudioCache](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/SpotifyAudioCache.kt), [MusicService](../../app/src/main/kotlin/moe/rukamori/archivetune/playback/MusicService.kt) |
 | OAuth binding | [Account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyLibrespotAccount.kt) persists a newly verified catalog binding even when returning a cached token; [streaming account](../../app/src/main/kotlin/moe/rukamori/archivetune/spotify/SpotifyStreamingAccount.kt) exposes its existing effective-engine calculation |
 | Packaging | [Gradle ABI gate](../../app/build.gradle.kts), [R8 JNI keep](../../app/proguard-rules.pro), [MIT asset](../../app/src/main/assets/licenses/librespot-MIT.txt), [CI action](../../.github/actions/build-librespot/action.yml) |
+| Desktop | [JNI loader](../../desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/DesktopLibrespotLibrary.kt), [source adapter](../../desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/DesktopSpotifyLibrespotAudio.kt), [host recipe](../../native/librespot/build-desktop.sh), [CI action](../../.github/actions/build-desktop-librespot/action.yml) |
 | CI callers | Android assembly/lint and ARM64 candidate in [Build Pull Request](../../.github/workflows/build_pull_request.yml), shipping matrix in [release artifacts](../../.github/workflows/_release-artifacts.yml), [emulator QA](../../.github/workflows/android_emulator_qa.yml) |
 
 The binding supplies the actual Android API level (sysinfo can be unknown) and
@@ -167,46 +156,16 @@ CTR implementation at a 32 KiB read size; the Unofficial default remains 16 byte
 Cache tags are validated under the read guard's captured account/engine/quality;
 read-admission failures re-prepare through the source chain at the current position.
 Shared tests cover cache account/engine/quality separation and malformed renditions.
-No Maven dependency, extra output engine or existing Gradle/NDK version was changed.
-
-Local validation: repository check **0 findings**; iOS Python fixtures **26 passed**.
-Only Cargo lock metadata was generated locally (no Rust compiler invoked); the
-small reference checkout and temporary registry/research data were removed.
-Kotlin/common tests, Rust ABI compilation, lint, APK assembly, native/JNI loading,
-codec/seek/device testing, actual library/APK size and CI duration remain **UNRUN**.
+No Maven dependency or extra output engine is involved.
 
 The implementation deliberately does not advertise or control a Connect receiver.
 It opens a protocol audio session for local playback; no Spirc/player/discovery
-backend is linked. Desktop and iOS still return source unavailable while using
-Librespot. SOCKS and authenticated HTTP proxy configurations also fail the Android
-source rather than bypassing the selected proxy. An upstream audio-key-denied
-account remains unsupported even with Premium; it falls through to the next source.
-Modules UI/registry code and catalog metadata/queue mapping are untouched. The
-concurrent built-in-extension branch must keep its existing source-enable gate
-around this adapter when the branches integrate.
+backend is linked. iOS still returns source unavailable while using Librespot.
+SOCKS and authenticated HTTP proxy configurations fail the source rather than
+bypassing the selected proxy. An upstream audio-key-denied account remains
+unsupported even with Premium; it falls through to the next source.
 
-## Continuation audit (2026-11-08)
-
-Reviewed the existing plan and `8adb6cd9...b66bcf54` source changes without repeating
-the earlier protocol research. The bridge's used API signatures and Vorbis/audio-key
-types were checked against a bounded, temporary checkout of the same upstream pin;
-this was source inspection, with no Rust compilation. The scratch source was removed.
-
-The missing source pieces at hand-off were native-build failure resilience, an
-exact prepared-library cache, complete TV ABI selection, the public OAuth client
-id in Debug CI, an APK library audit, immediate credential-edit revocation and
-fail-closed cache alignment. Continuation fixes:
-
-- `0dbf07ab`: exact JNI cache/manifest plus Cargo caching, ABI/export/ELF checks,
-  all four TV-universal ABIs, Debug public client-id input, packaged-byte audits
-  and explicit JNI-unavailable APKs after native preparation failure.
-- `0c67fccc`: credential deletion closes JNI synchronously; a Kotlin revocation
-  epoch kills existing live/cache guards before preference observers run. Later
-  requests can rebuild after rapid same-account sign-out/sign-in. Missing JNI
-  fails before OAuth/search, and cache-alignment errors reject the candidate.
-- `d9fbefff` and the documentation follow-up: SDK-path fallback, NDK version
-  verification, and preference for the installed pinned NDK over a runner's
-  unrelated generic `ANDROID_NDK_HOME`.
+## End-to-end status
 
 | End-to-end requirement | Current source state / evidence still missing |
 |---|---|
@@ -219,10 +178,8 @@ fail-closed cache alignment. Continuation fixes:
 | Reconnect | Healthy sessions reused; rotated token/invalid session rebuilt on a later request, with deadline/cancellation/generation guards. Network-loss/token-rotation QA is pending. |
 | Fallback | Missing JNI, metadata/key/format/auth/throttle failure yields no source candidate; the configured chain continues. Read-admission failure rejects Spotify and preserves position during re-prepare. Device fallback remains unverified. |
 | Sign-out | Grant deletion closes JNI at the edit; native watch/generation and Kotlin read epochs revoke queued/in-flight work and descriptors. Account replacement, engine change and service destruction also invalidate. Actual device cleanup is unverified. |
-| Desktop / iOS | Existing OAuth remains. Desktop needs JVM JNI/session/source and per-host packaging; iOS needs C/Swift/static-library/AVFoundation range transport. Both still report Librespot unavailable. |
+| Desktop / iOS | Desktop resolves through the shared JNI object where CI staged a host library (linux-x64, linux-arm64, windows-x64); playback is unverified. iOS keeps OAuth only and needs a C/Swift/static-library/AVFoundation range transport. |
 
 The remaining acceptance work is CI compilation and physical playback validation,
-not another replacement engine. Allowed local checks still report **0 repository
-findings**, **26 iOS Python fixtures passed**. No PR, feature workflow dispatch,
-local Gradle/JVM/Rust build, lint, emulator or account playback probe was performed.
-Affected upstream #1649 accounts remain unsupported, even with Premium.
+not another replacement engine. Affected upstream #1649 accounts remain unsupported,
+even with Premium.
