@@ -37,6 +37,25 @@ class BackupAccountPreferenceKeysTest {
     }
 
     @Test
+    fun everyPersonalSignInIsAccountData() {
+        listOf(
+            "innerTubeOAuthToken",
+            "innerTubeOAuthRefreshToken",
+            "innerTubeOAuthExpiresAt",
+            "savedAccounts",
+            "deezerArl",
+            "appleMusicMediaUserToken",
+            "appleMusicDevToken",
+            "qqMusicUin",
+            "qqMusicMusickey",
+            "qqMusicCredential",
+            "listenTogetherSessionToken",
+        ).forEach { key ->
+            assertTrue(key, key in BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS)
+        }
+    }
+
+    @Test
     fun thePoolOptOutChoiceRemainsAnExportableSetting() {
         assertFalse("use_pool_accounts" in BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS)
     }

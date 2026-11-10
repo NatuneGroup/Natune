@@ -121,6 +121,24 @@ object TidalAccountManager {
     }
 
     /**
+     * One refresh attempt: [token] when the exchange succeeded, and [rejected] when Tidal refused the
+     * stored grant (400/401), so only an interactive sign-in can help. Every caller reads the outcome
+     * of its own call instead of shared state another refresh could overwrite.
+     */
+    data class RefreshResult(
+        val token: TokenResult?,
+        val rejected: Boolean,
+    ) {
+        companion object {
+            /** Tidal refused the grant; the stored session is finished. */
+            val Refused = RefreshResult(token = null, rejected = true)
+
+            /** Network error, timeout or a missing client: keep the stored session and retry later. */
+            val Unavailable = RefreshResult(token = null, rejected = false)
+        }
+    }
+
+    /**
      * Exchanges a stored refresh token for a fresh access token via the OAuth `refresh_token`
      * grant. Tidal typically does not return a new refresh_token here, so callers should keep the
      * existing one when [TokenResult.refreshToken] is null.
@@ -128,18 +146,18 @@ object TidalAccountManager {
     suspend fun refreshAccessToken(
         refreshToken: String,
         flow: String = FLOW_OAUTH,
-    ): TokenResult? =
-        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+    ): RefreshResult {
+        return AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
             withContext(Dispatchers.IO) {
             if (flow == FLOW_WEBCAPTURE) {
                 Timber.tag("TidalAccount").w("web-capture session has no refresh token; re-login required")
-                return@withContext null
+                return@withContext RefreshResult.Refused
             }
             val clientId = if (flow == FLOW_PKCE) PKCE_CLIENT_ID else CLIENT_ID
             val clientSecret = if (flow == FLOW_PKCE) PKCE_CLIENT_SECRET else CLIENT_SECRET
             // Without this flow's client the grant cannot be attempted. Return before any request, so
             // a stored session is never affected by a refresh that could not run.
-            if (clientId.isBlank() || clientSecret.isBlank()) return@withContext null
+            if (clientId.isBlank() || clientSecret.isBlank()) return@withContext RefreshResult.Unavailable
             val body =
                 FormBody
                     .Builder()
@@ -160,26 +178,31 @@ object TidalAccountManager {
                     val payload = response.body?.string().orEmpty()
                     if (!response.isSuccessful || payload.isBlank()) {
                         Timber.tag("TidalAccount").w("token refresh failed: %d", response.code)
-                        return@use null
+                        return@use TidalRefreshOutcome.failed(response.code)
                     }
                     val json = JSONObject(payload)
                     val user = json.optJSONObject("user")
-                    TokenResult(
-                        accessToken = json.getString("access_token"),
-                        refreshToken = json.optString("refresh_token").ifBlank { null },
-                        expiresAtMillis =
-                            System.currentTimeMillis() + (json.optLong("expires_in", 3600L) * 1000L),
-                        userId = user?.optLong("userId")?.takeIf { it > 0 },
-                        username = user?.optString("username")?.ifBlank { null },
-                        countryCode = user?.optString("countryCode")?.ifBlank { null },
+                    RefreshResult(
+                        token =
+                            TokenResult(
+                                accessToken = json.getString("access_token"),
+                                refreshToken = json.optString("refresh_token").ifBlank { null },
+                                expiresAtMillis =
+                                    System.currentTimeMillis() + (json.optLong("expires_in", 3600L) * 1000L),
+                                userId = user?.optLong("userId")?.takeIf { it > 0 },
+                                username = user?.optString("username")?.ifBlank { null },
+                                countryCode = user?.optString("countryCode")?.ifBlank { null },
+                            ),
+                        rejected = false,
                     )
                 }
             }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
                 Timber.tag("TidalAccount").w(it, "token refresh error")
-                null
+                RefreshResult.Unavailable
             }
             }
-        } ?: null
+        } ?: RefreshResult.Unavailable
+    }
 
     // PKCE web login (primary WebView flow) + Bearer capture (fallback).
 

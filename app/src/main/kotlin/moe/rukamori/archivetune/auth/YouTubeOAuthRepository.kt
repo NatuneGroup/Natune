@@ -52,9 +52,6 @@ object YouTubeOAuthRepository {
     private const val TOKEN_URL = "https://www.youtube.com/o/oauth2/token"
     private const val REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
-    /** Refresh this far before actual expiry, so a request never races the deadline. */
-    private const val REFRESH_SKEW_MS = 5 * 60 * 1000L
-
     private val client =
         OkHttpClient
             .Builder()
@@ -166,9 +163,9 @@ object YouTubeOAuthRepository {
 
     /**
      * Returns a valid access token, refreshing when it is near expiry. Null when no session exists,
-     * when the OAuth client is not configured, or when the refresh was rejected. A rejected refresh
-     * means the grant was revoked (password change, sign-out, or the 6-month idle expiry), so the
-     * stored session is cleared rather than left to fail on every request.
+     * when the OAuth client is not configured, or when the refresh did not succeed. Only a revoked
+     * grant (password change, sign-out, or the 6-month idle expiry) clears the stored session; a
+     * network failure keeps it so the next attempt can still refresh.
      */
     suspend fun validAccessToken(context: Context): String? =
         withContext(Dispatchers.IO) {
@@ -177,7 +174,7 @@ object YouTubeOAuthRepository {
             val origin = owner.origin()
             val expiresAt = context.dataStore.get(InnerTubeOAuthExpiresAtKey, 0L)
             val current = context.dataStore.get(InnerTubeOAuthTokenKey, "")
-            if (current.isNotBlank() && expiresAt - REFRESH_SKEW_MS > System.currentTimeMillis()) {
+            if (current.isNotBlank() && !YouTubeOAuthRefreshPolicy.needsRefresh(expiresAt, System.currentTimeMillis())) {
                 return@withContext current
             }
             val refresh = context.dataStore.get(InnerTubeOAuthRefreshTokenKey, "")
@@ -196,8 +193,12 @@ object YouTubeOAuthRepository {
             val json = post(TOKEN_URL, form)
             val access = json?.optString("access_token")?.takeIf { it.isNotBlank() }
             if (access == null) {
-                Timber.tag(TAG).w("Refresh rejected — clearing the OAuth session")
-                clear(origin)
+                if (YouTubeOAuthRefreshPolicy.isGrantRevoked(json?.optString("error"))) {
+                    Timber.tag(TAG).w("Refresh rejected — clearing the OAuth session")
+                    clear(origin)
+                } else {
+                    Timber.tag(TAG).w("Refresh did not complete; keeping the OAuth session")
+                }
                 return@withContext null
             }
             val committed = persist(

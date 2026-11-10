@@ -95,6 +95,44 @@ class AndroidRestoreCoordinatorRecoveryTest {
     }
 
     @Test
+    fun committedNoOpRecoveryKeepsTheSavedQueue() = runTest {
+        val ops = FakeFileOps()
+        val journal = "restore-pending/transaction"
+        val transaction = RestoreTransaction(ops, journal, emptyList())
+        ops.failDeletes = true
+        runCatching { transaction.commit() }
+        ops.failDeletes = false
+
+        var queueDeletes = 0
+        var cleanups = 0
+        val ready = ReadyMarker(
+            stageId = "stage-noop",
+            library = false,
+            settings = false,
+            account = true,
+            settingsKind = SettingsKind.NONE,
+            fontEntries = emptyList(),
+            previousSettingsPresent = false,
+        )
+        val outcome = AndroidRestoreCoordinator.recoverAtStartup(
+            ops = ops,
+            journalPath = journal,
+            ready = ready,
+            callbacks = AndroidRestoreCoordinator.AndroidRestoreRecoveryCallbacks(
+                hasRequiredStage = { true },
+                commit = { },
+                cleanup = { cleanups++ },
+                deletePendingQueue = { queueDeletes++ },
+                resumeApply = { },
+                block = { },
+            ),
+        )
+
+        if (outcome == RecoveryOutcome.COMMITTED) assertEquals(1, cleanups)
+        assertEquals(0, queueDeletes)
+    }
+
+    @Test
     fun settingsRollbackRestoresTheSnapshotOrDeletesTheCreatedFile() = runTest {
         val ops = FakeFileOps()
         val live = "files/datastore/settings.preferences_pb"

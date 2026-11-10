@@ -103,8 +103,8 @@ internal object AndroidRestoreCoordinator {
             val settingsDir = File(context.filesDir, "datastore")
             val pbStageRoot = File(settingsDir, RESTORE_PENDING_DIR)
             val pbStage = File(pbStageRoot, "$STAGE_PREFIX$stageId")
-            val settingsExcludedKeys =
-                if (includeAccount) emptySet() else BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS
+            val includePreferences = BackupPreferenceSelection.carriesPreferences(includeSettings, includeAccount)
+            val includeKey: (String) -> Boolean = { BackupPreferenceSelection.includes(it, includeSettings, includeAccount) }
             var hasDb = false
             var settingsKind = SettingsKind.NONE
             var fontCount = 0
@@ -141,7 +141,7 @@ internal object AndroidRestoreCoordinator {
                                 )
                             }
 
-                            isXml && includeSettings -> {
+                            isXml && includePreferences -> {
                                 if (settingsKind == SettingsKind.PB) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.XML
                                 require(entry.size != 0L) { "Restore settings are empty" }
@@ -155,7 +155,7 @@ internal object AndroidRestoreCoordinator {
                                 )
                             }
 
-                            isPb && includeSettings -> {
+                            isPb && includePreferences -> {
                                 if (settingsKind == SettingsKind.XML) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.PB
                                 require(entry.size != 0L) { "Restore settings are empty" }
@@ -195,6 +195,23 @@ internal object AndroidRestoreCoordinator {
             require(seen.isNotEmpty()) { "Empty restore archive" }
             require(!includeLibrary || hasDb) { "Backup missing database" }
             require(!includeSettings || settingsKind != SettingsKind.NONE) { "Backup missing settings" }
+            if (BackupPreferenceSelection.needsConversion(settingsKind)) {
+                // A raw install would bypass the per-key filter and carry in device-bound, secure-store
+                // and unselected values; merging through XML keeps every excluded local value.
+                convertPbToXml(File(pbStage, SETTINGS_PB), File(stagedDir, SETTINGS_XML), includeKey)
+                deleteTree(pbStage)
+                settingsKind = SettingsKind.XML
+            }
+            if (settingsKind == SettingsKind.XML && !includeSettings) {
+                val stagedXml = File(stagedDir, SETTINGS_XML)
+                // A backup made before any sign-in has no account keys; that is nothing to restore, not an error.
+                if (FileInputStream(stagedXml).use { readLegacySettings(it, includeKey) }.isEmpty) {
+                    stagedXml.delete()
+                    settingsKind = SettingsKind.NONE
+                }
+            }
+            val noOp = BackupPreferenceSelection.isAccountOnlyNoOp(includeSettings, includeAccount, settingsKind)
+            require(includeLibrary || settingsKind != SettingsKind.NONE || noOp) { "Backup has nothing to restore" }
 
             val fontEntries = fontStage.listFiles()
                 ?.filter { it.isFile }
@@ -239,9 +256,7 @@ internal object AndroidRestoreCoordinator {
             preflightTargets(targets)
             if (includeLibrary) preflightDatabase(File(stagedDir, InternalDatabase.DB_NAME))
             if (settingsKind == SettingsKind.XML) {
-                preflightXml(File(stagedDir, SETTINGS_XML), settingsExcludedKeys)
-            } else if (settingsKind == SettingsKind.PB) {
-                preflightPb(File(pbStage, SETTINGS_PB))
+                preflightXml(File(stagedDir, SETTINGS_XML), includeKey)
             }
             require(StatFs(root.path).availableBytes >= AndroidRestoreLimits.MIN_FREE_BYTES) {
                 "Not enough free space for restore staging"
@@ -349,7 +364,7 @@ internal object AndroidRestoreCoordinator {
             RecoveryOutcome.ROLLED_BACK -> callbacks.cleanup(ready)
 
             RecoveryOutcome.COMMITTED -> {
-                runCatching { callbacks.deletePendingQueue() }
+                if (ready == null || ready.changesLiveData()) runCatching { callbacks.deletePendingQueue() }
                 runCatching { callbacks.cleanup(ready) }
             }
 
@@ -382,7 +397,7 @@ internal object AndroidRestoreCoordinator {
         }
         when (outcome) {
             RecoveryOutcome.COMMITTED -> {
-                deletePendingQueue(context)
+                if (ready.changesLiveData()) deletePendingQueue(context)
                 cleanupSafely(context, ready)
             }
 
@@ -418,6 +433,10 @@ internal object AndroidRestoreCoordinator {
         ops: RestoreFileOps,
         ready: ReadyMarker,
     ) {
+        if (!ready.changesLiveData()) {
+            cleanupSafely(context, ready)
+            return
+        }
         val root = restoreRoot(context)
         val journal = File(root, JOURNAL_FILE)
         val targets = try {
@@ -498,11 +517,7 @@ internal object AndroidRestoreCoordinator {
         val file = File(stageRoot(context, ready), "staged/$SETTINGS_XML")
         require(file.isFile) { "Staged settings missing" }
         FileInputStream(file).use { input ->
-            restoreSettingsFromXml(
-                context,
-                input,
-                if (ready.account) emptySet() else BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS,
-            )
+            restoreSettingsFromXml(context, input) { BackupPreferenceSelection.includes(it, ready.settings, ready.account) }
         }
     }
 
@@ -524,16 +539,6 @@ internal object AndroidRestoreCoordinator {
                 stagedPath = File(staged, "${InternalDatabase.DB_NAME}-journal").path,
                 backupPath = File(previous, "${InternalDatabase.DB_NAME}-journal").path,
                 stagedRequired = false,
-            )
-        }
-        if (ready.settingsKind == SettingsKind.PB) {
-            val settingsDir = File(context.filesDir, "datastore")
-            val staged = File(File(settingsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}")
-            val previous = File(File(settingsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}")
-            targets += RestoreTarget(
-                livePath = File(settingsDir, SETTINGS_PB).path,
-                stagedPath = File(staged, SETTINGS_PB).path,
-                backupPath = File(previous, SETTINGS_PB).path,
             )
         }
         if (ready.settings) {
@@ -587,16 +592,20 @@ internal object AndroidRestoreCoordinator {
         }
     }
 
-    private fun preflightXml(file: File, excludedKeys: Set<String>) {
+    private fun preflightXml(file: File, includeKey: (String) -> Boolean) {
         require(file.isFile && file.length() > 0L) { "Restore settings missing" }
-        val values = FileInputStream(file).use { input -> readLegacySettings(input, excludedKeys) }
+        val values = FileInputStream(file).use { input -> readLegacySettings(input, includeKey) }
         require(!values.isEmpty) { "Restore settings are empty" }
     }
 
-    private fun preflightPb(file: File) {
-        require(file.isFile && file.length() > 0L) { "Restore settings missing" }
-        val snapshot = LegacyDataStorePreferences.read(file.readBytes())
-        require(snapshot.keys.isNotEmpty()) { "Restore settings are empty" }
+    private fun convertPbToXml(source: File, target: File, includeKey: (String) -> Boolean) {
+        require(source.isFile && source.length() > 0L) { "Restore settings missing" }
+        val snapshot = LegacyDataStorePreferences.read(source.readBytes())
+        FileOutputStream(target).use { output ->
+            writeLegacySettingsXml(output, snapshot, includeKey)
+            output.flush()
+            output.fd.sync()
+        }
     }
 
     private fun hasRequiredStage(context: Context, ready: ReadyMarker): Boolean {
@@ -606,11 +615,6 @@ internal object AndroidRestoreCoordinator {
         if (ready.settingsKind == SettingsKind.XML) {
             val snapshotPresent = File(stageRoot(context, ready), SETTINGS_PREVIOUS_FILE).isFile
             if (ready.previousSettingsPresent != snapshotPresent) return false
-        }
-        if (ready.settingsKind == SettingsKind.PB &&
-            !File(File(context.filesDir, "datastore/$RESTORE_PENDING_DIR/$STAGE_PREFIX${ready.stageId}"), SETTINGS_PB).isFile
-        ) {
-            return false
         }
         if (ready.settings) {
             val fonts = File(
@@ -654,13 +658,14 @@ internal object AndroidRestoreCoordinator {
         val stageId = values["stage"]?.takeIf(AndroidRestoreFontPolicy::isSafeStageId) ?: return null
         val kind = values["kind"]?.let { runCatching { SettingsKind.valueOf(it) }.getOrNull() } ?: return null
         val settings = values["settings"]?.toBoolean() ?: false
-        if (settings != (kind != SettingsKind.NONE)) return null
+        val account = values["account"]?.toBoolean() ?: false
+        if (!BackupPreferenceSelection.isConsistent(settings, account, kind)) return null
         val fontEntries = AndroidRestoreFontPolicy.decode(values["fonts"].orEmpty()) ?: return null
         return ReadyMarker(
             stageId = stageId,
             library = values["library"]?.toBoolean() ?: false,
             settings = settings,
-            account = values["account"]?.toBoolean() ?: false,
+            account = account,
             settingsKind = kind,
             fontEntries = fontEntries,
             previousSettingsPresent = values["previous-settings"]?.toBoolean() ?: false,
@@ -850,4 +855,7 @@ internal data class ReadyMarker(
     val settingsKind: SettingsKind,
     val fontEntries: List<AndroidRestoreFont>,
     val previousSettingsPresent: Boolean,
-)
+) {
+    fun changesLiveData(): Boolean =
+        BackupPreferenceSelection.changesLiveData(library, settingsKind, fontEntries.size)
+}

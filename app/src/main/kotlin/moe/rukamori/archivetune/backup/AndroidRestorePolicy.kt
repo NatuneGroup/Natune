@@ -79,6 +79,65 @@ internal object AndroidRestoreBlockedPolicy {
     fun shouldAttemptBestEffortScreen(markerExistedAtStartup: Boolean): Boolean = !markerExistedAtStartup
 }
 
+/** Which preference keys a backup or restore carries for the selected categories. */
+internal object BackupPreferenceSelection {
+    private val accountPrefixes = listOf("account.", "spotify_stream_", "SpotifyStream")
+
+    /**
+     * The shared pool cache is sealed with a non-exportable Keystore key, so on any other install it is
+     * unreadable ciphertext, and a restored refresh time would hold back the refetch that replaces it.
+     * A Spotify Connect device id belongs to the install that registered it, so a restored copy would
+     * make this device answer for another.
+     */
+    val DEVICE_BOUND_KEYS: Set<String> =
+        setOf(
+            "poolTidalAccounts",
+            "poolQobuzAccounts",
+            "poolDeezerAccounts",
+            "poolAppleMusicAccounts",
+            "poolAmazonAccounts",
+            "poolAccountsLastRefreshAtMillis",
+            "spotifyStreamDeviceId",
+        )
+
+    fun isAccountKey(name: String): Boolean =
+        name in BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS || accountPrefixes.any { name.startsWith(it) }
+
+    /** Sign-ins live in the same preferences file as settings, so either category needs that payload. */
+    fun carriesPreferences(settings: Boolean, account: Boolean): Boolean = settings || account
+
+    fun includes(name: String, settings: Boolean, account: Boolean): Boolean =
+        when {
+            name in DEVICE_BOUND_KEYS || name.startsWith("secure_store_") -> false
+            isAccountKey(name) -> account
+            else -> settings
+        }
+
+    /**
+     * A protobuf payload must merge through XML, never replace the live file: even a full selection
+     * excludes device-bound and secure-store values whose destination copy has to survive, and a raw
+     * replace would additionally wipe the unselected categories' local values.
+     */
+    fun needsConversion(kind: SettingsKind): Boolean = kind == SettingsKind.PB
+
+    /** An account-only selection whose payload carried no account key restores nothing, successfully. */
+    fun isAccountOnlyNoOp(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
+        account && !settings && kind == SettingsKind.NONE
+
+    /** A stage with no database, settings or fonts must not commit: commit cleanup drops the saved queue. */
+    fun changesLiveData(library: Boolean, kind: SettingsKind, fontCount: Int): Boolean =
+        library || kind != SettingsKind.NONE || fontCount > 0
+
+    fun isConsistent(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
+        when (kind) {
+            SettingsKind.NONE -> !settings
+            SettingsKind.XML -> carriesPreferences(settings, account)
+            // This version converts every protobuf payload before writing a marker, so such a marker
+            // can only be stale; installing the raw file would bypass [includes].
+            SettingsKind.PB -> false
+        }
+}
+
 internal enum class AndroidRestoreSettingsRollbackAction {
     RESTORE_SNAPSHOT,
     DELETE_LIVE,

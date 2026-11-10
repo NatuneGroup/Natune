@@ -35,10 +35,13 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.auth.YouTubeOAuthRefreshPolicy
+import moe.rukamori.archivetune.auth.YouTubeOAuthRepository
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.deezer.DeezerAudioProvider
 import moe.rukamori.archivetune.extensions.*
@@ -641,6 +644,21 @@ class App :
                 .collect {
                     val authState = youTubeLoginRepository.reconcilePersisted()
                     authState.sessionId?.takeIf(String::isNotBlank)?.let { BotGuardTokenGenerator.preWarm(it) }
+                }
+        }
+
+        // Playback drops an expired device-sign-in token, so without this the session reads as signed out
+        // an hour after sign-in and after every restart past that hour.
+        applicationScope.launch(Dispatchers.IO) {
+            dataStore.data
+                .map { it[InnerTubeOAuthRefreshTokenKey].isNullOrBlank() to (it[InnerTubeOAuthExpiresAtKey] ?: 0L) }
+                .distinctUntilChanged()
+                .collectLatest { (signedOut, expiresAt) ->
+                    if (signedOut || !YouTubeOAuthRepository.isConfigured) return@collectLatest
+                    delay(YouTubeOAuthRefreshPolicy.delayUntilRefreshMs(expiresAt, System.currentTimeMillis()))
+                    while (YouTubeOAuthRepository.validAccessToken(this@App) == null) {
+                        delay(YouTubeOAuthRefreshPolicy.RETRY_DELAY_MS)
+                    }
                 }
         }
 
