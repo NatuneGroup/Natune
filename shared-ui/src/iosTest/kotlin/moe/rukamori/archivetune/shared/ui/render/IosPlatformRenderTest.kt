@@ -37,13 +37,13 @@ import kotlin.time.Duration.Companion.minutes
 @OptIn(ExperimentalTestApi::class, ExperimentalForeignApi::class)
 class IosPlatformRenderTest {
     @Test fun capturePhoneScreens() {
-        val directory = getenv("NATUNE_RENDER_DIR")?.toKString() ?: return
+        val directory = checkNotNull(getenv("NATUNE_RENDER_DIR")) { "Missing simulator capture directory" }.toKString()
         for (name in AuditScreens) {
             println("NATIVE-RENDER $name")
             runSkikoComposeUiTest(size = Size(1179f, 2556f), density = Density(3f), testTimeout = 2.minutes) {
                 mainClock.autoAdvance = false
                 setContent {
-                    ArchiveTuneTheme(darkTheme = true, disableAnimations = true) {
+                    ArchiveTuneTheme(darkTheme = false, disableAnimations = true) {
                         val insets = SafeAreaPadding(top = 59.0, bottom = 34.0)
                         CompositionLocalProvider(
                             LocalAndroidPhonePresentation provides true,

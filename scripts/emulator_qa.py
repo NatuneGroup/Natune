@@ -157,6 +157,9 @@ def install_and_launch() -> None:
     adb("shell", "cmd", "connectivity", "airplane-mode", "enable", check=True)
     adb("shell", "svc", "wifi", "disable", check=True)
     adb("shell", "svc", "data", "disable", check=True)
+    # Match the shared audit's 393x852 dp phone viewport at density 3.
+    adb("shell", "wm", "size", "1179x2556", check=True)
+    adb("shell", "wm", "density", "480", check=True)
     print(adb("install", "-r", str(apks[0])).stdout.strip())
     (OUT / "device.txt").write_text("\n".join(
         adb("shell", *command).stdout.strip() for command in [

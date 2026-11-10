@@ -128,7 +128,7 @@ class PlatformRenderTest {
         val (w, h, d) = if (phone) Triple(1179, 2556, 3f) else Triple(1440, 900, 1f)
         val insets = if (phone) SafeAreaPadding(top = 59.0, bottom = 34.0) else SafeAreaPadding.None
         val scene = ImageComposeScene(w, h, Density(d), coroutineContext = coroutineContext) {
-            ArchiveTuneTheme(darkTheme = true, disableAnimations = true) {
+            ArchiveTuneTheme(darkTheme = false, disableAnimations = true) {
                 CompositionLocalProvider(
                     LocalAndroidPhonePresentation provides phone,
                     LocalDesktopLayout provides !phone,
