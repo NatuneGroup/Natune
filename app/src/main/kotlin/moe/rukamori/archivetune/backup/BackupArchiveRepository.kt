@@ -57,7 +57,7 @@ class BackupArchiveRepository
             val includeSettings = BackupArchiveCategory.SETTINGS in categories
             val includeAccount = BackupArchiveCategory.ACCOUNT in categories
             val includeLibrary = BackupArchiveCategory.LIBRARY in categories
-            val settingsExcludedKeys = if (includeAccount) emptySet() else ACCOUNT_PREFERENCE_KEYS
+            val includePreferences = BackupPreferenceSelection.carriesPreferences(includeSettings, includeAccount)
             val dbFile = context.getDatabasePath(InternalDatabase.DB_NAME)
             val dbFiles =
                 if (includeLibrary) {
@@ -71,7 +71,7 @@ class BackupArchiveRepository
                     emptyList()
                 }
 
-            val totalUnits = (if (includeSettings) 1 else 0) + (if (includeLibrary) 1 else 0) + dbFiles.size
+            val totalUnits = (if (includePreferences) 1 else 0) + (if (includeLibrary) 1 else 0) + dbFiles.size
             val unitSpan = 100f / totalUnits.coerceAtLeast(1)
             var completedUnits = 0
             var lastProgress: BackupArchiveProgress? = null
@@ -102,13 +102,15 @@ class BackupArchiveRepository
                 context.contentResolver.openOutputStream(uri, "wt")
                     ?: throw IllegalStateException("Failed to open backup destination")
             output.buffered().zipOutputStream().use { zipStream ->
-                if (includeSettings) {
+                if (includePreferences) {
                     emit(BackupArchiveStep.EXPORT_SETTINGS, indeterminate = true)
                     zipStream.putNextEntry(ZipEntry(SETTINGS_XML_FILENAME))
-                    writeSettingsToXml(zipStream, settingsExcludedKeys)
+                    writeSettingsToXml(zipStream) { BackupPreferenceSelection.includes(it, includeSettings, includeAccount) }
                     zipStream.closeEntry()
                     completedUnits++
+                }
 
+                if (includeSettings) {
                     // Embed custom font .ttf files so the user's font choice survives a
                     // backup/restore cycle. The font URI/name preferences live in settings.xml,
                     // but the actual .ttf binary lives in filesDir/custom_fonts/ — without
@@ -183,7 +185,7 @@ class BackupArchiveRepository
 
         private suspend fun writeSettingsToXml(
             outputStream: OutputStream,
-            excludedKeyNames: Set<String>,
+            includeKey: (String) -> Boolean,
         ) {
             val preferences =
                 context.dataStore.data
@@ -197,7 +199,7 @@ class BackupArchiveRepository
 
             preferences.forEach { (key, value) ->
                 if (
-                    key.name !in excludedKeyNames &&
+                    includeKey(key.name) &&
                     key.name !in ScheduledBackupRepository.NON_PORTABLE_PREFERENCE_KEYS
                 ) {
                     serializer.writePreference(key, value)
@@ -322,6 +324,31 @@ class BackupArchiveRepository
                     "tidalCookie",
                     // Qobuz direct-API tokens (contain user_auth_token + app_secret — sensitive).
                     "qobuzTokens",
+                    // Kept in step with the shared BackupPreferencePolicy account keys.
+                    "innerTubeOAuthToken",
+                    "innerTubeOAuthRefreshToken",
+                    "innerTubeOAuthExpiresAt",
+                    "accountImageUrl",
+                    "savedAccounts",
+                    "deezerArl",
+                    "deezerAccountName",
+                    "deezerAccountPremium",
+                    "amazonTurnstileJwt",
+                    "amazonTurnstileJwtExpiryMs",
+                    "amazonBypassToken",
+                    "paxsenixApiKey",
+                    "ai_api_key",
+                    "deeplApiKey",
+                    "openRouterApiKey",
+                    "telegramAccountName",
+                    "telegramAccountPhone",
+                    "appleMusicMediaUserToken",
+                    "appleMusicDevToken",
+                    "qqMusicUin",
+                    "qqMusicNickname",
+                    "qqMusicMusickey",
+                    "qqMusicCredential",
+                    "listenTogetherSessionToken",
                 )
         }
     }

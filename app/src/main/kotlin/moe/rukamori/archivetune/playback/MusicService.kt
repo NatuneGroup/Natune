@@ -9560,18 +9560,18 @@ class MusicService :
                     }
                 }
                     .onFailure { Timber.tag("MusicService").w(it, "Tidal token refresh threw") }
-                    .getOrNull()
-            if (refreshed == null) {
-                Timber.tag("MusicService").w("Tidal token refresh failed; flagging re-login and falling back to public instances")
-                markTidalNeedsRelogin()
+                    .getOrElse { TidalAccountManager.RefreshResult.Unavailable }
+            if (refreshed.token == null) {
+                Timber.tag("MusicService").w("Tidal token refresh failed (rejected=%s); falling back to public instances", refreshed.rejected)
+                if (refreshed.rejected) markTidalNeedsRelogin()
                 return@synchronized null
             }
-            persistRefreshedTidalToken(refreshed)
+            persistRefreshedTidalToken(refreshed.token)
             Timber.tag("MusicService").i(
                 "Tidal token refreshed; valid for ~%ds",
-                (refreshed.expiresAtMillis - System.currentTimeMillis()) / 1000,
+                (refreshed.token.expiresAtMillis - System.currentTimeMillis()) / 1000,
             )
-            refreshed.accessToken
+            refreshed.token.accessToken
         }
     }
 
@@ -9646,15 +9646,15 @@ class MusicService :
                     }
                 }
                     .onFailure { Timber.tag("MusicService").w(it, "Force refresh threw") }
-                    .getOrNull()
-            if (refreshed == null) {
-                Timber.tag("MusicService").w("Force refresh failed; account needs re-login")
-                markTidalNeedsRelogin()
+                    .getOrElse { TidalAccountManager.RefreshResult.Unavailable }
+            if (refreshed.token == null) {
+                Timber.tag("MusicService").w("Force refresh failed (rejected=%s)", refreshed.rejected)
+                if (refreshed.rejected) markTidalNeedsRelogin()
                 return@synchronized null
             }
-            persistRefreshedTidalToken(refreshed)
+            persistRefreshedTidalToken(refreshed.token)
             Timber.tag("MusicService").i("Tidal token force-refreshed after 401")
-            refreshed.accessToken
+            refreshed.token.accessToken
         }
 
     private fun resolveAppleStream(

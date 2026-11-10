@@ -270,7 +270,10 @@ class SpotifyHomeViewModel @Inject constructor(
             try {
                 val session = repository.restoreSession()
                 if (!session.isAuthenticated) {
-                    _screenState.update { SpotifyHomeScreenState.Error(R.string.spotify_not_connected, notAuthenticated = true) }
+                    _screenState.update {
+                        if (session.retryable) SpotifyHomeScreenState.Error(R.string.error_unknown)
+                        else SpotifyHomeScreenState.Error(R.string.spotify_not_connected, notAuthenticated = true)
+                    }
                     _isRefreshing.value = false
                     return@launch
                 }

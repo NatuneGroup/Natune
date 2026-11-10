@@ -49,7 +49,7 @@ class SpotifyAccountViewModel
                     .onSuccess { session ->
                         _uiState.update {
                             it.copy(
-                                isAuthenticated = session.isAuthenticated,
+                                isAuthenticated = session.isAuthenticated || session.retryable,
                                 accountName = session.accountName,
                                 accountAvatarUrl = session.accountAvatarUrl,
                                 isLoading = false,
@@ -58,7 +58,7 @@ class SpotifyAccountViewModel
                         // Reads the playlists already on disk. Without it the page shows "0
                         // playlists" for a connected account until the user hits reload by hand:
                         // nothing else fills the count in from the cache.
-                        if (session.isAuthenticated) {
+                        if (session.isAuthenticated || session.retryable) {
                             runCatching { repository.restoreCachedPlaylists() }
                                 .onFailure { error ->
                                     if (error is CancellationException) throw error
