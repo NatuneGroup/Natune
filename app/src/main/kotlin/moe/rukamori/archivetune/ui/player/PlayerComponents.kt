@@ -796,7 +796,6 @@ internal fun StyledPlaybackSliderContent(
         SliderStyle.Standard -> {
             Slider(
                 interactionSource = interactionSource,
-                thumb = { PlayerSeekThumb(interactionSource, activeColor) },
                 value = value,
                 valueRange = valueRange,
                 onValueChange = onValueChange,
