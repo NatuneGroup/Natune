@@ -827,7 +827,7 @@ object LyricsUtils {
                     time = (line.startTime * scale * 1000.0).toLong(),
                     text = line.text,
                     words = words,
-                    agent = line.agent,
+                    agent = moe.rukamori.archivetune.shared.domain.lyrics.normalizeTtmlAgent(line.agent),
                     providerRomanizedText = line.providerRomanizedText,
                     providerRomanizedWords = line.providerRomanizedWords,
                     providerRomanizedLanguage = line.providerRomanizedLanguage,

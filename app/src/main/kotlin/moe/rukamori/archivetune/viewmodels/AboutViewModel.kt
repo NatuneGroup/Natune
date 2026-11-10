@@ -554,6 +554,27 @@ class AboutViewModel
                                     ),
                                 ),
                         ),
+                        TeamMember(
+                            avatarUrl = "https://avatars.githubusercontent.com/u/26746725?v=4",
+                            name = "Boidushya",
+                            positionResId = R.string.about_position_boidushya,
+                            profileUrl = "https://github.com/boidushya",
+                            links =
+                                AboutLinkCollection.of(
+                                    AboutLinkUiModel(
+                                        id = "github",
+                                        iconResId = R.drawable.github,
+                                        labelResId = R.string.about_content_desc_github,
+                                        url = "https://github.com/boidushya",
+                                    ),
+                                    AboutLinkUiModel(
+                                        id = "website",
+                                        iconResId = R.drawable.website,
+                                        labelResId = R.string.about_content_desc_website,
+                                        url = "https://boidu.dev",
+                                    ),
+                                ),
+                        ),
                     ),
                 contributorsState = contributorsState,
                 contributorsReadMoreUrl = ContributorsReadMoreUrl,

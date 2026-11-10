@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.reportException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 class LyricsHelper
@@ -235,7 +236,7 @@ class LyricsHelper
 
             if (!isNetworkAvailable) {
                 GlobalLog.append(Log.WARN, "LyricsHelper", "Network unavailable, aborting lyrics fetch")
-                return LyricsResult(providerName = "", lyrics = LYRICS_NOT_FOUND)
+                return LyricsResult.Unavailable
             }
 
             // When "Prioritize Word Synced Lyrics" is ON (and the caller isn't asking for the
@@ -301,7 +302,7 @@ class LyricsHelper
                                 val lyrics =
                                     providerRequests.run(isExtension = false, timeoutMillis = WORD_SYNC_PROVIDER_TIMEOUT_MS) {
                                         fetchProviderLyrics(provider, mediaMetadata, artist)
-                                    }
+                                    }?.lyrics
                                 if (lyrics == null) {
                                     GlobalLog.append(
                                         Log.DEBUG,
@@ -370,6 +371,9 @@ class LyricsHelper
             }
 
             val allResult = mutableListOf<LyricsResult>()
+            // A search that lost a provider to a timeout or error is incomplete, and replaying it
+            // from the cache would hide that provider's results until the entry is evicted.
+            val hadProviderFailure = AtomicBoolean(false)
             val providers = orderedProviders().filter { it.isEnabled(context) }
 
             // Fan out all enabled providers in parallel. The previous implementation
@@ -387,7 +391,7 @@ class LyricsHelper
                     providers.map { provider ->
                         async {
                             try {
-                                providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
+                                val completed = providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
                                     provider.getAllLyrics(mediaId, songTitle, songArtists, songAlbum, duration) lyricsCallback@{ lyrics ->
                                         val normalizedLyrics = LyricsUtils.lyricsOrNotFound(lyrics)
                                         if (normalizedLyrics == LYRICS_NOT_FOUND) return@lyricsCallback
@@ -398,16 +402,20 @@ class LyricsHelper
                                         callback(result)
                                     }
                                 }
+                                if (completed == null) hadProviderFailure.set(true)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
+                                hadProviderFailure.set(true)
                                 reportException(e)
                             }
                         }
                     }.forEach { it.await() }
                 }
             }
-            cache.put(cacheKey, allResult.toList())
+            if (allResult.isNotEmpty() && !hadProviderFailure.get()) {
+                cache.put(cacheKey, allResult.toList())
+            }
         }
 
         /**
@@ -418,24 +426,31 @@ class LyricsHelper
             providers: List<LyricsProvider>,
             mediaMetadata: MediaMetadata,
         ): LyricsResult {
-            if (providers.isEmpty()) return LyricsResult(providerName = "", lyrics = LYRICS_NOT_FOUND)
+            if (providers.isEmpty()) return LyricsResult.Unavailable
 
             val artist = mediaMetadata.artists.joinToString { it.name }
-            val results =
+            val fetches =
                 supervisorScope {
                     providers
                         .map { provider ->
                             async(Dispatchers.IO) {
-                                val lyrics =
+                                val fetch =
                                     providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
                                         fetchProviderLyrics(provider, mediaMetadata, artist)
-                                    }
-                                if (lyrics == null) null else provider.name to lyrics
+                                    } ?: ProviderLyricsFetch.Failed
+                                provider to fetch
                             }
-                        }.mapNotNull { it.await() }
+                        }.map { it.await() }
                 }
+            val results = fetches.mapNotNull { (provider, fetch) -> fetch.lyrics?.let { provider.name to it } }
 
-            if (results.isEmpty()) return LyricsResult(providerName = "", lyrics = LYRICS_NOT_FOUND)
+            if (results.isEmpty()) {
+                return if (isConclusiveMiss(fetches.map { it.second.answer })) {
+                    LyricsResult(providerName = "", lyrics = LYRICS_NOT_FOUND)
+                } else {
+                    LyricsResult.Unavailable
+                }
+            }
 
             // Ranking: word-synced > line-synced > plain. `firstOrNull` walks the
             // results in provider-priority order (because `providers` is ordered), so
@@ -456,7 +471,7 @@ class LyricsHelper
             provider: LyricsProvider,
             mediaMetadata: MediaMetadata,
             artist: String,
-        ): String? =
+        ): ProviderLyricsFetch =
             try {
                 provider
                     .getLyrics(
@@ -469,17 +484,19 @@ class LyricsHelper
                     ).fold(
                         onSuccess = { lyrics ->
                             LyricsUtils.lyricsOrNotFound(lyrics).takeIf { it != LYRICS_NOT_FOUND }
+                                ?.let { ProviderLyricsFetch.found(it) }
+                                ?: ProviderLyricsFetch.Missing
                         },
                         onFailure = {
                             reportException(it)
-                            null
+                            ProviderLyricsFetch(answer = it.toProviderLyricsAnswer())
                         },
                     )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 reportException(e)
-                null
+                ProviderLyricsFetch(answer = e.toProviderLyricsAnswer())
             }
 
         private suspend fun orderedProviders(): List<LyricsProvider> {
@@ -612,4 +629,10 @@ class LyricsHelper
 data class LyricsResult(
     val providerName: String,
     val lyrics: String,
-)
+    /** False when no provider could be asked or reached, so a miss must not be stored. */
+    val isConclusive: Boolean = true,
+) {
+    companion object {
+        val Unavailable = LyricsResult(providerName = "", lyrics = LYRICS_NOT_FOUND, isConclusive = false)
+    }
+}

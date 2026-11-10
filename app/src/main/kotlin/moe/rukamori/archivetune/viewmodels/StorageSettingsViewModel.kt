@@ -260,13 +260,14 @@ class StorageSettingsViewModel
 
         /**
          * Evict the in-memory lyrics LruCache (LyricsHelper.cache + singleLyricsCache)
-         * and wipe the persistent Room `lyrics` table. No progress dialog — this is
-         * a fast in-process operation, unlike the disk-based cache clears above.
+         * and drop the provider-fetched rows of the Room `lyrics` table; edits, picks,
+         * translations and embedded lyrics stay. No progress dialog — this is a fast
+         * in-process operation, unlike the disk-based cache clears above.
          */
         fun clearLyricsCache() {
             viewModelScope.launch(Dispatchers.IO) {
                 lyricsHelper.clearCache()
-                database.query { clearAllLyrics() }
+                database.query { clearRemoteLyrics() }
             }
         }
 
