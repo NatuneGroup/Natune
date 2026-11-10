@@ -33,6 +33,7 @@ object SimpMusicLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         SimpMusicLyrics.getAllLyrics(videoId = id, duration = duration, callback = callback)

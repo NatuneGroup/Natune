@@ -20,6 +20,9 @@ class TtmlAgentParseTest {
               <p begin="00:00:05.000" end="00:00:06.000" ttm:agent="v1 v2">
                 <span begin="00:00:05.000" end="00:00:06.000">together</span>
               </p>
+              <p begin="00:00:07.000" end="00:00:08.000" ttm:agent="v2 V2">
+                <span begin="00:00:07.000" end="00:00:08.000">two voices</span>
+              </p>
             </div>
           </body>
         </tt>
@@ -28,7 +31,7 @@ class TtmlAgentParseTest {
     @Test
     fun parsedTtmlLinesCarryOneBareAgentId() {
         assertEquals(
-            listOf("v1", "v2", TTML_GROUP_AGENT),
+            listOf("v1", "v2", TTML_GROUP_AGENT, TTML_GROUP_AGENT),
             LyricsUtils.parseTtml(ttml).map { it.agent },
         )
     }
