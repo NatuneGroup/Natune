@@ -15,6 +15,10 @@ import moe.rukamori.archivetune.shared.ui.lyrics.*
 import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveTuneShell
 import moe.rukamori.archivetune.shared.ui.navigation.ShellTab
+import moe.rukamori.archivetune.shared.ui.LocalHostSafeArea
+import moe.rukamori.archivetune.shared.ui.safeAreaPadding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.MutableStateFlow
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.DefaultLibraryFilterOrder
@@ -88,7 +92,7 @@ private fun MiniBar(modifier: Modifier = Modifier) {
     )
 }
 
-internal val AuditScreens = listOf("home", "player", "fullscreen-lyrics", "mini-player", "queue", "lyrics", "settings", "settings-lyrics", "settings-privacy", "search", "library") + PlayerDesignStyle.entries.map { "player-style-${it.name}" }
+internal val AuditScreens = listOf("home", "player", "fullscreen-lyrics", "transport-glyphs", "mini-player", "queue", "lyrics", "settings", "settings-lyrics", "settings-privacy", "search", "library") + PlayerDesignStyle.entries.map { "player-style-${it.name}" }
 
 internal object RenderAuditFixture {
     @Composable fun Content(name: String, phone: Boolean) {
@@ -102,8 +106,24 @@ internal object RenderAuditFixture {
             "player" -> Player(phone)
             "lyrics" -> Player(phone, PlayerPanel.LYRICS)
             "fullscreen-lyrics" -> Player(phone, PlayerPanel.LYRICS, fullscreen = true)
+            "transport-glyphs" -> TransportGlyphs()
             "queue" -> Player(phone, PlayerPanel.QUEUE)
             else -> if (name.startsWith("player-style-")) Player(phone, style = PlayerDesignStyle.valueOf(name.removePrefix("player-style-"))) else error("Unknown audit screen: $name")
+        }
+    }
+
+    @Composable private fun TransportGlyphs() {
+        Column(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current).padding(16.dp)) {
+            for (style in PlayerDesignStyle.entries) {
+                Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(style.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                    CompositionLocalProvider(LocalPlayerGlyphStyle provides style) {
+                        for (symbol in listOf(PlayerSymbol.PREVIOUS, PlayerSymbol.PLAY, PlayerSymbol.PAUSE, PlayerSymbol.NEXT)) {
+                            PlayerGlyph(symbol, MaterialTheme.colorScheme.onSurface, true, null, Modifier.size(30.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -155,7 +175,7 @@ internal object RenderAuditFixture {
             canvas = { _, _, m -> Box(m) },
             customBackground = { _, m -> Box(m) },
             lyrics = { m -> Lyrics(m) },
-            compactLyrics = { m -> Lyrics(m) },
+            compactLyrics = { m -> CompactLyrics(m, style) },
             queue = { m -> Queue(m) },
         )
         if (!phone && panel == PlayerPanel.ARTWORK && style == PlayerDesignStyle.Default) {
@@ -165,11 +185,19 @@ internal object RenderAuditFixture {
                 Modifier.fillMaxSize(), remember { PlayerInteractionState().apply { this.panel = panel; fullscreenLyrics = fullscreen } })
         }
     }
-    @Composable private fun Lyrics(modifier: Modifier) {
-        val lines = listOf("Like the legend of the phoenix", "All ends with beginnings",
+    private fun lyricLines() = listOf("Like the legend of the phoenix", "All ends with beginnings",
             "What keeps the planet spinning", "The force from the beginning", "We've come too far",
             "To give up who we are", "So let's raise the bar", "And our cups to the stars")
             .mapIndexed { i, text -> SyncedLine(i * 8_000L, text, durationMs = 8_000L) }
+    @Composable private fun CompactLyrics(modifier: Modifier, style: PlayerDesignStyle) {
+        playerLyricsSlots(lyricLines(), "render", remember { MutableStateFlow(playback()) },
+            remember { LyricsRomanizationState(LyricsRomanizationPresentation.off("render")) },
+            LyricsSurfaceSettings(reduceMotion = true), LyricsSurfaceActions({}, {}),
+            if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
+            fullVisible = false, compactVisible = true, resumed = true).compact(modifier)
+    }
+    @Composable private fun Lyrics(modifier: Modifier) {
+        val lines = lyricLines()
         LyricsFullscreenRenderer(lines, "render", remember { MutableStateFlow(playback()) },
             remember { LyricsRomanizationState(LyricsRomanizationPresentation.off("render")) },
             LyricsSurfaceSettings(reduceMotion = true), LyricsSurfaceActions({}, {}), modifier)

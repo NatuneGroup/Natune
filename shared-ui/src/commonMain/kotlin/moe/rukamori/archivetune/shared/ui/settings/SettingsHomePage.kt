@@ -56,8 +56,10 @@ fun SettingsHomePage(
     val visibleRows = if (reference != null && searchQuery.isNotBlank()) rows.filter { row ->
         row !is SettingsRow.Header && labels[row.anchor].orEmpty().contains(searchQuery, ignoreCase = true)
     } else if (reference != null && scrollTo.isNullOrBlank()) rows.filterNot { it.anchor in phoneSettingsHomeBrowseHidden } else rows
-    val visibleReference = if (reference != null) reference.copy(rows = reference.rows.filter { spec ->
+    val visibleReference = if (reference != null && searchQuery.isNotBlank()) reference.copy(rows = reference.rows.filter { spec ->
         visibleRows.any { it.anchor == spec.anchor }
+    }) else if (reference != null && scrollTo.isNullOrBlank()) reference.copy(rows = reference.rows.filterNot {
+        it.anchor in phoneSettingsHomeBrowseHidden
     }) else reference
     CompositionLocalProvider(LocalPhoneSettingsReference provides visibleReference, LocalPhoneSettingsRoot provides (reference != null)) {
         SettingsPage(

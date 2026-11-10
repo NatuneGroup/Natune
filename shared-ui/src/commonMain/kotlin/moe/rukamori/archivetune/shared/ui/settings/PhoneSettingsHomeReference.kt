@@ -20,7 +20,7 @@ internal val PhoneSettingsHomeReference = PhoneSettingsReference(Res.string.m4_s
     PhoneSettingReference("navigation_bar", Res.string.m6_settings_home_navigation_bar, Res.drawable.phone_reference_nav_bar, PhoneSettingKind.ACTION),
     PhoneSettingReference("liquid_glass", Res.string.m6_liquid_glass, Res.drawable.phone_reference_blur_on, PhoneSettingKind.ACTION),
     PhoneSettingReference("lyrics_animations", Res.string.m6_settings_home_lyrics_animations, Res.drawable.phone_reference_animation, PhoneSettingKind.ACTION),
-    PhoneSettingReference("playback", Res.string.m6_settings_home_playback, Res.drawable.phone_reference_player_music_note, PhoneSettingKind.ACTION),
+    PhoneSettingReference("playback", Res.string.m6_settings_home_playback, Res.drawable.phone_reference_music_note, PhoneSettingKind.ACTION),
     PhoneSettingReference("canvas", Res.string.m6_settings_home_canvas, Res.drawable.phone_reference_motion_photos_on, PhoneSettingKind.ACTION),
     PhoneSettingReference("sources", Res.string.m6_settings_home_sources, Res.drawable.phone_reference_provider_tidal, PhoneSettingKind.ACTION),
     PhoneSettingReference("modules", Res.string.source_modules, Res.drawable.phone_reference_extension, PhoneSettingKind.ACTION),

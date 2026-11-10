@@ -148,7 +148,8 @@ internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, s
         PlayerSymbol.REPEAT -> if (LocalPlayerControlMotion.current.repeat == PlayerRepeat.ONE)
             Res.drawable.solar_repeat_one else Res.drawable.solar_repeat
         PlayerSymbol.HEART -> if (selected == true) Res.drawable.solar_heart_bold else Res.drawable.solar_heart_linear
-        PlayerSymbol.SHARE -> Res.drawable.reference_player_share
+        PlayerSymbol.SHARE -> if (LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.TIKTOK)
+            Res.drawable.solar_share_linear else Res.drawable.reference_player_share
         PlayerSymbol.MORE -> Res.drawable.solar_more
         PlayerSymbol.SLEEP, PlayerSymbol.BEDTIME -> Res.drawable.solar_sleep
         PlayerSymbol.DOWN -> Res.drawable.solar_down

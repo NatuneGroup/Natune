@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.rukamori.archivetune.shared.domain.playback.*
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportLibrary
@@ -127,7 +128,8 @@ class PlatformRenderTest {
     private fun render(name: String, phone: Boolean, title: String, content: @Composable () -> Unit) = runTest {
         val (w, h, d) = if (phone) Triple(1179, 2556, 3f) else Triple(1440, 900, 1f)
         val insets = if (phone) SafeAreaPadding(top = 59.0, bottom = 34.0) else SafeAreaPadding.None
-        val scene = ImageComposeScene(w, h, Density(d), coroutineContext = coroutineContext) {
+        val compositionJob = Job(coroutineContext[Job])
+        val scene = ImageComposeScene(w, h, Density(d), coroutineContext = coroutineContext + compositionJob) {
             ArchiveTuneTheme(darkTheme = false, disableAnimations = true) {
                 CompositionLocalProvider(
                     LocalAndroidPhonePresentation provides phone,
@@ -135,7 +137,7 @@ class PlatformRenderTest {
                     LocalHostSafeArea provides insets,
                 ) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        if (name in setOf("player", "lyrics", "fullscreen-lyrics", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, phone)
+        if (name in setOf("player", "lyrics", "fullscreen-lyrics", "transport-glyphs", "queue") || name.startsWith("player-style-")) RenderAuditFixture.Content(name, phone)
                         else Box(Modifier.fillMaxSize().safeAreaPadding(insets)) {
                             if (name in AuditScreens) {
                                 if (phone) RenderAuditFixture.PhoneShell(name) else RenderAuditFixture.DesktopShellContent(name)
@@ -159,7 +161,7 @@ class PlatformRenderTest {
                     File(dir, "$name.png").writeBytes(data.bytes)
                 }
             }
-        } finally { scene.close() }
+        } finally { scene.close(); compositionJob.cancel(); runCurrent() }
     }
 
     @Composable
@@ -248,6 +250,7 @@ class PlatformRenderTest {
     @Test fun settingsPrivacy() = both("settings-privacy", "Privacy") { RenderAuditFixture.Content("settings-privacy", it) }
     @Test fun player() = both("player", "Now playing") { RenderAuditFixture.Content("player", it) }
     @Test fun fullscreenLyrics() = both("fullscreen-lyrics", "Lyrics") { RenderAuditFixture.Content("fullscreen-lyrics", it) }
+    @Test fun transportGlyphs() = both("transport-glyphs", "Transport") { RenderAuditFixture.Content("transport-glyphs", it) }
     @Test fun lyrics() = both("lyrics", "Lyrics") { RenderAuditFixture.Content("lyrics", it) }
     @Test fun queue() = both("queue", "Queue") { RenderAuditFixture.Content("queue", it) }
     @Test fun savedPlayerStyles() {

@@ -68,6 +68,7 @@ class SettingsBackTest {
         assertTrue(title.bottom < search.top)
         onNodeWithTag("setting:account").assertIsDisplayed()
         onNodeWithTag("setting:playback").assertIsDisplayed()
+        onNodeWithTag("setting:modules").assertExists()
         onNodeWithTag("setting:appearance_extras").assertDoesNotExist()
         onNodeWithTag("settings-search").performTextInput("Appearance extras")
         onNodeWithTag("setting:appearance_extras").assertIsDisplayed().performClick()
