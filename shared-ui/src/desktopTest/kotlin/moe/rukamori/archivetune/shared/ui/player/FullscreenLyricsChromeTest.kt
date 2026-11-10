@@ -1,0 +1,58 @@
+package moe.rukamori.archivetune.shared.ui.player
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.domain.settings.*
+import kotlin.test.*
+
+@OptIn(ExperimentalTestApi::class)
+class FullscreenLyricsChromeTest {
+    @Test fun controlsDispatchAndSavedLooksKeepTheirLyricsOwner() = runComposeUiTest {
+        val callbacks = PlayerTestActions()
+        val interaction = PlayerInteractionState().apply { fullscreenLyrics = true; panel = PlayerPanel.LYRICS }
+        var background by mutableStateOf(PlayerBackgroundStyle.DEFAULT)
+        var volumeVisible by mutableStateOf(true)
+        var volume = 0f
+        val actions = PlayerActions(callbacks.callbacks.playPause, callbacks.callbacks.seekTo, {},
+            { volume = it }, callbacks.callbacks.onAction, {})
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(393.dp, 740.dp)) {
+                    BottomSheetPlayer(playerFixture(), actions,
+                        PreferenceSnapshot.of(PlayerBackgroundStyleKey to background.name, PlayerCustomImageUriKey to "fixture",
+                            ShowPlayerVolumeBarKey to volumeVisible), playerSlots(), false, interaction = interaction)
+                }
+            }
+        }
+        for (look in PlayerBackgroundStyle.entries) {
+            runOnIdle { background = look }
+            onNodeWithTag("lyrics-owner-slot").assertExists()
+            onNodeWithTag("fullscreen-lyrics-transport").assertIsDisplayed()
+            onNodeWithTag("fullscreen-lyrics-footer").assertIsDisplayed()
+        }
+        onNodeWithContentDescription("Previous track").performClick()
+        onNodeWithContentDescription("Pause").performClick()
+        onNodeWithContentDescription("Next track").performClick()
+        onNodeWithContentDescription("Playback position").performSemanticsAction(SemanticsActions.SetProgress) { it(.5f) }
+        onNodeWithContentDescription("Volume").performSemanticsAction(SemanticsActions.SetProgress) { it(.25f) }
+        onNodeWithContentDescription("More").performClick()
+        runOnIdle {
+            assertEquals(listOf(PlayerAction.PREVIOUS, PlayerAction.NEXT, PlayerAction.MORE), callbacks.actions)
+            assertEquals(1, callbacks.plays)
+            assertEquals(listOf(90000L), callbacks.seeks)
+            assertEquals(.25f, volume)
+            volumeVisible = false
+        }
+        onNodeWithTag("fullscreen-lyrics-volume").assertDoesNotExist()
+        onNodeWithContentDescription("Like").assertDoesNotExist()
+        onNodeWithContentDescription("Back to player").performClick()
+        runOnIdle { assertFalse(interaction.fullscreenLyrics); assertEquals(PlayerPanel.LYRICS, interaction.panel) }
+    }
+}
