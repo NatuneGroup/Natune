@@ -69,7 +69,7 @@ fun PlayerLoadingCrossfade(loading: Boolean, spinner: @Composable () -> Unit, co
 fun Modifier.playerPressFeedback(): Modifier = composed {
     val motion = !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f
     var pressed by remember { mutableStateOf(false) }
-    val scale = animateFloatAsState(if (pressed && motion) .92f else 1f,
+    val scale = animateFloatAsState(if (pressed && motion) PlayerMotionSpecs.PressScale else 1f,
         if (motion) PlayerMotionSpecs.response() else snap(), label = "playerButtonPress")
     this.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
         .pointerInput(motion) {
@@ -113,7 +113,7 @@ fun StyledPlaybackSlider(sliderStyle: SliderStyle, value: Float, valueRange: Clo
 internal fun PlayerSeekThumb(source: MutableInteractionSource, color: Color) {
     val dragging by source.collectIsDraggedAsState()
     val motion = !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f
-    val scale = animateFloatAsState(if (dragging) 1.4f else 0f,
+    val scale = animateFloatAsState(if (dragging) PlayerMotionSpecs.DragThumbScale else 0f,
         if (motion) PlayerMotionSpecs.response() else snap(), label = "playerSeekThumb")
     // A zero-size layout preserves the thumb-free styles' full-width track during dragging too.
     Box(Modifier.size(0.dp).drawBehind { drawCircle(color, radius = 8.dp.toPx() * scale.value.coerceAtLeast(0f)) })
