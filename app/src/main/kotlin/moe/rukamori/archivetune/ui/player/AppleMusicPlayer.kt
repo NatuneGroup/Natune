@@ -2072,7 +2072,7 @@ private fun AppleMusicTransportButton(
     ) {
         PlayerControlCrossfade(iconRes) { glyph ->
             PlayerTransportIcon(
-                        iconRes = glyph,
+                iconRes = glyph,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f),
                 modifier =

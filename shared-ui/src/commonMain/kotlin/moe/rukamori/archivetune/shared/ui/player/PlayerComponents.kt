@@ -152,7 +152,6 @@ internal fun PlayerIcon(
             }
         }
     }
-
 }
 
 private fun PlayerSymbol.controlKind(): PlayerControlKind? = when (this) {
@@ -325,7 +324,6 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
                 }
             })
         PlayerSeekLabels(progress, duration, remaining)
-
     }
 }
 

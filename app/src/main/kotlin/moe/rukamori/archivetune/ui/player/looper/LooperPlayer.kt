@@ -440,7 +440,7 @@ fun LooperPlayerContent(
                         }) {
                             PlayerControlCrossfade(if (isPlaying) R.drawable.player_pause else R.drawable.player_play) { playGlyph ->
                                 PlayerTransportIcon(
-                        iconRes = playGlyph,
+                                    iconRes = playGlyph,
                                     contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                                     tint = if (isPlaying) Color.White else Color.Black,
                                     modifier = Modifier.size(28.dp).then(playPauseMotion.modifier),

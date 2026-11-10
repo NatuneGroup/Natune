@@ -26,6 +26,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
@@ -102,12 +103,17 @@ internal class PlayerTrackDirection {
     var direction: Int = 1
         private set
 
-    fun update(current: String?, order: List<String>): Int {
+    fun directionFor(current: String?, order: List<String>): Int {
         if (current != previous && previous != null && current != null) {
             val before = order.indexOf(previous).takeIf { it >= 0 } ?: previousOrder.indexOf(previous)
             val after = order.indexOf(current)
-            direction = if (before >= 0 && after >= 0 && after < before) -1 else 1
+            return if (before >= 0 && after >= 0 && after < before) -1 else 1
         }
+        return direction
+    }
+
+    fun update(current: String?, order: List<String>): Int {
+        direction = directionFor(current, order)
         previous = current
         previousOrder = order
         return direction
@@ -117,7 +123,9 @@ internal class PlayerTrackDirection {
 @Composable
 internal fun rememberPlayerTrackMotion(current: String?, order: List<String>, level: PlayerMotionLevel): PlayerTrackMotion {
     val memory = remember { PlayerTrackDirection() }
-    return PlayerTrackMotion(level, memory.update(current, order))
+    val direction = memory.directionFor(current, order)
+    SideEffect { memory.update(current, order) }
+    return PlayerTrackMotion(level, direction)
 }
 
 /** Two halves of a triangle become two pause bars; geometry changes only in the draw phase. */
@@ -221,7 +229,6 @@ internal fun <T> PlayerTextSwap(
     val track = LocalPlayerTrackMotion.current
     PlayerTrackSwap(target, if (fade) track.level.takeIf { it.fades } ?: PlayerMotionLevel.Fade else PlayerMotionLevel.None,
         modifier, alignment, track.direction, content)
-
 }
 
 /** Fixed-size slots retain their outgoing content until the spring settles; rapid changes reverse immediately. */
