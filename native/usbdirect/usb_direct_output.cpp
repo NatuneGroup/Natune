@@ -9,6 +9,8 @@
  */
 
 #include "usbdirect/usb_direct_output.h"
+#include "usbdirect/usb_direct_packets.h"
+#include <array>
 
 #include <linux/usbdevice_fs.h>
 #include <sys/ioctl.h>
@@ -47,6 +49,7 @@ struct Slot {
     bool submitted = false;
     uint64_t generation = 0;
     uint64_t musicFrames = 0;
+    uint64_t completionOrder = 0;
     Clock::time_point sent;
 
     Slot(int packets, size_t capacity) : bytes(capacity) {
@@ -60,14 +63,7 @@ struct Slot {
         urb->usercontext = this;
     }
 
-    bool succeeded() const {
-        if (urb->status != 0) return false;
-        for (int i = 0; i < urb->number_of_packets; ++i) {
-            const auto &packet = urb->iso_frame_desc[i];
-            if (packet.status != 0 || packet.actual_length != packet.length) return false;
-        }
-        return true;
-    }
+
 };
 
 class Session {
@@ -125,6 +121,7 @@ public:
         uint64_t generation = 0;
         auto lastFeedback = Clock::now();
         bool wasPlaying = false;
+        IsoHealth health;
         auto fail = [&](int error) {
             if (shared.error == 0) shared.error = error;
             shared.playing = false;
@@ -141,18 +138,36 @@ public:
                 cancelAll();
                 clock = PacketClock(chosen_.sampleRate, intervalUs_, highSpeed_);
                 lastFeedback = Clock::now();
+                health.reset();
             }
+            std::array<Slot *, kSlots> completed{};
+            size_t count = 0;
             for (auto &slot : slots_) {
                 if (slot->pending) {
                     if (Clock::now() - slot->sent > std::chrono::milliseconds(500)) fail(kErrorTimeout);
                 } else if (slot->submitted) {
-                    slot->submitted = false;
-                    if (slot->generation == generation && shared.error == 0) {
-                        if (!slot->succeeded()) fail(kErrorTransfer);
-                        else shared.frames += slot->musicFrames;
+                    size_t at = count;
+                    while (at > 0 && completed[at - 1]->completionOrder > slot->completionOrder) {
+                        completed[at] = completed[at - 1];
+                        --at;
                     }
-                    slot->musicFrames = 0;
+                    completed[at] = slot.get();
+                    ++count;
                 }
+            }
+            for (size_t i = 0; i < count; ++i) {
+                auto &slot = *completed[i];
+                slot.submitted = false;
+                if (slot.generation == generation && shared.error == 0) {
+                    const auto accounting = accountIsoCompletion(slot.urb->status, slot.urb->iso_frame_desc,
+                        slot.urb->number_of_packets, frameBytes, slot.musicFrames * frameBytes);
+                    if (!health.accept(slot.urb->status, accounting.badPackets)) fail(kErrorTransfer);
+                    else {
+                        shared.frames += accounting.frames;
+                        shared.pendingFrames -= slot.musicFrames;
+                    }
+                }
+                slot.musicFrames = 0;
             }
             if (!shared.controls.empty()) {
                 auto control = shared.controls.front();
@@ -322,7 +337,9 @@ private:
             if (result == -EAGAIN) return 0;
             if (result < 0) return result;
             auto *completed = static_cast<usbdevfs_urb *>(urb);
-            static_cast<Slot *>(completed->usercontext)->pending = false;
+            auto *slot = static_cast<Slot *>(completed->usercontext);
+            slot->pending = false;
+            slot->completionOrder = ++completionOrder_;
         }
     }
 
@@ -352,6 +369,7 @@ private:
 
     int fd_ = -1;
     bool highSpeed_ = false;
+    uint64_t completionOrder_ = 0;
     int streamingInterface_ = -1;
     Candidate chosen_;
     uint32_t intervalUs_ = 0;
@@ -477,6 +495,7 @@ int Output::write(const uint8_t *data, size_t size) {
     if (shared_.error != 0) return shared_.error;
     const size_t n = std::min(size, shared_.ring.space()) / frameBytes_ * frameBytes_;
     shared_.ring.write(data, n);
+    shared_.pendingFrames += n / frameBytes_;
     if (n > 0) shared_.changed.notify_all();
     return static_cast<int>(n);
 }
@@ -494,6 +513,7 @@ int Output::flush() {
     std::lock_guard<std::mutex> lock(shared_.mutex);
     shared_.ring.clear();
     shared_.frames = 0;
+    shared_.pendingFrames = 0;
     shared_.generation++;
     shared_.playing = false;
     shared_.changed.notify_all();
@@ -504,6 +524,12 @@ int64_t Output::playedFrames() {
     std::lock_guard<std::mutex> lock(shared_.mutex);
     if (shared_.error != 0) return shared_.error;
     return static_cast<int64_t>(shared_.frames);
+}
+
+int64_t Output::pendingFrames() {
+    std::lock_guard<std::mutex> lock(shared_.mutex);
+    if (shared_.error != 0) return shared_.error;
+    return static_cast<int64_t>(shared_.pendingFrames);
 }
 
 int Output::control(bool input, uint8_t request, uint16_t value, uint16_t index, uint8_t *data, uint16_t size) {

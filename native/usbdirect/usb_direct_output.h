@@ -99,6 +99,9 @@ public:
     // negative error.
     int64_t playedFrames();
 
+    // Accepted music frames still queued or on the bus, independent of packet loss.
+    int64_t pendingFrames();
+
     // Class request to an interface of the device, served between transfers.
     // Returns the bytes transferred or a negative error.
     int control(bool input, uint8_t request, uint16_t value, uint16_t index, uint8_t *data, uint16_t size);
@@ -125,6 +128,7 @@ public:
         bool playing = false;
         bool closed = false;
         uint64_t frames = 0;
+        uint64_t pendingFrames = 0;
         uint64_t generation = 0;
         int error = 0;
         bool opened = false;

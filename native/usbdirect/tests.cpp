@@ -1,4 +1,5 @@
 #include "usbdirect/usb_direct_output.h"
+#include "usbdirect/usb_direct_packets.h"
 #include <cassert>
 #include <cerrno>
 #include <numeric>
@@ -6,6 +7,31 @@
 using namespace natune::usbdirect;
 
 int main() {
+    usbdevfs_iso_packet_desc packets[] = {{16, 16, 0}, {16, 8, 0}, {16, 16, 0}};
+    auto completed = accountIsoCompletion(0, packets, 3, 4, 40);
+    assert(completed.frames == 8 && !completed.badPackets); // Partial OUT data and a silence tail.
+    packets[1].status = static_cast<unsigned>(-EXDEV);
+    completed = accountIsoCompletion(0, packets, 3, 4, 40);
+    assert(completed.frames == 6 && completed.badPackets);
+    IsoHealth health;
+    assert(health.accept(0, completed.badPackets)); // An isolated missed frame is recoverable.
+    assert(health.accept(0, false));
+    for (unsigned i = 1; i < IsoHealth::kMaxConsecutiveBadUrbs; ++i) assert(health.accept(0, true));
+    assert(!health.accept(0, true));
+    health.reset();
+    assert(health.accept(0, true));
+    assert(!health.accept(-ENODEV, false)); // URB errors still fail immediately.
+    assert(accountIsoCompletion(-EIO, packets, 3, 4, 40).frames == 0);
+    packets[0].actual_length = 0;
+    packets[1].status = 0;
+    packets[1].actual_length = 0;
+    packets[2].actual_length = 0;
+    completed = accountIsoCompletion(0, packets, 3, 4, 40);
+    assert(completed.frames == 0 && !completed.badPackets); // OUT controllers may omit lengths.
+    assert(health.accept(0, completed.badPackets));
+    packets[0].actual_length = 100;
+    assert(accountIsoCompletion(0, packets, 3, 4, 4).frames == 1); // Never count padding or excess bytes.
+
     PacketClock full(44100, 1000, false);
     size_t frames = 0;
     for (int packet = 0; packet < 1000; ++packet) frames += full.next();
