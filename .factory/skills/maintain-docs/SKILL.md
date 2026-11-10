@@ -1,25 +1,23 @@
 ---
 name: maintain-docs
-description: Update ArchiveTune's maintained Markdown after behavior, build, workflow or release changes. Use when documentation is stale or a code change affects agent instructions.
+description: Update Natune's maintained Markdown after behavior, build, workflow or release changes. Use when documentation is stale or a code change affects agent instructions.
 license: GPL-3.0-only
 ---
 
 # Maintain project documentation
 
-1. Read `AGENTS.md` and the relevant subsystem document. Keep fork invariants in
-   `AGENTS.md`; use `CLAUDE.md` as a concise entry point, not another copy.
-2. Put current subsystem knowledge in `docs/claude/`, development/runbook details
-   in `docs/engineering/`, and reusable workflows beside this skill.
-3. Inspect the actual code/configuration before updating commands or feature claims.
-   A historical green run does not validate a changed candidate.
-4. Update only documents affected by the change. Keep comments focused on why.
-   Do not add session transcripts, duplicate plans, speculative claims or filler tests.
-5. Preserve historical evidence and copyright/provenance. Distinguish implementation,
-   compilation, synthetic tests, device behavior and physical-audio evidence.
+1. Read `AGENTS.md` and the relevant subsystem document. Invariants belong in
+   `AGENTS.md`; `CLAUDE.md` only points to it.
+2. Put product knowledge in `docs/claude/`, development and runbook details in
+   `docs/engineering/`, and reusable workflows beside this skill.
+3. Check the actual code and configuration before you change a command or a feature
+   claim. An old green run does not validate a new change.
+4. Update only the documents the change affects. Describe current state; do not add
+   session logs, dated progress notes, duplicate plans or speculative claims. Delete a
+   document that no longer describes anything current, after fixing links to it.
+5. Keep copyright, licence and provenance notes. Distinguish implemented, compiled,
+   tested and device-verified behavior.
 6. Run `python3 scripts/check_repository.py --worktree` to validate links, skill
-   frontmatter, documented CI commands and repository contracts. Inspect failures;
-   do not disable the checks or erase evidence to make them pass.
-7. If a change needs Gradle/emulator verification, use the authorized build host.
-   Never start a local JVM on the constrained Termux host or expose credentials.
+   frontmatter and documented CI commands. Fix failures; do not disable the checks.
 
-Finish with the affected paths, the checks actually run and any remaining evidence gaps.
+Finish with the changed paths, the checks you ran and any remaining gaps.
