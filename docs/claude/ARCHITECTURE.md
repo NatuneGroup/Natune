@@ -10,7 +10,7 @@ Crossfade and automix hand-offs are decided by `CrossfadeHandoffPolicy` (`CONTIN
 
 Stream errors are handled through bounded URL/cache invalidation, source re-resolution, codec recovery, and optional next-item skipping. Do not turn a terminal error into an unbounded retry loop.
 
-## Finite YouTube playlists (local source; validation pending)
+## Finite YouTube playlists
 
 Ordinary playlist entry points use `YouTubePlaylistQueue` and `FinitePlaylistLoader`
 over the existing core browse playlist/continuation APIs. RD/Mix and explicit radio
@@ -33,7 +33,7 @@ per operation, including selected-occurrence resolution. Ambiguous empty termina
 envelopes fail incomplete; only explicit numeric-zero initial counts prove empty.
 No live envelope test or fixed 80-track server limit is established.
 
-## Infinite queue and queue editing (local source; validation pending)
+## Infinite queue and queue editing
 
 `MusicService` owns Android recommendation work through `AndroidInfiniteQueue`;
 `PortableQueueOwner` owns the same feature through `PortableInfiniteQueue`. Both
@@ -65,7 +65,7 @@ are unchanged. Portable collection titles remain limited by available request
 metadata (the provider page has no collection-title field). These changes and the
 focused tests still need exact-head CI and device/host interaction validation.
 
-## YouTube login ownership (local source; validation pending)
+## YouTube login ownership
 
 Login-only official Music install recognition makes one owned fixed same-WebView
 HTTPS return; the observed `net::ERR_UNKNOWN_URL_SCHEME` is not proof of renderer loss.
@@ -81,7 +81,7 @@ the login or pager implementation. Primary/manual client, terminal auth errors,
 YTPlayerUtils → InnerTubeX → NewPipe → Echo and direct-audio guards remain intact.
 Focused tests, independent review and remote compilation/execution remain pending.
 
-## Podcast history and progress (local source; validation pending)
+## Podcast history and progress
 
 Android History and the shared desktop/iOS History page retain dated songs and podcast
 episodes from the signed-in YouTube archive. Near-tail reads and explicit Load more use
@@ -123,14 +123,6 @@ override, so provider refresh, persistence, audio lookup and scrobble identity s
 canonical, and a reset restores the provider names. Pre-38 `titleOverride` titles move into
 the table during the upgrade and the flag is cleared.
 
-Focused parser, paging/account, progress/policy, row-recomposition, portable migration/
-snapshot, and Android archive-import tests are authored but unrun locally. Android's
-migration test checks the additive SQL contract, not a real Android Room upgrade.
-Schema exports were prepared without running KSP: CI must confirm generated identities
-for Android 38 and portable 10, including the new portable identity assertion, and those
-two exports still need committing once a build emits them. Build,
-test, device/account/audio and upgrade/restore validation remain unverified.
-
 ## Sources
 
 The shared `audiosource` contract resolves Tidal, Qobuz (plus its backup), Deezer, Apple Music,
@@ -149,7 +141,14 @@ the standard no-stream error.
 No new provider may bypass `resolveMultiSourceDataSpec`, replace the source priority contract, or
 introduce a REST/WS path to koiverse domains.
 
-## iOS native interface (local source; validation pending)
+Spotify catalog requests stay bounded. A GraphQL track search with complete title, artist
+and duration does not also call REST `/tracks`; a missing ISRC stays unknown. Cancellation
+and HTTP 401, 403 or 429 never trigger a second REST fallback. GraphQL and REST have
+separate cooldown gates; `Retry-After` accepts seconds or an HTTP date, with a 30-second
+floor and a 24-hour cap. A REST `QUOTA_EXCEEDED` body is kept distinct from a transient
+throttle. Do not add spoofed client tokens, extra client IDs or other quota workarounds.
+
+## iOS native interface
 
 SwiftUI is limited to `App`/`WindowGroup`, a `UIViewControllerRepresentable`, safe-area handling
 and URL/browsing-activity forwarding in `iosApp/ArchiveTune/ArchiveTuneApp.swift`. The UIKit
@@ -172,7 +171,7 @@ existing MediaPlayer Now Playing metadata and transport remain independent and u
 See [the binary comparison and boundary](../engineering/ios-swiftui-parity.md). No device QA
 is claimed.
 
-## Keyboard shortcuts (local source; validation pending)
+## Keyboard shortcuts
 
 One table owns every shortcut: `shared-ui/.../ui/shortcuts/KeyboardShortcuts.kt`. A `ShortcutEntry` pairs a
 `KeymapAction` with a help group, a resource label and its chords, and the root OS key handler, the help overlay and
@@ -225,10 +224,9 @@ so the focused surface stays activatable for accessibility, and a text field nev
 space is unaffected.
 
 Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
-window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
-evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
+window accelerators and the Alt+Back navigation gesture.
 
-## Player action support (local source; validation pending)
+## Player action support
 
 `PlayerActionSupport` is the set of player actions a host has an owner for, carried on `PlayerNativeState` and copied
 onto `PlayerState` by `withNativeState`. The shared player renders a control only for an action in that set: the title
@@ -278,9 +276,9 @@ without refreshing or reporting its token dead. Genuine credential rejection ret
 the existing bounded re-lease. A `429` skips that account until its bounded cooldown
 expires; a successful AAC fallback cannot hide a later pooled FLAC result. Returned
 manifest quality and metadata stay attached to the stream. Empty community-instance
-lists skip that resolver. See [live incident evidence](../engineering/tidal-pool-lossless.md).
+lists skip that resolver.
 
-## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
+## Bounded acoustic graph
 
 `shared-domain/.../dsp/acoustic/` owns the audit state machine (`AcousticAuditOwner`), the FFT
 analyzer, the heat scale/palette and raster, and the verdict vocabulary; each host supplies only
@@ -330,12 +328,8 @@ feature remain. Persisted preset/state formats are not dead with an unused build
 Connection and pending room requests have bounded deadlines (historical design: 60/90 seconds);
 decoded responses, cancellation and connection generations guard completion. Keep manual recovery,
 protobuf-only Meowery (no JSON/client-capabilities frame), JSON-only chat and server-side host
-restrictions. Historical 2026-10-06 synthetic checks received `room_created` from Hugging Face
-and `host_not_allowed` from Meowery; these were not Android synchronized-playback validation.
-The local delayed-retry fix snapshots socket, connection and room-request generations,
-then checks the still-pending deadline before sending. Independent source review and confirmed
-fixes are complete; actual CI is recorded in the candidate PR/Actions. This does not establish
-synchronized playback or host eligibility.
+restrictions. Delayed retries snapshot socket, connection and room-request generations,
+then check the still-pending deadline before sending.
 
 Spotify Home's Yuma-derived geometry was recorded at fork `04ef0f333`, reference YumaPlayer
 `28aef61`: two track rows, 240dp track tiles, 150dp artwork cards, 16dp gutters, reference
@@ -363,11 +357,8 @@ opaque and configuration-bound, and obsolete work cannot publish to a changed ly
 Primary system-device region JP, no usable pack and no off/removal/prior-attempt flag permit
 one persisted foreground consideration; offline consumes it, while manual retry remains.
 No geolocation, startup wait or background watcher is added. The pinned IPADIC JAR is data,
-not executable downloaded code. The real pinned-data/production-tokenizer fixture executed
-in PR #198's green 835-test run and shipped in Nightly N202610151104 / build 6833.
-That historical result does not validate the newer YouTube source above.
+not executable downloaded code.
 
 Downloader requests own UUID staging directories, latches and transport/probe cleanup.
 Spotify refresh, sign-in and sign-out serialize credential persistence and session invalidation
 under the same mutex; catalog/streaming separation and playback source policy remain intact.
-These source-level ownership changes are not proof of real-network or device behavior.

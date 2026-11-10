@@ -109,8 +109,6 @@ and does not materialize defaults in an empty store. Restore remains a category-
 normalize only the candidate; rollback/exact `replaceAll`, including EMPTY, restores the original
 snapshot without migration. Legacy Apple overrides from XML are materialized in that same commit.
 
-The settings-conflict implementation and focused tests are source-only until the orchestrator's
-exact-head CI. No local compilation/test execution or device/physical-output evidence is claimed.
 Shared host route availability and native audio adapters remain separate port coverage; persisted
 settings/UI parity alone does not prove a desktop/iOS feature runs.
 
@@ -259,9 +257,7 @@ for their actual selected item, not blindly the playing song; SpatialFlow uses t
 menu. Opening is idle; collapse/navigation/target changes deactivate work even during exit
 animation. See [architecture](ARCHITECTURE.md) for bounded-source and heuristic-result limits.
 
-Implementation and independent source review are complete; the 113 new focused test methods
-were integrated but unexecuted at the 2026-10-15 pre-CI checkpoint. Actual build/test evidence is
-in candidate PR/Actions, not a source-review claim. Japanese pack automation uses
+Japanese pack automation uses
 primary system-device locale region JP only, one persisted best-effort foreground consideration
 on Wi-Fi/cellular, no startup block/IP lookup, and explicit off/removal refusal. Offline consumes
 the consideration without a retry loop. Keep manual download/cancel,

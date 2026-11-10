@@ -2,9 +2,9 @@
 
 Natune (`NatuneGroup/Natune`) is a Kotlin Multiplatform music player. It grew out of
 ArchiveTune and keeps that lineage: the Android host still uses the
-`moe.rukamori.archivetune` package. Audio comes from Tidal, Deezer, Qobuz, Telegram,
-optional modules and an opt-in Spotify streaming source, with YouTube as the final
-fallback. Spotify also supplies catalog metadata.
+`moe.rukamori.archivetune` package. Audio comes from Tidal, Qobuz, Deezer, Apple Music,
+Amazon, QQ Music, JioSaavn, Telegram, optional modules and an opt-in Spotify streaming
+source, with YouTube as the final fallback. Spotify also supplies catalog metadata.
 
 `dev` is the integration branch and builds the Nightly channel. `main` is Stable.
 There are only these two channels; Canary is retired (see
@@ -40,7 +40,7 @@ There are only these two channels; Canary is retired (see
   restore a committed debug keystore, `Koiverse.jks*`, `ArchiveTuneKoiverseServer.txt`
   or `DataServer.txt`. Do not rotate the release key or read secret values.
 - **Multi-source playback.** Providers live in `tidal/`, `deezer/`, `qobuz/`,
-  `spotify/`, `telegram/` and `:modules`; the shared contract and source order live in
+  `spotify/`, `telegram/`, `audiosource/` and `:modules`; the shared contract and source order live in
   `audiosource/` (`AudioSourceConfig.DEFAULT_ORDER`). Resolution goes through
   `resolveMultiSourceDataSpec` in `playback/MusicService.kt`; `tidal-dash://` and
   `telegram://` are routed there. Do not rewire playback around this chain.
