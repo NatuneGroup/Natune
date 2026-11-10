@@ -74,6 +74,8 @@ fun SettingsPage(
         }
     }
     LaunchedEffect(scrollTo, pageRows.map { it.anchor }) {
+        // Supplementary host rows have no reference anchor; null must not select the first of them.
+        if (scrollTo.isNullOrBlank()) return@LaunchedEffect
         val index = pageEntries.indexOfFirst { entry -> entry.row.anchor == scrollTo || entry.reference?.anchor == scrollTo ||
             entry.reference?.aliases?.any { it == scrollTo } == true }
         if (index >= 0) listState.scrollToItem(leadingItemCount + index)

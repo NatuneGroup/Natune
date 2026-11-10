@@ -38,6 +38,20 @@ class SettingsBackTest {
         assertEquals(1, backs)
     }
 
+    @Test fun openingPhoneSettingsWithoutAnAnchorKeepsTheFirstGroupVisible() = runComposeUiTest {
+        val store = Store()
+        val controller = SettingsController(store, store.snapshots.value, false)
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalPhoneSettingsReference provides phoneSettingsReference("settings")) {
+                    SettingsHomePage(controller, {}, onFailure = { error("Edit failed") })
+                }
+            }
+        }
+        onNodeWithTag("setting:account").assertIsDisplayed()
+        onNodeWithTag("setting:appearance").assertIsDisplayed()
+    }
+
     @Test fun aHostWithoutBackKeepsThePageHeaderless() = runComposeUiTest {
         val store = Store()
         val controller = SettingsController(store, store.snapshots.value, false)
