@@ -422,7 +422,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew :shared-ui:iosSimulatorArm64Test --tests '*IosPlatformRenderTest*'             -Pnatune.androidSdk=false -Pnatune.renderAudit=true             -Pnatune.renderDir="$GITHUB_WORKSPACE/outputs/ui-renders/ios-native"             --console=plain --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g -Pkotlin.daemon.jvmargs=-Xmx2g
-          test "$(find outputs/ui-renders/ios-native -name '*.png' | wc -l | tr -d ' ')" = 10
+          test "$(find outputs/ui-renders/ios-native -name '*.png' | wc -l | tr -d ' ')" = 28
       - name: Upload native iOS images and test reports
         if: always()
         uses: actions/upload-artifact@v7

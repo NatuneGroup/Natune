@@ -101,6 +101,7 @@ fun BottomSheetPlayer(
             CompositionLocalProvider(
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat),
+                LocalPlayerGlyphStyle provides presentation.style,
             ) {
                 // The expansion surface paints edge to edge: its background fills the whole window, including the
                 // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.

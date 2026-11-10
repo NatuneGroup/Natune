@@ -88,7 +88,7 @@ private fun MiniBar(modifier: Modifier = Modifier) {
     )
 }
 
-internal val AuditScreens = listOf("home", "player", "mini-player", "queue", "lyrics", "settings", "settings-lyrics", "settings-privacy", "search", "library")
+internal val AuditScreens = listOf("home", "player", "mini-player", "queue", "lyrics", "settings", "settings-lyrics", "settings-privacy", "search", "library") + PlayerDesignStyle.entries.map { "player-style-${it.name}" }
 
 internal object RenderAuditFixture {
     @Composable fun Content(name: String, phone: Boolean) {
@@ -102,7 +102,7 @@ internal object RenderAuditFixture {
             "player" -> Player(phone)
             "lyrics" -> Player(phone, PlayerPanel.LYRICS)
             "queue" -> Player(phone, PlayerPanel.QUEUE)
-            else -> error("Unknown audit screen: $name")
+            else -> if (name.startsWith("player-style-")) Player(phone, style = PlayerDesignStyle.valueOf(name.removePrefix("player-style-"))) else error("Unknown audit screen: $name")
         }
     }
 
@@ -147,7 +147,7 @@ internal object RenderAuditFixture {
     @Composable private fun DesktopBar() = DesktopPlayerBar(
         songs[0], playback(), nativeState(), art, false, remember { DesktopShellState() }, {}, {}, {}, {}, {},
     )
-    @Composable private fun Player(phone: Boolean, panel: PlayerPanel = PlayerPanel.ARTWORK) {
+    @Composable private fun Player(phone: Boolean, panel: PlayerPanel = PlayerPanel.ARTWORK, style: PlayerDesignStyle = PlayerDesignStyle.Default) {
         val state = PlayerState(playback(), songs[0].item.title, songs[0].item.subtitle, songs.map { it.occurrenceId }, canPrevious = true, canNext = true, volume = .75f, reducedMotion = true)
         val slots = PlayerSlots(
             artwork = { _, m -> art(songs[0].item, m) },
@@ -157,10 +157,10 @@ internal object RenderAuditFixture {
             compactLyrics = { m -> Lyrics(m) },
             queue = { m -> Queue(m) },
         )
-        if (!phone && panel == PlayerPanel.ARTWORK) {
+        if (!phone && panel == PlayerPanel.ARTWORK && style == PlayerDesignStyle.Default) {
             DesktopExpandedPlayer(state, slots, {}, {}, {}, {}, {}, Modifier.fillMaxSize())
         } else {
-            BottomSheetPlayer(state, PlayerActions({}, {}, {}, {}, {}, {}), PreferenceSnapshot.EMPTY, slots, false,
+            BottomSheetPlayer(state, PlayerActions({}, {}, {}, {}, {}, {}), PreferenceSnapshot.of(PlayerDesignStyleKey to style.name), slots, false,
                 Modifier.fillMaxSize(), remember { PlayerInteractionState().apply { this.panel = panel } })
         }
     }

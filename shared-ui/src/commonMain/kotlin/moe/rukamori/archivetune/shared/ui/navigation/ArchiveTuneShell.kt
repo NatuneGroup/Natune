@@ -300,8 +300,8 @@ private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
 internal fun TabMark(tab: ShellTab) {
     val drawable = when (tab) {
         ShellTab.Home -> Res.drawable.m4_icon_home_outlined
-        ShellTab.Search -> Res.drawable.solar_magnifer_linear
-        ShellTab.Library -> Res.drawable.solar_library_linear
+        ShellTab.Search -> Res.drawable.m4_icon_search
+        ShellTab.Library -> Res.drawable.m4_icon_library_outlined
     }
     Icon(painterResource(drawable), stringResource(tab.label), Modifier.size(24.dp))
 }
