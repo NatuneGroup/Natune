@@ -200,6 +200,7 @@ private fun ArchiveTuneLoadedRoot(
         val desktopShellState = remember { DesktopShellState() }
         var expanded by remember { mutableStateOf(false) }
         val phoneSheet = rememberPhonePlayerSheetState()
+        val desktopSheet = rememberPhonePlayerSheetState()
         var shortcutsVisible by remember { mutableStateOf(false) }
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
         // consumed, so returning to the tab later does not take focus from the user.
@@ -226,6 +227,7 @@ private fun ArchiveTuneLoadedRoot(
             if (current == null) {
                 expanded = false
                 phoneSheet.reset()
+                desktopSheet.reset()
                 desktopShellState.expandedPlayer = false
             }
         }
@@ -400,7 +402,7 @@ private fun ArchiveTuneLoadedRoot(
                 // One page host for both shells: only the columns around the page differ. Lyrics and queue surfaces
                 // stay mounted while a desktop pane or the expanded player shows them, so their scroll owner survives
                 // opening and closing the pane.
-                val surfaceOpen = expanded || (!desktopShell && phoneSheet.visible) || (desktopShell && (desktopShellState.expandedPlayer || desktopShellState.lyricsOpen))
+                val surfaceOpen = expanded || (!desktopShell && phoneSheet.visible) || (desktopShell && (desktopShellState.expandedPlayer || desktopSheet.visible || desktopShellState.lyricsOpen))
                 val slots = host.playerSlots(surfaceOpen, active, interaction)
                 val page: @Composable (Modifier) -> Unit = { pageModifier ->
                     CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
@@ -491,7 +493,11 @@ private fun ArchiveTuneLoadedRoot(
                                 lyricsPane = { paneModifier -> slots.lyrics(paneModifier) },
                                 content = { pageModifier -> page(pageSource.then(pageModifier)) },
                             )
-                            if (desktopShellState.expandedPlayer && current != null) {
+                            if (current != null) PhonePlayerSheet(
+                                expanded = desktopShellState.expandedPlayer,
+                                onExpanded = { desktopShellState.expandedPlayer = it },
+                                motion = policy.motion, state = desktopSheet, dragEnabled = false,
+                            ) {
                                 DesktopExpandedPlayer(
                                     state = desktopPlayerState(current, currentPlayback, nativeState, policy.motion),
                                     slots = slots,

@@ -84,6 +84,7 @@ internal fun PhonePlayerSheet(
     motion: Boolean,
     state: PhonePlayerSheetState = rememberPhonePlayerSheetState(),
     modifier: Modifier = Modifier,
+    dragEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     LaunchedEffect(expanded, motion) { state.animate(expanded, motion) }
@@ -95,6 +96,7 @@ internal fun PhonePlayerSheet(
                 .graphicsLayer { translationY = (1f - state.progress) * size.height }
                 .semantics { progressBarRangeInfo = ProgressBarRangeInfo(state.progress, 0f..1f) }
                 .draggable(rememberDraggableState { state.drag(-it / heightPx) }, Orientation.Vertical,
+                    enabled = dragEnabled,
                     onDragStopped = { state.settle(it / density, expanded, motion, onExpanded) })) {
                 content()
             }
