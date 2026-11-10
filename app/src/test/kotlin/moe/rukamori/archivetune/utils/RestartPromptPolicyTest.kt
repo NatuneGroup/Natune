@@ -130,4 +130,53 @@ class RestartPromptPolicyTest {
         policy.committed(restartSettingValues(conflicts, true), restartSettingValues(enabled, true), actualRunning)
         assertFalse(policy.visible)
     }
+
+    @Test
+    fun olderPlatformsPromptForThePreferenceBasedDirectRouteAndKeepTheDormantParent() {
+        val parent = mutablePreferencesOf(BitPerfectUsbOutputKey to true)
+        val driver = parent.toMutablePreferences().apply { this[DirectUsbDriverKey] = true }
+        val before = restartSettingValues(parent, false, true)
+        val after = restartSettingValues(driver, false, true)
+        assertEquals("false|false|false", before[RestartReason.USB_OUTPUT])
+        assertEquals("true|false|true", after[RestartReason.USB_OUTPUT])
+        val enabling = RestartPromptPolicy()
+        enabling.committed(before, after, before)
+        assertTrue(enabling.visible)
+        assertEquals(setOf(RestartReason.USB_OUTPUT), enabling.reasons)
+        val disabling = RestartPromptPolicy()
+        disabling.committed(after, before, after)
+        assertTrue(disabling.visible)
+        assertEquals(setOf(RestartReason.USB_OUTPUT), disabling.reasons)
+        assertEquals(true, parent[BitPerfectUsbOutputKey])
+        assertEquals("false|false|false", restartSettingValues(driver, false, false)[RestartReason.USB_OUTPUT])
+    }
+
+    @Test
+    fun selectingTheOlderPlatformDriverFirstPromptsOnlyWhenItsParentIsEnabled() {
+        val driver = mutablePreferencesOf(DirectUsbDriverKey to true)
+        val parent = driver.toMutablePreferences().apply { this[BitPerfectUsbOutputKey] = true }
+        val initial = restartSettingValues(emptyPreferences(), false, true)
+        val policy = RestartPromptPolicy()
+        policy.committed(initial, restartSettingValues(driver, false, true), initial)
+        assertFalse(policy.visible)
+        policy.committed(restartSettingValues(driver, false, true), restartSettingValues(parent, false, true), initial)
+        assertTrue(policy.visible)
+        assertEquals(setOf(RestartReason.USB_OUTPUT), policy.reasons)
+    }
+
+    @Test
+    fun android14RetainsItsPlatformRouteWhenTheDirectDriverIsDisabled() {
+        val parent = mutablePreferencesOf(BitPerfectUsbOutputKey to true)
+        val driver = parent.toMutablePreferences().apply { this[DirectUsbDriverKey] = true }
+        val platform = restartSettingValues(parent, true, true)
+        val direct = restartSettingValues(driver, true, true)
+        assertEquals("true|false|false", platform[RestartReason.USB_OUTPUT])
+        assertEquals("true|false|true", direct[RestartReason.USB_OUTPUT])
+        val policy = RestartPromptPolicy()
+        policy.committed(direct, platform, direct)
+        assertTrue(policy.visible)
+        assertEquals(platform, restartSettingValues(parent, true, false))
+        val conflicting = driver.toMutablePreferences().apply { this[AutomixEnabledKey] = true }
+        assertEquals("false|false|false", restartSettingValues(conflicting, false, true)[RestartReason.USB_OUTPUT])
+    }
 }

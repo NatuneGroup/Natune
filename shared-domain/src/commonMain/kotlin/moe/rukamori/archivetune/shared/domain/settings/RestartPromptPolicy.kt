@@ -22,15 +22,16 @@ fun restartSettingValues(settings: RestartScopedSettings): Map<RestartReason, St
 
 /**
  * The effective values of every restart-scoped setting, plus the USB output and the region. USB output is the choice
- * that actually takes effect: bit-perfect output needs platform support and yields to crossfade and automix, and
- * exclusive audio is the fallback when it does not.
+ * that actually takes effect: bit-perfect output needs the platform or opted-in direct driver and yields to crossfade
+ * and automix, and exclusive audio is the fallback when it does not.
  */
 fun restartSettingValues(
     preferences: PreferenceSnapshot,
     bitPerfectSupported: Boolean,
+    directUsbDriverAvailable: Boolean = false,
 ): Map<RestartReason, String> {
     val bitPerfect =
-        bitPerfectSupported &&
+        bitPerfectOutputSupported(bitPerfectSupported, preferences[DirectUsbDriverKey, false], directUsbDriverAvailable) &&
             preferences[BitPerfectUsbOutputKey, false] &&
             !preferences[CrossfadeEnabledKey, false] &&
             !preferences[AutomixEnabledKey, false]
