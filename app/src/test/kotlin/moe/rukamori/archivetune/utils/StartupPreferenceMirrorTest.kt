@@ -168,7 +168,7 @@ class StartupPreferenceMirrorTest {
             MaxImageCacheSizeKey,
             SmartTrimmerKey,
             MaxSongCacheSizeKey,
-            BitPerfectUsbOutputKey,
+            BitPerfectUsbOutputKey, DirectUsbDriverKey,
             CrossfadeEnabledKey,
             AutomixEnabledKey,
             UsbExclusiveAudioKey,
