@@ -46,6 +46,7 @@ import moe.rukamori.archivetune.lyrics.PreparedLyricsPhonetic
 import moe.rukamori.archivetune.lyrics.PreparedLyricsTrack
 import moe.rukamori.archivetune.lyrics.PreparedLyricsWord
 import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.shared.domain.lyrics.normalizeTtmlAgent
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.viewmodels.LyricsRenderError
@@ -206,7 +207,7 @@ private fun parseEnhancedLyrics(source: String): EnhancedParsedLyrics {
                     words = line.words.filter { it.text.isNotEmpty() }.map { word ->
                         WordTimestamp(word.text, word.startTime, word.endTime, word.isBackground)
                     }.takeIf { it.isNotEmpty() },
-                    agent = line.agent,
+                    agent = normalizeTtmlAgent(line.agent),
                     durationMs = ((line.endTime - line.startTime) * 1000.0).toLong().coerceAtLeast(0L),
                     providerRomanizedText = line.providerRomanizedText,
                     providerRomanizedWords = line.providerRomanizedWords,

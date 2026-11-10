@@ -142,11 +142,12 @@ internal object TtmlParser {
             }
 
         val agent =
-            paragraph.getAttribute("ttm:agent").takeIf { it.isNotEmpty() }
-                ?: paragraph.attributes
-                    .firstOrNull { it.name.endsWith("agent", ignoreCase = true) }
-                    ?.value
-                    ?.takeIf { it.isNotEmpty() }
+            normalizeTtmlAgent(
+                paragraph.getAttribute("ttm:agent").takeIf { it.isNotEmpty() }
+                    ?: paragraph.attributes
+                        .firstOrNull { it.name.endsWith("agent", ignoreCase = true) }
+                        ?.value,
+            )
         val lineKey = readAttributeBySuffix(paragraph, "key")
         val transliteration = lineKey?.let { transliterations[it] }
         val translation = lineKey?.let { translations[it] }
