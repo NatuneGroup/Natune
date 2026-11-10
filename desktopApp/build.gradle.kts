@@ -913,9 +913,9 @@ tasks.named<Test>("jvmTest") {
  * The window, icon and renderer suites are pure JVM checks: no native engine, no fixtures, no display. They share the
  * untrimmed task's single JVM with the native playback suites, whose manual-engine ring is already sensitive to the work
  * the JVM did first (`DesktopPlaybackEngineTest.speedChangeScalesMediaTimeOnceTheQueuedAudioHasPlayed` assumes the ring
- * holds no more than the two seconds it drains, and it failed four times on this branch while the same suite passed on
- * the base). Running them in their own JVM keeps the playback suites the environment they have on the base and lets
- * these tests run without the engine closure.
+ * holds no more than the two seconds it drains, and it failed intermittently when these suites shared its JVM).
+ * Running them in their own JVM keeps the playback suites in the environment they expect and lets these tests run
+ * without the engine closure.
  */
 val desktopWindowTestClasses = listOf(
     "moe.rukamori.archivetune.desktop.DesktopWindowBoundsTest",

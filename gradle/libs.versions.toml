@@ -122,7 +122,7 @@ innertubexDesktopVersion = "v0.11.2"
 # The desktop host alone is on v0.11.5 (tag at 0.11.5): WEB_REMIX-first selection with the library's own
 # ClientHealthTracker cooldowns, TVHTML5_SAMSUNG, late SABR tokens, and the fixes that stop a DRM format
 # from being handed out when cookies are present. Android and iOS keep v0.11.2 on purpose: their playback
-# path is unchanged by this branch.
+# path did not move with it.
 innertubexDesktopAppVersion = "v0.11.5"
 # The pattern-based signature/`n` interpreter InnerTubeX compiles against. Natune never calls it directly;
 # it is declared so the desktop host's copy is the 0.1.4 build that v0.11.5 is written for.

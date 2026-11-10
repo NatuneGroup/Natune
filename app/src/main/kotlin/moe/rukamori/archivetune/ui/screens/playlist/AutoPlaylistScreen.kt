@@ -309,7 +309,6 @@ fun AutoPlaylistScreen(
         }
     }
 
-    // System bars padding
     val systemBarsTopPadding = LocalStableSystemBarsTopPadding.current
 
     Box(

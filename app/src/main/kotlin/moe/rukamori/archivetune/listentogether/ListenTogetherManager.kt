@@ -778,7 +778,6 @@ class ListenTogetherManager @Inject constructor(
                 val nowIsHost = event.newHostId == userId.value
 
                 if (wasHost && !nowIsHost) {
-                    // Lost host role
                     Timber.tag(TAG).d("Local user lost host role")
                     stopQueueSyncObservation()
                     stopVolumeSyncObservation()
@@ -789,7 +788,6 @@ class ListenTogetherManager @Inject constructor(
                     // Restore guest mute state since we're now a guest
                     updateGuestMuteState()
                 } else if (!wasHost && nowIsHost) {
-                    // Gained host role
                     Timber.tag(TAG).d("Local user gained host role")
                     updateGuestMuteState() // This will restore mute state since we're now host
 
@@ -1323,7 +1321,7 @@ class ListenTogetherManager @Inject constructor(
         isPlaying: Boolean,
         position: Long,
         queue: List<TrackInfo>?,
-        queueTitle: String? = null,  // New param
+        queueTitle: String? = null,
         bypassBuffer: Boolean = false
     ) {
         val connection = playerConnection

@@ -1,8 +1,8 @@
 name: Build Pull Request
 
-# Recreated on blacksmith runners (previously parked under .github/inherited-workflows/).
+# Runs on Blacksmith runners.
 # Gives every PR into dev/main and every dev push an assemble + lint signal plus a fast
-# compile pass over the KMP shared modules, so agents get CI without local heavy builds.
+# compile pass over the KMP shared modules.
 on:
   pull_request:
     branches:

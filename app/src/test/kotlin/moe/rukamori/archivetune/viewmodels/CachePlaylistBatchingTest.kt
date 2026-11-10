@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * P1-1: `getSongsByIds` binds one SQLite variable per id, and the player cache's key set is
+ * `getSongsByIds` binds one SQLite variable per id, and the player cache's key set is
  * unbounded. A 1 GiB cache easily holds more ids than Android 11 and older accept in a statement,
  * which used to kill the process from `viewModelScope`.
  */
