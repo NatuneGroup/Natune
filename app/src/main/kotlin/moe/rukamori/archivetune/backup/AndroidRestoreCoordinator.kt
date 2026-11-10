@@ -103,8 +103,8 @@ internal object AndroidRestoreCoordinator {
             val settingsDir = File(context.filesDir, "datastore")
             val pbStageRoot = File(settingsDir, RESTORE_PENDING_DIR)
             val pbStage = File(pbStageRoot, "$STAGE_PREFIX$stageId")
-            val settingsExcludedKeys =
-                if (includeAccount) emptySet() else BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS
+            val includePreferences = BackupPreferenceSelection.carriesPreferences(includeSettings, includeAccount)
+            val includeKey: (String) -> Boolean = { BackupPreferenceSelection.includes(it, includeSettings, includeAccount) }
             var hasDb = false
             var settingsKind = SettingsKind.NONE
             var fontCount = 0
@@ -141,7 +141,7 @@ internal object AndroidRestoreCoordinator {
                                 )
                             }
 
-                            isXml && includeSettings -> {
+                            isXml && includePreferences -> {
                                 if (settingsKind == SettingsKind.PB) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.XML
                                 require(entry.size != 0L) { "Restore settings are empty" }
@@ -155,7 +155,7 @@ internal object AndroidRestoreCoordinator {
                                 )
                             }
 
-                            isPb && includeSettings -> {
+                            isPb && includePreferences -> {
                                 if (settingsKind == SettingsKind.XML) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.PB
                                 require(entry.size != 0L) { "Restore settings are empty" }
@@ -195,6 +195,21 @@ internal object AndroidRestoreCoordinator {
             require(seen.isNotEmpty()) { "Empty restore archive" }
             require(!includeLibrary || hasDb) { "Backup missing database" }
             require(!includeSettings || settingsKind != SettingsKind.NONE) { "Backup missing settings" }
+            if (settingsKind == SettingsKind.PB && !BackupPreferenceSelection.replacesWholeFile(includeSettings, includeAccount)) {
+                // Replacing the live file would also overwrite the categories the user left unselected.
+                convertPbToXml(File(pbStage, SETTINGS_PB), File(stagedDir, SETTINGS_XML), includeKey)
+                deleteTree(pbStage)
+                settingsKind = SettingsKind.XML
+            }
+            if (settingsKind == SettingsKind.XML && !includeSettings) {
+                val stagedXml = File(stagedDir, SETTINGS_XML)
+                // A backup made before any sign-in has no account keys; that is nothing to restore, not an error.
+                if (FileInputStream(stagedXml).use { readLegacySettings(it, includeKey) }.isEmpty) {
+                    stagedXml.delete()
+                    settingsKind = SettingsKind.NONE
+                }
+            }
+            require(includeLibrary || settingsKind != SettingsKind.NONE) { "Backup has nothing to restore" }
 
             val fontEntries = fontStage.listFiles()
                 ?.filter { it.isFile }
@@ -239,7 +254,7 @@ internal object AndroidRestoreCoordinator {
             preflightTargets(targets)
             if (includeLibrary) preflightDatabase(File(stagedDir, InternalDatabase.DB_NAME))
             if (settingsKind == SettingsKind.XML) {
-                preflightXml(File(stagedDir, SETTINGS_XML), settingsExcludedKeys)
+                preflightXml(File(stagedDir, SETTINGS_XML), includeKey)
             } else if (settingsKind == SettingsKind.PB) {
                 preflightPb(File(pbStage, SETTINGS_PB))
             }
@@ -498,11 +513,7 @@ internal object AndroidRestoreCoordinator {
         val file = File(stageRoot(context, ready), "staged/$SETTINGS_XML")
         require(file.isFile) { "Staged settings missing" }
         FileInputStream(file).use { input ->
-            restoreSettingsFromXml(
-                context,
-                input,
-                if (ready.account) emptySet() else BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS,
-            )
+            restoreSettingsFromXml(context, input) { BackupPreferenceSelection.includes(it, ready.settings, ready.account) }
         }
     }
 
@@ -587,10 +598,20 @@ internal object AndroidRestoreCoordinator {
         }
     }
 
-    private fun preflightXml(file: File, excludedKeys: Set<String>) {
+    private fun preflightXml(file: File, includeKey: (String) -> Boolean) {
         require(file.isFile && file.length() > 0L) { "Restore settings missing" }
-        val values = FileInputStream(file).use { input -> readLegacySettings(input, excludedKeys) }
+        val values = FileInputStream(file).use { input -> readLegacySettings(input, includeKey) }
         require(!values.isEmpty) { "Restore settings are empty" }
+    }
+
+    private fun convertPbToXml(source: File, target: File, includeKey: (String) -> Boolean) {
+        require(source.isFile && source.length() > 0L) { "Restore settings missing" }
+        val snapshot = LegacyDataStorePreferences.read(source.readBytes())
+        FileOutputStream(target).use { output ->
+            writeLegacySettingsXml(output, snapshot, includeKey)
+            output.flush()
+            output.fd.sync()
+        }
     }
 
     private fun preflightPb(file: File) {
@@ -654,13 +675,14 @@ internal object AndroidRestoreCoordinator {
         val stageId = values["stage"]?.takeIf(AndroidRestoreFontPolicy::isSafeStageId) ?: return null
         val kind = values["kind"]?.let { runCatching { SettingsKind.valueOf(it) }.getOrNull() } ?: return null
         val settings = values["settings"]?.toBoolean() ?: false
-        if (settings != (kind != SettingsKind.NONE)) return null
+        val account = values["account"]?.toBoolean() ?: false
+        if (!BackupPreferenceSelection.isConsistent(settings, account, kind)) return null
         val fontEntries = AndroidRestoreFontPolicy.decode(values["fonts"].orEmpty()) ?: return null
         return ReadyMarker(
             stageId = stageId,
             library = values["library"]?.toBoolean() ?: false,
             settings = settings,
-            account = values["account"]?.toBoolean() ?: false,
+            account = account,
             settingsKind = kind,
             fontEntries = fontEntries,
             previousSettingsPresent = values["previous-settings"]?.toBoolean() ?: false,

@@ -221,7 +221,9 @@ class SpotifyLibraryRepository
                         onFailure = {
                             if (it is CancellationException) throw it
                             reportException(it)
-                            SpotifyAccountSession()
+                            // Offline or a token-service hiccup leaves the stored sign-in intact and connected.
+                            val retryable = !SpotifySessionFailure.isCredentialRejection(it)
+                            SpotifyAccountSession(accountName = accountName, accountAvatarUrl = avatarUrl, retryable = retryable)
                         },
                     )
             }
@@ -911,6 +913,8 @@ data class SpotifyAccountSession(
     val isAuthenticated: Boolean = false,
     val accountName: String = "",
     val accountAvatarUrl: String? = null,
+    /** Signed in, but the access token could not be fetched right now; retry rather than ask to reconnect. */
+    val retryable: Boolean = false,
 )
 
 /** The playlist tracks of a page that Spotify can actually play — local files have no YouTube match. */

@@ -121,6 +121,14 @@ object TidalAccountManager {
     }
 
     /**
+     * True when the latest [refreshAccessToken] returned null because Tidal refused the grant, so only
+     * an interactive sign-in can help. Network errors and timeouts leave it false. Callers serialize refreshes.
+     */
+    @Volatile
+    var lastRefreshRejected: Boolean = false
+        private set
+
+    /**
      * Exchanges a stored refresh token for a fresh access token via the OAuth `refresh_token`
      * grant. Tidal typically does not return a new refresh_token here, so callers should keep the
      * existing one when [TokenResult.refreshToken] is null.
@@ -128,11 +136,13 @@ object TidalAccountManager {
     suspend fun refreshAccessToken(
         refreshToken: String,
         flow: String = FLOW_OAUTH,
-    ): TokenResult? =
-        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+    ): TokenResult? {
+        lastRefreshRejected = false
+        return AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
             withContext(Dispatchers.IO) {
             if (flow == FLOW_WEBCAPTURE) {
                 Timber.tag("TidalAccount").w("web-capture session has no refresh token; re-login required")
+                lastRefreshRejected = true
                 return@withContext null
             }
             val clientId = if (flow == FLOW_PKCE) PKCE_CLIENT_ID else CLIENT_ID
@@ -160,6 +170,7 @@ object TidalAccountManager {
                     val payload = response.body?.string().orEmpty()
                     if (!response.isSuccessful || payload.isBlank()) {
                         Timber.tag("TidalAccount").w("token refresh failed: %d", response.code)
+                        if (TidalRefreshOutcome.isRejection(response.code)) lastRefreshRejected = true
                         return@use null
                     }
                     val json = JSONObject(payload)
@@ -180,6 +191,7 @@ object TidalAccountManager {
             }
             }
         } ?: null
+    }
 
     // PKCE web login (primary WebView flow) + Bearer capture (fallback).
 

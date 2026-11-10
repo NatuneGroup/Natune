@@ -79,6 +79,48 @@ internal object AndroidRestoreBlockedPolicy {
     fun shouldAttemptBestEffortScreen(markerExistedAtStartup: Boolean): Boolean = !markerExistedAtStartup
 }
 
+/** Which preference keys a backup or restore carries for the selected categories. */
+internal object BackupPreferenceSelection {
+    private val accountPrefixes = listOf("account.", "spotify_stream_", "SpotifyStream")
+
+    /**
+     * The shared pool cache is sealed with a non-exportable Keystore key, so on any other install it is
+     * unreadable ciphertext, and a restored refresh time would hold back the refetch that replaces it.
+     */
+    val DEVICE_BOUND_KEYS: Set<String> =
+        setOf(
+            "poolTidalAccounts",
+            "poolQobuzAccounts",
+            "poolDeezerAccounts",
+            "poolAppleMusicAccounts",
+            "poolAmazonAccounts",
+            "poolAccountsLastRefreshAtMillis",
+        )
+
+    fun isAccountKey(name: String): Boolean =
+        name in BackupArchiveRepository.ACCOUNT_PREFERENCE_KEYS || accountPrefixes.any { name.startsWith(it) }
+
+    /** Sign-ins live in the same preferences file as settings, so either category needs that payload. */
+    fun carriesPreferences(settings: Boolean, account: Boolean): Boolean = settings || account
+
+    fun includes(name: String, settings: Boolean, account: Boolean): Boolean =
+        when {
+            name in DEVICE_BOUND_KEYS || name.startsWith("secure_store_") -> false
+            isAccountKey(name) -> account
+            else -> settings
+        }
+
+    /** A raw preferences file may only replace the live one when the selection filters nothing out. */
+    fun replacesWholeFile(settings: Boolean, account: Boolean): Boolean = settings && account
+
+    fun isConsistent(settings: Boolean, account: Boolean, kind: SettingsKind): Boolean =
+        when (kind) {
+            SettingsKind.NONE -> !settings
+            SettingsKind.XML -> carriesPreferences(settings, account)
+            SettingsKind.PB -> replacesWholeFile(settings, account)
+        }
+}
+
 internal enum class AndroidRestoreSettingsRollbackAction {
     RESTORE_SNAPSHOT,
     DELETE_LIVE,
