@@ -61,6 +61,7 @@ object MusixmatchExperimentalLyricsProvider : LyricsProvider {
             artist = artist,
             album = album,
             duration = duration,
+            onFailure = onFailure,
             callback = callback,
         )
     }
