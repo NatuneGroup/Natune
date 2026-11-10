@@ -115,7 +115,7 @@ object AppleMusicProvider {
     // Web player JWT currently in hand, or null while none has been scraped.
     //
     // Deliberately not seeded with a hardcoded token: a pinned JWT goes stale on Apple's
-    // schedule (the one removed here expires 2026-10-22), and a stale token behaves exactly like
+    // schedule, and a stale token behaves exactly like
     // a live one until every AMP request 401s — the failure then reads as "canvas found nothing"
     // rather than "no credentials". With no token in hand the lookup is skipped, and said so.
     @Volatile

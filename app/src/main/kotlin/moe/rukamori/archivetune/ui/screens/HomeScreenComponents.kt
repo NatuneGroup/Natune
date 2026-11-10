@@ -166,7 +166,7 @@ fun HomeSectionHeader(
     leadingIcon: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    // BitChord-style section header (2026-09-03 redesign): a heavy 22sp W700
+    // BitChord-style section header: a heavy 22sp W700
     // title with an optional subtitle line, typography-led rather than
     // chrome-led, sitting at the 10dp page gutter. The fork's existing
     // affordances (leading glyph, account avatar, tap-to-navigate) render
@@ -564,7 +564,7 @@ private fun SpeedDialRandomTile(
 }
 
 /**
- * Keep Listening section — the BitChord compact shelf (2026-09-03 redesign):
+ * Keep Listening section — the BitChord compact shelf:
  * a single row of square 150dp cards for the mixed Song/Album/Artist items.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -611,8 +611,8 @@ fun KeepListeningSection(
 }
 
 /**
- * Forgotten Favorites section — the BitChord compact shelf (2026-09-03
- * redesign): a single row of square 150dp song cards. Tap plays from a queue
+ * Forgotten Favorites section — the BitChord compact shelf:
+ * a single row of square 150dp song cards. Tap plays from a queue
  * built over the whole section; hold opens the song menu.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -908,7 +908,7 @@ fun HomePageSectionTitle(
 /**
  * Helper that renders the small neutral glyph used as the leading icon for
  * section headers (clock for "Recently Played", bolt for "Speed Dial").
- * Restyled for the BitChord header design (2026-09-03): the icon now renders
+ * Restyled for the BitChord header design: the icon now renders
  * inline at 20dp with no circular container, so the header reads as
  * typography first with a quiet affordance before it.
  */

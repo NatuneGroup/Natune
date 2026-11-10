@@ -73,7 +73,6 @@ fun PlaylistSuggestionsSection(
     val playlistSuggestions by viewModel.playlistSuggestions.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoadingSuggestions.collectAsStateWithLifecycle()
 
-    // State for duplicate check dialog
     var showDuplicateDialog by remember { mutableStateOf(false) }
     var songToCheck by remember { mutableStateOf<SongItem?>(null) }
 

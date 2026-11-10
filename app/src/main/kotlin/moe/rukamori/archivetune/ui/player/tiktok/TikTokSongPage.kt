@@ -138,8 +138,7 @@ internal fun TikTokSongPage(
     isPlaying: Boolean,
     // While the stream is loading or the feed is playing an engine-initiated
     // swipe, the current page is not "paused" — buffering and auto-advance
-    // must not flash the play glyph (user report 2026-09-02: "when the song
-    // ends it pauses").
+    // must not flash the play glyph.
     suppressPauseOverlay: Boolean,
     playerConnection: PlayerConnection,
     queueTitle: String?,
@@ -254,8 +253,7 @@ internal fun TikTokSongPage(
                                         // and the backdrop are the same image, so an
                                         // alpha ramp at each edge reads as focus falling
                                         // off — without it the two renderings meet in a
-                                        // hard straight line (user report 2026-09-02:
-                                        // "straight lines / color inconsistency").
+                                        // hard straight line.
                                         .graphicsLayer {
                                             compositingStrategy =
                                                 CompositingStrategy.Offscreen
@@ -439,10 +437,7 @@ internal fun TikTokSongPage(
 
         // ── The action rail, hanging down alongside the song info ── A SIBLING of the whole Column
         // (page level) rather than a child of the media zone, so the rail's BOTTOM sits level with
-        // the caption block's last line — the artist • album text (user request 2026-09-03: "Shift
-        // the like button, profile and the other control icons down and align it with the name of
-        // the album of the song and the name of the artist which is just below the name of the
-        // song").
+        // the caption block's last line — the artist • album text.
         if (!immersive) {
             TikTokRail(
                 pageMetadata = pageMetadata,
@@ -547,8 +542,8 @@ private fun TikTokSongInfo(
     Column(modifier = modifier) {
         val showChipRow = lyricsControlsVisible || !queueTitle.isNullOrBlank()
         if (showChipRow) {
-            // FIXED-HEIGHT caption row (user report 2026-09-03: "When I open lyrics in tiktok style
-            // and then close it I see artwork shifting it's position a bit for a split second").
+            // FIXED-HEIGHT caption row, so opening and closing the lyrics pane never shifts the
+            // artwork for a frame.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.height(TIKTOK_CAPTION_ROW_HEIGHT),
