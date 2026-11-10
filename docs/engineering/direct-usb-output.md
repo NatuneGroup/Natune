@@ -57,8 +57,12 @@ transfers serialize with close on a separate lifetime lock, leaving PCM writes
 free to run while a volume transfer or read-back waits on the bus. Original
 levels are restored when the bus still works. Unsupported or unverifiable controls
 use the platform route; no fixed/full-volume opt-in is added. Unlike upstream's idle
-suspension/replay buffer, Natune retains its direct stream while paused and releases
-it at end of stream, reset or service destruction. This avoids introducing a second
+suspension/replay buffer, Natune retains its direct stream while paused, across
+seek flushes and across same-rate/channel/encoding track transitions. Seeks
+flush the native generation and resume the existing transport if playing.
+Changed formats drain and reopen; unsupported trim/channel maps use the platform
+route. The direct stream is released at drained end of stream, reset, release,
+format change, transfer failure or service destruction. This avoids introducing a second
 pause/replay policy in the existing player.
 
 Service destruction clears the running direct-device owner and `enabled` flag.
@@ -88,6 +92,19 @@ the direct driver pauses playback, and the ordering of kernel detach, noisy
 broadcasts and physical-unplug recovery, remain unverified on hardware. The
 driver remains experimental and default off until that behavior is established.
 
+No physical DAC has been exercised. The complete hardware-unverified list is:
+
+- USB permission UI and permission refusal on a connected DAC.
+- UAC1/UAC2 rate read-back, alternate-setting changes and supported hardware formats.
+- USB bus timing, explicit feedback, tolerated packet loss and audible dropouts.
+- Kernel detach, noisy-broadcast ordering and any pause caused by opening the driver.
+- Real unplug, direct failure recovery, speaker routing and kernel-interface restoration.
+- Initial hardware volume, per-channel ceilings, read-back and restoration on actual DACs.
+- Physical volume keys, mute and later user changes that raise hardware volume.
+- Pause/resume, seek flushes and same-format gapless playback on hardware.
+- Service restart, system suspend/resume and reconnect on hardware.
+- Actual bit-perfect samples at the DAC output.
+
 Validation commands are targeted and every Gradle invocation uses the shared lock:
 
 ```sh
@@ -102,13 +119,14 @@ flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
 
 The local Gradle attempt (offline to avoid large downloads) failed before compilation:
 no Android SDK/NDK is configured and the checkout's uninitialized `lyrics` submodule
-leaves `lyrics/betterlyrics` missing. Gradle was stopped under the lock. The 19
-pure-Kotlin JUnit tests plus three PCM-output short-write/flush/mute tests ran with the
-installed standalone Kotlin compiler. All ten Android playback components also
+leaves `lyrics/betterlyrics` missing. Gradle was stopped under the lock. The 23
+focused Kotlin JUnit tests (including startup-volume ceilings and PCM short writes,
+flush and mute) passed with the installed standalone Kotlin compiler. Eight
+Robolectric sink tests cover seek retention, matching/changing formats, trim/maps,
+packet-loss drain and successful/failed fallback; these require CI. All ten Android playback components also
 typechecked against Android API 36, the pinned Media3 1.10.1 libraries and XML-derived
 resource-ID declarations; this is bounded API coverage, not an SDK 37 app build. Host CMake
 transport tests and a host JNI build passed; the stripped host JNI library exported
-only seven entry points before the drain-accounting addition (now eight JNI entry points) and had 16 KB load alignment. Those results do not establish
+only eight JNI entry points and had 16 KB load alignment. Those results do not establish
 Android ARM64 linkage, APK size or Android app compilation. GitHub's PR builds remain
-required. No physical DAC, USB permission UI, bus timing, rate switching, unplug
-recovery, volume keys, suspend/resume or actual bit-perfect output was verified.
+required. Hardware coverage remains the exact unverified list above.
