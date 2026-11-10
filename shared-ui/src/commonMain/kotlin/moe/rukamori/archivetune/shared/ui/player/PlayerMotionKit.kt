@@ -88,6 +88,7 @@ object PlayerMotionSpecs {
 
 @Composable
 internal fun rememberPlayerMotionLevel(allowed: Boolean): PlayerMotionLevel {
+    // Read the platform animation scale once per composition.
     val scale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
     return playerMotionLevel(allowed && scale > 0f, LocalSystemReducedMotion.current)
 }
