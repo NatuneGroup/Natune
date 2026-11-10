@@ -49,8 +49,7 @@ internal class UsbDirectAudioOutput private constructor(
 
     fun markDetached() { failure = -19 }
 
-    fun refreshVolume(userChange: Boolean = false) {
-        if (userChange) volumeCanRise.set(true)
+    fun refreshVolume() {
         volumeRevision.incrementAndGet()
         if (failure != 0 || !volumePending.compareAndSet(false, true)) return
         runCatching { volumeExecutor.execute {
@@ -60,7 +59,12 @@ internal class UsbDirectAudioOutput private constructor(
                     served = volumeRevision.get()
                     synchronized(volumeLock) {
                         if (handle != 0L) {
-                            val db = UsbVolume.decibels(volume.snapshot, devices.volumeFraction() * playerVolume)
+                            // Player fades and ducking only scale below the system level, so only an audible system
+                            // level at or under the DAC's own setting may release the startup ceiling.
+                            val system = devices.volumeFraction()
+                            if (!volumeCanRise.get() && system > 0f &&
+                                volume.withinOriginal(UsbVolume.decibels(volume.snapshot, system))) volumeCanRise.set(true)
+                            val db = UsbVolume.decibels(volume.snapshot, system * playerVolume)
                             if (volumeCanRise.get()) volume.set(control, db) else volume.setInitial(control, db)
                         }
                     }
@@ -133,12 +137,7 @@ internal class UsbDirectAudioOutput private constructor(
     override fun isStalled(): Boolean = failure != 0
     override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters.DEFAULT
     override fun setPlaybackParameters(playbackParams: PlaybackParameters) = Unit
-    override fun setVolume(volume: Float) {
-        val next = volume.coerceIn(0f, 1f)
-        val changed = next != playerVolume
-        playerVolume = next
-        refreshVolume(userChange = changed)
-    }
+    override fun setVolume(volume: Float) { playerVolume = volume.coerceIn(0f, 1f); refreshVolume() }
     override fun addListener(listener: AudioOutput.Listener) { listeners.add(listener) }
     override fun removeListener(listener: AudioOutput.Listener) { listeners.remove(listener) }
     override fun setOffloadDelayPadding(delayInFrames: Int, paddingInFrames: Int) = Unit

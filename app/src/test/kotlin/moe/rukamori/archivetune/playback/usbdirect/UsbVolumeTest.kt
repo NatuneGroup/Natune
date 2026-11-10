@@ -99,4 +99,16 @@ class UsbVolumeTest {
         assertEquals(-70 * 256, channels.getValue(2).current)
     }
 
+    @Test fun startupCeilingReleasesOnlyAtOrBelowEveryOriginalChannel() {
+        val channels = mapOf(1 to Control(current = -20 * 256), 2 to Control(current = -70 * 256))
+        val control = UsbControl { input, request, value, index, data ->
+            channels.getValue(value and 255).transfer(input, request, value, index, data)
+        }
+        val volume = UsbVolume.Volume.open(control, UsbVolume.Feature(2, 0, false, listOf(1, 2)))
+        assertFalse(volume.withinOriginal(0.0))
+        assertFalse(volume.withinOriginal(-30.0))
+        assertTrue(volume.withinOriginal(-70.0))
+        assertTrue(volume.withinOriginal(-75.0))
+    }
+
 }
