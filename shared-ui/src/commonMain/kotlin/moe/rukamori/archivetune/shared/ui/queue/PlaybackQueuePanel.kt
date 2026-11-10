@@ -84,7 +84,7 @@ fun PlaybackQueuePanel(
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
     // Read in the composition only through this state, so the panel recomposes when the overlay toggles, not per scroll tick.
-    val listScrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0 } }
+    val listScrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
     val snackbar = remember { SnackbarHostState() }
     var selected by remember(queue) { mutableStateOf(emptySet<String>()) }
     var saveEntries by remember(queue) { mutableStateOf<List<ContentOccurrence>?>(null) }
@@ -100,7 +100,9 @@ fun PlaybackQueuePanel(
     LaunchedEffect(rows, state.currentOccurrenceId) {
         selected = selected.intersect(rows.mapTo(HashSet()) { it.occurrenceId })
         if (firstScroll && currentIndex >= 0) {
-            list.scrollToItem(currentIndex + QueuePanelHeaderItems)
+            // The first track is already visible below the expanded header. Scrolling to it can
+            // clamp partway through that header on a short queue and duplicate its controls.
+            if (currentIndex > 0) list.scrollToItem(currentIndex + QueuePanelHeaderItems)
             firstScroll = false
         }
     }
@@ -180,7 +182,7 @@ fun PlaybackQueuePanel(
         edits.refreshInfiniteQueue()
     } }
     val onLock: () -> Unit = { command { settings.edit { set(QueueEditLockKey, !locked) } } }
-    val onJump: () -> Unit = { if (currentIndex >= 0) scope.launch { list.animateScrollToItem(currentIndex + QueuePanelHeaderItems) } }
+    val onJump: () -> Unit = { if (currentIndex >= 0) scope.launch { list.animateScrollToItem(if (currentIndex == 0) 0 else currentIndex + QueuePanelHeaderItems) } }
     val onSave: () -> Unit = { save(rows) }
     val onClear: () -> Unit = { remove { edits.clearUpcoming() } }
     val onSelect: () -> Unit = { selected = rows.mapTo(HashSet()) { it.occurrenceId } }
