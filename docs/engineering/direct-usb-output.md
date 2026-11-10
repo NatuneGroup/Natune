@@ -60,6 +60,18 @@ The old worker's libusb subset was uncommitted, LGPL-2.1-or-later, approximately
 Upstream-derived notices and GPL/LGPL licence texts are retained in source and in
 About's bundled notices.
 
+## Unverified on hardware
+
+Claiming the USB interface can detach `snd-usb-audio` and remove Android's routed
+audio device. Both primary and secondary players keep Media3's
+`setHandleAudioBecomingNoisy(true)` protection; there is no separate app noisy
+receiver. The noisy broadcast carries no reliable USB-device identity or cause,
+and a real unplug can race the native open. A timed pause-suppression window
+cannot safely distinguish those events, so it is not installed. Whether opening
+the direct driver pauses playback, and the ordering of kernel detach, noisy
+broadcasts and physical-unplug recovery, remain unverified on hardware. The
+driver remains experimental and default off until that behavior is established.
+
 Validation commands are targeted and every Gradle invocation uses the shared lock:
 
 ```sh
