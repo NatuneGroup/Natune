@@ -63,4 +63,25 @@ class UsbVolumeTest {
         assertNull(UsbVolume.feature(raw, 0, 4, 2))
         assertNull(UsbVolume.feature(raw.copyOf(raw.size - 1), 0, 1, 2))
     }
+    @Test fun initialAndroidVolumeNeverRaisesTheDacsOriginalLevel() {
+        for (uac2 in listOf(false, true)) {
+            for (original in listOf(-70, -20, 0)) {
+                for (fraction in listOf(0f, 0.25f, 1f)) {
+                    val control = Control(uac2, original * 256)
+                    val volume = UsbVolume.Volume.open(control, UsbVolume.Feature(2, 0, uac2, listOf(0)))
+                    volume.setInitial(control, UsbVolume.decibels(volume.snapshot, fraction))
+                    assertEquals(minOf(original.toDouble(), UsbVolume.decibels(volume.snapshot, fraction)),
+                        volume.snapshot.currentDb, 0.0)
+                    // The sink's initial unity-volume callback must retain the startup ceiling.
+                    volume.setInitial(control, UsbVolume.decibels(volume.snapshot, 1f))
+                    assertTrue(control.current <= original * 256)
+                    volume.set(control, 0.0)
+                    assertEquals(0, control.current)
+                    volume.restore(control)
+                    assertEquals(original * 256, control.current)
+                }
+            }
+        }
+    }
+
 }

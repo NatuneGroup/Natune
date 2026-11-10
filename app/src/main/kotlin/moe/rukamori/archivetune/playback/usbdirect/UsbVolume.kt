@@ -169,6 +169,12 @@ internal object UsbVolume {
             return setTargets(control, List(feature.channels.size) { target })
         }
 
+        fun setInitial(control: UsbControl, db: Double): Snapshot {
+            require(db.isFinite()) { "Invalid USB volume" }
+            val target = floor(db.coerceIn(snapshot.minDb, snapshot.maxDb) * 256.0).toInt()
+            return setTargets(control, original.map { minOf(it, target) })
+        }
+
         fun restore(control: UsbControl): Snapshot = setTargets(control, original)
 
         private fun setTargets(

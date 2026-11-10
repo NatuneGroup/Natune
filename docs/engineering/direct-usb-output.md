@@ -42,8 +42,10 @@ closes the descriptor before freeing transfer buffers. One device lease prevents
 Natune players from claiming the DAC simultaneously.
 
 Hardware feature-unit volume is mandatory. Startup never raises an existing level;
-it initially attenuates to at most -40 dB, then applies the current Android music
-volume multiplied by player volume, capped at 0 dB. Every write is read back. Explicit mute emits silence without software gain. System
+it initially attenuates to at most -40 dB, then applies the lower of each channel's
+original level and Android music volume multiplied by player volume, capped at 0 dB.
+Initial sink callbacks and passive settings notifications retain that ceiling;
+only subsequent volume changes may raise it. Every write is read back. Explicit mute emits silence without software gain. System
 volume changes are observed and served away from the playback thread. Original
 levels are restored when the bus still works. Unsupported or unverifiable controls
 use the platform route; no fixed/full-volume opt-in is added. Unlike upstream's idle

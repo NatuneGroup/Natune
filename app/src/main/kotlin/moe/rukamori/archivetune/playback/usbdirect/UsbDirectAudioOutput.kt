@@ -31,6 +31,7 @@ internal class UsbDirectAudioOutput private constructor(
     private val volumeExecutor = Executors.newSingleThreadExecutor()
     private val volumePending = AtomicBoolean(false)
     private val volumeRevision = AtomicInteger()
+    private val volumeCanRise = AtomicBoolean(false)
     @Volatile private var playerVolume = 1f
     @Volatile private var failure = 0
     private var writtenFrames = 0L
@@ -47,7 +48,8 @@ internal class UsbDirectAudioOutput private constructor(
 
     fun markDetached() { failure = -19 }
 
-    fun refreshVolume() {
+    fun refreshVolume(userChange: Boolean = false) {
+        if (userChange) volumeCanRise.set(true)
         volumeRevision.incrementAndGet()
         if (failure != 0 || !volumePending.compareAndSet(false, true)) return
         runCatching { volumeExecutor.execute {
@@ -56,7 +58,10 @@ internal class UsbDirectAudioOutput private constructor(
                 do {
                     served = volumeRevision.get()
                     synchronized(this) {
-                        if (handle != 0L) volume.set(control, UsbVolume.decibels(volume.snapshot, devices.volumeFraction() * playerVolume))
+                        if (handle != 0L) {
+                            val db = UsbVolume.decibels(volume.snapshot, devices.volumeFraction() * playerVolume)
+                            if (volumeCanRise.get()) volume.set(control, db) else volume.setInitial(control, db)
+                        }
                     }
                 } while (served != volumeRevision.get() && failure == 0)
             } catch (_: Exception) {
@@ -117,7 +122,12 @@ internal class UsbDirectAudioOutput private constructor(
     override fun isStalled(): Boolean = failure != 0
     override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters.DEFAULT
     override fun setPlaybackParameters(playbackParams: PlaybackParameters) = Unit
-    override fun setVolume(volume: Float) { playerVolume = volume.coerceIn(0f, 1f); refreshVolume() }
+    override fun setVolume(volume: Float) {
+        val next = volume.coerceIn(0f, 1f)
+        val changed = next != playerVolume
+        playerVolume = next
+        refreshVolume(userChange = changed)
+    }
     override fun addListener(listener: AudioOutput.Listener) { listeners.add(listener) }
     override fun removeListener(listener: AudioOutput.Listener) { listeners.remove(listener) }
     override fun setOffloadDelayPadding(delayInFrames: Int, paddingInFrames: Int) = Unit
@@ -172,7 +182,7 @@ internal class UsbDirectAudioOutput private constructor(
                     val feature = UsbVolume.feature(raw, plan.alternate.control, plan.alternate.terminal, plan.format.channels)
                         ?: throw IllegalStateException("USB hardware volume unavailable")
                     val volume = UsbVolume.Volume.open(controlFor(handle), feature)
-                    try { volume.set(controlFor(handle), UsbVolume.decibels(volume.snapshot, devices.volumeFraction())) }
+                    try { volume.setInitial(controlFor(handle), UsbVolume.decibels(volume.snapshot, devices.volumeFraction())) }
                     catch (error: Exception) { runCatching { volume.restore(controlFor(handle)) }; throw error }
                     val output = UsbDirectAudioOutput(config, devices, context, handle, device.deviceId, result[1],
                         plan.format.subslot * plan.format.channels, volume)
