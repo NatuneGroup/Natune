@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,6 +66,7 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerControlCrossfade
 import moe.rukamori.archivetune.shared.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.shared.ui.player.PlayerBackgroundStyle
 import moe.rukamori.archivetune.shared.ui.player.capabilities
+import moe.rukamori.archivetune.shared.ui.player.PlayerGlyph
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerPanel
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
@@ -78,6 +80,7 @@ import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
 import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
+import moe.rukamori.archivetune.shared.ui.resources.m5_lyrics
 import moe.rukamori.archivetune.shared.ui.resources.m5_like
 import moe.rukamori.archivetune.shared.ui.resources.m5_more
 import moe.rukamori.archivetune.shared.ui.resources.m5_next
@@ -183,6 +186,40 @@ private fun NumberedControls(c: PlayerRenderContext, textColor: Color, modifier:
         PlayerSeek(c)
         Spacer(Modifier.height(12.dp))
         NumberedTransport(c)
+        if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+            c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) {
+            Spacer(Modifier.height(32.dp))
+            CinematicPhoneBottomControls(c)
+        }
+    }
+}
+
+/** The phone Cinematic footer keeps Queue, Sleep and Lyrics reachable without opening More. */
+@Composable
+private fun CinematicPhoneBottomControls(c: PlayerRenderContext) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalButton(
+            onClick = { c.interaction.panel = PlayerPanel.QUEUE },
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.weight(1f).testTag("player-cinematic-queue"),
+        ) {
+            PlayerGlyph(PlayerSymbol.QUEUE, androidx.compose.material3.LocalContentColor.current, true, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(Res.string.m5_queue))
+        }
+        PlayerIcon(PlayerSymbol.SLEEP, stringResource(actionLabel(PlayerAction.SLEEP)),
+            { c.actions.onAction(PlayerAction.SLEEP) }, enabled = PlayerAction.SLEEP in c.state.actionSupport,
+            modifier = Modifier.testTag("player-cinematic-sleep"), size = 48.dp, iconSize = 24.dp)
+        FilledTonalButton(
+            onClick = { c.interaction.panel = PlayerPanel.LYRICS },
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.weight(1f).testTag("player-cinematic-lyrics"),
+        ) {
+            PlayerGlyph(PlayerSymbol.LYRICS, androidx.compose.material3.LocalContentColor.current, true, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(Res.string.m5_lyrics))
+        }
     }
 }
 
