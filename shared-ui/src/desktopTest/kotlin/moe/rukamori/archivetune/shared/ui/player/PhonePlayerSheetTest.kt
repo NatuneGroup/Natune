@@ -15,6 +15,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.ui.desktop.DesktopExpandedPlayer
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import java.io.File
@@ -103,5 +104,44 @@ class PhonePlayerSheetTest {
         runOnIdle { assertEquals(1f, state.progress); current = false }
         runOnIdle { assertEquals(0f, state.progress); current = true }
         onNodeWithTag("phone-player-sheet").assertDoesNotExist()
+    }
+
+    @Test fun desktopExpansionHasIntermediateFramesAndKeepsDragForItsContents() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var expanded by mutableStateOf(false)
+        lateinit var state: PhonePlayerSheetState
+        setContent {
+            MaterialTheme {
+                state = rememberPhonePlayerSheetState()
+                Box(Modifier.requiredSize(1000.dp, 700.dp).background(Color.LightGray).testTag("desktop-motion-root")) {
+                    Text("Home")
+                    PhonePlayerSheet(expanded, { expanded = it }, true, state, dragEnabled = false) {
+                        DesktopExpandedPlayer(playerFixture(), playerSlots(), {}, {}, {}, {}, {})
+                    }
+                }
+            }
+        }
+        fun capture(name: String) {
+            val directory = File(System.getProperty("natune.renderDir"), "motion").apply { mkdirs() }
+            val bitmap = onNodeWithTag("desktop-motion-root").captureToImage()
+            Image.makeFromBitmap(bitmap.asSkiaBitmap()).use { image ->
+                image.encodeToData(EncodedImageFormat.PNG)!!.use { File(directory, "$name.png").writeBytes(it.bytes) }
+            }
+        }
+        mainClock.advanceTimeByFrame()
+        capture("desktop-expand-000")
+        runOnIdle { expanded = true }
+        mainClock.advanceTimeBy(96)
+        val first = state.progress
+        assertTrue(first > 0f && first < 1f)
+        capture("desktop-expand-096")
+        mainClock.advanceTimeBy(160)
+        assertTrue(state.progress > first && state.progress < 1f)
+        capture("desktop-expand-256")
+        mainClock.advanceTimeBy(1500)
+        assertEquals(1f, state.progress)
+        capture("desktop-expanded")
+        onNodeWithTag("phone-player-sheet").performTouchInput { swipeDown() }
+        runOnIdle { assertTrue(expanded); assertEquals(1f, state.progress) }
     }
 }
