@@ -30,8 +30,9 @@ object YouTubeSubtitleLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        YouTube.transcript(id).onSuccess(callback)
+        YouTube.transcript(id).onSuccess(callback).onFailure(onFailure)
     }
 }

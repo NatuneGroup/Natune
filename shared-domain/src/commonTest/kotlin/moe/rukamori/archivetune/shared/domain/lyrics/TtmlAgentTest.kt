@@ -25,7 +25,13 @@ class TtmlAgentTest {
 
     @Test
     fun aRepeatedAgentIsStillOneVoice() {
-        assertEquals("v2", normalizeTtmlAgent("v2 #v2 V2"))
+        assertEquals("v2", normalizeTtmlAgent("v2 #v2 v2"))
+    }
+
+    @Test
+    fun agentIdsAreCaseSensitive() {
+        assertEquals(TTML_GROUP_AGENT, normalizeTtmlAgent("v2 V2"))
+        assertEquals(TTML_GROUP_AGENT, normalizeTtmlAgent("v2 #v2 V2"))
     }
 
     @Test
@@ -45,11 +51,12 @@ class TtmlAgentTest {
                 <div>
                   <p begin="1.000" end="2.000" ttm:agent="#v2"><span begin="1.000" end="2.000">Hi</span></p>
                   <p begin="3.000" end="4.000" ttm:agent="v1 v2"><span begin="3.000" end="4.000">Both</span></p>
+                  <p begin="5.000" end="6.000" ttm:agent="v2 V2"><span begin="5.000" end="6.000">Two voices</span></p>
                 </div>
               </body>
             </tt>
             """.trimIndent()
 
-        assertEquals(listOf("v2", TTML_GROUP_AGENT), LyricsParser.parseTtml(ttml).map { it.agent })
+        assertEquals(listOf("v2", TTML_GROUP_AGENT, TTML_GROUP_AGENT), LyricsParser.parseTtml(ttml).map { it.agent })
     }
 }

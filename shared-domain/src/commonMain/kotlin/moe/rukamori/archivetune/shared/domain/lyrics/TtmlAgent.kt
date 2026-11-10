@@ -18,7 +18,7 @@ fun normalizeTtmlAgent(raw: String?): String? {
             .split(ttmlIdRefSeparator)
             .map { it.removePrefix("#") }
             .filter(String::isNotEmpty)
-            .distinctBy(String::lowercase)
+            .distinct()
     return when (ids.size) {
         0 -> null
         1 -> ids.single()

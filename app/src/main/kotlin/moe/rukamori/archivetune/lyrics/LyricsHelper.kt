@@ -35,7 +35,6 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.reportException
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 class LyricsHelper
@@ -370,10 +369,9 @@ class LyricsHelper
                 return
             }
 
-            val allResult = mutableListOf<LyricsResult>()
             // A search that lost a provider to a timeout or error is incomplete, and replaying it
             // from the cache would hide that provider's results until the entry is evicted.
-            val hadProviderFailure = AtomicBoolean(false)
+            val searchResults = LyricsSearchResults()
             val providers = orderedProviders().filter { it.isEnabled(context) }
 
             // Fan out all enabled providers in parallel. The previous implementation
@@ -392,30 +390,33 @@ class LyricsHelper
                         async {
                             try {
                                 val completed = providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
-                                    provider.getAllLyrics(mediaId, songTitle, songArtists, songAlbum, duration) lyricsCallback@{ lyrics ->
+                                    provider.getAllLyrics(
+                                        mediaId, songTitle, songArtists, songAlbum, duration,
+                                        onFailure = { error ->
+                                            if (error is CancellationException) throw error
+                                            searchResults.failed()
+                                            reportException(error)
+                                        },
+                                    ) lyricsCallback@{ lyrics ->
                                         val normalizedLyrics = LyricsUtils.lyricsOrNotFound(lyrics)
                                         if (normalizedLyrics == LYRICS_NOT_FOUND) return@lyricsCallback
                                         val result = LyricsResult(provider.name, normalizedLyrics)
-                                        synchronized(allResult) {
-                                            allResult += result
-                                        }
+                                        searchResults.add(result)
                                         callback(result)
                                     }
                                 }
-                                if (completed == null) hadProviderFailure.set(true)
+                                if (completed == null) searchResults.failed()
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                hadProviderFailure.set(true)
+                                searchResults.failed()
                                 reportException(e)
                             }
                         }
                     }.forEach { it.await() }
                 }
             }
-            if (allResult.isNotEmpty() && !hadProviderFailure.get()) {
-                cache.put(cacheKey, allResult.toList())
-            }
+            searchResults.cacheableResults()?.let { cache.put(cacheKey, it) }
         }
 
         /**

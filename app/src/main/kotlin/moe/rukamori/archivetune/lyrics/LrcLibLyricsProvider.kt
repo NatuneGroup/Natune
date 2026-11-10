@@ -33,6 +33,7 @@ object LrcLibLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         LrcLib.getAllLyrics(title, artist, duration, null, callback)
