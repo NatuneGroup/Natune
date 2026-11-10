@@ -69,4 +69,41 @@ class DirectUsbAudioSinkTest {
         h.sink.reset()
         assertEquals(1, h.releases)
     }
+    @Test fun samePcmFormatRetainsQueuedAudioAndTheDevice() {
+        val h = Harness()
+        h.open()
+        h.sink.configure(h.format.buildUpon().setId("next-track").build(), 4096, intArrayOf(0, 1))
+        assertTrue(h.write(20L))
+        assertEquals(1, h.opens)
+        assertEquals(0, h.releases)
+        assertEquals(0, h.flushes)
+        h.playedUs = 41L
+        assertEquals(41L, h.sink.getCurrentPositionUs(false))
+    }
+
+    @Test fun aNewRateDrainsAndReopensTheDevice() {
+        val h = Harness()
+        h.open()
+        h.sink.configure(h.format.buildUpon().setSampleRate(96000).build(), 0, null)
+        assertFalse(h.write())
+        h.playedUs = 1000L
+        assertTrue(h.write())
+        assertEquals(2, h.opens)
+        assertEquals(1, h.releases)
+    }
+
+    @Test fun sameFormatWithTrimOrChannelRemappingUsesThePlatform() {
+        for (trim in listOf(false, true)) {
+            val h = Harness()
+            h.open()
+            h.playedUs = 1000L
+            val next = if (trim) h.format.buildUpon().setEncoderPadding(1).build() else h.format
+            h.sink.configure(next, 0, if (trim) null else intArrayOf(1, 0))
+            assertTrue(h.write())
+            assertEquals(1, h.opens)
+            assertEquals(1, h.releases)
+            assertEquals(1, h.normalConfigurations)
+        }
+    }
+
 }
