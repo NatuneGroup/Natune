@@ -4,6 +4,7 @@ import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
 import moe.rukamori.archivetune.ui.player.PlayerTransportIcon
+import moe.rukamori.archivetune.ui.player.playerPressFeedback
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
