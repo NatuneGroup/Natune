@@ -33,10 +33,14 @@ internal class PlayerRenderContext(
     val artworkPager: PlayerArtworkPagerState,
     /** M4's policy, built from the shell's actual background visibility; it already honors DisableBlur/DisableAnimations. */
     val optical: OpticalPolicy,
+    /** The platform's reduce-motion setting; it keeps crossfades and drops travel, scale and overshoot. */
+    val systemReducedMotion: Boolean = false,
+    val motionLevel: PlayerMotionLevel = playerMotionLevel(optical.motion && !state.reducedMotion, systemReducedMotion),
 ) {
     val surfaces: PlayerSurfaceActivity get() = playerSurfaceActivity(
         preferences.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
-    val motionActive: Boolean get() = optical.motion && !state.reducedMotion
+    val motionActive: Boolean get() = motionLevel.moves
+    val fadeActive: Boolean get() = motionLevel.fades
 }
 
 /**
@@ -68,7 +72,8 @@ fun BottomSheetPlayer(
     interaction: PlayerInteractionState = remember { PlayerInteractionState() },
 ) {
     val presentation=preferences.playerPreferences()
-    val artworkPager=rememberPlayerArtworkPager(state,actions)
+    val motionLevel=rememberPlayerMotionLevel(!state.reducedMotion && state.active && !preferences[DisableAnimationsKey, false])
+    val artworkPager=rememberPlayerArtworkPager(state,actions,motionLevel.moves)
     LaunchedEffect(state.playback?.occurrenceId,state.playback?.playbackGeneration,state.playback?.discontinuityGeneration) {
         interaction.reconcile(state.playback)
     }
@@ -84,9 +89,10 @@ fun BottomSheetPlayer(
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
         val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
-        val handoff=rememberPlayerHandoff(state,optical.motion && !state.reducedMotion)
-        val content=slots(preferences,surfaces).withHandoff(handoff)
-        val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical)
+        val handoff=rememberPlayerHandoff(state,optical.motion && motionLevel.moves)
+        val content=slots(preferences,surfaces).withHandoff(handoff).withTrackMotion(motionLevel.takeIf { surfaces.artwork } ?: PlayerMotionLevel.None)
+        val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical,
+            LocalSystemReducedMotion.current, motionLevel)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)
         DisposableEffect(showingLyrics) {
@@ -97,8 +103,9 @@ fun BottomSheetPlayer(
             presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
         MaterialTheme(colorScheme=if(forceDark) darkColorScheme() else MaterialTheme.colorScheme) {
             CompositionLocalProvider(
+                LocalPlayerTrackMotion provides rememberPlayerTrackMotion(state.displayedOccurrenceId, state.occurrenceIds, motionLevel),
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
-                LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat),
+                LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat, c.fadeActive),
             ) {
                 // The expansion surface paints edge to edge: its background fills the whole window, including the
                 // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.
@@ -126,10 +133,10 @@ fun BottomSheetPlayer(
                                 }
                                 val sidePanel = presentation.style != PlayerDesignStyle.FLAMINGO &&
                                     (interaction.panel != PlayerPanel.ARTWORK || presentation.style == PlayerDesignStyle.METROLIST_KMP)
-                                if (sidePanel) {
-                                    val panelWidth = if (windowWidth >= 1200.dp) 420.dp else windowWidth * 0.42f
+                                val panelWidth = if (windowWidth >= 1200.dp) 420.dp else windowWidth * 0.42f
+                                PlayerPanelTransition(interaction.panel.takeIf { sidePanel }, c.motionLevel, vertical = false) { panel ->
                                     Box(Modifier.width(panelWidth).fillMaxHeight()) {
-                                        SelectedPlayerPanel(c, Modifier.fillMaxSize())
+                                        SelectedPlayerPanel(c, Modifier.fillMaxSize(), panel)
                                     }
                                 }
                             }
@@ -144,8 +151,16 @@ fun BottomSheetPlayer(
                         }
                     } else {
                         Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
-                        if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
-                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
+                        val overlayPanel=interaction.panel.takeIf {
+                            it!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO
+                        }
+                        if(presentation.style==PlayerDesignStyle.SPATIALFLOW) {
+                            // SpatialFlow reveals its own panel.
+                            if(overlayPanel!=null) SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
+                        } else {
+                            PlayerPanelTransition(overlayPanel,c.motionLevel) { panel ->
+                                SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp),panel)
+                            }
                         }
                     }
                     // Every phone/tablet style shares this hit target above artwork and panels.
@@ -168,22 +183,23 @@ fun BottomSheetPlayer(
 }
 
 @Composable
-private fun SelectedPlayerPanel(c: PlayerRenderContext,modifier: Modifier) {
+private fun SelectedPlayerPanel(c: PlayerRenderContext,modifier: Modifier,panel: PlayerPanel=c.interaction.panel) {
     if(c.preferences.style==PlayerDesignStyle.SPATIALFLOW) SpatialFlowPanel(c,modifier)
-    else PlayerSidePanel(c,modifier)
+    else PlayerSidePanel(c,modifier,panel)
 }
 
+/** [panel] is the one to draw; it differs from the interaction's while a closing panel animates out. */
 @Composable
-internal fun PlayerSidePanel(c: PlayerRenderContext,modifier: Modifier) {
+internal fun PlayerSidePanel(c: PlayerRenderContext,modifier: Modifier,panel: PlayerPanel=c.interaction.panel) {
     Column(modifier.testTag("player-side-panel")) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ c.interaction.panel=PlayerPanel.ARTWORK })
             TextButton(onClick={ c.interaction.panel=PlayerPanel.LYRICS }) { Text(stringResource(Res.string.m5_lyrics)) }
             TextButton(onClick={ c.interaction.panel=PlayerPanel.QUEUE }) { Text(stringResource(Res.string.m5_queue)) }
-            if(c.interaction.panel!=PlayerPanel.QUEUE) PlayerIcon(PlayerSymbol.EXPAND,stringResource(Res.string.m5_fullscreen),
+            if(panel!=PlayerPanel.QUEUE) PlayerIcon(PlayerSymbol.EXPAND,stringResource(Res.string.m5_fullscreen),
                 { c.interaction.fullscreenLyrics=true })
         }
-        if(c.interaction.panel==PlayerPanel.QUEUE) c.slots.queue(Modifier.weight(1f).fillMaxWidth())
+        if(panel==PlayerPanel.QUEUE) c.slots.queue(Modifier.weight(1f).fillMaxWidth())
         else c.slots.lyrics(Modifier.weight(1f).fillMaxWidth())
     }
 }

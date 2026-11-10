@@ -19,13 +19,14 @@ internal class PlayerArtworkPagerState(val pager: PagerState) {
     var programmatic by mutableStateOf(false)
     var dragged by mutableStateOf(false)
     var cancelledDragGeneration by mutableIntStateOf(0)
+    var followedCancellation = 0
 }
 
 internal fun artworkPageIndex(state: PlayerState): Int = state.occurrenceIds.indexOf(state.displayedOccurrenceId)
 
 /** One synchronizer above look/orientation branches; only genuine user settles select an occurrence. */
 @Composable
-internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerActions): PlayerArtworkPagerState {
+internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerActions,motion: Boolean = !state.reducedMotion && state.active): PlayerArtworkPagerState {
     val ids=state.occurrenceIds
     val current=state.displayedOccurrenceId
     val pager=rememberPagerState(initialPage=artworkPageIndex(state).coerceAtLeast(0),pageCount={ ids.size })
@@ -42,11 +43,17 @@ internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerAction
         }
     }
     // Cancellation can unblock a follow whose occurrence keys already changed while dragging.
-    LaunchedEffect(current,ids,sync.cancelledDragGeneration) {
+    LaunchedEffect(current,ids,sync.cancelledDragGeneration,motion) {
         val target=artworkPageIndex(state)
+        val cancelled = sync.followedCancellation != sync.cancelledDragGeneration
+        sync.followedCancellation = sync.cancelledDragGeneration
         if(target>=0 && target!=pager.currentPage && !sync.dragged) {
             sync.programmatic=true
-            try { pager.scrollToPage(target) } finally { sync.programmatic=false }
+            try {
+                if (motion && !cancelled && pager.layoutInfo.visiblePagesInfo.isNotEmpty() && kotlin.math.abs(target - pager.currentPage) == 1)
+                    pager.animateScrollToPage(target, animationSpec = PlayerMotionSpecs.travel())
+                else pager.scrollToPage(target)
+            } finally { sync.programmatic=false }
         }
     }
     LaunchedEffect(pager) {

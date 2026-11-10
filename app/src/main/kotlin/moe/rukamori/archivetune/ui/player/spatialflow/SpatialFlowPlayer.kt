@@ -934,14 +934,14 @@ fun SpatialFlowPlayerContent(
                                     modifier = Modifier.fillMaxSize(),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    if (isLoading && !isPlaying) {
+                                    moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade(isLoading && !isPlaying, {
                                         CircularWavyProgressIndicator(modifier = Modifier.size(42.dp))
-                                    } else {
+                                    }) {
                                         PlayerControlCrossfade(
                                             if (isPlaying) R.drawable.spatialflow_ic_pause else R.drawable.spatialflow_ic_play,
                                         ) { playGlyph ->
-                                            Icon(
-                                                painter = painterResource(id = playGlyph),
+                                            moe.rukamori.archivetune.ui.player.PlayerTransportIcon(
+                                                iconRes = playGlyph,
                                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                                 modifier = Modifier.size(42.dp).then(playPauseMotion.modifier),
                                             )

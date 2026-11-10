@@ -2,8 +2,6 @@ package moe.rukamori.archivetune.shared.ui.player
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -23,7 +21,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 /** The player controls that share one motion vocabulary across every player style and the mini player. */
-enum class PlayerControlKind { PlayPause, Next, Previous, Shuffle, Repeat, Like }
+enum class PlayerControlKind { PlayPause, Next, Previous, Shuffle, Repeat, Like, Queue, Lyrics }
 
 /** What a control does when its state changes or it is tapped. Pure so the mapping can be unit tested. */
 enum class PlayerControlGesture { Spin, Pop, Dip, Swap, NudgeForward, NudgeBackward, Squash }
@@ -45,7 +43,7 @@ fun playerControlGesture(kind: PlayerControlKind, before: Any?, after: Any?): Pl
         }
         PlayerControlKind.Shuffle -> if (after == true) PlayerControlGesture.Swap else PlayerControlGesture.Dip
         PlayerControlKind.PlayPause -> PlayerControlGesture.Squash
-        PlayerControlKind.Like -> if (after == true) PlayerControlGesture.Pop else PlayerControlGesture.Dip
+        PlayerControlKind.Like, PlayerControlKind.Queue, PlayerControlKind.Lyrics -> if (after == true) PlayerControlGesture.Pop else PlayerControlGesture.Dip
         PlayerControlKind.Next, PlayerControlKind.Previous -> null
     }
 }
@@ -61,7 +59,12 @@ fun playerControlTapGesture(kind: PlayerControlKind): PlayerControlGesture? = wh
  * Whether player controls may move, and the repeat mode the repeat glyph stands for. Styles pass
  * only "selected" to the repeat button, so repeat-one versus repeat-all comes from here.
  */
-internal data class PlayerControlMotionEnvironment(val active: Boolean, val repeat: PlayerRepeat)
+internal data class PlayerControlMotionEnvironment(
+    val active: Boolean,
+    val repeat: PlayerRepeat,
+    /** Glyph crossfades still run when the platform asks for reduced motion and [active] is false. */
+    val fades: Boolean = active,
+)
 
 /** Defaults to still, so a control drawn outside a player never animates. */
 internal val LocalPlayerControlMotion = compositionLocalOf { PlayerControlMotionEnvironment(false, PlayerRepeat.OFF) }
@@ -82,10 +85,10 @@ class PlayerControlMotion internal constructor(
     private var job: Job? = null
 
     val modifier: Modifier = Modifier.graphicsLayer {
-        rotationZ = rotation.value
-        scaleX = scale.value
-        scaleY = scale.value
-        translationX = shift.value * size.width
+        rotationZ = if (enabled()) rotation.value else 0f
+        scaleX = if (enabled()) scale.value else 1f
+        scaleY = if (enabled()) scale.value else 1f
+        translationX = if (enabled()) shift.value * size.width else 0f
     }
 
     fun tap() {
@@ -98,9 +101,16 @@ class PlayerControlMotion internal constructor(
         job = scope.launch { animate(gesture) }
     }
 
+    internal suspend fun reset() {
+        job?.cancel()
+        rotation.snapTo(0f)
+        scale.snapTo(1f)
+        shift.snapTo(0f)
+    }
+
     private suspend fun animate(gesture: PlayerControlGesture): Unit = coroutineScope {
-        val settle = spring<Float>(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
-        val quick = spring<Float>(Spring.DampingRatioNoBouncy, Spring.StiffnessHigh)
+        val settle = PlayerMotionSpecs.settle<Float>()
+        val quick = PlayerMotionSpecs.response<Float>()
         // A gesture cancelled half way leaves its transform behind; settle whatever this one does not drive.
         if (gesture != PlayerControlGesture.Spin && rotation.value != 0f) launch {
             rotation.animateTo(if (rotation.value > 180f) 360f else 0f, settle)
@@ -114,7 +124,7 @@ class PlayerControlMotion internal constructor(
             PlayerControlGesture.Spin -> {
                 launch {
                     rotation.snapTo(0f)
-                    rotation.animateTo(360f, spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow))
+                    rotation.animateTo(360f, PlayerMotionSpecs.settle())
                     rotation.snapTo(0f)
                 }
                 launch { scale.animateTo(1.12f, quick); scale.animateTo(1f, settle) }
@@ -148,10 +158,10 @@ fun rememberPlayerControlMotion(kind: PlayerControlKind, state: Any?, active: Bo
     val scope = rememberCoroutineScope()
     val motion = remember(kind, scope) { PlayerControlMotion(kind, scope) { enabled } }
     val last = remember(motion) { arrayOf(state) }
-    LaunchedEffect(motion, state) {
+    LaunchedEffect(motion, state, active) {
         val before = last[0]
         last[0] = state
-        playerControlGesture(kind, before, state)?.let(motion::play)
+        if (!active) motion.reset() else playerControlGesture(kind, before, state)?.let(motion::play)
     }
     return motion
 }
@@ -165,7 +175,7 @@ fun <T> PlayerControlCrossfade(
     content: @Composable (T) -> Unit,
 ) {
     if (!active) Box(modifier, contentAlignment = Alignment.Center) { content(targetState) }
-    else Crossfade(targetState, modifier, animationSpec = tween(160), label = "playerControlGlyph") {
+    else Crossfade(targetState, modifier, animationSpec = tween(PlayerMotionSpecs.FadeMillis), label = "playerControlGlyph") {
         Box(contentAlignment = Alignment.Center) { content(it) }
     }
 }
