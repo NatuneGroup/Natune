@@ -75,6 +75,16 @@ internal class DirectUsbAudioSink(
     private fun selectOutput(): Boolean {
         val config = pending ?: return true
         if (output != null) {
+            val previous = configured?.format
+            if (previous != null && canUseDirect(config) &&
+                previous.sampleRate == config.format.sampleRate &&
+                previous.channelCount == config.format.channelCount &&
+                previous.pcmEncoding == config.format.pcmEncoding
+            ) {
+                configured = config
+                pending = null
+                return true
+            }
             if (directPending()) return false
             closeOutput()
         } else if (normal.hasPendingData()) {
@@ -84,10 +94,7 @@ internal class DirectUsbAudioSink(
         normal.reset()
         configured = config
         val format = config.format
-        val mapping = config.outputChannels
-        val identityMapping = mapping == null ||
-            (mapping.size == format.channelCount && (0 until mapping.size).all { mapping[it] == it })
-        if (identityMapping && wantsDirect(format)) {
+        if (canUseDirect(config)) {
             output = createOutput(format, attributes, sessionId)
         }
         if (output == null) normal.configure(config.format, config.bufferSize, config.outputChannels)
@@ -96,6 +103,12 @@ internal class DirectUsbAudioSink(
         if (playing) { output?.play() ?: normal.play() }
         output?.setVolume(volume)
         return true
+    }
+
+    private fun canUseDirect(config: Config): Boolean {
+        val mapping = config.outputChannels
+        return wantsDirect(config.format) && (mapping == null ||
+            (mapping.size == config.format.channelCount && mapping.indices.all { mapping[it] == it }))
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
