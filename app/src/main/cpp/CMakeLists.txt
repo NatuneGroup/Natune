@@ -9,7 +9,7 @@
 # sources live under the repo's root `native/` tree.
 #
 # Two audio libraries build here as well: the AAudio exclusive output stream
-# (archivetune_dsp) and nothing else. The retired Tryptify `monochrome_dsp` and
+# (archivetune_dsp) and the direct USB audio output (archivetune_usb). The retired Tryptify `monochrome_dsp` and
 # LastWave `lastwave_audio` engines, with their vendored soxr resampler, are
 # gone: the shared DSP chain replaced them all in Kotlin.
 
@@ -95,6 +95,34 @@ find_library(log-lib-dsp log)
 find_library(dl-lib-dsp dl)
 target_link_libraries(archivetune_dsp ${log-lib-dsp} ${dl-lib-dsp})
 target_link_options(archivetune_dsp PRIVATE "-Wl,-z,max-page-size=16384")
+
+# ---------------------------------------------------------------------------
+# archivetune_usb: the direct USB audio output (native/usbdirect), loaded by
+# UsbDirectNative.kt. Without it the direct driver reports itself unavailable
+# and bit-perfect output stays on the Android path.
+#
+# Android grants the USB file descriptor; USBFS drives isochronous URBs directly.
+# No vendored driver or device-discovery library is needed.
+# ---------------------------------------------------------------------------
+add_library(archivetune_usb SHARED
+    ${ARCHIVETUNE_NATIVE_DIR}/usbdirect/usb_direct_output.cpp
+    jni/usb_direct_jni.cpp
+)
+target_include_directories(archivetune_usb PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ARCHIVETUNE_NATIVE_DIR}
+)
+target_compile_options(archivetune_usb PRIVATE -Os -fvisibility=hidden -fexceptions)
+find_library(log-lib-usb log)
+target_link_libraries(archivetune_usb PRIVATE ${log-lib-usb})
+target_link_options(archivetune_usb PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,--strip-all"
+    "-Wl,--version-script,${CMAKE_CURRENT_SOURCE_DIR}/usb_direct_exports.map"
+)
+set_property(TARGET archivetune_usb APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/usb_direct_exports.map"
+)
 
 # The optional Discord target/package lookup is disabled without the licensed AAR.
 # Native audio keeps its existing CMake/prefab configuration independently.
