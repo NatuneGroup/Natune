@@ -10,12 +10,7 @@ import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
 import org.junit.Assert.*
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
 class DirectUsbAudioSinkTest {
     private class Harness(transportDrain: Boolean = false) {
         var opens = 0
@@ -47,8 +42,7 @@ class DirectUsbAudioSinkTest {
                 else -> null
             }
         } as AudioSink
-        val output = Proxy.newProxyInstance(AudioOutput::class.java.classLoader, (if (transportDrain) arrayOf(AudioOutput::class.java, DirectUsbPendingOutput::class.java)
-                else arrayOf(AudioOutput::class.java))) { _, method, args ->
+        private val outputProxy = Proxy.newProxyInstance(AudioOutput::class.java.classLoader, arrayOf(AudioOutput::class.java)) { _, method, args ->
             when (method.name) {
                 "write" -> {
                     if (failWrite) throw AudioOutput.WriteException(-5, true)
@@ -57,14 +51,25 @@ class DirectUsbAudioSinkTest {
                 "play" -> { plays++; null }
                 "release" -> { releases++; null }
                 "flush" -> { flushes++; playedUs = 0L; null }
-                "hasPendingData" -> pendingFrames
-                "getPositionUs" -> { if (failPosition) throw AudioOutput.WriteException(-5, true); playedUs }
+                "getPositionUs" -> playedUs
                 "getSampleRate" -> 48000
                 "getBufferSizeInFrames" -> 1024L
                 else -> null
             }
         } as AudioOutput
-        val sink = DirectUsbAudioSink(normal, { true }, { _, _, _ -> opens++; output })
+        val output = object : AudioOutput by outputProxy {
+            override fun getPositionUs(): Long {
+                if (failPosition) throw AudioOutput.WriteException(-5, true)
+                return playedUs
+            }
+        }
+        private val drainingOutput = object : AudioOutput by output, DirectUsbPendingOutput {
+            override fun hasPendingData(): Boolean = pendingFrames
+        }
+        val sink = DirectUsbAudioSink(normal, { true }, { _, _, _ ->
+            opens++
+            if (transportDrain) drainingOutput else output
+        })
         init {
             val listener = Proxy.newProxyInstance(AudioSink.Listener::class.java.classLoader, arrayOf(AudioSink.Listener::class.java)) { _, method, args ->
                 if (method.name == "onAudioSinkError") reportedError = args!![0] as Exception
