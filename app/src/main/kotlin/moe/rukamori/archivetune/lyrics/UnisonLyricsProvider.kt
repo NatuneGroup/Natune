@@ -57,6 +57,7 @@ object UnisonLyricsProvider : LyricsProvider {
             artist = artist,
             album = album,
             durationSeconds = duration,
+            onFailure = onFailure,
             callback = callback,
         )
     }
