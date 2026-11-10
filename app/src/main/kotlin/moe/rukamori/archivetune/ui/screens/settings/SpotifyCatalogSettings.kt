@@ -130,7 +130,7 @@ fun SpotifyCatalogSettings(
                     onSyncHistoryChange = onSyncSpotifyHistoryChange,
                     onReloadClick = spotifyAccountViewModel::reloadPlaylists,
                     onLogoutClick = { spotifyAccountViewModel.logout() },
-                    modifierFor = positions::modifierFor,
+                    modifierFor = { key -> positions.modifierFor(key) },
                 )
             }
         }
