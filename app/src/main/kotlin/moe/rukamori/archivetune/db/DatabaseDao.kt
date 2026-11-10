@@ -722,8 +722,8 @@ interface DatabaseDao : LyricsOffsetDao {
     @Query("SELECT * FROM lyrics WHERE id IN (:ids)")
     suspend fun getLyricsByIds(ids: List<String>): List<LyricsEntity>
 
-    @Query("DELETE FROM lyrics")
-    fun clearAllLyrics()
+    @Query("DELETE FROM lyrics WHERE source = 'REMOTE'")
+    fun clearRemoteLyrics()
 
     @Transaction
     @SuppressWarnings(RoomWarnings.QUERY_MISMATCH)
