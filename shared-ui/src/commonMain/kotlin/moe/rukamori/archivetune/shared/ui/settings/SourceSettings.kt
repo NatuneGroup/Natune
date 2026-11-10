@@ -45,7 +45,7 @@ fun SourceSettings(
     LaunchedEffect(poolEnabled) { if (!poolEnabled && dialog == SourceDialog.POOL) dialog = null }
     SettingsPage(sourceSettingsRows(preferences, spotifyStreamingReady, navigate,
         { dialog = SourceDialog.ORDER }, { dialog = SourceDialog.CHECK },
-        if (poolEnabled) ({ dialog = SourceDialog.POOL }) else null, spotifyStreamingPlatformSupported),
+        if (poolEnabled) ({ dialog = SourceDialog.POOL }) else null, poolConfigured, spotifyStreamingPlatformSupported),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { change ->
             val poolSources = listOf(QobuzEnabledKey, DeezerEnabledKey, AppleMusicSourceEnabledKey, AmazonEnabledKey)
@@ -162,15 +162,25 @@ fun sourceSettingsRows(
     reorder: () -> Unit,
     checkSources: () -> Unit,
     refreshPool: (() -> Unit)?,
+    poolConfigured: Boolean = false,
     spotifyStreamingPlatformSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     refreshPool?.let { add(SettingsRow.Action("youtube_music", Res.string.m6_refresh_pool, it)) }
+    // The pool switch moved here from the Integrations hub: it only decides whether the shared accounts of the
+    // sources listed below are used, and the list can no longer write it from two places.
+    add(SettingsRow.Toggle(
+        "use_pool_accounts", Res.string.m6_integration_use_pool_accounts, UsePoolAccountsKey, true,
+        description = if (poolConfigured) Res.string.m6_integration_pool_enabled_desc
+        else Res.string.m6_integration_pool_unavailable_desc,
+        enabled = poolConfigured,
+        read = { poolConfigured && it[UsePoolAccountsKey, true] },
+    ))
     add(SettingsRow.Action("preferred_sources", Res.string.m6_preferred_sources, reorder))
     val catalogs = listOf(SettingsRow.Option("YOUTUBE", Res.string.m6_source_youtube),
         SettingsRow.Option("SPOTIFY", Res.string.m6_source_spotify_catalog), SettingsRow.Option("APPLE_MUSIC", Res.string.m6_apple_music))
     add(SettingsRow.Choice("default_metadata_source", Res.string.m6_metadata_source, DefaultMetadataSourceKey, "YOUTUBE", catalogs))
     add(SettingsRow.Choice("default_search_source", Res.string.m6_search_source, DefaultSearchSourceKey, "YOUTUBE", catalogs))
-    add(SettingsRow.Action("spotify_catalog_source", Res.string.m6_source_spotify_catalog, { navigate("settings/integration") }))
+    add(SettingsRow.Action("spotify_catalog_source", Res.string.m6_source_spotify_catalog, { navigate("settings/spotify") }))
     add(SettingsRow.Toggle("youtube_source_enable", Res.string.m6_source_youtube, YouTubeSourceEnabledKey, true))
     add(SettingsRow.Choice("audio_quality", Res.string.m6_audio_quality, AudioQualityKey, "AUTO", listOf(
         SettingsRow.Option("AUTO", Res.string.m6_quality_auto), SettingsRow.Option("HIGH", Res.string.m6_high),
@@ -185,11 +195,11 @@ fun sourceSettingsRows(
     add(SettingsRow.Choice("tidal_audio_quality", Res.string.m6_audio_quality, TidalAudioQualityKey, "FLAC",
         qualityOptions("AAC_320", "FLAC", "HI_RES_LOSSLESS"), enabled = preferences[TidalEnabledKey, true]))
     add(SettingsRow.Toggle("tidal_animated_covers", Res.string.m6_animated_artwork, TidalAnimatedCoversEnabledKey, false, enabled = preferences[TidalEnabledKey, true]))
-    add(SettingsRow.Action("tidal_manage_instances", Res.string.m6_tidal_manage, { navigate("settings/integration") }))
+    // Instance management lives on the Tidal and Qobuz pages, so these rows open them instead of the hub.
+    add(SettingsRow.Action("tidal_manage_instances", Res.string.m6_tidal_manage, { navigate("settings/tidal") }))
     add(SettingsRow.Toggle("qobuz_enable", Res.string.m6_source_qobuz, QobuzEnabledKey, false))
-    add(SettingsRow.Choice("qobuz_audio_quality", Res.string.m6_audio_quality, QobuzAudioQualityKey, "FLAC",
-        qualityOptions("FLAC", "HI_RES", "MAX"), enabled = preferences[QobuzEnabledKey, false]))
-    add(SettingsRow.Action("qobuz_manage_instances", Res.string.m6_qobuz_manage, { navigate("settings/integration") }))
+    // The Qobuz quality picker lives on the Qobuz page, with the account it belongs to.
+    add(SettingsRow.Action("qobuz_manage_instances", Res.string.m6_qobuz_manage, { navigate("settings/qobuz") }))
     add(SettingsRow.Toggle("qobuz_backup_enable", Res.string.m6_source_qobuz_backup, QobuzBackupEnabledKey, false))
     add(SettingsRow.Toggle("applemusic_enable", Res.string.m6_apple_music, AppleMusicSourceEnabledKey, false))
     add(SettingsRow.Choice("applemusic_quality", Res.string.m6_audio_quality, AppleMusicQualityKey, "LOSSLESS", qualityOptions("AAC", "LOSSLESS", "HI_RES_LOSSLESS")))
@@ -210,8 +220,8 @@ fun sourceSettingsRows(
         write = { selected -> require(!selected || spotifyReady); this[SpotifyStreamEnabledKey] = selected }))
     add(SettingsRow.Action("spotify_stream_settings", Res.string.m6_source_spotify_stream, { navigate("settings/spotify_streaming") }))
     add(SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false))
-    add(SettingsRow.Choice("jiosaavn_audio_quality", Res.string.m6_audio_quality, SaavnAudioQualityKey, "QUALITY_320",
-        qualityOptions("QUALITY_320", "QUALITY_160", "QUALITY_96"), enabled = preferences[JioSaavnEnabledKey, false]))
+    // The quality picker lives on the JioSaavn page, with the account it belongs to.
+    add(SettingsRow.Action("jiosaavn_settings", Res.string.m6_source_jio, { navigate("settings/jiosaavn") }))
     add(SettingsRow.Action("check_source", Res.string.m6_check_sources, checkSources))
 }
 

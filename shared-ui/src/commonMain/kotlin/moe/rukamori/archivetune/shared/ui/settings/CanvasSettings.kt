@@ -22,8 +22,8 @@ import org.jetbrains.compose.resources.stringResource
  * Canvas settings. The shared policy derives every gate from the settings, the host's [connectivity] (null until
  * measured) and the host's [providerProbes]. The page never probes: it asks [refreshHealth] for exactly the providers
  * whose gate is open, and the host reports each result through [providerProbes]. [cacheBytes] is null until the host
- * has measured the cache, so an unmeasured cache is never shown as zero. A committed limit change calls
- * [applyCacheLimit]; a confirmed clear calls [clearCache]. Both throw on failure, which reaches [onFailure].
+ * has measured the cache, so an unmeasured cache is never shown as zero. The cache limit and the clear action live
+ * with the other caches in Storage, so this page reports usage and links there.
  */
 @Composable
 fun CanvasSettings(
@@ -32,8 +32,7 @@ fun CanvasSettings(
     providerProbes: CanvasProviderProbes,
     refreshHealth: suspend (Set<CanvasHealthProvider>) -> Unit,
     cacheBytes: Long?,
-    applyCacheLimit: suspend (Int) -> Unit,
-    clearCache: suspend () -> Unit,
+    navigate: (String) -> Unit,
     onFailure: () -> Unit,
     resumed: Boolean = true,
     motionEnabled: Boolean = true,
@@ -45,7 +44,6 @@ fun CanvasSettings(
     val scope = rememberCoroutineScope()
     val latestRefresh by rememberUpdatedState(refreshHealth)
     var refreshing by remember { mutableStateOf(false) }
-    var confirmClear by remember { mutableStateOf(false) }
     val providersToProbe = preferences.canvasProvidersToProbe(connectivity)
     suspend fun probe(providers: Set<CanvasHealthProvider>) {
         try { latestRefresh(providers) }
@@ -93,13 +91,10 @@ fun CanvasSettings(
         }, enabled = refreshAllowed && !refreshing))
         add(SettingsRow.Header("canvas_cache", Res.string.m6_canvas_cache))
         add(SettingsRow.Status("canvas_cache_used", Res.string.m6_canvas_cache_used, usage))
-        add(SettingsRow.IntChoice(
-            "max_cache_size", Res.string.m6_canvas_cache_limit, MaxCanvasCacheSizeKey, 256,
-            cacheCapacityOptions(canvas = true),
-        ))
         add(SettingsRow.Action(
-            "clear_canvas_cache", Res.string.m6_clear_canvas_cache, run = { confirmClear = true },
-            description = Res.string.m6_canvas_cache_desc,
+            "canvas_cache_settings", Res.string.m6_canvas_cache_settings,
+            run = { navigate("settings/storage?scrollTo=max_cache_size") },
+            description = Res.string.m6_canvas_cache_settings_desc,
         ))
     }
     SettingsPage(
@@ -110,15 +105,6 @@ fun CanvasSettings(
         motionEnabled = motionEnabled,
         onFailure = onFailure,
         modifier = modifier,
-        onCommitted = { change ->
-            if (MaxCanvasCacheSizeKey in change.changedKeys) applyCacheLimit(change.after[MaxCanvasCacheSizeKey, 256])
-        },
-    )
-    if (confirmClear) SettingsConfirmActionDialog(
-        title = Res.string.m6_clear_canvas_cache,
-        onConfirm = clearCache,
-        onDismiss = { confirmClear = false },
-        onFailure = onFailure,
     )
 }
 

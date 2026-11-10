@@ -19,6 +19,7 @@
     <string name="m6_integration_amazon_desc">Add Amazon Music instances and authorize via Turnstile</string>
     <string name="m6_integration_qqmusic">QQ Music</string>
     <string name="m6_integration_qqmusic_desc">Try QQ Music for a track before falling through to the sources below it.</string>
+    <string name="m6_integration_spotify_catalog_desc">Sign in to import playlists and read Spotify metadata.</string>
     <string name="m6_integration_spotify_streaming">Spotify streaming</string>
     <string name="m6_integration_spotify_streaming_desc">Experimental. Plays audio from Spotify through a second account that is used only for streaming.</string>
     <string name="m6_integration_telegram">Telegram</string>

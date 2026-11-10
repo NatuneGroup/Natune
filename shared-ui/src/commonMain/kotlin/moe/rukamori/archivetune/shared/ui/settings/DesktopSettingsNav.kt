@@ -205,6 +205,12 @@ fun desktopSettingsNavRows(
         )
         add(
             entry(
+                "spotify", Res.string.m6_source_spotify_catalog,
+                Res.string.m6_integration_spotify_catalog_desc, "settings/spotify",
+            ),
+        )
+        add(
+            entry(
                 "spotify_streaming", Res.string.m6_settings_home_spotify_streaming,
                 Res.string.m6_settings_home_spotify_streaming_desc, "settings/spotify_streaming",
             ),
@@ -340,6 +346,9 @@ fun desktopIntegrationDestinations(): List<IntegrationDestination> = listOf(
         Res.string.m6_settings_home_device_connect_desc,
     ),
     IntegrationDestination("settings/telegram", Res.string.m6_integration_telegram, Res.string.m6_integration_telegram_desc),
+    IntegrationDestination(
+        "settings/spotify", Res.string.m6_source_spotify_catalog, Res.string.m6_integration_spotify_catalog_desc,
+    ),
     IntegrationDestination(
         "settings/spotify_streaming", Res.string.m6_settings_home_spotify_streaming,
         Res.string.m6_settings_home_spotify_streaming_desc,

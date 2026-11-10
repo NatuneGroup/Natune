@@ -123,7 +123,7 @@ fun buildSettingsGroups(
                 SettingsChild("Include moderate-confidence channels", "ai_content_filter_moderate", listOf("moderate confidence", "ai filter moderate", "ai channels")),
                 SettingsChild("Update channel lists", "ai_content_filter_update", listOf("update channel lists", "refresh ai list", "aislist update")),
                 SettingsChild("About AiSList", "ai_content_filter_source", listOf("aislist", "about aislist", "ai list source")),
-                SettingsChild("Hide AI mix", "hide_ai_mix", listOf("hide ai", "ai mix", "smart mix", "hide mix")) { SearchResultSwitch(HideAiMixKey, false) },
+                SettingsChild("Hide AI mix", "hide_ai_mix", listOf("hide ai", "ai mix", "smart mix", "hide mix")),
             ),
         )
     val languagePacks =
@@ -150,11 +150,11 @@ fun buildSettingsGroups(
                 SettingsChild("Clear listen history", "clear_listen_history", listOf("clear history", "delete history", "reset history")),
                 SettingsChild("Pause search history", "pause_search_history", listOf("pause search", "stop search history", "private search")) { SearchResultSwitch(PauseSearchHistoryKey, false) },
                 SettingsChild("Clear search history", "clear_search_history", listOf("clear search", "delete search", "reset search")),
-                SettingsChild("Sync playback to YouTube history", "sync_yt_history", listOf("youtube history", "sync history", "playback history")) { SearchResultSwitch(SyncPlaybackToYouTubeHistoryKey, moe.rukamori.archivetune.shared.domain.settings.PrivacyPreferenceDefaults.SYNC_YOUTUBE_HISTORY) },
+                SettingsChild("Sync playback to YouTube history", "sync_yt_history", listOf("youtube history", "sync history", "playback history")),
                 SettingsChild("Haptics", "haptics", listOf("haptic", "vibration", "haptic feedback", "vibrate")) { SearchResultSwitch(EnableHapticFeedbackKey, true) },
                 SettingsChild("Disable screenshot", "disable_screenshot", listOf("screenshot", "screen capture", "privacy", "no screenshot")) { SearchResultSwitch(DisableScreenshotKey, false) },
                 SettingsChild("Show tags in library", "show_tags_in_library", listOf("tags", "library tags", "show tags")),
-                SettingsChild("Low data mode", "low_data_mode", listOf("low data", "data saver", "save data", "metered", "data mode")) { SearchResultSwitch(LowDataModeKey, true) },
+                SettingsChild("Low data mode", "low_data_mode", listOf("low data", "data saver", "save data", "metered", "data mode")),
                 SettingsChild("Force high refresh rate", "force_high_refresh_rate", listOf("refresh rate", "high refresh", "120hz", "90hz", "smooth")) { SearchResultSwitch(ForceHighRefreshRateKey, false) },
                 SettingsChild("Open supported links by default", "open_supported_links", listOf("open links", "supported links", "default links", "deep link", "default browser app")),
             ),

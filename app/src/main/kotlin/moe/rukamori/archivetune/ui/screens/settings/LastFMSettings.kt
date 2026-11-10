@@ -62,6 +62,8 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LastFmPreferYtThumbnailsKey
+import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
+import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.scrobbling.LastFmScrobbleQueue
 import moe.rukamori.archivetune.scrobbling.LastFmSendLovesKey
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -69,6 +71,7 @@ import moe.rukamori.archivetune.ui.component.InfoLabel
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
+import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.viewmodels.LastFmLoginDialogUiModel
@@ -297,6 +300,10 @@ private fun LastFmSettingsSuccess(
     // always in sync with the dashboard's read of the same key.
     var preferYtThumbnails by rememberPreference(LastFmPreferYtThumbnailsKey, defaultValue = false)
     var sendLoves by rememberPreference(LastFmSendLovesKey, defaultValue = false)
+    // ListenBrainz is a scrobbler, so its rows moved here from the Integrations hub.
+    val (listenBrainzEnabled, onListenBrainzEnabledChange) = rememberPreference(ListenBrainzEnabledKey, false)
+    val (listenBrainzToken, onListenBrainzTokenChange) = rememberPreference(ListenBrainzTokenKey, "")
+    var showListenBrainzTokenEditor by remember { mutableStateOf(false) }
     val context = LocalContext.current
     LaunchedEffect(Unit) { LastFmScrobbleQueue.attach(context) }
     val pendingScrobbles by LastFmScrobbleQueue.pendingCount.collectAsStateWithLifecycle()
@@ -481,6 +488,64 @@ private fun LastFmSettingsSuccess(
                 onClick = { onOpenTimingEditor(LastFmTimingSetting.DELAY_SECONDS) },
             )
         }
+    }
+
+    // ListenBrainz is a scrobbler, so it sits here with Last.fm instead of on the Integrations hub.
+    PreferenceGroup(
+        modifier = positions.modifierFor("listenbrainz_group"),
+        title = stringResource(R.string.scrobbling),
+    ) {
+        item {
+            SwitchPreference(
+                modifier = positions.modifierFor("listenbrainz"),
+                title = { Text(stringResource(R.string.listenbrainz_scrobbling)) },
+                description = stringResource(R.string.listenbrainz_scrobbling_description),
+                icon = { Icon(painterResource(R.drawable.token), null) },
+                checked = listenBrainzEnabled,
+                onCheckedChange = onListenBrainzEnabledChange,
+            )
+        }
+
+        item {
+            PreferenceEntry(
+                modifier = positions.modifierFor("listenbrainz_token"),
+                title = {
+                    Text(
+                        if (listenBrainzToken.isBlank()) {
+                            stringResource(R.string.set_listenbrainz_token)
+                        } else {
+                            stringResource(R.string.edit_listenbrainz_token)
+                        },
+                    )
+                },
+                icon = { Icon(painterResource(R.drawable.token), null) },
+                onClick = { showListenBrainzTokenEditor = true },
+            )
+        }
+    }
+
+    if (showListenBrainzTokenEditor) {
+        TextFieldDialog(
+            initialTextFieldValue =
+                androidx.compose.ui.text.input
+                    .TextFieldValue(listenBrainzToken),
+            onDone = { data ->
+                onListenBrainzTokenChange(data)
+                showListenBrainzTokenEditor = false
+            },
+            onDismiss = { showListenBrainzTokenEditor = false },
+            singleLine = true,
+            maxLines = 1,
+            // The dialog opens pre-filled with the stored token, so editing it put a working
+            // ListenBrainz credential on screen in cleartext every time.
+            masked = true,
+            isInputValid = {
+                it.isNotEmpty()
+            },
+            extraContent = {
+                InfoLabel(text = stringResource(R.string.listenbrainz_scrobbling_description))
+            },
+        )
     }
 }
 
