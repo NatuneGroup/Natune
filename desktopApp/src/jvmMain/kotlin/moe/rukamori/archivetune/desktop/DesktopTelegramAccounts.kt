@@ -454,7 +454,8 @@ internal fun desktopTelegramBrowsePage(graph: DesktopSessionGraph, back: () -> U
             scope = graph.scope,
         )
     }
-    val binding = TelegramBrowseOwnerBinding(owner, graph.scope, ::formatMemberCount, back)
+    // One binding for the page visit. Rebuilding it on recomposition would close a search or an open that is running.
+    val binding = remember { TelegramBrowseOwnerBinding(owner, graph.scope, ::formatMemberCount, back) }
     DisposableEffect(binding) { onDispose { binding.close() } }
     return ArchiveGraphPage.TelegramBrowse(
         state = binding.state.collectAsState().value,
@@ -486,7 +487,10 @@ internal fun desktopTelegramBotsPage(graph: DesktopSessionGraph, back: () -> Uni
             newId = { UUID.randomUUID().toString() },
         )
     }
-    val binding = TelegramBotsOwnerBinding(owner, graph.scope, back) { bot -> openRoute("telegram/bot/${bot.id}") }
+    // One binding for the page visit, so a recomposition does not cancel a running add or the saved-list load.
+    val binding = remember {
+        TelegramBotsOwnerBinding(owner, graph.scope, back) { bot -> openRoute("telegram/bot/${bot.id}") }
+    }
     DisposableEffect(binding) {
         val job: Job = graph.scope.launch { binding.load() }
         onDispose {
