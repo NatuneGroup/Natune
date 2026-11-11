@@ -80,7 +80,6 @@ import moe.rukamori.archivetune.utils.ArtworkStorage
 import moe.rukamori.archivetune.utils.discordAlbumMusicUrl
 import moe.rukamori.archivetune.utils.makeTimeString
 import timber.log.Timber
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsetsSides
 
 enum class ActivitySource { ARTIST, ALBUM, SONG, APP }
@@ -526,11 +525,6 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
             )
         },
     ) { innerPadding ->
-        val playerAwareBottomPadding =
-            LocalPlayerAwareWindowInsets.current
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
         val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
 
