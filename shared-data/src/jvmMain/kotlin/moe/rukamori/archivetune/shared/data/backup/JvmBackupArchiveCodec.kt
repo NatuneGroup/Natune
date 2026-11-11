@@ -218,7 +218,7 @@ class JvmBackupArchiveCodec {
         val writer = XMLOutputFactory.newFactory().createXMLStreamWriter(output, "UTF-8")
         writer.writeStartDocument("UTF-8", "1.0")
         writer.writeStartElement("ArchiveTuneBackup"); writer.writeStartElement("Settings")
-        snapshot.keys.filter { BackupPreferencePolicy.includes(it.name, selected) }.forEach { key ->
+        snapshot.keys.filter { BackupPreferencePolicy.includesForExport(it.name, selected) }.forEach { key ->
             val tag = when(key.kind) {
                 PreferenceKind.BOOLEAN -> "boolean"; PreferenceKind.STRING -> "string"; PreferenceKind.FLOAT -> "float"
                 PreferenceKind.INT -> "int"; PreferenceKind.LONG -> "long"; PreferenceKind.DOUBLE -> "double"

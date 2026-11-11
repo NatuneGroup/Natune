@@ -645,7 +645,7 @@ fun BackupAndRestoreSettings(
         BackupCategoryDialog(
             title = Res.string.m6_backup_options_title,
             confirmLabel = Res.string.m6_backup_action_create,
-            choices = BackupSelectionCategory.entries,
+            choices = BackupSelectionCategory.entries.filterNot { it == BackupSelectionCategory.ACCOUNT },
             onConfirm = { selected ->
                 createOpen = false
                 runCreate(selected)

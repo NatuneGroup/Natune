@@ -206,7 +206,7 @@ private fun RestoreOptionsDialog(
         },
     ) {
         Spacer(Modifier.height(8.dp))
-        BackupCategory.entries.forEach { category ->
+        BackupCategory.entries.filter { it in availableCategories }.forEach { category ->
             val isChecked = category in selected
             val isAvailable = category in availableCategories
             val labelRes =

@@ -515,6 +515,7 @@ fun BackupAndRestore(
         if (uri != null) {
             BackupOptionsDialog(
                 title = stringResource(R.string.restore_options_title),
+                availableCategories = BackupCategory.entries.filter { it in pendingRestoreCategories },
                 confirmLabel = stringResource(R.string.action_restore),
                 onConfirm = { categories ->
                     pendingRestoreCategories = categories
@@ -1173,7 +1174,7 @@ private fun GoogleDriveSyncDatePickerDialog(
 }
 
 @Composable
-private fun IconBubble(
+internal fun IconBubble(
     icon: Painter,
     containerColor: Color,
     contentColor: Color,
@@ -1196,108 +1197,6 @@ private fun IconBubble(
     }
 }
 
-@Composable
-private fun BackupOptionsDialog(
-    title: String,
-    availableCategories: List<BackupCategory> = BackupCategory.entries,
-    confirmLabel: String,
-    onConfirm: (Set<BackupCategory>) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selected by remember { mutableStateOf(availableCategories.toSet()) }
-
-    DefaultDialog(
-        onDismiss = onDismiss,
-        title = { Text(title) },
-        buttons = {
-            TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
-                Text(stringResource(android.R.string.cancel))
-            }
-            TextButton(
-                onClick = { onConfirm(selected) },
-                shapes = ButtonDefaults.shapes(),
-                enabled = selected.isNotEmpty(),
-            ) {
-                Text(confirmLabel)
-            }
-        },
-    ) {
-        Spacer(Modifier.height(8.dp))
-        availableCategories.forEach { category ->
-            val isChecked = category in selected
-            val labelRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.string.backup_category_library
-                    BackupCategory.ACCOUNT -> R.string.backup_category_account
-                    BackupCategory.SETTINGS -> R.string.backup_category_settings
-                }
-            val descRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.string.backup_category_library_desc
-                    BackupCategory.ACCOUNT -> R.string.backup_category_account_desc
-                    BackupCategory.SETTINGS -> R.string.backup_category_settings_desc
-                }
-            val iconRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.drawable.library_music
-                    BackupCategory.ACCOUNT -> R.drawable.account
-                    BackupCategory.SETTINGS -> R.drawable.settings
-                }
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = Color.Transparent,
-                onClick = {
-                    selected = if (isChecked) selected - category else selected + category
-                },
-            ) {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 72.dp)
-                            .padding(horizontal = 4.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    IconBubble(
-                        icon = painterResource(iconRes),
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        size = 40.dp,
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = stringResource(labelRes),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(descRes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Checkbox(
-                        checked = isChecked,
-                        onCheckedChange = { checked ->
-                            selected = if (checked) selected + category else selected - category
-                        },
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-    }
-}
 
 /**
  * Resolves the human-readable display name of a SAF tree URI's root folder by querying its

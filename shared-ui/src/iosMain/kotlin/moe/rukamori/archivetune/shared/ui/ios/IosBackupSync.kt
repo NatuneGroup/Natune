@@ -12,7 +12,7 @@ import moe.rukamori.archivetune.shared.data.playlistimport.ParsedPlaylistFile
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
 import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
-import moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory
+import moe.rukamori.archivetune.shared.domain.backup.createSyncBackup
 import moe.rukamori.archivetune.shared.domain.platform.FileHandle
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDestination
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportFormat
@@ -56,7 +56,7 @@ internal class IosBackupSync(private val graph: IosSessionGraph, private val hos
         val prefs = graph.settings.snapshot()
         val value = prefs[key]?.takeIf { it.startsWith(FOLDER_PREFIX) } ?: return@withLock BackupSyncOutcome.NO_FOLDER
         try {
-            val archive = graph.backup.archives.create(BackupDataCategory.entries.toSet())
+            val archive = createSyncBackup(graph.backup.archives)
             val name = if (prefs[overwriteKey] == true) "Natune.backup" else "Natune.${iosNowMillis()}.backup"
             host.files.writeChildAtomic(FileHandle(value.removePrefix(FOLDER_PREFIX)), name, archive)
             graph.settings.edit {

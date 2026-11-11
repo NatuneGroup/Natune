@@ -45,11 +45,11 @@ import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
  *
  * - `backup.json`: the manifest (format name and version, platform, portable schema version, creation time).
  * - `portable-state.db`: a VACUUM INTO copy of the library, queue and history, present with LIBRARY.
- * - `settings.json`: typed logical preferences, filtered by [BackupPreferencePolicy] for ACCOUNT and SETTINGS.
+ * - `settings.json`: typed logical settings, with accounts and credentials excluded by [BackupPreferencePolicy].
  *
  * Every entry name, size and count is bounded before anything is written, and an archive is inspected again before a
- * restore. Vault references never enter the archive: account values are exported by their logical names and go back
- * through the vault on restore.
+ * restore. New exports omit account values and vault references. Old archives retain their logical account values
+ * and restore them through the vault when ACCOUNT is selected.
  */
 
 /** What one archive holds after its entries were checked. The database, when present, sits at [database]. */
@@ -424,7 +424,7 @@ internal class DesktopPendingRestore private constructor(
             try {
                 Files.createDirectory(staging)
                 database?.let { Files.move(it, staging.resolve(PortableBackupFormat.DATABASE)) }
-                settings?.let { Files.write(staging.resolve(PortableBackupFormat.SETTINGS), PortableBackupFormat.encodeSettings(it)) }
+                settings?.let { Files.write(staging.resolve(PortableBackupFormat.SETTINGS), PortableBackupFormat.encodeRestoreSettings(it)) }
                 Files.write(staging.resolve(MARKER), PortableBackupFormat.encodePendingMarker(categories))
                 deleteTree(target)
                 Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE)
