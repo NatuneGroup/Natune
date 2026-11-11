@@ -51,7 +51,7 @@ class SyncUtilsTest {
 
     @Before
     fun setUp() = runBlocking {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context: Application = RuntimeEnvironment.getApplication()
         context.dataStore.edit {
             it.clear()
             it[InnerTubeCookieKey] = "SAPISID=synthetic-test-cookie"
