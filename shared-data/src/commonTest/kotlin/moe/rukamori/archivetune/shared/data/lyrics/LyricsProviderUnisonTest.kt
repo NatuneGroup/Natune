@@ -152,7 +152,7 @@ class LyricsProviderUnisonTest {
         }
 
     @Test
-    fun serverErrorOnEveryRouteIsAFailure() =
+    fun serverErrorIsRetainedAndStopsTheLookup() =
         runTest {
             val seen = mutableListOf<HttpRequestData>()
             val provider =
@@ -169,7 +169,8 @@ class LyricsProviderUnisonTest {
             val result = provider.getLyrics("abc", "Song", "Artist", null, 200)
 
             assertTrue(result.isFailure)
-            assertEquals(2, seen.size)
+            assertTrue(result.exceptionOrNull()!!.isTransientLyricsFailure())
+            assertEquals(1, seen.size)
         }
 
     @Test
@@ -182,6 +183,28 @@ class LyricsProviderUnisonTest {
 
             assertIs<IllegalArgumentException>(result.exceptionOrNull())
             assertTrue(seen.isEmpty())
+        }
+
+    @Test
+    fun allResultsReportTheSearchOutageAndStillEmitAvailableVariants() =
+        runTest {
+            val provider = UnisonLyricsProvider(
+                routedClient(
+                    mutableListOf(),
+                    mapOf(
+                        "/lyrics/search" to CannedReply("", HttpStatusCode.ServiceUnavailable),
+                        "/lyrics/variants/abc" to CannedReply(search(summary(4, "variant lyrics"))),
+                    ),
+                ),
+            )
+            val failures = mutableListOf<Throwable>()
+            val emitted = mutableListOf<String>()
+
+            provider.getAllLyrics("abc", "Song", "Artist", null, 200, onFailure = failures::add) { emitted += it }
+
+            assertEquals(listOf("variant lyrics"), emitted)
+            assertEquals(1, failures.size)
+            assertTrue(failures.single().isTransientLyricsFailure())
         }
 
     @Test

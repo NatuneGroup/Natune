@@ -1,10 +1,12 @@
 package moe.rukamori.archivetune.lyrics
 
 import androidx.annotation.StringRes
+import io.ktor.client.plugins.ResponseException
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** What one provider said about a track. */
 internal enum class ProviderLyricsAnswer { FOUND, MISSING, FAILED }
@@ -21,18 +23,47 @@ internal data class ProviderLyricsFetch(
     }
 }
 
+/** Successful siblings may still stream to the UI when the search cannot be cached. */
+internal class LyricsSearchResults {
+    private val results = mutableListOf<LyricsResult>()
+    private val hadProviderFailure = AtomicBoolean(false)
+
+    fun add(result: LyricsResult) {
+        synchronized(results) { results += result }
+    }
+
+    fun failed() {
+        hadProviderFailure.set(true)
+    }
+
+    fun recordFailure(error: Throwable): ProviderLyricsAnswer {
+        if (error is CancellationException) throw error
+        val answer = error.toProviderLyricsAnswer()
+        if (answer == ProviderLyricsAnswer.FAILED) failed()
+        return answer
+    }
+
+    fun cacheableResults(): List<LyricsResult>? = synchronized(results) {
+        results.takeIf { it.isNotEmpty() && !hadProviderFailure.get() }?.toList()
+    }
+}
+
 private const val MAX_CAUSE_DEPTH = 8
 
 /**
  * A provider that could not be reached says nothing about whether it has the track. An
  * [IOException] anywhere in the cause chain (offline, DNS, timeout, reset) or a cancelled request
- * is a failed lookup; any other error is the provider's own answer and counts as a miss.
+ * is a failed lookup, as is a retryable HTTP response; other errors count as a miss.
  */
 internal fun Throwable.toProviderLyricsAnswer(): ProviderLyricsAnswer =
     if (
         generateSequence(this) { it.cause }
             .take(MAX_CAUSE_DEPTH)
-            .any { it is IOException || it is CancellationException }
+            .any {
+                it is IOException || it is CancellationException ||
+                    (it is ResponseException &&
+                        (it.response.status.value == 429 || it.response.status.value in 500..599))
+            }
     ) {
         ProviderLyricsAnswer.FAILED
     } else {

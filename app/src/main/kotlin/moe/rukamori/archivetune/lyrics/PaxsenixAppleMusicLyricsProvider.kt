@@ -40,8 +40,9 @@ object PaxsenixAppleMusicLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        getLyrics(id, title, artist, album, duration).onSuccess(callback)
+        getLyrics(id, title, artist, album, duration).onSuccess(callback).onFailure(onFailure)
     }
 }

@@ -33,6 +33,7 @@ object KuGouLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         KuGou.getAllPossibleLyricsOptions(title, artist, duration, callback)

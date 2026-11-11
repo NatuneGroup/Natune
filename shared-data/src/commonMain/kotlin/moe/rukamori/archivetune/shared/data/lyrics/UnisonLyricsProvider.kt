@@ -42,21 +42,28 @@ class UnisonLyricsProvider(
         album: String?,
         durationSec: Int,
         isrc: String?,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        var results = searchEntries(title, artist, album, durationSec)
-        if (results.isEmpty()) {
-            val cleanVideoId = id.trim().takeIf { it.isNotEmpty() }
-            if (cleanVideoId != null) {
-                results = fetchVariants(cleanVideoId)
-                if (results.isEmpty()) {
-                    results = listOfNotNull(fetchByVideoId(cleanVideoId))
+        try {
+            var results = searchEntries(title, artist, album, durationSec, onFailure)
+            if (results.isEmpty()) {
+                val cleanVideoId = id.trim().takeIf { it.isNotEmpty() }
+                if (cleanVideoId != null) {
+                    results = fetchVariants(cleanVideoId, onFailure)
+                    if (results.isEmpty()) {
+                        results = listOfNotNull(fetchByVideoId(cleanVideoId, onFailure))
+                    }
                 }
             }
-        }
-        results.take(MAX_SEARCH_RESULTS).forEach { entry ->
-            currentCoroutineContext().ensureActive()
-            callback(entry.lyrics)
+            results.take(MAX_SEARCH_RESULTS).forEach { entry ->
+                currentCoroutineContext().ensureActive()
+                callback(entry.lyrics)
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) onFailure(error)
         }
     }
 
@@ -78,18 +85,34 @@ class UnisonLyricsProvider(
         return fetchByVideoId(cleanVideoId)
     }
 
-    private suspend fun fetchByVideoId(videoId: String): UnisonEntry? =
-        suspendRunCatching {
+    private suspend fun fetchByVideoId(videoId: String, onFailure: ((Throwable) -> Unit)? = null): UnisonEntry? =
+        try {
             requestBody(LYRICS_URL) { parameter("v", videoId) }?.let { decodeEntry(it) }
-        }.getOrNull()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) {
+                if (onFailure == null) throw error
+                onFailure(error)
+            }
+            null
+        }
 
-    private suspend fun fetchById(id: Long): UnisonEntry? =
-        suspendRunCatching {
+    private suspend fun fetchById(id: Long, onFailure: ((Throwable) -> Unit)? = null): UnisonEntry? =
+        try {
             requestBody("${API_BASE_URL}lyrics/$id")?.let { decodeEntry(it) }
-        }.getOrNull()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) {
+                if (onFailure == null) throw error
+                onFailure(error)
+            }
+            null
+        }
 
-    private suspend fun fetchVariants(videoId: String): List<UnisonEntry> =
-        suspendRunCatching {
+    private suspend fun fetchVariants(videoId: String, onFailure: ((Throwable) -> Unit)? = null): List<UnisonEntry> =
+        try {
             val response =
                 requestBody("${API_BASE_URL}lyrics/variants/$videoId")
                     ?.let { LyricsJson.decodeFromString<UnisonSearchResponse>(it) }
@@ -99,19 +122,28 @@ class UnisonLyricsProvider(
                 .orEmpty()
                 .mapNotNull { it.toEntry() }
                 .take(MAX_SEARCH_RESULTS)
-        }.getOrDefault(emptyList())
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) {
+                if (onFailure == null) throw error
+                onFailure(error)
+            }
+            emptyList()
+        }
 
     private suspend fun searchEntries(
         title: String,
         artist: String,
         album: String?,
         durationSec: Int,
+        onFailure: ((Throwable) -> Unit)? = null,
     ): List<UnisonEntry> {
         val cleanTitle = title.trim()
         val cleanArtist = artist.trim()
         if (cleanTitle.isBlank() || cleanArtist.isBlank()) return emptyList()
 
-        return suspendRunCatching {
+        return try {
             val body =
                 requestBody(SEARCH_URL) {
                     parameter("song", cleanTitle)
@@ -132,19 +164,27 @@ class UnisonLyricsProvider(
                 if (entries.size >= MAX_SEARCH_RESULTS) break
                 val entry =
                     summary.toEntry()
-                        ?: summary.videoId?.takeIf { it.isNotBlank() }?.let { fetchByVideoId(it) }
-                        ?: fetchById(summary.id)
+                        ?: summary.videoId?.takeIf { it.isNotBlank() }?.let { fetchByVideoId(it, onFailure) }
+                        ?: fetchById(summary.id, onFailure)
                 if (entry != null) entries += entry
             }
             entries
-        }.getOrDefault(emptyList())
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) {
+                if (onFailure == null) throw error
+                onFailure(error)
+            }
+            emptyList()
+        }
     }
 
     /** Unison's Android client set no User-Agent of its own, so none is sent here. */
     private suspend fun requestBody(
         url: String,
         configure: HttpRequestBuilder.() -> Unit = {},
-    ): String? = LyricsHttp.getWithStatus(client, url, defaultUserAgent = false, configure = configure).body
+    ): String? = LyricsHttp.getWithStatus(client, url, defaultUserAgent = false, configure = configure).requireBody()
 
     private fun decodeEntry(body: String): UnisonEntry? =
         LyricsJson
