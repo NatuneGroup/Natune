@@ -1334,8 +1334,8 @@ enum class PlayerDesignStyle(
      */
     FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
 
-    // Metrolist's clean column player (MetrolistGroup/Metrolist, GPL-3.0); like LOOPER it
-    // leaves the backdrop to the reader instead of painting one of its own.
+    // Metrolist's clean column player (MetrolistGroup/Metrolist, GPL-3.0). It paints its own flat
+    // surface, so no shared backdrop draws behind it whatever the background choice.
     METROLIST_KMP,
     ;
 
@@ -1366,7 +1366,7 @@ enum class PlayerDesignStyle(
         get() = this in ArtworkCanvasStyles
 
     fun usesSharedBackground(stored: PlayerBackgroundStyle): Boolean =
-        supportsBackgroundChoice && stored != PlayerBackgroundStyle.DEFAULT
+        supportsBackgroundChoice && stored != PlayerBackgroundStyle.DEFAULT && this != METROLIST_KMP
 
     fun rendersSharedBackground(stored: PlayerBackgroundStyle): Boolean =
         usesSharedBackground(stored) || this in SharedBackgroundHosts
@@ -1391,7 +1391,7 @@ enum class PlayerDesignStyle(
         private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
         private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
         private val ArtworkCanvasStyles = setOf(APPLE_MUSIC, SPATIALFLOW, LOOPER, FLAMINGO)
-        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER, METROLIST_KMP)
+        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER)
 
         /**
          * What a fresh install opens with. Seven readers — the player, its thumbnail, the queue, the
