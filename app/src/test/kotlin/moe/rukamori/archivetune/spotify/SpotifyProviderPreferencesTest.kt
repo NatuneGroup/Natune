@@ -85,4 +85,26 @@ class SpotifyProviderPreferencesTest {
         moe.rukamori.archivetune.modules.NativeExtensionPolicy.migrate(prefs)
         assertTrue(SpotifyProviderPreferences.enabled(SpotifyProviderIds.CATALOG, prefs))
     }
+
+    @Test fun preferenceAdapterReproducesLegacyAvailabilityForEveryEngineSessionAndChoice() {
+        for (engine in listOf("LIBRESPOT", "UNOFFICIAL", "unknown")) {
+            for (product in listOf("premium", "free", "")) {
+                for (alternate in listOf("", "alternate")) for (official in listOf("", "official")) {
+                    for (alternateChoice in listOf(null, false, true)) for (officialChoice in listOf(null, false, true)) {
+                        val prefs = mutablePreferencesOf(SpotifyStreamEngineKey to engine, SpotifyProductKey to product,
+                            SpotifyStreamProductKey to "premium", SpotifyStreamSpDcKey to alternate,
+                            SpotifyLibrespotRefreshTokenKey to official, SpotifyStreamEnabledKey to false,
+                            SpotifyAccessTokenKey to "unrelated-catalog-token", SpotifyCatalogEnabledKey to false)
+                        alternateChoice?.let { prefs[SpotifyAlternateEnabledKey] = it }
+                        officialChoice?.let { prefs[SpotifyLibrespotEnabledKey] = it }
+                        val effectiveOfficial = engine == "LIBRESPOT" && product == "premium"
+                        val expected = if (effectiveOfficial) official.isNotBlank() && (officialChoice ?: official.isNotBlank())
+                            else alternate.isNotBlank() && (alternateChoice ?: alternate.isNotBlank())
+                        assertEquals("$engine/$product/$alternateChoice/$officialChoice", expected,
+                            SpotifyProviderPreferences.playbackAvailable(prefs))
+                    }
+                }
+            }
+        }
+    }
 }
