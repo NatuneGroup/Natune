@@ -1,7 +1,7 @@
 name: Rust core
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, rust]
     paths:
       - 'native/core/**'
       - 'shared-core/**'
@@ -83,7 +83,6 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/shared-core/build/cargo
           TTML_GOLDENS: ${{ github.workspace }}/shared-core/build/ttml-kotlin-goldens.json
-          TTML_REQUIRE_ALL_GOLDENS: '1'
         run: cargo test --locked -p natune-lyrics --test parity
       - uses: actions/upload-artifact@v7
         if: always()

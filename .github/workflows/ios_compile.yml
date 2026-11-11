@@ -10,6 +10,7 @@ on:
     branches:
       - dev
       - main
+      - rust
     paths:
       - 'native/core/**'
       - 'shared-core/**'
