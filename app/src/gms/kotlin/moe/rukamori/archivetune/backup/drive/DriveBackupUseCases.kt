@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.backup.BackupArchiveCategory
+import moe.rukamori.archivetune.backup.BackupExportPolicy
 import moe.rukamori.archivetune.backup.CreateBackupUseCase
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -81,7 +81,7 @@ class DriveBackupUseCases @Inject constructor(
             val archive = repository.createTemporaryArchive()
             try {
                 onStatus(R.string.drive_backup_preparing)
-                createBackup(Uri.fromFile(archive), BackupArchiveCategory.entries.toSet())
+                createBackup(Uri.fromFile(archive), BackupExportPolicy.DEFAULT_CATEGORIES)
                 onStatus(R.string.drive_backup_uploading)
                 val backup = withToken(account) { repository.upload(it, archive) }
                 settings.setBackup(account, backup)
