@@ -468,6 +468,9 @@ private fun ArchiveTuneLoadedRoot(
                                     )
                                 },
                                 playerBar = {
+                                    // The shell always calls this slot, so the bar's existence is decided here: with
+                                    // nothing queued there is no bar, and no strip is reserved under the page.
+                                    if (current != null) {
                                     Box(Modifier.fillMaxWidth().height(DesktopShellMetrics.playerBarHeight)) {
                                     PlayerSurfaceTransition(current, rememberPlayerMotionLevel(policy.motion)) { shown ->
                                         DesktopPlayerBar(
@@ -485,6 +488,7 @@ private fun ArchiveTuneLoadedRoot(
                                             onAction = ::desktopPlayerAction,
                                             onVolumeChange = ::setVolume,
                                         )
+                                    }
                                     }
                                     }
                                 },
