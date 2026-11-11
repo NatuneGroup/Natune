@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package moe.rukamori.archivetune.shared.ui.player
 
 import androidx.compose.foundation.clickable
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -147,7 +151,15 @@ internal fun ArchiveMiniPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
                 ) {
-                    artwork(current.item, Modifier.size(if (phone) { if (compact) 44.dp else 52.dp } else if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(if (phone) 10.dp else 8.dp)))
+                    if (phone) {
+                        Box(Modifier.size(if (compact) 44.dp else 52.dp).testTag("mini-player-artwork-ring"), contentAlignment = Alignment.Center) {
+                            val duration = playback?.durationMs?.takeIf { it > 0L }
+                            val progress = if (duration == null) 0f else (playback.positionMs.toDouble() / duration).toFloat().coerceIn(0f, 1f)
+                            CircularWavyProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxSize(),
+                                color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .12f))
+                            artwork(current.item, Modifier.size(if (compact) 34.dp else 42.dp).clip(CircleShape))
+                        }
+                    } else artwork(current.item, Modifier.size(if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(8.dp)))
                     Column(Modifier.weight(1f)) {
                         MarqueeText(current.item.title, style = MaterialTheme.typography.bodyMedium)
                         if (current.item.subtitle.isNotBlank()) {
@@ -174,8 +186,8 @@ internal fun ArchiveMiniPlayer(
                                 else if (playing) Res.string.m5_pause else Res.string.m5_play),
                             onClick = onPlayPause,
                             size = 48.dp, iconSize = 24.dp,
-                            container = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            container = if (phone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (phone) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
                             shape = CircleShape,
                             modifier = Modifier.testTag("mini-player-play-pause"),
                         )
@@ -192,7 +204,7 @@ internal fun ArchiveMiniPlayer(
                         iconSize = 24.dp,
                     )
                 }
-                MiniPlayerProgressLine(playback, Modifier.fillMaxWidth())
+                if (!phone) MiniPlayerProgressLine(playback, Modifier.fillMaxWidth())
                 }
             } else {
                 Row(

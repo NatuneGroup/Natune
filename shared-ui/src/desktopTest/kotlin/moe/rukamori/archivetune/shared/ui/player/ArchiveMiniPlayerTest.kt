@@ -60,6 +60,7 @@ class ArchiveMiniPlayerTest {
             }
         }
         onNodeWithTag("mini-player-previous").assertIsDisplayed().performClick()
+        onNodeWithTag("mini-player-artwork-ring", useUnmergedTree = true).assertIsDisplayed()
         assertEquals(listOf(PlayerAction.PREVIOUS), actions)
         assertEquals(0, expanded)
     }

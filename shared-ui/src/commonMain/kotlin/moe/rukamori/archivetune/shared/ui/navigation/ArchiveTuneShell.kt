@@ -137,6 +137,7 @@ fun ArchiveTuneShell(
             }
         }
         val bottomChrome: @Composable () -> Unit = {
+            val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
             CompositionLocalProvider(
                 LocalNavigationBarHiddenByScroll provides hiddenByScroll,
                 LocalBottomUiCompactFraction provides bottomUiCompactFraction,
@@ -161,15 +162,23 @@ fun ArchiveTuneShell(
                             }
                         }
                         else -> {
-                            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip()
-                                .testTag("shell-mini-player")) { miniPlayer() }
+                            val floatingMini = phone && layout == ShellLayout.BottomBar
+                            Box(Modifier.fillMaxWidth().then(if (floatingMini) Modifier.padding(horizontal = 12.dp) else Modifier),
+                                contentAlignment = Alignment.Center) {
+                                Box(Modifier.then(if (floatingMini) Modifier.widthIn(max = pill.maxWidth) else Modifier)
+                                    .fillMaxWidth(if (floatingMini) pill.widthFraction else 1f)
+                                    .heightIn(min = 48.dp).then(if (floatingMini) Modifier.clip(pill.shape(PillRole.MINI_PLAYER)) else Modifier)
+                                    .miniPlayerStrip().testTag("shell-mini-player")) { miniPlayer() }
+                            }
+                            if (floatingMini) Spacer(Modifier.height(4.dp).testTag("shell-player-navigation-gap"))
                             if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
                                 // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
                                 SukisuNavigationBar(
                                     items = ShellTab.entries,
                                     selected = { tab -> navigation.selectedTab == tab },
                                     onSelect = { tab -> navigation.select(tab, toRoot = false) },
-                                    modifier = Modifier.testTag("shell-bottom-bar"),
+                                    modifier = Modifier.then(if (phone && pill.isDocked) Modifier.padding(horizontal = 12.dp) else Modifier)
+                                        .testTag("shell-bottom-bar"),
                                     hideLabels = preferences[HideNavigationBarLabelsKey, false],
                                 )
                             } else if (layout == ShellLayout.BottomBar) {
