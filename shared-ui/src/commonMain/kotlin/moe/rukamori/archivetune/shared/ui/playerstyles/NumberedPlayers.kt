@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -79,6 +80,8 @@ import moe.rukamori.archivetune.shared.ui.player.resolveBackground
 import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
 import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_now_playing
+import moe.rukamori.archivetune.shared.ui.resources.phone_reference_queue_music
 import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
 import moe.rukamori.archivetune.shared.ui.resources.m5_lyrics
 import moe.rukamori.archivetune.shared.ui.resources.m5_like
@@ -157,7 +160,13 @@ internal fun NumberedPlayer(c: PlayerRenderContext) {
 @Composable
 private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
+        if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+            c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) {
+            Text(stringResource(Res.string.m5pq_now_playing), style = MaterialTheme.typography.titleMedium, color = textColor)
+            (c.state.queueTitle ?: c.state.albumTitle)?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.titleMedium, color = textColor.copy(alpha = .8f))
+            }
+        } else PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val side = minOf(maxWidth, maxHeight, if (LocalDesktopLayout.current) 392.dp else maxWidth)
             PlayerArtworkPager(
@@ -191,6 +200,11 @@ private fun NumberedControls(c: PlayerRenderContext, textColor: Color, modifier:
         if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
             c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) {
             Spacer(Modifier.height(32.dp))
+            c.state.formatLabel?.takeIf { c.preferences.showCodec && it.isNotBlank() }?.let {
+                Text(it, Modifier.fillMaxWidth().padding(bottom = 8.dp).testTag("player-cinematic-format"),
+                    style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = .6f),
+                    textAlign = TextAlign.Center)
+            }
             CinematicPhoneBottomControls(c)
         }
     }
@@ -199,26 +213,31 @@ private fun NumberedControls(c: PlayerRenderContext, textColor: Color, modifier:
 /** The phone Cinematic footer keeps Queue, Sleep and Lyrics reachable without opening More. */
 @Composable
 private fun CinematicPhoneBottomControls(c: PlayerRenderContext) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
+    val color = numberedTextColor(c)
+    val container = color.copy(alpha = .1f)
+    val colors = ButtonDefaults.filledTonalButtonColors(containerColor = container, contentColor = color)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         FilledTonalButton(
             onClick = { c.interaction.panel = PlayerPanel.QUEUE },
-            shape = RoundedCornerShape(50),
-            modifier = Modifier.weight(1f).testTag("player-cinematic-queue"),
+            shape = RoundedCornerShape(16.dp), colors = colors,
+            modifier = Modifier.weight(1f).height(48.dp).testTag("player-cinematic-queue"),
         ) {
-            PlayerGlyph(PlayerSymbol.QUEUE, androidx.compose.material3.LocalContentColor.current, true, null, Modifier.size(18.dp))
+            androidx.compose.material3.Icon(org.jetbrains.compose.resources.painterResource(Res.drawable.phone_reference_queue_music),
+                contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(Res.string.m5_queue))
         }
         PlayerIcon(PlayerSymbol.SLEEP, stringResource(actionLabel(PlayerAction.SLEEP)),
             { c.actions.onAction(PlayerAction.SLEEP) }, enabled = PlayerAction.SLEEP in c.state.actionSupport,
-            modifier = Modifier.testTag("player-cinematic-sleep"), size = 48.dp, iconSize = 24.dp)
+            modifier = Modifier.testTag("player-cinematic-sleep"), size = 48.dp, iconSize = 22.dp,
+            container = color.copy(alpha = if ((c.state.sleepTimerMs ?: 0L) > 0L) .2f else .1f), contentColor = color)
         FilledTonalButton(
             onClick = { c.interaction.panel = PlayerPanel.LYRICS },
-            shape = RoundedCornerShape(50),
-            modifier = Modifier.weight(1f).testTag("player-cinematic-lyrics"),
+            shape = RoundedCornerShape(16.dp), colors = colors,
+            modifier = Modifier.weight(1f).height(48.dp).testTag("player-cinematic-lyrics"),
         ) {
-            PlayerGlyph(PlayerSymbol.LYRICS, androidx.compose.material3.LocalContentColor.current, true, null, Modifier.size(18.dp))
+            PlayerGlyph(PlayerSymbol.LYRICS, androidx.compose.material3.LocalContentColor.current, true, null, Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(Res.string.m5_lyrics))
         }
