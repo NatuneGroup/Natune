@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.test.v2.runSkikoComposeUiTest
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
@@ -58,7 +60,7 @@ class CinematicPhoneControlsTest {
         runOnIdle { assertFalse(expanded); assertEquals(PlayerAction.COLLAPSE, actions.actions.last()) }
     }
 
-    @Test fun everyPhoneStyleHasAReachableCollapseInBothOrientations() = runComposeUiTest {
+    @Test fun everyPhoneStyleHasAReachableCollapseInBothOrientations() = runSkikoComposeUiTest(size = Size(852f, 852f)) {
         var style by mutableStateOf(PlayerDesignStyle.Default)
         var landscape by mutableStateOf(false)
         var expanded by mutableStateOf(true)
