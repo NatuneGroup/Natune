@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,7 +38,7 @@ fun QobuzPasswordLogin(
         onDismissRequest = { if (!busy) open = false },
         title = { Text(stringResource(Res.string.builtin_qobuz_password_login)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(email, { email = it }, enabled = !busy, singleLine = true,
                     label = { Text(stringResource(Res.string.builtin_qobuz_email)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))

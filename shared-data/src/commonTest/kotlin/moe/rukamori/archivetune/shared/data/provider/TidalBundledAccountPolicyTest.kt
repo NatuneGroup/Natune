@@ -32,7 +32,7 @@ class TidalBundledAccountPolicyTest {
         try {
             val repo = KtorTidalRepository(http, TidalAccess("personal", bearer = "fixture-token"), accountQualityFallback = { true })
             val audio = assertIs<PreparedAudio.TidalManifest>(repo.resolve(request))
-            assertEquals(listOf("HI_RES_LOSSLESS", "LOSSLESS", "HIGH"), qualities)
+            assertEquals(listOf<String?>("HI_RES_LOSSLESS", "LOSSLESS", "HIGH"), qualities)
             assertEquals("HIGH", audio.quality)
             assertEquals("personal", audio.accountScope)
         } finally { http.close() }
