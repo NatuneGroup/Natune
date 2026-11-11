@@ -71,3 +71,10 @@ for abi in abis:
         "alignment": alignment_report(after, [n for n in names if n not in a and n.endswith(".so")]),
     }
 print(json.dumps(report, indent=2))
+# A green size report for an APK that never packaged the core would measure only the binding runtime.
+packaged = sorted({n.split("/")[1] for n in b if n.startswith("lib/")})
+missing = [abi for abi in packaged if f"lib/{abi}/libnatune_ffi.so" not in b]
+if not packaged or missing:
+    raise SystemExit(f"Rust core missing from the opt-in APK for {missing or 'every ABI'}; packaged ABIs: {packaged}")
+if any(n.endswith("/libnatune_ffi.so") for n in a):
+    raise SystemExit("Baseline APK must not contain the Rust core")
