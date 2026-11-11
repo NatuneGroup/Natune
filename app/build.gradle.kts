@@ -1096,7 +1096,8 @@ androidComponents {
 if (providers.gradleProperty("natune.rustCore").orNull == "true") {
     android.sourceSets.getByName("main").jniLibs.srcDir(rootProject.layout.projectDirectory.dir("shared-core/build/generated/androidJniLibs"))
     android.buildTypes.configureEach { proguardFiles(rootProject.file("shared-core/proguard-rules.pro")) }
-    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }.configureEach {
+    // Source-set jniLibs are collected by merge*JniLibFolders, which runs before merge*NativeLibs.
+    tasks.matching { it.name.startsWith("merge") && (it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs")) }.configureEach {
         dependsOn(":shared-core:buildRustAndroid")
     }
 }
