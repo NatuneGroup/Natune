@@ -70,6 +70,7 @@ jobs:
           java-version: '21'
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v6
+      - uses: ./.github/actions/prefetch-gradle
       - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
@@ -110,6 +111,8 @@ jobs:
           java-version: '21'
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v6
+      - uses: ./.github/actions/prefetch-gradle
+      - uses: android-actions/setup-android@v3
       - name: Install the repository NDK in CI
         run: sdkmanager 'ndk;30.0.16248370' 'platforms;android-37' 'build-tools;37.0.0'
       - name: Build baseline APK, then the opt-in Rust APK
@@ -118,9 +121,9 @@ jobs:
         run: |
           ./gradlew :app:assembleGmsMobileUniversalDebug --stacktrace --console=plain
           mkdir -p shared-core/build/apk-comparison
-          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/baseline.apk")' 
+          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/baseline.apk")'
           ./gradlew -Pnatune.rustCore=true :app:assembleGmsMobileUniversalDebug --stacktrace --console=plain
-          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/rust.apk")' 
+          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/rust.apk")'
           python3 scripts/rust_core_apk_report.py shared-core/build/apk-comparison/baseline.apk shared-core/build/apk-comparison/rust.apk > shared-core/build/apk-comparison/report.json
           cat shared-core/build/apk-comparison/report.json
       - uses: actions/upload-artifact@v7

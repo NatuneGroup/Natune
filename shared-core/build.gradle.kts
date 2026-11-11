@@ -80,7 +80,7 @@ kotlin {
         buildLibrary.configure { outputs.file(layout.buildDirectory.file("generated/interop/$rustTarget.def")) }
         compilations.getByName("main").cinterops.create("natune_ffi") {
             definitionFile.set(layout.buildDirectory.file("generated/interop/$rustTarget.def"))
-            includeDirs(generated.map { it.dir("nativeInterop/cinterop/headers/natune_ffi") })
+            header(generated.map { it.file("nativeInterop/cinterop/headers/natune_ffi/natune_ffi.h") })
             tasks.named(interopProcessingTaskName) { dependsOn(generateBindings, buildLibrary) }
         }
     }

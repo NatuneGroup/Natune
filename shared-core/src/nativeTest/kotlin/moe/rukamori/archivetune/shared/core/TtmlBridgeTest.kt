@@ -49,6 +49,21 @@ class TtmlBridgeTest {
         }
     }
 
+    @Test fun generatedBoundsAndUtf16RefusalMatchTheKotlinReader() = runBlocking {
+        val reader = assertNotNull(rustTtmlReaderOrNull())
+        val bodies = listOf(
+            "<tt><p begin=\"0\">" + "a".repeat(2_000_000) + "</p></tt>",
+            "<tt>" + "<div>".repeat(200) + "<p begin=\"0\">Deep</p>" + "</div>".repeat(200) + "</tt>",
+            "<tt><p begin=\"0\">Bound</p>" + "<a/>".repeat(100_000) + "</tt>",
+            "<tt><p begin=\"0\">" + "𠀀".repeat(600_000) + "</p></tt>",
+            "<tt><p begin=\"0\">" + '\uD800' + "</p></tt>",
+            "<tt><p begin=\"0\">" + '\uDC00' + "</p></tt>",
+        )
+        bodies.forEachIndexed { index, raw ->
+            assertDocument(TtmlDocument(LyricsParser.parseTtml(raw), LyricsParser.parseTtmlCredits(raw)), reader.readTtml(raw), "generated-bound-$index")
+        }
+    }
+
     @Test fun fullJvmPathTiming() = runBlocking {
         val loadStart = System.nanoTime()
         val reader = assertNotNull(rustTtmlReaderOrNull())

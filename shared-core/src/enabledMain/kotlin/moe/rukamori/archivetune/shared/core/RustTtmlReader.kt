@@ -34,7 +34,14 @@ private object RustTtmlReader : TtmlDocumentReader {
         workers.launch {
             try {
                 if (!continuation.isActive) return@launch
-                val record = parseTtml(LyricsNormalizer.normalize(raw), token)
+                val xml = LyricsNormalizer.normalize(raw)
+                // UniFFI lowers strings as UTF-8. Refuse an unpaired UTF-16 surrogate before the
+                // encoder can replace it with '?', which would turn malformed XML into a row.
+                if (!wellFormedUtf16(xml)) {
+                    continuation.resume(TtmlDocument(emptyList()))
+                    return@launch
+                }
+                val record = parseTtml(xml, token)
                 val lines = record.lines.map { line ->
                     val words = line.words.map { LyricsWord(it.text, it.startTime, it.endTime, it.isBackground) }
                     if (words.isEmpty()) SyncedLine(
@@ -55,4 +62,15 @@ private object RustTtmlReader : TtmlDocumentReader {
             } finally { token.destroy() }
         }
     }
+}
+
+private fun wellFormedUtf16(value: String): Boolean {
+    var index = 0
+    while (index < value.length) {
+        val c = value[index++]
+        if (c.isHighSurrogate()) {
+            if (index == value.length || !value[index++].isLowSurrogate()) return false
+        } else if (c.isLowSurrogate()) return false
+    }
+    return true
 }
