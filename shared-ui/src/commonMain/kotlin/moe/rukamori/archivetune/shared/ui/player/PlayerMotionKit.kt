@@ -207,6 +207,7 @@ internal fun PlayerSlots.withTrackMotion(level: PlayerMotionLevel): PlayerSlots 
         compactLyrics = base.compactLyrics,
         queue = base.queue,
         outputButton = base.outputButton,
+        lyricsStatus = base.lyricsStatus,
     )
 }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,7 +52,7 @@ internal fun PhonePreferenceEntry(
         index == count - 1 -> RoundedCornerShape(small, small, large, large)
         else -> RoundedCornerShape(small)
     }
-    val iconShape = when (index % 4) {
+    val iconShape = if (LocalPhoneSettingsRoot.current) CircleShape else when (index % 4) {
         0 -> MaterialShapes.Ghostish.toShape()
         1 -> MaterialShapes.Clover4Leaf.toShape()
         2 -> MaterialShapes.Cookie9Sided.toShape()

@@ -168,22 +168,30 @@ private fun PlayerSymbol.controlKind(): PlayerControlKind? = when (this) {
 
 @Composable
 internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, selected: Boolean?, modifier: Modifier, repeat: PlayerRepeat = LocalPlayerControlMotion.current.repeat) {
-    val drawable = when (symbol) {
+    val drawable = transportDrawable(symbol, LocalPlayerGlyphStyle.current) ?: when (symbol) {
         PlayerSymbol.PREVIOUS -> Res.drawable.solar_skip_previous_linear
         PlayerSymbol.NEXT -> Res.drawable.solar_skip_next_linear
         PlayerSymbol.PLAY -> Res.drawable.solar_play_linear
         PlayerSymbol.PAUSE -> Res.drawable.solar_pause_linear
         PlayerSymbol.REPLAY -> Res.drawable.solar_replay_linear
-        PlayerSymbol.SHUFFLE -> Res.drawable.solar_shuffle
+        PlayerSymbol.SHUFFLE -> if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+            LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+            Res.drawable.reference_cinematic_shuffle else Res.drawable.solar_shuffle
         PlayerSymbol.REPEAT -> if (repeat == PlayerRepeat.ONE)
-            Res.drawable.solar_repeat_one else Res.drawable.solar_repeat
+            if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+                LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+                Res.drawable.reference_cinematic_repeat_one else Res.drawable.solar_repeat_one
+            else if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+                LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+                Res.drawable.reference_cinematic_repeat else Res.drawable.solar_repeat
         PlayerSymbol.HEART -> if (selected == true) Res.drawable.solar_heart_bold else Res.drawable.solar_heart_linear
-        PlayerSymbol.SHARE -> Res.drawable.solar_share_linear
+        PlayerSymbol.SHARE -> if (LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.TIKTOK)
+            Res.drawable.solar_share_linear else Res.drawable.reference_player_share
         PlayerSymbol.MORE -> Res.drawable.solar_more
         PlayerSymbol.SLEEP, PlayerSymbol.BEDTIME -> Res.drawable.solar_sleep
         PlayerSymbol.DOWN -> Res.drawable.solar_down
         PlayerSymbol.LYRICS -> Res.drawable.solar_lyrics
-        PlayerSymbol.QUEUE -> Res.drawable.solar_queue_music_linear
+        PlayerSymbol.QUEUE -> Res.drawable.reference_player_queue_music
         PlayerSymbol.BACK -> Res.drawable.solar_arrow_left_linear
         PlayerSymbol.EXPAND -> Res.drawable.solar_fullscreen_linear
         PlayerSymbol.OUTPUT -> Res.drawable.solar_cast
@@ -284,7 +292,12 @@ internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, e
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = PlayerSliderStyle.Simple, remaining: Boolean = false) {
+internal fun PlayerSeek(
+    c: PlayerRenderContext,
+    native: PlayerSliderStyle = PlayerSliderStyle.Simple,
+    remaining: Boolean = false,
+    codec: Boolean = false,
+) {
     val duration = c.state.playback?.durationMs?.takeIf { it > 0L }
     val progress = rememberPlayerProgress(c)
     val style = if(c.preferences.style.capabilities.sharedControls) c.preferences.slider else native
@@ -297,43 +310,69 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
         }
     }
     Column(Modifier.fillMaxWidth().testTag("seek-${style.name}")) {
+        val seekEnabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true
+        val colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color,
+            activeTickColor = color, inactiveTrackColor = color.copy(alpha = when (style) {
+                PlayerSliderStyle.Thick -> .28f
+                PlayerSliderStyle.Simple -> .15f
+                else -> .22f
+            }))
         PlayerSeekSlider(progress, duration,
             onPreview = { c.interaction.preview(it,c.state) },
             source = interactionSource, motion = c.motionActive,
             onCommit = { c.interaction.commit(c.state,c.actions.seekTo) },
-            enabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true,
+            enabled = seekEnabled,
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
-            track = {
-                Canvas(Modifier.fillMaxWidth().height(if(style==PlayerSliderStyle.Thick) 12.dp else 5.dp)) {
-                    val fraction = progress.fraction(duration)
-                    val h = size.height
-                    drawLine(color.copy(alpha=.2f),Offset(0f,h/2),Offset(size.width,h/2),h,StrokeCap.Round)
-                    val buffered = c.state.playback?.bufferedPositionMs
-                    if(duration!=null && buffered!=null) drawLine(color.copy(alpha=.3f),Offset(0f,h/2),
-                        Offset(size.width*(buffered.toDouble()/duration).toFloat().coerceIn(0f,1f),h/2),h,StrokeCap.Round)
-                    if(style==PlayerSliderStyle.Wavy) {
-                        val path=Path()
-                        for(i in 0..80) {
-                            val x=size.width*fraction*i/80f
-                            val y=h/2 + sin(x/12f*PI.toFloat())*3.dp.toPx()
-                            if(i==0) path.moveTo(x,y) else path.lineTo(x,y)
-                        }
-                        drawPath(path,color,style=Stroke(2.dp.toPx()))
-                    } else drawLine(color,Offset(0f,h/2),Offset(size.width*fraction,h/2),h,StrokeCap.Round)
-                    if(style==PlayerSliderStyle.Circular) drawCircle(color,8.dp.toPx(),Offset(size.width*fraction,h/2),style=Stroke(2.dp.toPx()))
+            thumb = { scaled ->
+                if (style != PlayerSliderStyle.Thick && style != PlayerSliderStyle.Simple)
+                    SliderDefaults.Thumb(interactionSource, modifier = scaled, colors = colors, enabled = seekEnabled)
+            },
+            track = { sliderState ->
+                if (style == PlayerSliderStyle.Standard) {
+                    SliderDefaults.Track(sliderState, colors = colors, enabled = seekEnabled)
+                } else {
+                    val trackHeight = when (style) {
+                        PlayerSliderStyle.Thick -> 12.dp
+                        PlayerSliderStyle.Simple -> 3.dp
+                        else -> 6.dp
+                    }
+                    Canvas(Modifier.fillMaxWidth().height(trackHeight)) {
+                        val fraction = progress.fraction(duration)
+                        val cy = size.height / 2
+                        val h = trackHeight.toPx()
+                        drawLine(colors.inactiveTrackColor, Offset(0f, cy), Offset(size.width, cy), h, StrokeCap.Round)
+                        if (style == PlayerSliderStyle.Wavy || style == PlayerSliderStyle.Circular) {
+                            val path = Path()
+                            val amplitude = if (c.motionActive && c.state.playback?.playWhenReady == true) 2.dp.toPx() else 0f
+                            for (i in 0..80) {
+                                val x = size.width * fraction * i / 80f
+                                val y = cy + sin(x / 12.dp.toPx() * PI.toFloat()) * amplitude
+                                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                            }
+                            drawPath(path, color, style = Stroke(h, cap = StrokeCap.Round))
+                        } else drawLine(color, Offset(0f, cy), Offset(size.width * fraction, cy), h, StrokeCap.Round)
+                    }
                 }
             })
-        PlayerSeekLabels(progress, duration, remaining)
+        PlayerSeekLabels(progress, duration, remaining,
+            c.state.formatLabel?.takeIf { codec && c.preferences.showCodec && it.isNotBlank() }, c.state.formatLossless)
     }
 }
 
 @Composable
-private fun PlayerSeekLabels(progress: PlayerProgress, duration: Long?, remaining: Boolean) {
+private fun PlayerSeekLabels(progress: PlayerProgress, duration: Long?, remaining: Boolean, quality: String?, lossless: Boolean) {
     val seconds by remember(progress) { derivedStateOf { progress.positionMs / 1000L } }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(playerTime(seconds * 1000L), style = MaterialTheme.typography.labelSmall.tabularFigures())
-        Text(if (duration == null) "—" else if (remaining) "−${playerTime((duration - seconds * 1000L).coerceAtLeast(0))}" else playerTime(duration),
-            style = MaterialTheme.typography.labelSmall.tabularFigures())
+    val style = MaterialTheme.typography.labelSmall.tabularFigures()
+    val start = playerTime(seconds * 1000L)
+    val end = if (duration == null) "—" else if (remaining) "−${playerTime((duration - seconds * 1000L).coerceAtLeast(0))}" else playerTime(duration)
+    if (quality == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(start, style = style)
+        Text(end, style = style)
+    } else Box(Modifier.fillMaxWidth().testTag("player-seek-quality-row")) {
+        // Centred rather than spaced between the timestamps, so the badge holds still as the digits change.
+        Text(start, modifier = Modifier.align(Alignment.CenterStart), style = style)
+        QualityBadge(quality, lossless, Modifier.align(Alignment.Center).padding(horizontal = 8.dp).testTag("player-seek-quality"))
+        Text(end, modifier = Modifier.align(Alignment.CenterEnd), style = style)
     }
 }
 

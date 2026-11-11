@@ -41,7 +41,6 @@ fun SettingsHomePage(
     var shortcutsVisible by remember { mutableStateOf(false) }
     val reference = LocalPhoneSettingsReference.current
     var searchQuery by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     val rows = settingsHomeRows(
@@ -56,11 +55,13 @@ fun SettingsHomePage(
     val labels = rows.associate { it.anchor to stringResource(it.title) }
     val visibleRows = if (reference != null && searchQuery.isNotBlank()) rows.filter { row ->
         row !is SettingsRow.Header && labels[row.anchor].orEmpty().contains(searchQuery, ignoreCase = true)
-    } else rows
+    } else if (reference != null && scrollTo.isNullOrBlank()) rows.filterNot { it.anchor in phoneSettingsHomeBrowseHidden } else rows
     val visibleReference = if (reference != null && searchQuery.isNotBlank()) reference.copy(rows = reference.rows.filter { spec ->
         visibleRows.any { it.anchor == spec.anchor }
+    }) else if (reference != null && scrollTo.isNullOrBlank()) reference.copy(rows = reference.rows.filterNot {
+        it.anchor in phoneSettingsHomeBrowseHidden
     }) else reference
-    CompositionLocalProvider(LocalPhoneSettingsReference provides visibleReference) {
+    CompositionLocalProvider(LocalPhoneSettingsReference provides visibleReference, LocalPhoneSettingsRoot provides (reference != null)) {
         SettingsPage(
             rows = visibleRows,
             preferences = preferences,
@@ -74,8 +75,10 @@ fun SettingsHomePage(
                 androidx.compose.material3.Text(stringResource(moe.rukamori.archivetune.shared.ui.resources.Res.string.m4_empty))
             } },
             header = if (reference != null) { {
-                PhoneSettingsSearchHeader(searchQuery, searching, { searchQuery = it }, { searching = it }, LocalSettingsBack.current ?: {})
+                PhoneSettingsSearchHeader(LocalSettingsBack.current ?: {})
             } } else null,
+            leadingItems = { if (reference != null) item(key = "settings-search") { PhoneSettingsSearchField(searchQuery) { searchQuery = it } } },
+            leadingItemCount = if (reference != null) 1 else 0,
         )
     }
     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })

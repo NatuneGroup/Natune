@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
+import moe.rukamori.archivetune.shared.ui.player.PlayerGlyph
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -148,9 +149,11 @@ internal fun QueuePanelTrack(
     modifier: Modifier, artwork: @Composable (Modifier) -> Unit, handle: @Composable () -> Unit,
     onSelect: () -> Unit, onPlay: () -> Unit, onRemove: () -> Unit, onNext: () -> Unit, onTop: () -> Unit,
     onUp: (() -> Unit)?, onDown: (() -> Unit)?,
+    playing: Boolean = false,
 ) {
     var more by remember(entry.occurrenceId) { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
+    val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
     val dismiss = rememberSwipeToDismissBoxState()
     LaunchedEffect(dismiss.currentValue) {
         if (dismiss.currentValue != SwipeToDismissBoxValue.Settled) {
@@ -159,22 +162,37 @@ internal fun QueuePanelTrack(
         }
     }
     val row: @Composable () -> Unit = {
-        Row(modifier.fillMaxWidth().background(if (current) colors.secondaryContainer else colors.surface)
+        Row(modifier.fillMaxWidth().then(if (phone) Modifier.padding(horizontal = 8.dp) else Modifier)
+            .background(if (current) { if (phone) colors.primaryContainer else colors.secondaryContainer } else colors.surface,
+                if (phone) RoundedCornerShape(16.dp) else RoundedCornerShape(0.dp))
             .combinedClickable(onClick = { if (selecting) onSelect() else onPlay() }, onLongClick = onSelect)
-            .padding(horizontal = 12.dp, vertical = 6.dp).testTag("queue-row-${entry.occurrenceId}"),
+            .heightIn(min = if (phone) 64.dp else 56.dp).padding(horizontal = if (phone) 8.dp else 12.dp, vertical = 6.dp)
+            .testTag("queue-row-${entry.occurrenceId}"),
             verticalAlignment = Alignment.CenterVertically) {
             if (selecting) Checkbox(selected, { onSelect() })
-            artwork(Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)))
+            Box(Modifier.size(if (phone) 48.dp else 44.dp).clip(RoundedCornerShape(if (phone) 10.dp else 6.dp)),
+                contentAlignment = Alignment.Center) {
+                artwork(Modifier.fillMaxSize())
+                if (phone && current) {
+                    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = .6f)))
+                    PlayerGlyph(if (playing) PlayerSymbol.PAUSE else PlayerSymbol.PLAY, androidx.compose.ui.graphics.Color.White,
+                        true, null, Modifier.size(28.dp).testTag("queue-current-play-overlay"))
+                }
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(entry.item.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
                 val artist = entry.item.artists.joinToString(", ") { it.name }.ifEmpty { entry.item.subtitle }
-                if (artist.isNotEmpty()) Text(artist, style = MaterialTheme.typography.bodySmall,
+                val subtitle = if (phone) listOfNotNull(artist.takeIf { it.isNotEmpty() }, entry.item.durationMs?.let(::queueTimeString)).joinToString(" • ") else artist
+                if (subtitle.isNotEmpty()) Text(subtitle, style = MaterialTheme.typography.bodySmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, color = colors.onSurfaceVariant)
             }
             handle()
             Box {
-                PlayerIcon(PlayerSymbol.MORE, stringResource(Res.string.queue_actions), { more = true })
+                if (phone) IconButton({ more = true }) {
+                    Icon(org.jetbrains.compose.resources.painterResource(Res.drawable.reference_queue_more_vert),
+                        stringResource(Res.string.queue_actions), Modifier.size(24.dp))
+                } else PlayerIcon(PlayerSymbol.MORE, stringResource(Res.string.queue_actions), { more = true })
                 DropdownMenu(more, { more = false }) {
                     DropdownMenuItem(text = { Text(stringResource(Res.string.queue_move_next)) }, enabled = !current,
                         onClick = { more = false; onNext() })

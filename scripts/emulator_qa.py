@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Drive the QA emulator: launch the app, walk onboarding/home/settings,
-select every player design, capture screenshots and logcat.
+select every player design, and capture a generated local WAV player and logcat.
 
 Settings pages are reached with the app's own routes (the `navigate_to` intent
 extra), not with measured row offsets, because the settings tree merges and
@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import time
+import wave
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -152,7 +153,19 @@ def tap_text(pattern: str, tag: str, scrolls: int = 0) -> bool:
 def install_and_launch() -> None:
     apks = sorted(Path("app/build/outputs/apk").rglob("*.apk"))
     print(f"apk: {apks[0]}")
+    # Capture fake/local data only; keep the guest offline before the app can start.
+    adb("shell", "cmd", "connectivity", "airplane-mode", "enable", check=True)
+    adb("shell", "svc", "wifi", "disable", check=True)
+    adb("shell", "svc", "data", "disable", check=True)
+    # Match the shared audit's 393x852 dp phone viewport at density 3.
+    adb("shell", "wm", "size", "1179x2556", check=True)
+    adb("shell", "wm", "density", "480", check=True)
     print(adb("install", "-r", str(apks[0])).stdout.strip())
+    (OUT / "device.txt").write_text("\n".join(
+        adb("shell", *command).stdout.strip() for command in [
+            ("wm", "size"), ("wm", "density"), ("getprop", "ro.build.version.sdk"),
+        ]
+    ) + "\n")
     adb("shell", "monkey", "-p", PKG, "-c", "android.intent.category.LAUNCHER", "1")
     time.sleep(15)
 
@@ -234,76 +247,95 @@ def open_style_row(tag: str) -> bool:
     return False
 
 
+def dismiss_update() -> None:
+    nodes = dump_ui("dismiss-update")
+    if _match("new update available", nodes)[0] or _match("new update available", nodes)[1]:
+        if not tap_text("never show again|remind me later", "dismiss-update-action"):
+            adb("shell", "input", "keyevent", "KEYCODE_BACK")
+            time.sleep(2)
+
+
+def capture_local_player() -> None:
+    """Exercise the real Android player with a generated silent WAV, never a provider URL."""
+    fixture = OUT / "Parity fixture.wav"
+    with wave.open(str(fixture), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"\0\0" * 8000 * 240)
+    target = "/sdcard/Music/parity-fixture.wav"
+    adb("shell", "mkdir", "-p", "/sdcard/Music")
+    for name in ["parity-up-next-1.wav", "parity-up-next-2.wav", "parity-fixture.wav"]:
+        path = f"/sdcard/Music/{name}"
+        adb("push", str(fixture), path, check=True)
+        adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", f"file://{path}")
+    adb("shell", "pm", "grant", PKG, "android.permission.READ_MEDIA_AUDIO")
+    # The app's local scan creates a real finite queue with upcoming entries. If the
+    # scan UI cannot be reached, the single-file intent still supplies player evidence.
+    open_route("local_songs", "parity-local-files")
+    scanned = tap_text("^settings$", "parity-local-scan-options") and tap_text("^scan device$", "parity-local-scan-start", scrolls=4)
+    if scanned:
+        time.sleep(8)
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        time.sleep(2)
+        scanned = tap_text("^parity-", "parity-play-local-queue")
+    (OUT / "parity-fixture-state.txt").write_text(
+        "local scan queue selected\n" if scanned else "single-file fallback; upcoming tracks not verified\n")
+    open_route("home", "player-home")
+    if not scanned:
+        adb("shell", "am", "start", "-n", f"{PKG}/{MAIN_ACTIVITY}",
+            "-a", "android.intent.action.VIEW", "-d", f"file://{target}", "-t", "audio/wav")
+    time.sleep(8)
+    adb("shell", "input", "keyevent", "KEYCODE_MEDIA_PAUSE")
+    time.sleep(2)
+    shot("parity-mini-player")
+    if not tap_text("parity-(fixture|up-next)", "expand-local-player"):
+        fail("local player: fixture title not found; expanded player not captured")
+        return
+    shot("parity-player")
+    if tap_text("^queue$|^up next$", "local-queue"):
+        shot("parity-queue")
+        dump_ui("parity-queue")
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        time.sleep(2)
+    else:
+        fail("local player: queue control not found")
+    if tap_text("^lyrics$", "local-lyrics"):
+        shot("parity-lyrics")
+        dump_ui("parity-lyrics")
+    else:
+        fail("local player: lyrics control not found")
+    # No timed lyrics are embedded in this WAV; the empty lyrics state is evidence,
+    # and is never described as verification of the loaded lyrics renderer.
+    fixture.unlink()
+
+
 def navigate() -> None:
     foreground()
-    time.sleep(5)
+    dismiss_update()
+    open_route("home", "nav-home-capture")
     shot("03-home")
-    tap_text("^search$|nav.*search", "nav-search")
+    open_route("search", "nav-search")
     time.sleep(3)
     shot("04-search")
-    tap_text("^library$|nav.*library", "nav-library")
+    open_route("library", "nav-library")
     time.sleep(3)
     shot("05-library")
     # The settings entry only exists on the Home route, so go back there first.
-    tap_text("^home$|nav.*home", "nav-home")
+    open_route("home", "nav-home")
     time.sleep(3)
     # Settings and Appearance are opened by route rather than by tapping the gear
     # and a fixed row offset: the Appearance page grows and reorders its sections,
     # and a stale offset silently lands on a different row.
     open_route(SETTINGS_ROUTE, "nav-settings")
     shot("06-settings")
+    open_route("settings/lyrics", "nav-lyrics-settings")
+    shot("06a-settings-lyrics")
     open_route(APPEARANCE_ROUTE, "nav-appearance")
     shot("06b-appearance-root")
     # The player section, at the style picker's own row.
     open_route(STYLE_ROW_ROUTE, "nav-appearance-player")
     shot("07-appearance")
-
-
-# The picker is a ModalBottomSheet: drag handle + title (to ~y=900), then a
-# scrollable LazyColumn of ~190px rows from ~y=960 to ~2250 (7 visible). The
-# sheet was not part of the Appearance merge, so these sheet measurements still
-# apply; the row on the page behind it is no longer reached by offset at all
-# (see STYLE_ROW_ROUTE).
-SHEET_LIST_TOP = 960
-SHEET_ROW_H = 190
-SHEET_VISIBLE = 6
-
-
-def _swipe_sheet(times: int) -> None:
-    for _ in range(times):
-        adb("shell", "input", "swipe", "540", "2100", "540", "1100", "350")
-        time.sleep(1.5)
-
-
-def _pick_style(i: int, style: str) -> str:
-    """Tap one row inside the open picker and say how it was found.
-
-    Returns 'label' for the style's own node, 'offset' for the measured sheet
-    geometry, or '' when nothing was tapped. The label is exact and wins; the
-    geometry is only used while the sheet is provably open -- its option labels
-    are in the hierarchy -- so a picker that never opened cannot turn into a tap
-    on an unrelated settings row behind it.
-    """
-    tag = f"style-pick-{i}"
-    nodes = dump_ui(tag)
-    clickable, plain = _match(f"^{re.escape(style)}$", nodes)
-    if clickable:
-        _tap_node(clickable[0], tag)
-        return "label"
-    # A tapped text node inside the sheet row still hits that row; below the
-    # sheet's list top is the sheet, above it is the settings row the sheet covers
-    # and whose value chip reads the same name.
-    inside = [node for node in plain if node[4] >= SHEET_LIST_TOP]
-    if inside:
-        _tap_node(inside[0], tag)
-        return "label"
-    if any(node[0].strip() in STYLES for node in nodes):
-        idx = i - 1
-        tap_xy(540, SHEET_LIST_TOP + (idx % SHEET_VISIBLE) * SHEET_ROW_H
-               + SHEET_ROW_H // 2, tag)
-        return "offset"
-    fail(f"{tag}: picker labels not on screen; '{style}' not selected")
-    return ""
 
 
 def select_styles() -> None:
@@ -320,22 +352,20 @@ def select_styles() -> None:
         if i > 1 and not open_style_row(f"style-open-{i}"):
             results.append(f"NOT SELECTED (row not found): {style}")
             continue
-        # Inside the sheet: scroll the list to the top, then down to the
-        # row group containing item i-1, and tap it.
-        adb("shell", "input", "swipe", "540", "1100", "540", "2100", "350")
-        time.sleep(1)
-        adb("shell", "input", "swipe", "540", "1100", "540", "2100", "350")
-        time.sleep(1)
-        _swipe_sheet((i - 1) // SHEET_VISIBLE)
-        picked = _pick_style(i, style)
+        # Options move with density and sheet size. Only a matching accessible label is tapped.
+        picked = "label" if tap_text(f"^{re.escape(style)}$", f"style-pick-{i}", scrolls=4) else ""
+        if not picked:
+            fail(f"style-pick-{i}: '{style}' option not found")
+            adb("shell", "input", "keyevent", "KEYCODE_BACK")
         time.sleep(2)
         shot(f"style-{i:02d}-{style.replace(' ', '_')}")
         if picked == "label":
             results.append(f"selected: {style}")
-        elif picked == "offset":
-            results.append(f"selected (offset, unverified): {style}")
         else:
             results.append(f"NOT SELECTED (picker not open): {style}")
+    # Player captures use the shipped default instead of the last style from the enumeration.
+    if not open_style_row("style-reset-default") or not tap_text("^Cinematic$", "style-reset-default-option", scrolls=4):
+        fail("could not restore default Cinematic player style before captures")
     results.append("n/a on Android host (shared-domain only): METROLIST_KMP")
     (OUT / "styles.txt").write_text("\n".join(results) + "\n")
     print("\n".join(results))
@@ -347,6 +377,7 @@ def main() -> None:
         walk_onboarding()
         navigate()
         select_styles()
+        capture_local_player()
     except Exception as e:  # noqa: BLE001 - QA must never block artifacts
         print(f"driver error: {e}")
         fail(f"driver error: {e}")

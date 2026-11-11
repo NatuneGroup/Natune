@@ -199,7 +199,7 @@ private fun ArchiveTuneLoadedRoot(
         // The desktop columns: rail labels, the two docked panes and the expanded player. Phone hosts never read it.
         val desktopShellState = remember { DesktopShellState() }
         var expanded by remember { mutableStateOf(false) }
-        val expandedTransition = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+        val phoneSheet = rememberPhonePlayerSheetState()
         var shortcutsVisible by remember { mutableStateOf(false) }
         // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
         // consumed, so returning to the tab later does not take focus from the user.
@@ -225,6 +225,7 @@ private fun ArchiveTuneLoadedRoot(
         LaunchedEffect(expanded, desktopShellState.expandedPlayer, current == null) {
             if (current == null) {
                 expanded = false
+                phoneSheet.reset()
                 desktopShellState.expandedPlayer = false
             }
         }
@@ -399,7 +400,7 @@ private fun ArchiveTuneLoadedRoot(
                 // One page host for both shells: only the columns around the page differ. Lyrics and queue surfaces
                 // stay mounted while a desktop pane or the expanded player shows them, so their scroll owner survives
                 // opening and closing the pane.
-                val surfaceOpen = expanded || (desktopShell && (desktopShellState.expandedPlayer || desktopShellState.lyricsOpen))
+                val surfaceOpen = expanded || (!desktopShell && phoneSheet.visible) || (desktopShell && (desktopShellState.expandedPlayer || desktopShellState.lyricsOpen))
                 val slots = host.playerSlots(surfaceOpen, active, interaction)
                 val page: @Composable (Modifier) -> Unit = { pageModifier ->
                     CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
@@ -511,7 +512,8 @@ private fun ArchiveTuneLoadedRoot(
                             Box(Modifier.weight(1f).fillMaxWidth()) {
                                 ArchiveTuneShell(navigation, preferences,
                                 onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
-                                television = television, contentModifier = pageSource, chromeVisible = !expanded || (rememberPlayerMotionLevel(policy.motion).fades && !expandedTransition.currentState),
+                                television = television, contentModifier = pageSource,
+                                chromeVisible = current == null || (!expanded && !phoneSheet.visible),
                                 miniPlayer = {
                                     PlayerSurfaceTransition(current, rememberPlayerMotionLevel(policy.motion), mini = true) { shown ->
                                     ArchiveMiniPlayer(
@@ -529,6 +531,7 @@ private fun ArchiveTuneLoadedRoot(
                                         onSeekTo = ::seekTo,
                                         onAction = ::desktopPlayerAction,
                                         onVolumeChange = ::setVolume,
+                                        modifier = Modifier.phonePlayerExpandDrag { expanded = true },
                                     )
                                     }
                                     },
@@ -539,8 +542,10 @@ private fun ArchiveTuneLoadedRoot(
                     }
                     // A player that must paint the strips itself draws outside the root's padding and reserves the
                     // host's inset around its own controls through LocalHostSafeArea.
-                    PlayerSurfaceTransition(current.takeIf { !desktopShell && expanded }, rememberPlayerMotionLevel(policy.motion),
-                        Modifier.fillMaxSize(), transitionState = expandedTransition) { _ -> BoundBottomSheetPlayer(
+                    if (!desktopShell && current != null) PhonePlayerSheet(
+                        expanded = expanded, onExpanded = { expanded = it }, motion = policy.motion,
+                        state = phoneSheet,
+                    ) { BoundBottomSheetPlayer(
                         queue = host.queue,
                         settings = host.settings,
                         actionScope = host.actionScope,

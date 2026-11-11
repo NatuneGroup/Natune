@@ -6,6 +6,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.player.*
 
 /**
@@ -16,14 +17,24 @@ import moe.rukamori.archivetune.shared.ui.player.*
 @Composable
 internal fun SimpMusicPlayer(c: PlayerRenderContext) {
     PlayerColumn(Modifier.testTag("simpmusic-content")) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            ActionButton(PlayerAction.COLLAPSE, c); ActionButton(PlayerAction.MORE, c)
+        // The shared close control is the single collapse, as in Android's top bar. The menu stays at the top right.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            ActionButton(PlayerAction.MORE, c)
         }
         if (c.landscape) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             PlayerArtworkPager(c, Modifier.weight(1f))
             Column(Modifier.weight(1f)) { SimpMusicControls(c) }
         } else {
-            PlayerArtworkPager(c, Modifier.fillMaxWidth())
+            if (LocalDesktopLayout.current) {
+                // The desktop column keeps its full-width sleeve and scrolls.
+                PlayerArtworkPager(c, Modifier.fillMaxWidth())
+            } else {
+                // A phone sleeve is square and gives up height: weight(fill = false) caps it at the room the rows
+                // below leave in the viewport, so the transport and action rows always stay on screen.
+                Box(Modifier.fillMaxWidth().weight(1f, fill = false), contentAlignment = Alignment.Center) {
+                    PlayerArtworkPager(c)
+                }
+            }
             SimpMusicLyricBand(c)
             SimpMusicControls(c)
         }
@@ -45,7 +56,7 @@ private fun SimpMusicControls(c: PlayerRenderContext) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PlayerMetadata(c) }; ActionButton(PlayerAction.LIKE, c)
         }
-        PlayerSeek(c)
+        PlayerSeek(c, codec = true)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             ActionButton(PlayerAction.SHUFFLE, c); ActionButton(PlayerAction.PREVIOUS, c)
             PlayButton(c); ActionButton(PlayerAction.NEXT, c); ActionButton(PlayerAction.REPEAT, c)
