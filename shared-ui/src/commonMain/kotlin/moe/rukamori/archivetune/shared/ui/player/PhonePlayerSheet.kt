@@ -15,8 +15,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -36,7 +36,8 @@ internal class PhonePlayerSheetState(private val scope: CoroutineScope) {
     private var dragging by mutableStateOf(false)
     private var fling = false
     val progress: Float get() = position.value
-    val visible: Boolean get() = progress > 0f || dragging
+    // Root chrome and slot owners only need visibility changes, not each animation or drag frame.
+    val visible: Boolean by derivedStateOf { position.value > 0f || dragging }
 
     init { position.updateBounds(0f, 1f) }
 
@@ -89,7 +90,6 @@ internal fun PhonePlayerSheet(
     motion: Boolean,
     state: PhonePlayerSheetState = rememberPhonePlayerSheetState(),
     modifier: Modifier = Modifier,
-    dragEnabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     LaunchedEffect(expanded, motion) { state.animate(expanded, motion) }
@@ -105,7 +105,6 @@ internal fun PhonePlayerSheet(
                     customActions = listOf(CustomAccessibilityAction(collapseLabel) { onExpanded(false); true })
                 }
                 .draggable(rememberDraggableState { state.drag(-it / heightPx) }, Orientation.Vertical,
-                    enabled = dragEnabled,
                     onDragStopped = { state.settle(it / density, expanded, motion, onExpanded) })) {
                 content()
             }

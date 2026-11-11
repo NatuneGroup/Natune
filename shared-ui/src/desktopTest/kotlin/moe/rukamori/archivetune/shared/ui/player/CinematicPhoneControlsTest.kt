@@ -39,7 +39,8 @@ class CinematicPhoneControlsTest {
         }
         onNodeWithText("Now Playing").assertIsDisplayed()
         onNodeWithText("Local").assertIsDisplayed()
-        onNodeWithTag("player-close").assertIsDisplayed()
+        onAllNodesWithTag("player-close").assertCountEquals(1)
+        onNodeWithTag("player-close").assertIsDisplayed().assertContentDescriptionEquals("Collapse player")
         onNodeWithTag("player-cinematic-format").performScrollTo().assertIsDisplayed()
         onNodeWithTag("player-cinematic-sleep").performScrollTo().performClick()
         assertEquals(listOf(PlayerAction.SLEEP), actions.actions)
@@ -48,7 +49,10 @@ class CinematicPhoneControlsTest {
         onNodeWithTag("player-cinematic-format").assertDoesNotExist()
         onNodeWithTag("player-cinematic-lyrics").performScrollTo().performClick()
         runOnIdle { assertEquals(PlayerPanel.LYRICS, interaction.panel) }
+        onAllNodesWithTag("player-close").assertCountEquals(1)
+        onNodeWithTag("player-close").assertIsDisplayed().assertContentDescriptionEquals("Collapse player")
         runOnIdle { interaction.panel = PlayerPanel.ARTWORK }
+        onAllNodesWithTag("player-close").assertCountEquals(1)
         onNodeWithTag("player-close").performClick()
         onNodeWithTag("phone-player-sheet").assertDoesNotExist()
         runOnIdle { assertFalse(expanded); assertEquals(PlayerAction.COLLAPSE, actions.actions.last()) }

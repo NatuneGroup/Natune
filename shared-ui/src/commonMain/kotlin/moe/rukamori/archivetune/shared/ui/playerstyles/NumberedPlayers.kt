@@ -163,8 +163,10 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
         if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
             c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PlayerIcon(PlayerSymbol.DOWN, stringResource(Res.string.m5_collapse),
-                    { c.actions.onAction(PlayerAction.COLLAPSE) }, Modifier.testTag("player-close"), contentColor = textColor)
+                if (c.interaction.panel == PlayerPanel.ARTWORK) {
+                    PlayerIcon(PlayerSymbol.DOWN, stringResource(Res.string.m5_collapse),
+                        { c.actions.onAction(PlayerAction.COLLAPSE) }, Modifier.testTag("player-close"), contentColor = textColor)
+                } else Spacer(Modifier.width(48.dp))
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(stringResource(Res.string.m5pq_now_playing), style = MaterialTheme.typography.titleMedium, color = textColor)
                     (c.state.queueTitle ?: c.state.albumTitle)?.takeIf { it.isNotBlank() }?.let {

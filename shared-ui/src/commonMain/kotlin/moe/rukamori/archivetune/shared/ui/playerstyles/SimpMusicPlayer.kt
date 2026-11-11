@@ -26,7 +26,7 @@ internal fun SimpMusicPlayer(c: PlayerRenderContext) {
             Column(Modifier.weight(1f)) { SimpMusicControls(c) }
         } else {
             if (LocalDesktopLayout.current) {
-                // The desktop column keeps its full-width sleeve; it scrolls as before.
+                // The desktop column keeps its full-width sleeve and scrolls.
                 PlayerArtworkPager(c, Modifier.fillMaxWidth())
             } else {
                 // A phone sleeve is square and gives up height: weight(fill = false) caps it at the room the rows

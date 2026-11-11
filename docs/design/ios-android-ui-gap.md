@@ -236,17 +236,14 @@ shared Compose resources. Android UI and playback sources are unchanged.
 | Module catalogs and native extensions | Installed API-v1 packages work through the existing host. Catalog import/update/check and native binary-extension operations have no iOS UI owner yet, and retain unavailable controls. This is current implementation availability, not a claim that all catalog operations are inherently forbidden by iOS. |
 | Native output / restore facts | iOS output-rate/observed-format rows and staged-restore quit/recovery behavior remain because they describe existing native APIs. They render in shared UI, but differ from Android system facts. |
 | Platform mechanisms | Android Auto, AOD, Media3 offload/PIP/USB-exclusive and Android screenshot/system controls cannot use their Android APIs on iOS; reference controls remain disabled with the shared availability description. UIKit pickers, AirPlay, authorization and alternate-icon confirmation remain system surfaces. |
-| Compilation and runtime | No local Gradle/JVM/Xcode build, lint or JVM test ran. Exact-head Android/desktop/Kotlin-Native CI, full unsigned iOS app linkage, device launch, Dynamic Type extremes, gestures and pixel checks remain unverified. |
+| Compilation and runtime | Android build and lint, desktop and Kotlin/Native compilation, and app unit tests are covered by PR CI. Shared KMP and desktop suites are also required. Device launch, Dynamic Type extremes, gestures, accessibility interaction, and pixel checks remain unverified. |
 
-Permitted checks after this implementation: repository checker **0 findings**;
-iOS Python contracts **38 tests passed**. Additional bounded source reads
-verified no changed Android sources, no Android/JVM resource imports in the
-changed common code, and no unresolved literal shared-resource references.
-No PR was opened and no CI workflow was dispatched.
+Validation uses the repository checker, iOS Python source contracts, and
+[PR #118 CI](https://github.com/NatuneGroup/Natune/pull/118). Shared UI uses common resources and retains the platform compilation gates.
 
 ## Render audit status
 
-Fixes committed on `fix/ios-desktop-ui-render-audit`, one commit per item:
+Implemented render-audit fixes:
 
 - `eda1b388` gives the queue lock vector's three stroke paths a transparent fill, which the vector test requires.
 - `c6d3928b` closes the phone queue to the artwork on a tap or downward drag of its drag strip, and on a downward drag of non-scrolling headers.
@@ -254,10 +251,12 @@ Fixes committed on `fix/ios-desktop-ui-render-audit`, one commit per item:
 - `21fd177b` centres the lossless badge between the timestamps on the fullscreen lyrics row and the BitChord seek row, with Android's wave glyph and a shimmer on lossless streams. The wave is drawn in code (`QualityBadge.kt`), not from a shared resource.
 - `ca9142e5` draws the phone mini player as a raised card with the pill's hairline border, above the nav pill.
 - `ce3b9011` shows the same centred badge on the SimpMusic seek row, which Android shows when the codec setting is on.
+- `6dc81d8b` fixes SimpMusic portrait fit: the square sleeve yields height to keep transport and footer controls visible, and the shared close button is its only collapse control. `SimpMusicPortraitFitTest` checks 393 × 852 and 360 × 640 viewports, including injected iOS safe areas; desktop retains its full-width sleeve.
+- Cinematic phone artwork has a labelled collapse button in its header, and the phone sheet exposes an accessibility collapse action. Fullscreen lyrics retains optical motion. Derived sheet visibility isolates root chrome and slot owners from animation frames. See [render audit coverage](ui-render-audit.md).
 
 Earlier commits on this branch cover the Cinematic phone header and footer, the artwork progress ring, the phone queue sheet chrome and current rows, the fullscreen lyrics backdrop and transport, and the settings heading and root groups.
 
-The native iOS render at `2008b225` (run 42949329927) shows the centred badge on the fullscreen lyrics and BitChord rows, and the raised mini card. These are native Skia frames, not simulator screenshots. No Android frame with the same data exists yet.
+The native iOS render at `2008b225` ([run 42949329927](https://github.com/NatuneGroup/Natune/actions/runs/42949329927)) shows the centred badge on the fullscreen lyrics and BitChord rows, and the raised mini card. These are native Skia frames, not simulator screenshots. No Android frame with the same data exists yet.
 
 Still open:
 
@@ -268,11 +267,10 @@ Still open:
 - Fullscreen lyrics glyphs and footer pill: the play, pause, and volume icons come from the shared glyph set, not from Android's lyrics drawables (`player_play`, `player_pause`, `player_volume_min`, `player_volume_up`). The shared footer pill shows the lyrics state. Neither is compared in a render. The volume track is 8 dp on both platforms, so it is unchanged.
 - Home header: the copy, sizes, weights, and gutter match Android's `HomeWelcomeHeader`, so the header itself is unchanged. The iOS home builds only the BitChord page (`IosCatalogueFeeds.kt`), which draws this header. Android's default home style is the classic page, which has no hero header. Changing the iOS page is a route decision, so it is not made here.
 - Settings titles: Android requests Bold for every preference title. Its bold may be synthetic, because the Poppins asset is declared as Regular only. The shared titles keep the real Bold face. No render compares the two.
-- SimpMusic style layout: at 393 × 852 pt the transport row was cut at the bottom edge, and the Lyrics, Queue, Sleep, and More row sat below the frame. The cut also appears at `e699cb54`, so the lossless badge did not cause it. The phone sleeve now gives up height to the rows below it, and the SimpMusic-local collapse is removed, so the shared close control is the one collapse, as in Android's top bar. `SimpMusicPortraitFitTest` checks the rows at 393 × 852 and 360 × 640; the desktop keeps its full-width sleeve.
 
 Not verified:
 
 - UIKit safe areas, gestures, lifecycle, and Dynamic Type. The phone scenes inject padding and do not mount the iOS window.
 - Loaded Android screens with the same data. The Android CI captures run in airplane mode, so Home, Search, and Library show empty or error states.
 - Matched palettes and artwork.
-- Desktop suites for the queue, settings, player styles, and the shell were run locally. The full Gradle suite, the Android build, and the iOS compile were not run.
+- Fresh native renders of the SimpMusic portrait-fit and Cinematic collapse fixes. Compilation and regression tests run in PR CI; historical captures do not verify later layout changes.
