@@ -45,7 +45,7 @@ private fun SimpMusicControls(c: PlayerRenderContext) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PlayerMetadata(c) }; ActionButton(PlayerAction.LIKE, c)
         }
-        PlayerSeek(c)
+        PlayerSeek(c, codec = true)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             ActionButton(PlayerAction.SHUFFLE, c); ActionButton(PlayerAction.PREVIOUS, c)
             PlayButton(c); ActionButton(PlayerAction.NEXT, c); ActionButton(PlayerAction.REPEAT, c)
