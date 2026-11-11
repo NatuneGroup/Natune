@@ -251,14 +251,18 @@ Fixes committed on `fix/ios-desktop-ui-render-audit`, one commit per item:
 - `eda1b388` gives the queue lock vector's three stroke paths a transparent fill, which the vector test requires.
 - `c6d3928b` closes the phone queue to the artwork on a tap or downward drag of its drag strip, and on a downward drag of non-scrolling headers.
 - `ec507a10` removes the edge fade from phone setting descriptions. A static description ends in an ellipsis, as Android's marquee does.
+- `21fd177b` centres the lossless badge between the timestamps on the fullscreen lyrics row and the BitChord seek row, with Android's wave glyph and a shimmer on lossless streams. The wave is drawn in code (`QualityBadge.kt`), not from a shared resource.
+- `ca9142e5` draws the phone mini player as a raised card with the pill's hairline border, above the nav pill.
+- `ce3b9011` shows the same centred badge on the SimpMusic seek row, which Android shows when the codec setting is on.
 
 Earlier commits on this branch cover the Cinematic phone header and footer, the artwork progress ring, the phone queue sheet chrome and current rows, the fullscreen lyrics backdrop and transport, and the settings heading and root groups.
 
 Still open:
 
-- Mini player: the phone bar is one row with no card surfaces. Android's two floating cards are not ported.
-- Fullscreen lyrics: the quality label is plain text between the timestamps. Android centres a lossless-wave glyph and the quality label, with a shimmer on lossless streams. The wave vector and the shimmer are not in shared resources.
-- Phone player format line: not ported. The shared state has a short format label and a lossless flag. The content and placement of Android's line were not compared in a render.
+- Mini player: the floating card's fill and border are ported in code. The mini player and the nav pill are now two floating cards, as on Android. No render compares them yet.
+- Lossless badge: the fullscreen lyrics, BitChord, and SimpMusic rows use the centred badge. The lyrics row shows it whenever a format is known, as Android's lyrics screen does. The BitChord and SimpMusic rows follow the codec setting, as Android does. Desktop layout tests check the centring. The text is the shared format line, and Android uses a shorter stream label, so the text may differ. No render compares it.
+- Phone player format line: the other shared styles keep their own format chip. Android's player uses `LosslessOrStats` only on the BitChord, SimpMusic, and lyrics screens, so the chips on the other styles were not compared with an Android screen.
+- Queue sheet: the header, source line, counts, four actions, connected row, and Continue Playing row are in `PhoneQueueHeader.kt`. This was checked in source only, and no render compares it with Android.
 - Home header: the copy, sizes, weights, and gutter match Android's `HomeWelcomeHeader`, so the header itself is unchanged. The iOS home builds only the BitChord page (`IosCatalogueFeeds.kt`), which draws this header. Android's default home style is the classic page, which has no hero header. Changing the iOS page is a route decision, so it is not made here.
 - Settings titles: Android requests Bold for every preference title. Its bold may be synthetic, because the Poppins asset is declared as Regular only. The shared titles keep the real Bold face. No render compares the two.
 
@@ -267,4 +271,4 @@ Not verified:
 - UIKit safe areas, gestures, lifecycle, and Dynamic Type. The phone scenes inject padding and do not mount the iOS window.
 - Loaded Android screens with the same data. The Android CI captures run in airplane mode, so Home, Search, and Library show empty or error states.
 - Matched palettes and artwork.
-- Only the queue and settings desktop test suites were run locally. The full Gradle suite, the Android build, and the iOS compile were not run.
+- Desktop suites for the queue, settings, player styles, and the shell were run locally. The full Gradle suite, the Android build, and the iOS compile were not run.
