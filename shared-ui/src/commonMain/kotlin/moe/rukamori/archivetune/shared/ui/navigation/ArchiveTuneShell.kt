@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.navigation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -155,7 +156,7 @@ fun ArchiveTuneShell(
                         ) {
                             val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
                             CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
-                            Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip()
+                            Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip(MaterialTheme.colorScheme.surfaceContainer)
                                 .testTag("shell-mini-player")) { miniPlayer() }
                             if (apple || compactSearchVisible(navigation.route)) {
                                 CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
@@ -163,12 +164,16 @@ fun ArchiveTuneShell(
                         }
                         else -> {
                             val floatingMini = phone && layout == ShellLayout.BottomBar
+                            // The floating mini player is its own card above the nav pill, filled and outlined like Android's raised pill.
+                            val miniShape = pill.shape(PillRole.MINI_PLAYER)
                             Box(Modifier.fillMaxWidth().then(if (floatingMini) Modifier.padding(horizontal = 12.dp) else Modifier),
                                 contentAlignment = Alignment.Center) {
                                 Box(Modifier.then(if (floatingMini) Modifier.widthIn(max = pill.maxWidth) else Modifier)
                                     .fillMaxWidth(if (floatingMini) pill.widthFraction else 1f)
-                                    .heightIn(min = 48.dp).then(if (floatingMini) Modifier.clip(pill.shape(PillRole.MINI_PLAYER)) else Modifier)
-                                    .miniPlayerStrip().testTag("shell-mini-player")) { miniPlayer() }
+                                    .heightIn(min = 48.dp).then(if (floatingMini) Modifier.clip(miniShape) else Modifier)
+                                    .miniPlayerStrip(if (floatingMini) pill.raisedContainerColor else MaterialTheme.colorScheme.surfaceContainer)
+                                    .then(if (floatingMini) (pill.border?.let { Modifier.border(it, miniShape) } ?: Modifier) else Modifier)
+                                    .testTag("shell-mini-player")) { miniPlayer() }
                             }
                             if (floatingMini) Spacer(Modifier.height(4.dp).testTag("shell-player-navigation-gap"))
                             if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
@@ -293,9 +298,9 @@ private fun Modifier.navigationMaterial(
  * here adds semantics, focus or a click action to the empty area.
  */
 @Composable
-private fun Modifier.miniPlayerStrip(): Modifier =
-    // The player is the same tinted chrome surface as the rail and the top bar, and it spans the window on desktop.
-    background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
+private fun Modifier.miniPlayerStrip(fill: Color): Modifier =
+    // The caller picks the surface: the docked strip uses the rail and top bar tone, and it spans the window on desktop.
+    background(fill).pointerInput(Unit, MiniPlayerStripHitTarget)
 
 /** Watches the strip's pointer events without consuming, so presence in the chain claims the region and nothing else. */
 private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
