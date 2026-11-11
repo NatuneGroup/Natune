@@ -97,7 +97,9 @@ fun BottomSheetPlayer(
         // The visible surface, including fullscreen lyrics chrome and backdrop, shares the optical motion policy.
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical,
             LocalSystemReducedMotion.current, motionLevel.takeIf { optical.motion } ?: PlayerMotionLevel.None)
-        val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
+        // The shell turns this report into the fullscreen switch, so only lyrics the user asked for may report. Inline
+        // lyrics on the artwork page, and the side lyrics that landscape Metrolist always mounts, stay where they are.
+        val showingLyrics=surfaces.fullLyrics && (interaction.fullscreenLyrics || interaction.panel==PlayerPanel.LYRICS)
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)
         DisposableEffect(showingLyrics) {
             visibilityCallback(showingLyrics)
@@ -182,9 +184,11 @@ fun BottomSheetPlayer(
                     if (!desktop && !interaction.fullscreenLyrics &&
                         !(phonePresentation && !landscape && (interaction.panel == PlayerPanel.QUEUE ||
                             presentation.style == PlayerDesignStyle.V4 && interaction.panel == PlayerPanel.ARTWORK))) {
+                        // With a panel open the control only returns to the artwork, so only the artwork state says "collapse".
+                        val collapses = phonePresentation && interaction.panel == PlayerPanel.ARTWORK
                         PlayerIcon(
-                            if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) PlayerSymbol.DOWN else PlayerSymbol.BACK,
-                            stringResource(if (phonePresentation) Res.string.m5_collapse else Res.string.m5_back),
+                            if (collapses) PlayerSymbol.DOWN else PlayerSymbol.BACK,
+                            stringResource(if (collapses) Res.string.m5_collapse else Res.string.m5_back),
                             { actions.onAction(PlayerAction.COLLAPSE) },
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
                                 .testTag("player-close"),
