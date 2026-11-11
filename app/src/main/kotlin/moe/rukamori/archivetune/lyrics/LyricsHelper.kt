@@ -24,9 +24,9 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PaxsenixApiKeyKey
 import moe.rukamori.archivetune.constants.PaxsenixEndpointKey
-import moe.rukamori.archivetune.constants.PreferredLyricsProvider
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
+import moe.rukamori.archivetune.shared.domain.settings.orderLyricsProviders
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -208,7 +208,7 @@ class LyricsHelper
                 invalidateCache(cacheKey)
             } else {
                 singleLyricsCache.get(cacheKey)?.let { cached ->
-                    val cachedIsSelectable = cachedProviderIsSelectable(cached, mediaMetadata, prioritizeWordSynced)
+                    val cachedIsSelectable = cachedProviderIsSelectable(cached, mediaMetadata)
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
                     // When prioritizing word-synced lyrics, only honor the cache if the
                     // cached lyrics are themselves word-synced. Eligibility follows the same
@@ -232,7 +232,7 @@ class LyricsHelper
 
                 val cached =
                     cache.get(cacheKey)?.firstOrNull {
-                        cachedProviderIsSelectable(it, mediaMetadata, prioritizeWordSynced)
+                        cachedProviderIsSelectable(it, mediaMetadata)
                     }
                 if (cached != null) {
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
@@ -263,97 +263,17 @@ class LyricsHelper
                 return LyricsResult.Unavailable
             }
 
-            // When "Prioritize Word Synced Lyrics" is ON (and the caller isn't asking for the
-            // preferred provider only), first try to obtain word-synced lyrics from the three
-            // word-sync-capable providers (BetterLyrics, YouLyPlus, Unison).
-            if (prioritizeWordSynced) {
-                GlobalLog.append(
-                    Log.DEBUG,
-                    "LyricsHelper",
-                    "PrioritizeWordSynced=on: querying BetterLyrics/YouLyPlus/Unison for word-synced lyrics",
-                )
-                val wordSyncedResult = tryFetchWordSyncedFromPriorityProviders(mediaMetadata)
-                if (wordSyncedResult != null && isMeaningfulLyrics(wordSyncedResult.lyrics)) {
-                    GlobalLog.append(
-                        Log.DEBUG,
-                        "LyricsHelper",
-                        "Word-synced lyrics found via ${wordSyncedResult.providerName}",
-                    )
-                    singleLyricsCache.put(cacheKey, wordSyncedResult)
-                    return wordSyncedResult
-                }
-                GlobalLog.append(
-                    Log.DEBUG,
-                    "LyricsHelper",
-                    "No word-synced lyrics from priority providers, falling back to normal priority flow",
-                )
-            }
-
             val ordered =
                 orderedProviders()
-                    .filter { isLookupEligible(it, mediaMetadata, sweepActive = false) }
+                    .filter { isLookupEligible(it, mediaMetadata) }
             val providers = if (preferredProviderOnly) ordered.take(1) else ordered
 
-            val result = fetchPriorityLyricsResult(providers, mediaMetadata)
+            val result = fetchPriorityLyricsResult(providers, mediaMetadata, prioritizeWordSynced)
             if (isMeaningfulLyrics(result.lyrics)) {
                 singleLyricsCache.put(cacheKey, result)
             }
 
             return result
-        }
-
-        /**
-         * Queries the three word-sync-capable providers (BetterLyrics, YouLyPlus, Unison) IN
-         * PARALLEL and returns the first one whose response is actually word-synced (QRC/YRC/TTML
-         * with word-level timings).
-         */
-        private suspend fun tryFetchWordSyncedFromPriorityProviders(
-            mediaMetadata: MediaMetadata,
-        ): LyricsResult? {
-            // Fixed canonical order. This is independent of the user's provider
-            // priority order so the behaviour is predictable when the toggle is ON.
-            val wordSyncCapable: List<LyricsProvider> =
-                WORD_SYNC_PROVIDER_NAMES
-                    .mapNotNull { name -> baseProviders.firstOrNull { it.name == name } }
-                    .filter { isLookupEligible(it, mediaMetadata, sweepActive = true) }
-
-            val artist = mediaMetadata.artists.joinToString { it.name }
-            val results =
-                supervisorScope {
-                    wordSyncCapable
-                        .map { provider ->
-                            async(Dispatchers.IO) {
-                                val lyrics =
-                                    providerRequests.run(isExtension = false, timeoutMillis = WORD_SYNC_PROVIDER_TIMEOUT_MS) {
-                                        fetchProviderLyrics(provider, mediaMetadata, artist)
-                                    }?.lyrics
-                                if (lyrics == null) {
-                                    GlobalLog.append(
-                                        Log.DEBUG,
-                                        "LyricsHelper",
-                                        "${provider.name} returned no lyrics (timeout or error)",
-                                    )
-                                    null
-                                } else {
-                                    val isWordSynced = LyricsUtils.hasWordSyncedLyrics(lyrics)
-                                    GlobalLog.append(
-                                        Log.DEBUG,
-                                        "LyricsHelper",
-                                        "${provider.name} returned lyrics (word-synced=$isWordSynced, length=${lyrics.length})",
-                                    )
-                                    if (isWordSynced) provider.name to lyrics else null
-                                }
-                            }
-                        }.mapNotNull { it.await() }
-                }
-
-            if (results.isEmpty()) return null
-
-            // Walk results in canonical provider order (because `wordSyncCapable`
-            // is ordered) and return the first one. We already filtered out
-            // non-word-synced responses above, so every entry here is word-synced.
-            val first = results.first()
-            return LyricsResult(providerName = first.first, lyrics = first.second)
         }
 
         suspend fun getAllLyrics(
@@ -453,6 +373,7 @@ class LyricsHelper
         private suspend fun fetchPriorityLyricsResult(
             providers: List<LyricsProvider>,
             mediaMetadata: MediaMetadata,
+            prioritizeWordSynced: Boolean,
         ): LyricsResult {
             if (providers.isEmpty()) return LyricsResult.Unavailable
 
@@ -463,7 +384,10 @@ class LyricsHelper
                         .map { provider ->
                             async(Dispatchers.IO) {
                                 val fetch =
-                                    providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
+                                    providerRequests.run(
+                                        provider !in baseProviders,
+                                        if (prioritizeWordSynced) WORD_SYNC_PROVIDER_TIMEOUT_MS else PROVIDER_TIMEOUT_MS,
+                                    ) {
                                         fetchProviderLyrics(provider, mediaMetadata, artist)
                                     } ?: ProviderLyricsFetch.Failed
                                 provider to fetch
@@ -530,27 +454,10 @@ class LyricsHelper
         private suspend fun orderedProviders(): List<LyricsProvider> {
             providerOverrideForTests?.let { return it }
             val orderStr = context.dataStore.data.first()[LyricsProviderOrderKey]
-            val orderedEnums = deserializeLyricsProviderOrder(orderStr)
-            val providerMap: Map<PreferredLyricsProvider, LyricsProvider> =
-                mapOf(
-                    PreferredLyricsProvider.LRCLIB to LrcLibLyricsProvider,
-                    PreferredLyricsProvider.KUGOU to KuGouLyricsProvider,
-                    PreferredLyricsProvider.MEGALOBIZ to MegalobizLyricsProvider,
-                    PreferredLyricsProvider.BETTER_LYRICS to BetterLyricsProvider,
-                    PreferredLyricsProvider.BETTER_LYRICS_PORTATO to BetterLyricsPortatoProvider,
-                    PreferredLyricsProvider.YOULY_PLUS to YouLyPlusLyricsProvider,
-                    PreferredLyricsProvider.SIMPMUSIC to SimpMusicLyricsProvider,
-                    PreferredLyricsProvider.PAXSENIX_APPLE_MUSIC to PaxsenixAppleMusicLyricsProvider,
-                    PreferredLyricsProvider.APPLE_MUSIC to AppleMusicAccountLyricsProvider,
-                    PreferredLyricsProvider.TIDAL to TidalLyricsProvider,
-                    PreferredLyricsProvider.DEEZER to DeezerLyricsProvider,
-                    PreferredLyricsProvider.UNISON to UnisonLyricsProvider,
-                    PreferredLyricsProvider.LYPRIO to LyprioLyricsProvider,
-                    PreferredLyricsProvider.MUSIXMATCH_EXPERIMENTAL to MusixmatchExperimentalLyricsProvider,
-                )
-            val userOrdered = orderedEnums.mapNotNull { providerMap[it] }
-            val rest = baseProviders.filterNot { it in userOrdered }
-            val builtIn = userOrdered + rest
+            val builtIn = orderLyricsProviders(
+                baseProviders,
+                deserializeLyricsProviderOrder(orderStr).map { it.providerName },
+            ) { it.name }
             val extensions = moduleLyrics.providers
             return if (context.dataStore.getAsync(PreferLyricsExtensionsKey) == true) extensions + builtIn else builtIn + extensions
         }
@@ -560,26 +467,17 @@ class LyricsHelper
         private fun cachedProviderIsSelectable(
             cached: LyricsResult,
             mediaMetadata: MediaMetadata,
-            sweepActive: Boolean,
         ): Boolean {
             val provider = availableProviders.firstOrNull { it.name == cached.providerName } ?: return false
-            return isLookupEligible(provider, mediaMetadata, sweepActive)
+            return isLookupEligible(provider, mediaMetadata)
         }
 
-        /**
-         * One eligibility authority for the fetch path and its cache. [sweepActive] preserves the
-         * documented word-sync exception: the fixed sweep queries its three providers regardless of
-         * their fallback switches, so their answers must remain reusable in that lookup mode. Every
-         * other mode accepts only enabled providers, and a provider that cannot serve this media id
-         * is never eligible.
-         */
         private fun isLookupEligible(
             provider: LyricsProvider,
             mediaMetadata: MediaMetadata,
-            sweepActive: Boolean,
         ): Boolean {
             if (!supportsMediaId(provider, mediaMetadata.id)) return false
-            return (sweepActive && provider.name in WORD_SYNC_PROVIDER_NAMES) || provider.isEnabled(context)
+            return provider.isEnabled(context)
         }
 
         private fun cachedProviderIsEnabled(cached: LyricsResult): Boolean =
@@ -628,10 +526,6 @@ class LyricsHelper
             // against, so a session that plays through a large library cannot grow this map
             // without bound.
             private const val MAX_WORD_SYNCED_UPGRADE_ATTEMPTS = 64
-
-            // The fixed sweep order. The sweep deliberately ignores these providers' fallback
-            // switches, so cache revalidation must accept their answers in the same lookup mode.
-            private val WORD_SYNC_PROVIDER_NAMES = listOf("BetterLyrics", "YouLyPlus", "Unison")
 
             // Per-provider hard timeout for the normal priority flow. Provider calls
             // that exceed this are cancelled and dropped from ranking. Tuned to be

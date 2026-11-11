@@ -11,6 +11,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import moe.rukamori.archivetune.constants.EnableAppleMusicLyricsKey
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -48,6 +49,7 @@ object AppleMusicAccountLyricsProvider : LyricsProvider {
     override val name = "Apple Music"
 
     override fun isEnabled(context: Context): Boolean {
+        if (context.dataStore[EnableAppleMusicLyricsKey] == false) return false
         // Enabled when the user pasted a Media-User-Token (0.Ap…) OR a shared pool account is
         // available. The dev JWT is optional: without one the web player token is scraped.
         val token = context.dataStore[AppleMusicMediaUserTokenKey]?.trim().orEmpty()
