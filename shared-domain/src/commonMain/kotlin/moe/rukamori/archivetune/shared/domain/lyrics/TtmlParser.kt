@@ -48,6 +48,12 @@ internal object TtmlParser {
             emptyList()
         }
 
+    fun readDocument(ttml: String): Pair<List<ParsedLine>, LyricsCredits> {
+        val doc = try { XmlTreeParser.parse(ttml) } catch (_: Exception) { return emptyList<ParsedLine>() to LyricsCredits() }
+        val lines = try { parseDocument(doc).sortedBy { it.startTime } } catch (_: Exception) { emptyList() }
+        return lines to readCredits(doc)
+    }
+
     /** The document-level credits: declared writers and whether translations/transliterations are machine-made. */
     fun parseCredits(ttml: String): LyricsCredits =
         try {

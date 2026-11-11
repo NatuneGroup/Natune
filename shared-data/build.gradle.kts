@@ -46,6 +46,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared-domain"))
+            implementation(project(":shared-core"))
             implementation(libs.kotlinx.coroutines.core)
             // Provider clients take an injected HttpClient; the host supplies the engine.
             implementation(libs.ktor.client.core)

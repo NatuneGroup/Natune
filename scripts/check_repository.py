@@ -21,7 +21,7 @@ POLICY = "quality/repository-policy.json"
 VENDORED = ("third_party/", "native/", "audio/", "app/src/main/java/org/drinkless/")
 HEADER_MARKER = "GPL-3.0 License | Contributors: see git history"
 # The KMP modules carry no per-file license banner; their lineage and credits live in docs/CREDITS.md.
-KMP_MODULES = ("shared/", "shared-domain/", "shared-data/", "shared-ui/", "desktopApp/", "iosApp/")
+KMP_MODULES = ("shared/", "shared-domain/", "shared-core/", "shared-data/", "shared-ui/", "desktopApp/", "iosApp/")
 
 
 def git(*args: str) -> bytes:
