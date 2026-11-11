@@ -677,7 +677,7 @@ class SyncUtils internal constructor(
                     .onSuccess { page ->
                         val removeMissing = authoritative && page.complete
                         if (!isSyncStillEnabled(gen)) return@onSuccess
-                        cleanupDuplicatePlaylists()
+                        if (page.complete) cleanupDuplicatePlaylists()
                         val remotePlaylists =
                             page.items
                                 .filterIsInstance<PlaylistItem>()
