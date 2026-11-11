@@ -87,9 +87,7 @@ import moe.rukamori.archivetune.ui.player.LocalVideoPreferredHeight
 import moe.rukamori.archivetune.ui.player.LocalVideoOnPreferredHeightChange
 import moe.rukamori.archivetune.ui.player.LocalVideoAvailableHeights
 import moe.rukamori.archivetune.ui.player.LocalVideoSelectedHeight
-import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
-import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
@@ -200,29 +198,6 @@ fun LooperPlayerContent(
                             tint = Color.White,
                             modifier = Modifier.size(22.dp),
                         )
-                    }
-
-                    val looperQuality = remember(currentFormat) { currentFormat?.streamQuality() }
-                    if (looperQuality != null && LocalPlayerPresentation.current.showCodec) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .border(
-                                        width = 0.5.dp,
-                                        color = Color.White.copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(20.dp),
-                                    ).background(
-                                        color = Color.White.copy(alpha = 0.08f),
-                                        shape = RoundedCornerShape(20.dp),
-                                    ).padding(horizontal = 10.dp, vertical = 3.dp),
-                        ) {
-                            Text(
-                                text = looperQuality.label(),
-                                style = LooperTypography.labelSmall,
-                                color = Color.White.copy(alpha = 0.7f),
-                                maxLines = 1,
-                            )
-                        }
                     }
 
                     Box(
@@ -373,6 +348,7 @@ fun LooperPlayerContent(
                     isPlaying = isPlaying,
                     scrubPosition = sliderPosition,
                     accentColor = accentColor,
+                    currentFormat = currentFormat,
                     onSeek = onSeek,
                     onSeekFinished = { onSeekFinished() },
                     modifier = Modifier.padding(horizontal = 12.dp),

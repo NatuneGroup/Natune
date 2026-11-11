@@ -125,10 +125,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -190,8 +187,7 @@ import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.ui.player.label
-import moe.rukamori.archivetune.ui.player.streamQuality
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -1382,11 +1378,6 @@ fun FlamingoPlayerContent(
                                                 showControl.value = true
                                                 lastClickTime.longValue = System.currentTimeMillis()
                                             },
-                                            onQualityClick = {
-                                                bottomSheetPageState.show {
-                                                    ShowMediaInfo(mediaMetadata.id)
-                                                }
-                                            },
                                             onSliderValueChange = onSliderValueChange,
                                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                                             modifier = Modifier
@@ -1832,11 +1823,6 @@ fun FlamingoPlayerContent(
                                                 onSlider = {
                                                     showControl.value = true
                                                     lastClickTime.longValue = System.currentTimeMillis()
-                                                },
-                                                onQualityClick = {
-                                                    bottomSheetPageState.show {
-                                                        ShowMediaInfo(mediaMetadata.id)
-                                                    }
                                                 },
                                                 onSliderValueChange = onSliderValueChange,
                                                 onSliderValueChangeFinished = onSliderValueChangeFinished,
@@ -3970,7 +3956,6 @@ private fun FlamingoPlayerControl(
     onLyrics: () -> Unit,
     onPlaylist: () -> Unit,
     onSlider: () -> Unit,
-    onQualityClick: () -> Unit = {},
     onSliderValueChange: (Long) -> Unit,
     onSliderValueChangeFinished: () -> Unit,
     modifier: Modifier,
@@ -4126,10 +4111,7 @@ private fun FlamingoPlayerControl(
                             )
                         }
 
-                        if (LocalPlayerPresentation.current.showCodec) FlamingoQualityIndicator(
-                            currentFormat = currentFormat,
-                            onQualityClick = onQualityClick,
-                        )
+                        StreamQualityBadge(format = currentFormat)
                     }
 
                     Box(
@@ -4498,75 +4480,5 @@ private fun FlamingoTrack(
             }
         }
         MixTrackSheen(visible = mixing, color = activeTrackColor, height = height)
-    }
-}
-
-@Composable
-private fun FlamingoQualityIndicator(
-    currentFormat: FormatEntity?,
-    onQualityClick: () -> Unit = {},
-) {
-    if (currentFormat == null) return
-
-    val quality = currentFormat.streamQuality()
-    val isLossless = quality.isLossless
-    val text = quality.label()
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(20.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onQualityClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .overlayEffect()
-                .background(
-                    color = Color(0x14FFFFFF),
-                    shape = FlamingoSmoothCornerShape(5.dp),
-                )
-                .height(20.dp)
-                .padding(horizontal = 7.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (isLossless) {
-                            R.drawable.flamingo_quality_lossless
-                        } else {
-                            R.drawable.player_graphic_eq
-                        },
-                    ),
-                    contentDescription = "quality_badge",
-                    modifier = Modifier
-                        .height(if (isLossless) 9.dp else 10.dp)
-                        .alpha(0.45f),
-                )
-                Spacer(modifier = Modifier.width(5.dp))
-
-                AnimatedContent(
-                    targetState = text,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                ) { thisText ->
-                    Text(
-                        text = thisText,
-                        modifier = Modifier.alpha(0.45f),
-                        fontSize = 11.sp,
-                        lineHeight = 11.sp,
-                    )
-                }
-            }
-        }
     }
 }

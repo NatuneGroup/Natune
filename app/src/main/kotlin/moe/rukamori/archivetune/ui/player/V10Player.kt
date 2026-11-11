@@ -188,6 +188,7 @@ fun V10PlayerContent(
     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
     val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
     val liked = currentSong?.song?.liked == true
     val onToggleLike = playerConnection::toggleLike
     val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
@@ -495,19 +496,26 @@ fun V10PlayerContent(
                         )
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        ) {
                             Text(
                                 text = formatEditorialTime(displayedProgress.coerceAtLeast(0L)),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = accent.copy(alpha = 0.8f)
                             )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        StreamQualityBadge(
+                            format = currentFormat,
+                            modifier = Modifier.align(Alignment.Center),
+                            contentColor = accent
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
                             Text(
                                 text = formatEditorialTime(duration.coerceAtLeast(0L)),
                                 style = MaterialTheme.typography.labelMedium,

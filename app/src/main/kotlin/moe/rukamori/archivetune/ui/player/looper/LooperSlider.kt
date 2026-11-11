@@ -12,9 +12,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +26,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -42,6 +42,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import java.util.Locale
 import kotlin.math.sin
+import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.utils.makeTimeString
 
 private val LooperTrackHeight = 8.dp
@@ -56,6 +58,7 @@ internal fun LooperExpressiveSlider(
     isPlaying: Boolean,
     scrubPosition: Long?,
     accentColor: Color,
+    currentFormat: FormatEntity?,
     onSeek: (Long) -> Unit,
     onSeekFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -194,22 +197,24 @@ internal fun LooperExpressiveSlider(
 
         Spacer(Modifier.height(8.dp))
 
-        Row(
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 3.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = makeTimeString(displayPosition),
                 style = LooperTypography.labelMedium,
                 color = Color.White,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
+            StreamQualityBadge(format = currentFormat, modifier = Modifier.align(Alignment.Center))
             Text(
                 text = String.format(Locale.ROOT, "-%s", makeTimeString(safeDuration - displayPosition)),
                 style = LooperTypography.labelMedium,
                 color = Color.White,
+                modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
     }

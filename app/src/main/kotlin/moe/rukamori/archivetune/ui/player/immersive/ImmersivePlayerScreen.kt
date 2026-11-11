@@ -85,8 +85,8 @@ import moe.rukamori.archivetune.ui.component.ListDialog
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
-import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
@@ -269,7 +269,6 @@ private fun ImmersivePortrait(
                         bottom = contentBottomPadding + 10.dp,
                     ),
         ) {
-            FormatSeam(if (showCodecOnPlayer) model.formatDetails else "")
             Spacer(modifier = Modifier.height(52.dp))
             MetadataRow(
                 title = model.title,
@@ -357,7 +356,6 @@ private fun ImmersiveLandscape(
                         bottom = contentBottomPadding + 18.dp,
                     ),
         ) {
-            FormatSeam(if (showCodecOnPlayer) model.formatDetails else "")
             Spacer(modifier = Modifier.height(22.dp))
             MetadataRow(
                 title = model.title,
@@ -564,19 +562,6 @@ private fun SourceLabel(
 }
 
 @Composable
-private fun FormatSeam(formatDetails: String) {
-    if (formatDetails.isBlank()) return
-    Text(
-        text = formatDetails,
-        color = ImmersiveSecondaryContentColor,
-        style = MaterialTheme.typography.labelMedium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
 private fun MetadataRow(
     title: String,
     artists: List<ImmersivePlayerArtist>,
@@ -664,11 +649,11 @@ private fun ProgressSection(
                 tint = ImmersiveContentColor,
                 modifier = Modifier.size(17.dp),
             )
-            Text(
-                text = quality.label(),
-                color = ImmersiveContentColor,
-                style = MaterialTheme.typography.labelLarge,
+            StreamQualityBadge(
+                quality = quality,
+                mediaId = model.mediaId,
                 modifier = Modifier.padding(start = 5.dp),
+                contentColor = ImmersiveContentColor,
             )
             Spacer(modifier = Modifier.weight(1f))
         }

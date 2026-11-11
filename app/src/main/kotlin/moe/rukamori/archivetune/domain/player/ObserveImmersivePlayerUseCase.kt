@@ -11,9 +11,6 @@ package moe.rukamori.archivetune.domain.player
 import androidx.media3.common.Player
 import kotlinx.coroutines.flow.Flow
 import moe.rukamori.archivetune.canvas.CanvasVideo
-import moe.rukamori.archivetune.db.entities.containerLabel
-import moe.rukamori.archivetune.db.entities.formattedBitrate
-import moe.rukamori.archivetune.db.entities.formattedSampleRate
 import moe.rukamori.archivetune.playback.ImmersivePlayerData
 import moe.rukamori.archivetune.playback.ImmersivePlayerRepository
 import moe.rukamori.archivetune.ui.player.immersive.ImmersivePlayerArtist
@@ -28,14 +25,6 @@ class ObserveImmersivePlayerUseCase @Inject constructor(
 
     fun map(data: ImmersivePlayerData, canvas: CanvasVideo? = null): ImmersivePlayerUiModel {
         val metadata = data.metadata
-        val formatDetails =
-            data.format?.let { format ->
-                listOfNotNull(
-                    format.containerLabel().takeIf(String::isNotBlank),
-                    format.formattedSampleRate(),
-                    format.formattedBitrate(),
-                ).joinToString(separator = " · ")
-            }.orEmpty()
         return ImmersivePlayerUiModel(
             mediaId = metadata.id,
             title = metadata.title,
@@ -49,7 +38,6 @@ class ObserveImmersivePlayerUseCase @Inject constructor(
             canSkipPrevious = data.canSkipPrevious,
             canSkipNext = data.canSkipNext,
             isLiked = data.song?.song?.liked == true,
-            formatDetails = formatDetails,
             streamQuality = data.format?.streamQuality(),
             outputDevice = data.outputDevice,
             canvas = canvas,
