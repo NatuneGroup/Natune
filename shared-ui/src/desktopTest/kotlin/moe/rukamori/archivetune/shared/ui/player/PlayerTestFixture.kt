@@ -23,7 +23,8 @@ internal class PlayerTestActions {
     val callbacks=PlayerActions({ plays++ },seeks::add,selected::add,{},actions::add,visibility::add)
 }
 
-internal fun playerSlots() = PlayerSlots(
+internal fun playerSlots(lyricsStatus: PlayerLyricsStatus? = null) = PlayerSlots(
+    lyricsStatus = lyricsStatus,
     artwork={ id,modifier -> Box(modifier.background(if(id=="track@0") Color.Red else Color(0xff2798aa)).testTag("artwork-$id")) },
     canvas={ _,active,modifier -> Box(modifier.background(Color.Magenta).testTag("canvas-$active")) },
     customBackground={ uri,modifier -> Box(modifier.background(Color.Yellow).testTag("custom-$uri")) },

@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension
 import org.gradle.api.plugins.ExtensionAware
 
@@ -69,6 +70,9 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
         }
+        iosTest.dependencies {
+            implementation(libs.compose.multiplatform.ui.test)
+        }
         getByName("desktopTest").dependencies {
             implementation(libs.coroutines.test)
             implementation(libs.compose.multiplatform.ui.test)
@@ -95,6 +99,13 @@ compose.resources {
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
 // invocation, because a cached result would skip the capture that the evidence relies on.
 tasks.named<Test>("desktopTest") {
+    // The full platform audit is manual evidence, not part of the default CI suite.
+    if (providers.gradleProperty("natune.renderAudit").orNull != "true") {
+        exclude("**/PlatformRenderTest*")
+    }
+    systemProperty("java.awt.headless", "true")
+    systemProperty("natune.renderDir", providers.gradleProperty("natune.renderDir")
+        .getOrElse(rootProject.layout.projectDirectory.dir("outputs/ui-renders").asFile.absolutePath))
     systemProperty(
         "archivetune.screenshotDir",
         rootProject.layout.projectDirectory.dir("outputs/screenshots").asFile.absolutePath,
@@ -118,3 +129,17 @@ compose.resources.customDirectory(
 )
 // androidMain aggregates commonMain's declared dir through the hierarchy; a leaf declaration
 // pointing at the same directory duplicates every entry and fails the assets copy.
+
+// Opt-in simulator images use the native iOS renderer and the same read-only fixtures as desktop.
+tasks.withType<KotlinNativeSimulatorTest>().configureEach {
+    if (providers.gradleProperty("natune.renderAudit").orNull == "true") {
+        providers.environmentVariable("NATUNE_SIMULATOR_DEVICE_ID").orNull?.let { device.set(it) }
+        val directory = providers.gradleProperty("natune.renderDir")
+            .getOrElse(rootProject.layout.projectDirectory.dir("outputs/ui-renders/ios-native").asFile.absolutePath)
+        // simctl forwards only SIMCTL_CHILD_* variables into its spawned process.
+        environment("SIMCTL_CHILD_NATUNE_RENDER_DIR", directory)
+        outputs.upToDateWhen { false }
+    } else {
+        filter.excludeTestsMatching("*IosPlatformRenderTest*")
+    }
+}

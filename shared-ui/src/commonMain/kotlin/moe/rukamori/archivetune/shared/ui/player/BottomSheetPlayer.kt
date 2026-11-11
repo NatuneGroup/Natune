@@ -72,6 +72,8 @@ fun BottomSheetPlayer(
     interaction: PlayerInteractionState = remember { PlayerInteractionState() },
 ) {
     val presentation=preferences.playerPreferences()
+    val phonePresentation=moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+    val horizontalPadding=if(phonePresentation && presentation.style==PlayerDesignStyle.V4) 32.dp else 20.dp
     val motionLevel=rememberPlayerMotionLevel(!state.reducedMotion && state.active && !preferences[DisableAnimationsKey, false])
     val artworkPager=rememberPlayerArtworkPager(state,actions,motionLevel.moves)
     LaunchedEffect(state.playback?.occurrenceId,state.playback?.playbackGeneration,state.playback?.discontinuityGeneration) {
@@ -88,9 +90,11 @@ fun BottomSheetPlayer(
         val styleLandscape=landscape && !desktop
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
-        val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
+        val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),
+            visible=surfaces.background || interaction.fullscreenLyrics && state.active)
         val handoff=rememberPlayerHandoff(state,optical.motion && motionLevel.moves)
         val content=slots(preferences,surfaces).withHandoff(handoff).withTrackMotion(motionLevel.takeIf { surfaces.artwork } ?: PlayerMotionLevel.None)
+        // The visible surface, including fullscreen lyrics chrome and backdrop, shares the optical motion policy.
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical,
             LocalSystemReducedMotion.current, motionLevel.takeIf { optical.motion } ?: PlayerMotionLevel.None)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
@@ -99,19 +103,21 @@ fun BottomSheetPlayer(
             visibilityCallback(showingLyrics)
             onDispose { visibilityCallback(false) }
         }
-        val forceDark=presentation.style.capabilities.monochrome ||
-            presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
+        val forceDark=if(interaction.fullscreenLyrics) presentation.effectiveLyricsBackground() != "FOLLOW_THEME"
+            else presentation.style.capabilities.monochrome ||
+                presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
         MaterialTheme(colorScheme=if(forceDark) darkColorScheme() else MaterialTheme.colorScheme) {
             CompositionLocalProvider(
                 LocalPlayerTrackMotion provides rememberPlayerTrackMotion(state.displayedOccurrenceId, state.occurrenceIds, motionLevel),
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat, c.fadeActive),
+                LocalPlayerGlyphStyle provides presentation.style,
             ) {
                 // The expansion surface paints edge to edge: its background fills the whole window, including the
                 // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.
                 // A host with no measured safe area (Android, desktop) gets an inset of zero and this is unchanged.
                 Box(Modifier.fillMaxSize().testTag("player-${presentation.style.name}-${if(landscape) "landscape" else "portrait"}")) {
-                    PlayerBackground(c)
+                    if (interaction.fullscreenLyrics) PlayerLyricsBackground(c) else PlayerBackground(c)
                     Box(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current)) {
                     if(interaction.fullscreenLyrics) {
                         FullscreenLyricsChrome(c)
@@ -150,25 +156,35 @@ fun BottomSheetPlayer(
                             }
                         }
                     } else {
-                        Box(Modifier.fillMaxSize().padding(top=48.dp).padding(horizontal=20.dp,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        val cinematicPhone = phonePresentation && presentation.style == PlayerDesignStyle.V4
+                        if (!(phonePresentation && interaction.panel == PlayerPanel.QUEUE)) {
+                            Box(Modifier.fillMaxSize().padding(top=if(cinematicPhone) 0.dp else 48.dp).padding(horizontal=horizontalPadding,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        }
                         val overlayPanel=interaction.panel.takeIf {
                             it!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO
                         }
+                        // The phone queue draws its own sheet chrome edge to edge; every other panel sits below the close control.
+                        val panelSurface=Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                        val panelInset=Modifier.padding(top=48.dp).padding(16.dp)
                         if(presentation.style==PlayerDesignStyle.SPATIALFLOW) {
                             // SpatialFlow reveals its own panel.
-                            if(overlayPanel!=null) SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
+                            if(overlayPanel!=null) SelectedPlayerPanel(c,panelSurface
+                                .then(if(phonePresentation && overlayPanel==PlayerPanel.QUEUE) Modifier else panelInset))
                         } else {
                             PlayerPanelTransition(overlayPanel,c.motionLevel) { panel ->
-                                SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp),panel)
+                                SelectedPlayerPanel(c,panelSurface
+                                    .then(if(phonePresentation && panel==PlayerPanel.QUEUE) Modifier else panelInset),panel)
                             }
                         }
                     }
-                    // Every phone/tablet style shares this hit target above artwork and panels.
+                    // Cinematic artwork and the phone queue own their header controls; other surfaces share this one.
                     // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
-                    if (!desktop && !interaction.fullscreenLyrics) {
+                    if (!desktop && !interaction.fullscreenLyrics &&
+                        !(phonePresentation && !landscape && (interaction.panel == PlayerPanel.QUEUE ||
+                            presentation.style == PlayerDesignStyle.V4 && interaction.panel == PlayerPanel.ARTWORK))) {
                         PlayerIcon(
                             if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) PlayerSymbol.DOWN else PlayerSymbol.BACK,
-                            stringResource(Res.string.m5_back),
+                            stringResource(if (phonePresentation) Res.string.m5_collapse else Res.string.m5_back),
                             { actions.onAction(PlayerAction.COLLAPSE) },
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
                                 .testTag("player-close"),
@@ -191,6 +207,17 @@ private fun SelectedPlayerPanel(c: PlayerRenderContext,modifier: Modifier,panel:
 /** [panel] is the one to draw; it differs from the interaction's while a closing panel animates out. */
 @Composable
 internal fun PlayerSidePanel(c: PlayerRenderContext,modifier: Modifier,panel: PlayerPanel=c.interaction.panel) {
+    if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current && !c.landscape &&
+        panel == PlayerPanel.QUEUE) {
+        CompositionLocalProvider(moe.rukamori.archivetune.shared.ui.queue.LocalPhoneQueuePlayerActions provides
+            moe.rukamori.archivetune.shared.ui.queue.PhoneQueuePlayerActions(c.state.displayedOccurrenceId, c.state.liked,
+                if (PlayerAction.LIKE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.LIKE) } } else null,
+                if (PlayerAction.MORE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.MORE) } } else null,
+                onClose = { c.interaction.panel = PlayerPanel.ARTWORK })) {
+            c.slots.queue(modifier)
+        }
+        return
+    }
     Column(modifier.testTag("player-side-panel")) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ c.interaction.panel=PlayerPanel.ARTWORK })

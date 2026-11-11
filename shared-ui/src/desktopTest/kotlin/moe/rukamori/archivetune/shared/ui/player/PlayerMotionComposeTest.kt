@@ -28,6 +28,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.PlayerBackgroundStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.DisableAnimationsKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.desktop.DesktopExpandedPlayerTransition
@@ -38,8 +39,9 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class PlayerMotionComposeTest {
-    @Test fun hiddenPlayerStopsMotionAndCrossfadesUntilItsSurfaceReturns() = runComposeUiTest {
+    @Test fun fullscreenLyricsKeepsMotionWhileOccludedPlayerPanelsStopIt() = runComposeUiTest {
         val interaction = PlayerInteractionState()
+        var disabled by mutableStateOf(false)
         val slots = playerSlots()
         val callbacks = PlayerTestActions().callbacks
         lateinit var environment: PlayerControlMotionEnvironment
@@ -49,7 +51,8 @@ class PlayerMotionComposeTest {
                 Box(Modifier.requiredSize(400.dp, 740.dp)) {
                     BottomSheetPlayer(
                         playerFixture().copy(reducedMotion = false), callbacks,
-                        PreferenceSnapshot.of(PlayerDesignStyleKey to "V2", PlayerBackgroundStyleKey to "CUSTOM"),
+                        PreferenceSnapshot.of(PlayerDesignStyleKey to "V2", PlayerBackgroundStyleKey to "CUSTOM",
+                            DisableAnimationsKey to disabled),
                         PlayerSlots(
                             artwork = slots.artwork, canvas = slots.canvas,
                             customBackground = { _, modifier ->
@@ -66,7 +69,13 @@ class PlayerMotionComposeTest {
         runOnIdle { assertTrue(environment.active); assertTrue(environment.fades) }
         runOnIdle { interaction.fullscreenLyrics = true }
         mainClock.advanceTimeByFrame()
+        runOnIdle { assertTrue(environment.active); assertTrue(environment.fades) }
+        runOnIdle { disabled = true }
+        mainClock.advanceTimeByFrame()
         runOnIdle { assertFalse(environment.active); assertFalse(environment.fades) }
+        runOnIdle { disabled = false }
+        mainClock.advanceTimeByFrame()
+        runOnIdle { assertTrue(environment.active); assertTrue(environment.fades) }
         for (panel in listOf(PlayerPanel.LYRICS, PlayerPanel.QUEUE)) {
             runOnIdle { interaction.fullscreenLyrics = false; interaction.panel = panel }
             mainClock.advanceTimeByFrame()

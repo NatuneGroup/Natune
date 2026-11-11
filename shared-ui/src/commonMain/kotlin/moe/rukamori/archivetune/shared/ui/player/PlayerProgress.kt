@@ -12,6 +12,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -69,7 +70,8 @@ internal fun PlayerSeekSlider(
     onPreview: (Float) -> Unit,
     onCommit: () -> Unit,
     modifier: Modifier = Modifier,
-    track: (@Composable () -> Unit)? = null,
+    thumb: (@Composable (Modifier) -> Unit)? = null,
+    track: (@Composable (SliderState) -> Unit)? = null,
 ) {
     val dragging by source.collectIsDraggedAsState()
     val scale = animateFloatAsState(if (dragging && enabled) PlayerMotionSpecs.DragThumbScale else 1f,
@@ -78,9 +80,10 @@ internal fun PlayerSeekSlider(
         value = progress.fraction(duration), onValueChange = onPreview, onValueChangeFinished = onCommit,
         enabled = enabled, interactionSource = source, modifier = modifier,
         thumb = {
-            Box(Modifier.size(20.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            val scaled = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            if (thumb != null) thumb(scaled) else Box(Modifier.size(20.dp).then(scaled)
                 .background(if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f), CircleShape))
         },
-        track = { state -> if (track != null) track() else SliderDefaults.Track(state) },
+        track = { state -> if (track != null) track(state) else SliderDefaults.Track(state) },
     )
 }
