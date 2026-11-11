@@ -12,6 +12,7 @@ class BackupRestoreArchiveTest {
     private val stream = StringPreferenceKey("spotifyStreamSpDc")
     private val pool = StringPreferenceKey("poolTidalAccounts")
     private val device = StringPreferenceKey("scheduledBackupDirectoryUri")
+    private fun libraryFixture(): ByteArray = javaClass.getResourceAsStream("/fixtures/schema36-synthetic-song.db")!!.use { it.readBytes() }
     private fun snapshot() = PreferenceSnapshot.of(style to "FLAMINGO", catalog to "catalog-fixture",
         stream to "stream-fixture", pool to "pool-fixture", device to "device-only")
 
@@ -41,13 +42,20 @@ class BackupRestoreArchiveTest {
     }
     @Test fun newXmlArchivesNeverContainSecretsEvenWhenAccountIsSelected() {
         for (selected in listOf(setOf(BackupCategory.SETTINGS), BackupCategory.entries.toSet(), setOf(BackupCategory.ACCOUNT))) {
-            val archive = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), selected)
+            val library = if (BackupCategory.LIBRARY in selected) mapOf("song.db" to libraryFixture()) else emptyMap()
+            val archive = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), selected, library)
             assertCredentialFreePayload(archive)
             ZipInputStream(archive.inputStream()).use { zip ->
                 assertEquals("settings.xml", zip.nextEntry.name)
                 val xml = zip.readBytes()
                 assertCredentialFreePayload(xml)
                 if (BackupCategory.SETTINGS in selected) assertTrue(xml.decodeToString().contains("dark"))
+                if (BackupCategory.LIBRARY in selected) {
+                    assertEquals("song.db", zip.nextEntry.name)
+                    val database = zip.readBytes()
+                    assertContentEquals(libraryFixture(), database)
+                    assertCredentialFreePayload(database)
+                }
                 assertNull(zip.nextEntry)
             }
         }
@@ -67,8 +75,9 @@ class BackupRestoreArchiveTest {
                     override suspend fun libraryFiles(): Map<String, ByteArray> = error("Unused")
                     override suspend fun fontFiles(): Map<String, ByteArray> = error("Unused")
                 })
-            val fresh = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), BackupCategory.entries.toSet())
-            assertEquals(setOf(moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory.SETTINGS), gateway.inspect(fresh).categories)
+            val fresh = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), BackupCategory.entries.toSet(), mapOf("song.db" to libraryFixture()))
+            assertEquals(setOf(moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory.LIBRARY,
+                moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory.SETTINGS), gateway.inspect(fresh).categories)
             val legacy = zip("settings.xml" to """<ArchiveTuneBackup><Settings>
                 <string name="spotify_sp_dc" value="legacy-cookie"/>
                 </Settings></ArchiveTuneBackup>""".toByteArray())
