@@ -172,6 +172,7 @@ fun SettingsPage(
                                             text = stringResource(it),
                                             active = visible && resumed && motionEnabled,
                                             phaseKey = row.anchor,
+                                            fade = reference == null,
                                         )
                                     }
                                 }
@@ -180,6 +181,7 @@ fun SettingsPage(
                                     text = stringResource(description),
                                     active = visible && resumed && motionEnabled,
                                     phaseKey = row.anchor,
+                                    fade = reference == null,
                                 )
                             } else if (row is SettingsRow.IntChoice) {
                                 val stored = preferences[row.key, row.default]

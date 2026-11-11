@@ -236,7 +236,13 @@ fun SettingsMarqueeText(
     color: Color = Color.Unspecified,
     fontWeight: FontWeight? = null,
     phaseKey: Any? = null,
+    fade: Boolean = true,
 ) {
+    if (!active && !fade) {
+        Text(text, modifier, color = color, style = style, fontWeight = fontWeight,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
     MarqueeText(
         text = text,
         modifier = modifier,
@@ -245,6 +251,7 @@ fun SettingsMarqueeText(
         fontWeight = fontWeight,
         active = active,
         phaseKey = phaseKey,
+        fade = fade,
         iterations = SETTINGS_MARQUEE_PASSES,
         initialDelayMs = SETTINGS_MARQUEE_DELAY_MS,
         restMs = SETTINGS_MARQUEE_DELAY_MS,
