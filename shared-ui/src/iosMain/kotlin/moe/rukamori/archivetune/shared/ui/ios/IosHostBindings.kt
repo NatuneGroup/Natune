@@ -333,6 +333,7 @@ private fun iosPlayerSlots(
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },
         outputButton = { modifier, tint, enabled -> IosAudioRoutePicker(modifier, tint, enabled) },
+        lyricsStatus = document?.let { moe.rukamori.archivetune.shared.ui.player.PlayerLyricsStatus(it.occurrenceId, it.hasLines) },
     )
 }
 

@@ -119,6 +119,8 @@ internal fun MusicPlayerController.togglePlayPause(displayedPlayback: PlaybackSn
  * controller, preference store or navigation stack is created by a player look.
  * [canvas] must suspend decoding when its active argument is false.
  */
+data class PlayerLyricsStatus(val occurrenceId: String, val hasLyrics: Boolean)
+
 class PlayerSlots(
     val artwork: @Composable (occurrenceId: String?, modifier: Modifier) -> Unit,
     val canvas: @Composable (occurrenceId: String?, active: Boolean, modifier: Modifier) -> Unit,
@@ -128,4 +130,5 @@ class PlayerSlots(
     val queue: @Composable (modifier: Modifier) -> Unit,
     /** A native route control when the host supplies one; other hosts retain their existing OUTPUT action. */
     val outputButton: (@Composable (modifier: Modifier, tint: Color, enabled: Boolean) -> Unit)? = null,
+    val lyricsStatus: PlayerLyricsStatus? = null,
 )

@@ -19,15 +19,17 @@ class FullscreenLyricsChromeTest {
         val interaction = PlayerInteractionState().apply { fullscreenLyrics = true; panel = PlayerPanel.LYRICS }
         var background by mutableStateOf(PlayerBackgroundStyle.DEFAULT)
         var volumeVisible by mutableStateOf(true)
+        var lyricsBackground by mutableStateOf("DEFAULT")
         var volume = 0f
         val actions = PlayerActions(callbacks.callbacks.playPause, callbacks.callbacks.seekTo, {},
             { volume = it }, callbacks.callbacks.onAction, {})
         setContent {
             MaterialTheme {
                 Box(Modifier.requiredSize(393.dp, 740.dp)) {
-                    BottomSheetPlayer(playerFixture(), actions,
+                    BottomSheetPlayer(playerFixture().copy(formatLabel = "Lossless", formatLossless = true), actions,
                         PreferenceSnapshot.of(PlayerBackgroundStyleKey to background.name, PlayerCustomImageUriKey to "fixture",
-                            ShowPlayerVolumeBarKey to volumeVisible), playerSlots(), false, interaction = interaction)
+                            LyricsBackgroundStyleKey to lyricsBackground, ShowPlayerVolumeBarKey to volumeVisible),
+                        playerSlots(PlayerLyricsStatus("track@1", false)), false, interaction = interaction)
                 }
             }
         }
@@ -36,6 +38,15 @@ class FullscreenLyricsChromeTest {
             onNodeWithTag("lyrics-owner-slot").assertExists()
             onNodeWithTag("fullscreen-lyrics-transport").assertIsDisplayed()
             onNodeWithTag("fullscreen-lyrics-footer").assertIsDisplayed()
+            onNodeWithText("Lossless").assertIsDisplayed()
+            onNodeWithText("Lyrics not found").assertIsDisplayed()
+            if (look == PlayerBackgroundStyle.CUSTOM) onNodeWithTag("custom-fixture").assertExists()
+        }
+        runOnIdle { background = PlayerBackgroundStyle.DEFAULT }
+        for (mode in listOf("DEFAULT", "FOLLOW_THEME", "COLORING", "MOVING_BLUR")) {
+            runOnIdle { lyricsBackground = mode }
+            onNodeWithTag("lyrics-background-$mode").assertIsDisplayed()
+            onNodeWithTag("lyrics-owner-slot").assertExists()
         }
         onNodeWithContentDescription("Previous track").performClick()
         onNodeWithContentDescription("Pause").performClick()
@@ -54,5 +65,14 @@ class FullscreenLyricsChromeTest {
         onNodeWithContentDescription("Like").assertDoesNotExist()
         onNodeWithContentDescription("Back to player").performClick()
         runOnIdle { assertFalse(interaction.fullscreenLyrics); assertEquals(PlayerPanel.LYRICS, interaction.panel) }
+    }
+
+    @Test fun savedLyricsModesResolveCustomBackgroundAndKeepFollowThemeExplicit() {
+        for (mode in listOf("DEFAULT", "FOLLOW_THEME", "COLORING", "MOVING_BLUR")) {
+            val preferences = PreferenceSnapshot.of(LyricsBackgroundStyleKey to mode).playerPreferences()
+            assertEquals(mode, preferences.effectiveLyricsBackground())
+            assertEquals("CUSTOM", preferences.copy(background = PlayerBackgroundStyle.CUSTOM).effectiveLyricsBackground())
+        }
+        assertEquals("DEFAULT", PreferenceSnapshot.of(LyricsBackgroundStyleKey to "CUSTOM").playerPreferences().effectiveLyricsBackground())
     }
 }

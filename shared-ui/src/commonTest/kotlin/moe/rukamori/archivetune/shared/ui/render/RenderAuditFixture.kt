@@ -169,7 +169,8 @@ internal object RenderAuditFixture {
         songs[0], playback(), nativeState(), art, false, remember { DesktopShellState() }, {}, {}, {}, {}, {},
     )
     @Composable private fun Player(phone: Boolean, panel: PlayerPanel = PlayerPanel.ARTWORK, style: PlayerDesignStyle = PlayerDesignStyle.Default, fullscreen: Boolean = false) {
-        val state = PlayerState(playback(), songs[0].item.title, songs[0].item.subtitle, songs.map { it.occurrenceId }, canPrevious = true, canNext = true, volume = .75f, reducedMotion = true)
+        val state = PlayerState(playback(), songs[0].item.title, songs[0].item.subtitle, songs.map { it.occurrenceId }, canPrevious = true, canNext = true, volume = .75f, reducedMotion = true,
+            queueTitle = "YouTube", formatLabel = "Lossless", formatLossless = true)
         val slots = PlayerSlots(
             artwork = { _, m -> art(songs[0].item, m) },
             canvas = { _, _, m -> Box(m) },
@@ -177,6 +178,7 @@ internal object RenderAuditFixture {
             lyrics = { m -> Lyrics(m) },
             compactLyrics = { m -> CompactLyrics(m, style) },
             queue = { m -> Queue(m) },
+            lyricsStatus = PlayerLyricsStatus(songs[0].occurrenceId, true),
         )
         if (!phone && panel == PlayerPanel.ARTWORK && style == PlayerDesignStyle.Default) {
             DesktopExpandedPlayer(state, slots, {}, {}, {}, {}, {}, Modifier.fillMaxSize())

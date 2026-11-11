@@ -27,6 +27,8 @@ import moe.rukamori.archivetune.shared.ui.playerstyles.TitleLine
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
 internal fun FullscreenLyricsChrome(c: PlayerRenderContext) {
@@ -43,23 +45,25 @@ internal fun FullscreenLyricsChrome(c: PlayerRenderContext) {
                 { c.interaction.preview(it, c.state) }, { c.interaction.commit(c.state, c.actions.seekTo) })
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(playerTime(position), style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .54f))
+                c.state.formatLabel?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .7f),
+                        modifier = Modifier.testTag("fullscreen-lyrics-quality"))
+                }
                 Text(if (duration == null) "" else "−${playerTime((duration - position).coerceAtLeast(0))}",
                     style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .54f))
             }
             CompositionLocalProvider(LocalPlayerGlyphStyle provides PlayerDesignStyle.Default) {
                 Row(Modifier.fillMaxWidth().testTag("fullscreen-lyrics-transport"),
                     horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    PlayerIcon(PlayerSymbol.PREVIOUS, stringResource(Res.string.m5_previous), { c.actions.onAction(PlayerAction.PREVIOUS) },
-                        enabled = c.state.canPrevious, size = 68.dp, iconSize = 44.dp)
+                    LyricsTransportGlyph(c, previous = true)
                     val playback = c.state.playback
-                    Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(74.dp), contentAlignment = Alignment.Center) {
                         if (playback?.isBuffering == true) CircularProgressIndicator(Modifier.size(42.dp), color = foreground)
                         else PlayerIcon(if (playback?.playWhenReady == true) PlayerSymbol.PAUSE else PlayerSymbol.PLAY,
                             stringResource(if (playback?.playWhenReady == true) Res.string.m5_pause else Res.string.m5_play),
-                            c.actions.playPause, enabled = playback != null, size = 92.dp, iconSize = 54.dp)
+                            c.actions.playPause, enabled = playback != null, size = 74.dp, iconSize = 54.dp)
                     }
-                    PlayerIcon(PlayerSymbol.NEXT, stringResource(Res.string.m5_next), { c.actions.onAction(PlayerAction.NEXT) },
-                        enabled = c.state.canNext, size = 68.dp, iconSize = 44.dp)
+                    LyricsTransportGlyph(c, previous = false)
                 }
             }
             val volume = c.state.volume?.takeIf { it.isFinite() }
@@ -74,13 +78,26 @@ internal fun FullscreenLyricsChrome(c: PlayerRenderContext) {
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("fullscreen-lyrics-footer"),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(Res.string.m5_lyrics), style = MaterialTheme.typography.labelLarge,
+            val status = c.slots.lyricsStatus?.takeIf { it.occurrenceId == c.state.displayedOccurrenceId }
+            Text(stringResource(if (status?.hasLyrics == false) Res.string.phone_lyrics_not_found else Res.string.m5_lyrics), style = MaterialTheme.typography.labelLarge,
                 color = foreground.copy(alpha = .75f), modifier = Modifier.clip(RoundedCornerShape(50))
                     .background(foreground.copy(alpha = .1f)).clickable { c.actions.onAction(PlayerAction.MORE) }
                     .padding(horizontal = 16.dp, vertical = 7.dp))
             PlayerIcon(PlayerSymbol.MORE, stringResource(Res.string.m5_more), { c.actions.onAction(PlayerAction.MORE) }, iconSize = 20.dp)
             PlayerIcon(PlayerSymbol.CLOSE_X, stringResource(Res.string.m5_back), { c.interaction.fullscreenLyrics = false }, iconSize = 20.dp)
         }
+    }
+}
+
+@Composable
+private fun LyricsTransportGlyph(c: PlayerRenderContext, previous: Boolean) {
+    val action = if (previous) PlayerAction.PREVIOUS else PlayerAction.NEXT
+    val motion = rememberPlayerControlMotion(if (previous) PlayerControlKind.Previous else PlayerControlKind.Next,
+        null, c.motionActive)
+    IconButton({ motion.tap(); c.actions.onAction(action) }, enabled = if (previous) c.state.canPrevious else c.state.canNext,
+        modifier = Modifier.size(68.dp)) {
+        Icon(painterResource(Res.drawable.reference_lyrics_fast_forward), stringResource(action.label()),
+            Modifier.size(44.dp).graphicsLayer { scaleX = if (previous) -1f else 1f }.then(motion.modifier))
     }
 }
 
