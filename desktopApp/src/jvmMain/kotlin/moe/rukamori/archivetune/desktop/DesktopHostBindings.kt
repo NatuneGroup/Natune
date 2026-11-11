@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,6 +79,7 @@ internal fun desktopHostBindings(
     backRequests: MutableSharedFlow<Unit>,
     recognition: DesktopRecognitionMount,
     feedback: DesktopFeedbackMount,
+    overlayOwners: DesktopOverlayOwners,
     quit: () -> Unit,
     /** The F key's window fullscreen toggle; the root binds it where a window state exists. */
     toggleFullscreen: () -> Unit = {},
@@ -110,6 +110,8 @@ internal fun desktopHostBindings(
     val canvas = createDesktopCanvas(graph, settingsOwners.spotify)
     val canvasFrames = DesktopCanvasFrames(graph, canvas)
     val lyricsTools = DesktopLyricsTools(graph)
+    // Each navigation entry disposes its overlays, so the root closes these owners once, not an overlay.
+    overlayOwners.own(podcasts::close, topMixes::close, canvas::close, lyricsTools::close)
     return ArchiveTuneHostBindings(
         queue = DesktopPodcastQueue(graph.queue, podcasts),
         songMetadata = graph.library.songMetadata,
@@ -156,9 +158,6 @@ internal fun desktopHostBindings(
             }
         },
         overlays = { route ->
-            DisposableEffect(podcasts, topMixes, canvas, lyricsTools) {
-                onDispose { podcasts.close(); topMixes.close(); canvas.close(); lyricsTools.close() }
-            }
             DesktopItemMenuDialog(menu, graph, route.value, sleepSheet, canvas) { target -> ownRoutes.trySend(target) }
             DesktopCreatePlaylistOverlay(createPlaylist, route)
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
