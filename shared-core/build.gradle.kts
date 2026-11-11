@@ -29,6 +29,10 @@ jvmLibrary.configure { outputs.dir(layout.buildDirectory.dir("generated/rustReso
 val androidLibraries = nativeTask("buildRustAndroid", "android", "--abis",
     providers.gradleProperty("natune.rustAndroidAbis").getOrElse("arm64-v8a,armeabi-v7a,x86_64,x86"))
 androidLibraries.configure { outputs.dir(layout.buildDirectory.dir("generated/androidJniLibs")) }
+val retainedAndroidParser = tasks.register<Copy>("prepareRetainedAndroidTtmlTestSource") {
+    from(rootProject.file("lyrics/betterlyrics/src/main/kotlin/moe/koiverse/rukamori/betterlyrics/TTMLParser.kt"))
+    into(layout.buildDirectory.dir("generated/retained-android-test"))
+}
 
 kotlin {
     jvmToolchain(21)
@@ -48,6 +52,7 @@ kotlin {
             dependencies {
                 implementation(project(":shared-domain"))
                 implementation(libs.kotlinx.coroutines.core)
+                if (nativeEnabled) implementation(libs.atomicfu)
             }
         }
         commonTest {
@@ -65,7 +70,8 @@ kotlin {
             }
             nativeMain { kotlin.srcDir(generated.map { it.dir("nativeMain/kotlin") }) }
             jvmTest {
-                kotlin.srcDir("src/nativeTest/kotlin")
+                kotlin.srcDir("src/bridgeJvmTest/kotlin")
+                kotlin.srcDir(retainedAndroidParser)
                 dependencies { implementation(libs.kotlinx.serialization.json) }
             }
             if (hasAndroidSdk) androidMain {
@@ -87,6 +93,7 @@ kotlin {
 }
 
 if (nativeEnabled) {
+    tasks.matching { it.name == "compileTestKotlinJvm" }.configureEach { dependsOn(retainedAndroidParser) }
     tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(generateBindings) }
     tasks.matching { it.name == "jvmProcessResources" }.configureEach { dependsOn(jvmLibrary) }
     tasks.withType<Test>().configureEach {

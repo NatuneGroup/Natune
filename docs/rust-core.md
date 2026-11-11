@@ -78,7 +78,12 @@ The JVM suite compares every field against the retained two-parse Kotlin API and
 checks the optimized one-parse Kotlin baseline separately. CI exports Kotlin
 goldens and tests those with the pure Rust crate; both sides share inputs and
 goldens. Word tolerances are ≤1 microsecond with identical millisecond truncation.
-The existing Kotlin suites remain unchanged and run in ordinary PR CI.
+The existing Kotlin suites remain unchanged and run in ordinary PR CI. The JVM
+harness also compiles the unmodified retained BetterLyrics TTML parser from the
+pinned lyrics submodule and records its row differences in
+`ttml-android-differences.json`. Its entity resolver is never exercised with DTDs.
+Android differs in timed-span whitespace and namespace handling; these differences
+are preserved as a separate rollout gate, rather than changing Android's live parser.
 
 The benchmark corpus is synthetic TTML of realistic 5/50/500 KiB sizes, not a
 claim about a particular provider's copyrighted document. Rust timing excludes

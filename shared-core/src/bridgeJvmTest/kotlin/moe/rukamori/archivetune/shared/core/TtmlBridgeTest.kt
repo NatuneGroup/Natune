@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.shared.core
 
 import java.io.File
-import kotlin.system.measureNanoTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,6 +11,7 @@ import moe.rukamori.archivetune.shared.core.bindings.CoreException
 import moe.rukamori.archivetune.shared.core.bindings.ParseCancellation
 import moe.rukamori.archivetune.shared.core.bindings.parseTtml
 import moe.rukamori.archivetune.shared.domain.lyrics.*
+import moe.rukamori.archivetune.betterlyrics.TTMLParser
 
 class TtmlBridgeTest {
     private val repo = File(System.getProperty("natune.repo"))
@@ -49,6 +49,40 @@ class TtmlBridgeTest {
         }
     }
 
+    @Test fun retainedAndroidParserDifferencesAreRecorded() {
+        val inputs = Json.parseToJsonElement(File(repo, "native/core/fixtures/ttml-inputs.json").readText()).jsonArray
+        val differences = buildJsonObject {
+            inputs.forEach { value ->
+                val case = value.jsonObject
+                val xml = case.getValue("xml").jsonPrimitive.content
+                // The old DOM parser has an entity resolver. Refused declarations are deliberately
+                // never passed to it by this comparison harness.
+                if (xml.contains("<!DOCTYPE", true) || xml.contains("<!ENTITY", true)) return@forEach
+                val shared = snapshot(LyricsParser.readTtmlDocument(xml)).getValue("lines")
+                val lines = TTMLParser.parseTTML(xml).map { line ->
+                    val words = line.words.map { LyricsWord(it.text, it.startTime, it.endTime, it.isBackground) }
+                    val agent = normalizeTtmlAgent(line.agent)
+                    if (words.isEmpty()) SyncedLine(
+                        (line.startTime * 1000).toLong(), line.text, agent,
+                        providerRomanizedText = line.providerRomanizedText, providerRomanizedWords = line.providerRomanizedWords,
+                        providerRomanizedLanguage = line.providerRomanizedLanguage, providerTranslationText = line.providerTranslationText,
+                    ) else KaraokeLine(
+                        (line.startTime * 1000).toLong(), line.text, agent, words = words,
+                        providerRomanizedText = line.providerRomanizedText, providerRomanizedWords = line.providerRomanizedWords,
+                        providerRomanizedLanguage = line.providerRomanizedLanguage, providerTranslationText = line.providerTranslationText,
+                    )
+                }.sortedBy { it.time }
+                val android = snapshot(TtmlDocument(lines)).getValue("lines")
+                if (case.getValue("id").jsonPrimitive.content == "added/minimal") assertEquals(shared, android)
+                if (shared != android) put(case.getValue("id").jsonPrimitive.content, buildJsonObject {
+                    put("shared", shared); put("retainedAndroid", android)
+                })
+            }
+        }
+        File(repo, "shared-core/build/ttml-android-differences.json").writeText(differences.toString())
+        println("TTML_ANDROID_DIFFERENCES=${differences.keys.joinToString()}")
+    }
+
     @Test fun generatedBoundsAndUtf16RefusalMatchTheKotlinReader() = runBlocking {
         val reader = assertNotNull(rustTtmlReaderOrNull())
         val bodies = listOf(
@@ -78,7 +112,8 @@ class TtmlBridgeTest {
                 repeat(65) { round ->
                     for (offset in 0..2) {
                         val kind = (round + offset) % 3 // Rotate order to reduce warmup/order bias.
-                        val elapsed = measureNanoTime {
+                        val startNs = System.nanoTime()
+                        run {
                             val doc = when (kind) {
                                 0 -> TtmlDocument(LyricsParser.parseTtml(xml), LyricsParser.parseTtmlCredits(xml))
                                 1 -> KotlinTtmlDocumentReader.readTtml(xml)
@@ -86,10 +121,11 @@ class TtmlBridgeTest {
                             }
                             consumed += doc.lines.sumOf { it.text.length.toLong() + it.time }
                         }
+                        val elapsed = System.nanoTime() - startNs
                         if (round >= 15) samples[kind].add(elapsed)
                     }
                 }
-                put(buildJsonObject {
+                add(buildJsonObject {
                     put("syntheticBytes", xml.toByteArray().size)
                     put("consumed", consumed)
                     for ((index, label) in listOf("kotlinTwoParse", "kotlinOneParse", "rustIncludingBridge").withIndex()) {
