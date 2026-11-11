@@ -144,7 +144,7 @@ fun ListenTogetherScreen(
                         supportingContent = if (member.host) ({ Text(stringResource(Res.string.m4_room_host)) }) else null,
                         leadingContent = { memberAvatar(member, Modifier.size(48.dp)) },
                         trailingContent = if (room.isHost && !member.self) ({
-                            TextButton({ selectedMemberId = member.id }) { Text(stringResource(Res.string.m4_more)) }
+                            ItemMenuButton({ selectedMemberId = member.id })
                         }) else null)
                 }
                 if (room.isHost) {

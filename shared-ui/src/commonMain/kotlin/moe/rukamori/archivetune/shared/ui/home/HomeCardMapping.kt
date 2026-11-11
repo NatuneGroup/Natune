@@ -5,7 +5,6 @@ import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
-import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.screens.ItemMenuButton
