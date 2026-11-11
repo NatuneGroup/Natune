@@ -318,13 +318,17 @@ internal fun DesktopMountedRoot(
     // pages.
     val feedback = remember(graph, uiScope) { DesktopFeedbackMount(graph, uiScope) }
     DisposableEffect(feedback) { onDispose { feedback.close() } }
+    // Overlays are disposed on every navigation, so the root closes the overlay owners once, at shutdown.
+    val overlayOwners = remember(graph, backRequests, recognition, feedback) { DesktopOverlayOwners() }
+    DisposableEffect(overlayOwners) { onDispose { overlayOwners.close() } }
     val host =
-        remember(graph, backRequests, recognition, feedback) {
+        remember(graph, backRequests, recognition, feedback, overlayOwners) {
             desktopHostBindings(
                 graph,
                 backRequests,
                 recognition,
                 feedback,
+                overlayOwners,
                 quit,
                 toggleFullscreen = {
                     windowState.placement =
