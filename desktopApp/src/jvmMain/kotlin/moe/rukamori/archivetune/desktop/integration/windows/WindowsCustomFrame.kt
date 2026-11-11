@@ -86,8 +86,9 @@ internal object WindowsCustomFrame {
 
     /**
      * The `user32` entry points this frame needs, declared here instead of taken from JNA's
-     * `User32` interface: the four calls a maximized or per-monitor-DPI window makes (`IsZoomed`,
-     * `ScreenToClient`, `GetDpiForWindow`, `GetSystemMetricsForDpi`) are not declared there, and
+     * `User32` interface: the calls a maximized, minimized or per-monitor-DPI window makes
+     * (`IsZoomed`, `IsIconic`, `ScreenToClient`, `GetDpiForWindow`, `GetSystemMetricsForDpi`) are
+     * not declared there, and
      * the window-procedure handles stay [Pointer] because that is what the 64-bit entry points take
      * and return. JNA's `User32.SetWindowLongPtr` already returns `Pointer`; a `LONG_PTR` there is
      * a 5.6-era signature and truncates the procedure address on 64-bit Windows.
@@ -138,6 +139,8 @@ internal object WindowsCustomFrame {
         fun ScreenToClient(hwnd: WinDef.HWND, point: WinDef.POINT): Int
 
         fun IsZoomed(hwnd: WinDef.HWND): Int
+
+        fun IsIconic(hwnd: WinDef.HWND): Int
 
         fun GetDpiForWindow(hwnd: WinDef.HWND): Int
 
@@ -364,6 +367,32 @@ internal object WindowsCustomFrame {
         }
     }
 
+    /** What the frame answers to a `WM_NCCALCSIZE` whose `wParam` is TRUE. */
+    internal enum class NcCalcSizeResponse {
+        /** The window procedure chain handles the message unchanged. */
+        PassThrough,
+
+        /** The client area covers the whole window. */
+        CoverWindow,
+
+        /** The client area covers the window, inset by the frame a maximized window would cover the taskbar with. */
+        CoverWindowInset,
+    }
+
+    /**
+     * The `WM_NCCALCSIZE` decision, without the window handle so it runs on any JVM. A minimized
+     * window must pass the message through: answering 0 while `IsIconic` makes Windows size the
+     * iconic window as if it were restored, which is a known cause of a wrong restore size and a
+     * blank or offset window after minimize/restore. `IsZoomed` still reports true for a window
+     * minimized from the maximized state, so the minimized check comes first.
+     */
+    internal fun ncCalcSizeResponse(minimized: Boolean, maximized: Boolean): NcCalcSizeResponse =
+        when {
+            minimized -> NcCalcSizeResponse.PassThrough
+            maximized -> NcCalcSizeResponse.CoverWindowInset
+            else -> NcCalcSizeResponse.CoverWindow
+        }
+
     /** The procedure itself: it calls the previous one for every message it does not own. */
     private class Procedure(
         private val api: NatuneUser32,
@@ -379,22 +408,37 @@ internal object WindowsCustomFrame {
             return when (uMsg) {
                 WM_NCCALCSIZE ->
                     if (wParam.toInt() == 1) {
-                        // The client area becomes the whole window. A maximized window would then
-                        // cover the taskbar, so
-                        // its bounds are inset by the frame the window manager keeps.
-                        val zoomed = runCatching { api.IsZoomed(hwnd) != 0 }.getOrDefault(false)
-                        if (zoomed) {
-                            runCatching {
-                                val params = NcCalcSizeParams(Pointer(lParam.toLong()))
-                                val edge = frameEdge(hwnd)
-                                params.rgrc[0].left += edge
-                                params.rgrc[0].top += edge
-                                params.rgrc[0].right -= edge
-                                params.rgrc[0].bottom -= edge
-                                params.write()
+                        val response =
+                            ncCalcSizeResponse(
+                                minimized =
+                                    runCatching { api.IsIconic(hwnd) != 0 }.getOrDefault(false),
+                                maximized =
+                                    runCatching { api.IsZoomed(hwnd) != 0 }.getOrDefault(false),
+                            )
+                        when (response) {
+                            // A minimized window lets the default procedure size it: answering 0
+                            // here would size the iconic window as restored and corrupt the
+                            // restore bounds.
+                            NcCalcSizeResponse.PassThrough -> pass(hwnd, uMsg, wParam, lParam)
+                            // The client area becomes the whole window. A maximized window would
+                            // then cover the taskbar, so its bounds are inset by the frame the
+                            // window manager keeps.
+                            NcCalcSizeResponse.CoverWindow,
+                            NcCalcSizeResponse.CoverWindowInset -> {
+                                if (response == NcCalcSizeResponse.CoverWindowInset) {
+                                    runCatching {
+                                        val params = NcCalcSizeParams(Pointer(lParam.toLong()))
+                                        val edge = frameEdge(hwnd)
+                                        params.rgrc[0].left += edge
+                                        params.rgrc[0].top += edge
+                                        params.rgrc[0].right -= edge
+                                        params.rgrc[0].bottom -= edge
+                                        params.write()
+                                    }
+                                }
+                                WinDef.LRESULT(0L)
                             }
                         }
-                        WinDef.LRESULT(0L)
                     } else {
                         pass(hwnd, uMsg, wParam, lParam)
                     }
