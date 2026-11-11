@@ -146,6 +146,8 @@ fun TidalSettings(
 
     val rows = buildList<SettingsRow> {
         add(SettingsRow.Header("tidal_account", Res.string.m6_tidal_account_group))
+        add(SettingsRow.Toggle("tidal_account_quality_fallback", Res.string.builtin_tidal_quality_fallback,
+            TidalAccountQualityFallbackKey, false))
         if (signedIn) {
             add(SettingsRow.Status(
                 "tidal_account_connected", Res.string.m6_tidal_account_connected_label, connectedValue,

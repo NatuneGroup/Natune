@@ -23,6 +23,8 @@ class KtorTidalRepository(
     private val countryCode: String = "US",
     resolver: TidalInstanceResolver? = null,
     private val instances: () -> List<String> = { emptyList() },
+    private val accountQualityFallback: () -> Boolean = { false },
+    private val accountRateLimit: TidalRateLimitGate? = null,
 ) : PagedAudioProvider("tidal:${access.scope}:$apiBase:$instanceBase:$countryCode") {
     override val provider = ContentProvider.TIDAL
     override val source = AudioSourceType.TIDAL
@@ -90,17 +92,25 @@ class KtorTidalRepository(
             // Account path: the retained direct-id or bearer-search match, then the official
             // playbackinfopostpaywall manifest. A trusted direct id must stay trusted, and the HTTP
             // timeout must stay ProviderRequestTimeout so the attempt reports TIMEOUT, not NO_MATCH.
+            val fallback = accountQualityFallback()
+            if (fallback && accountRateLimit?.canAttempt(access.scope) == false) {
+                throw TidalPlaybackFailure(429, null, TidalFailureKind.RATE_LIMITED)
+            }
             val track = match(request) ?: return null
-            val root = http.json("$api/tracks/${pathId(track.item.ref.id)}/playbackinfopostpaywall",
-                mapOf("audioquality" to quality, "playbackmode" to "STREAM", "assetpresentation" to "FULL"),
-                mapOf("Authorization" to "Bearer ${access.bearer}")).jsonObject
-            if (root.preview()) return null
-            val data = root.obj("data") ?: root
-            if (data.preview()) return null
-            val encoded = data.text("manifest") ?: throw ProviderProtocolFailure()
-            val raw = try { Base64.decode(encoded).decodeToString(throwOnInvalidSequence = true) }
-                catch (failure: Exception) { throw ProviderProtocolFailure() }
-            return manifest(request, track, quality, raw)
+            val resolveQuality: suspend (String) -> PreparedAudio? = { tier ->
+                val url = "$api/tracks/${pathId(track.item.ref.id)}/playbackinfopostpaywall"
+                val params = mapOf("audioquality" to tier, "playbackmode" to "STREAM", "assetpresentation" to "FULL")
+                val root = if (fallback) accountPlayback(url, params) else http.json(url, params,
+                    mapOf("Authorization" to "Bearer ${access.bearer}")).jsonObject
+                val data = root.obj("data") ?: root
+                if (root.preview() || data.preview()) null else {
+                    val encoded = data.text("manifest") ?: throw ProviderProtocolFailure()
+                    val raw = try { Base64.decode(encoded).decodeToString(throwOnInvalidSequence = true) }
+                        catch (_: Exception) { throw ProviderProtocolFailure() }
+                    manifest(request, track, if (fallback) data.text("audioQuality") ?: tier else tier, raw)
+                }
+            }
+            return if (fallback) resolveTidalQuality(quality, resolve = resolveQuality) else resolveQuality(quality)
         }
         // Public-instance path: the retained racing resolver (no bundled hosts; the configured or
         // pool-discovered list is required, exactly as the original). An empty list throws like
@@ -121,6 +131,21 @@ class KtorTidalRepository(
             accountScope = streamAccount(access.scope),
             trustedTrackId = request.directIds[source],
         ).prepared
+    }
+
+    private suspend fun accountPlayback(url: String, params: Map<String, String>): JsonObject {
+        if (!access.isActive()) throw UnsupportedContentOperation()
+        val reply = http.exchange(url, params, mapOf("Authorization" to "Bearer ${access.bearer}"))
+        if (!access.isActive()) throw UnsupportedContentOperation()
+        val root = runCatching { Json.parseToJsonElement(reply.body).jsonObject }.getOrNull()
+        if (reply.status !in 200..299) {
+            val subStatus = (root?.long("subStatus") ?: root?.long("sub_status"))?.toInt()
+            val kind = classifyTidalFailure(reply.status, subStatus, root?.text("userMessage"))
+            val retryAfterMs = PoolResponse.retryAfterMs(reply.retryAfter)
+            if (kind == TidalFailureKind.RATE_LIMITED) accountRateLimit?.limit(access.scope, retryAfterMs)
+            throw TidalPlaybackFailure(reply.status, subStatus, kind, retryAfterMs)
+        }
+        return root ?: throw ProviderProtocolFailure()
     }
 
     private fun manifest(
