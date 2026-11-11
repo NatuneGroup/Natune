@@ -80,9 +80,7 @@ fun ContentRow(
                         modifier = Modifier.padding(horizontal = 8.dp).testTag("track-duration-${occurrence.occurrenceId}")) }
                     trailingControls?.invoke()
                     actions.more?.let { more ->
-                        TextButton(onClick = { more(occurrence) }, modifier = Modifier.testTag("more-${occurrence.occurrenceId}")) {
-                            Text(stringResource(Res.string.m4_more))
-                        }
+                        ItemMenuButton(onClick = { more(occurrence) }, modifier = Modifier.testTag("more-${occurrence.occurrenceId}"))
                     }
                 }
             }

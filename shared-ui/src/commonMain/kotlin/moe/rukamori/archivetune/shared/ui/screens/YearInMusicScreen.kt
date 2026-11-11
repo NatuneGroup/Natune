@@ -213,7 +213,7 @@ private fun YearRecapCardContent(
                     Text(effectiveSong(top.item).subtitle)
                     Text(stringResource(Res.string.m4_stats_plays, top.playCount))
                     songMenu?.let { menu ->
-                        TextButton({ menu(top.item.ref) }) { Text(stringResource(Res.string.m4_more)) }
+                        ItemMenuButton({ menu(top.item.ref) })
                     }
                 }
                 YearRecapCard.ARTISTS, YearRecapCard.ALBUMS -> {
