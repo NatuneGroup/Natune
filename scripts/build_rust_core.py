@@ -51,7 +51,13 @@ def bindings():
     version = subprocess.check_output([str(executable), "--version"], text=True).strip()
     if version != f"gobley-uniffi-bindgen {GOBLEY}":
         raise SystemExit(f"Unexpected generator version: {version}")
-    run(str(executable), "--library", str(library), "--crate", "natune_ffi", "--config", str(WORKSPACE / "crates/natune-ffi/uniffi.toml"), "--out-dir", str(BUILD / "generated/bindings"))
+    output = BUILD / "generated/bindings"
+    if output.exists():
+        shutil.rmtree(output)
+    run(str(executable), "--library", str(library), "--crate", "natune_ffi", "--config", str(WORKSPACE / "crates/natune-ffi/uniffi.toml"), "--out-dir", str(output))
+    for target in ("common", "jvm", "android", "native"):
+        if not list((output / f"{target}Main/kotlin").rglob(f"natune_ffi.{target}.kt")):
+            raise SystemExit(f"Gobley did not generate {target} bindings; check the flat CLI configuration")
 
 
 def jvm(target=None):
@@ -99,7 +105,7 @@ def interop(target):
     directory = build(target)
     definition = BUILD / f"generated/interop/{target}.def"
     definition.parent.mkdir(parents=True, exist_ok=True)
-    definition.write_text(f"headers = natune_ffi.h\npackage = natune_ffi.cinterop\nstaticLibraries = libnatune_ffi.a\nlibraryPaths = {directory.as_posix()}\n")
+    definition.write_text(f"package = natune_ffi.cinterop\nstaticLibraries = libnatune_ffi.a\nlibraryPaths = {directory.as_posix()}\n")
 
 
 if __name__ == "__main__":

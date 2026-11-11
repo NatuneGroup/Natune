@@ -177,13 +177,14 @@ class HostLyrics(
         val before = state.value ?: return@withLock false
         val item = queue.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return@withLock false
         if (before.occurrenceId != occurrenceId || before.raw != expected || revision != expectedRevision || !guard()) return@withLock false
-        val lines = parse(raw)
+        val parsed = parse(raw)
+        val lines = parsed.lines
         require(raw.isNotBlank() && lines.isNotEmpty()) { "No usable lyrics" }
         if (storage?.write(item, raw, edited = true, guard = guard) == false) return@withLock false
         if (!guard() || state.value != before) return@withLock false
         revision++
         state.value = HostLyricsDocument(occurrenceId, lines, false, raw,
-            if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null)
+            if (LyricsDetection.isTtml(raw)) parsed.credits else null)
         true
     }
 

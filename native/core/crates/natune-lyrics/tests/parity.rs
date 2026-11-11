@@ -56,9 +56,16 @@ fn compare(actual: &Value, expected: &Value, path: &str) {
 #[test]
 fn bounds_refusal_and_cancellation() {
     for xml in [
-        format!("<tt>{}</tt>", "<div>".repeat(64)),
-        format!("<tt>{}</tt>", "<a/>".repeat(100_000)),
-        format!("<tt>{}</tt>", "a".repeat(2_000_000)),
+        format!(
+            "<tt>{}<p begin=\"0\">Deep</p>{}</tt>",
+            "<div>".repeat(64),
+            "</div>".repeat(64)
+        ),
+        format!(
+            "<tt><p begin=\"0\">Bound</p>{}</tt>",
+            "<a/>".repeat(100_000)
+        ),
+        format!("<tt><p begin=\"0\">{}</p></tt>", "a".repeat(2_000_000)),
         "<!DOCTYPE tt [<!ENTITY x SYSTEM 'file:///private'>]><tt/>".to_owned(),
     ] {
         assert!(parse_ttml(&xml, || false).unwrap().lines.is_empty());
