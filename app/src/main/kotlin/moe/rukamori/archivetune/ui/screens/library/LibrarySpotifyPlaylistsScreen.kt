@@ -31,7 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.rememberSpotifyCatalogEnabled
 import moe.rukamori.archivetune.spotify.SpotifyLibraryViewModel
 import moe.rukamori.archivetune.ui.component.ExpressivePullToRefreshBox
 import moe.rukamori.archivetune.ui.component.SpotifyLibraryPlaylistListItem
@@ -41,7 +41,7 @@ fun LibrarySpotifyPlaylistsScreen(
     navController: NavController,
     viewModel: SpotifyLibraryViewModel = hiltViewModel(),
 ) {
-    if (!rememberSpotifyMetadataExtensionEnabled()) {
+    if (!rememberSpotifyCatalogEnabled()) {
         Text(stringResource(R.string.extensions_disabled))
         return
     }
