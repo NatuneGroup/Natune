@@ -17,6 +17,20 @@ class JioSaavnWebPlayerTest {
     private fun song(high: Boolean = true, rights: Int = 0) =
         """{"id":"7","title":"Song","more_info":{"album":"Album","duration":"180","encrypted_media_url":"fixture-ciphertext","320kbps":"$high","rights":{"code":"$rights"},"artistMap":{"primary_artists":[{"name":"Artist"}]}}}"""
 
+    @Test fun keylessWithWebPlayerOffAnswersUnavailableWithoutAnyCall() = runTest {
+        var calls = 0
+        val http = HttpClient(MockEngine) { engine {
+            dispatcher = StandardTestDispatcher(testScheduler)
+            addHandler { calls++; respond("{}") }
+        } }
+        try {
+            val repo = KtorJioSaavnRepository(http, useWebPlayer = { false })
+            val failure = assertFailsWith<AudioProviderUnavailable> { repo.resolve(request()) }
+            assertEquals(AudioProviderUnavailableReason.CLIENT_CONFIGURATION_REQUIRED, failure.reason)
+            assertEquals(0, calls)
+        } finally { http.close() }
+    }
+
     @Test fun keyFree320ExchangeAcceptsKeyedDetailsAndCarriesRefererAndExpiry() = runTest {
         val calls = mutableListOf<String>()
         val http = HttpClient(MockEngine) { engine {

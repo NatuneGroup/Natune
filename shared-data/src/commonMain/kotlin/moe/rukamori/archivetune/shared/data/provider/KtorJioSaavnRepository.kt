@@ -44,7 +44,10 @@ class KtorJioSaavnRepository(client: HttpClient, private val decoder: JioSaavnUr
         return parse(song ?: throw ProviderProtocolFailure())
     }
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
-        if (!useWebPlayer() && decoder == null) return null
+        // Keyless with the web player off is a client that cannot resolve at all, not an empty
+        // search: say unavailable so the resolver reports it instead of NO_MATCH.
+        if (!useWebPlayer() && decoder == null)
+            throw AudioProviderUnavailable(AudioProviderUnavailableReason.CLIENT_CONFIGURATION_REQUIRED)
         val track = match(request) ?: return null
         val info = Json.parseToJsonElement(track.rawJson).jsonObject.obj("more_info") ?: return null
         val rights = info.obj("rights")

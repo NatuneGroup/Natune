@@ -8,7 +8,7 @@ import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
 import moe.rukamori.archivetune.shared.domain.settings.JioSaavnWebPlayerKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 
-/** With no key, the default answers unavailable; only the explicit option uses the web player. */
+/** With no key, the default answers unavailable (client configuration required); only the explicit option uses the web player. */
 internal fun iosJioSaavnSource(http: HttpClient,
     preferences: () -> PreferenceSnapshot?): AudioProviderRepository = KtorJioSaavnRepository(
     http,
