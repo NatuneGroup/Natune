@@ -113,10 +113,6 @@ internal fun LyricsProviderPreference.label() = when (this) {
     LyricsProviderPreference.UNISON -> Res.string.m6_unison
     LyricsProviderPreference.APPLE_MUSIC -> Res.string.m6_apple_music
     LyricsProviderPreference.PAXSENIX_APPLE_MUSIC -> Res.string.m6_pax_apple
-    LyricsProviderPreference.PAXSENIX_NETEASE -> Res.string.m6_pax_netease
-    LyricsProviderPreference.PAXSENIX_SPOTIFY -> Res.string.m6_pax_spotify
-    LyricsProviderPreference.PAXSENIX_MUSIXMATCH -> Res.string.m6_pax_musixmatch
-    LyricsProviderPreference.PAXSENIX_YOUTUBE -> Res.string.m6_pax_youtube
     LyricsProviderPreference.TIDAL -> Res.string.m6_tidal
     LyricsProviderPreference.DEEZER -> Res.string.m6_deezer
     LyricsProviderPreference.MUSIXMATCH_EXPERIMENTAL -> Res.string.m6_musixmatch_experimental
@@ -134,10 +130,6 @@ private fun LyricsProviderPreference.anchor() = when (this) {
     LyricsProviderPreference.UNISON -> "enable_unison_lyrics"
     LyricsProviderPreference.APPLE_MUSIC -> "apple_music_lyrics"
     LyricsProviderPreference.PAXSENIX_APPLE_MUSIC -> "enable_paxsenix_apple_music_lyrics"
-    LyricsProviderPreference.PAXSENIX_NETEASE -> "enable_paxsenix_netease_lyrics"
-    LyricsProviderPreference.PAXSENIX_SPOTIFY -> "enable_paxsenix_spotify_lyrics"
-    LyricsProviderPreference.PAXSENIX_MUSIXMATCH -> "enable_paxsenix_musixmatch_lyrics"
-    LyricsProviderPreference.PAXSENIX_YOUTUBE -> "enable_paxsenix_youtube_lyrics"
     LyricsProviderPreference.TIDAL -> "enable_tidal_lyrics"
     LyricsProviderPreference.DEEZER -> "enable_deezer_lyrics"
     LyricsProviderPreference.MUSIXMATCH_EXPERIMENTAL -> "enable_musixmatch_experimental"

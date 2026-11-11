@@ -195,40 +195,13 @@ val DefaultLyricsProviderOrder =
         PreferredLyricsProvider.UNISON,
         PreferredLyricsProvider.PAXSENIX_APPLE_MUSIC,
         PreferredLyricsProvider.APPLE_MUSIC,
-        PreferredLyricsProvider.PAXSENIX_NETEASE,
-        PreferredLyricsProvider.PAXSENIX_SPOTIFY,
-        PreferredLyricsProvider.PAXSENIX_MUSIXMATCH,
-        PreferredLyricsProvider.PAXSENIX_YOUTUBE,
         PreferredLyricsProvider.TIDAL,
         PreferredLyricsProvider.DEEZER,
         PreferredLyricsProvider.MUSIXMATCH_EXPERIMENTAL,
     )
-fun deserializeLyricsProviderOrder(orderStr: String?): List<PreferredLyricsProvider> {
-    if (orderStr.isNullOrBlank()) return DefaultLyricsProviderOrder
-
-    val parsed =
-        orderStr
-            .split(",")
-            .mapNotNull { name ->
-                PreferredLyricsProvider.entries.find { it.name == name.trim() }
-            }.distinct()
-
-    val normalized =
-        when {
-            parsed.take(3) ==
-                listOf(
-                    PreferredLyricsProvider.LRCLIB,
-                    PreferredLyricsProvider.KUGOU,
-                    PreferredLyricsProvider.BETTER_LYRICS,
-                )
-            -> listOf(PreferredLyricsProvider.BETTER_LYRICS) + parsed.filterNot { it == PreferredLyricsProvider.BETTER_LYRICS }
-
-            else -> parsed
-        }
-
-    val missing = DefaultLyricsProviderOrder.filterNot { it in normalized }
-    return normalized + missing
-}
+fun deserializeLyricsProviderOrder(orderStr: String?): List<PreferredLyricsProvider> =
+    app.natune.shared.domain.settings.parseLyricsProviderOrder(orderStr)
+        .map { PreferredLyricsProvider.valueOf(it.name) }
 val DefaultArtworkProviderOrder =
     listOf(
         PreferredArtworkProvider.LOCAL_EMBEDDED,

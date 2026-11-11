@@ -25,11 +25,7 @@ import app.natune.shared.data.lyrics.resolveBundledEndpoint
 import app.natune.shared.data.lyrics.LyricsProvider
 import app.natune.shared.data.lyrics.LyricsRequest
 import app.natune.shared.data.lyrics.PaxsenixAppleMusicLyricsProvider
-import app.natune.shared.data.lyrics.PaxsenixMusixmatchLyricsProvider
-import app.natune.shared.data.lyrics.PaxsenixNeteaseLyricsProvider
 import app.natune.shared.data.lyrics.PaxsenixSettings
-import app.natune.shared.data.lyrics.PaxsenixSpotifyLyricsProvider
-import app.natune.shared.data.lyrics.PaxsenixYouTubeLyricsProvider
 import app.natune.shared.data.lyrics.SimpMusicLyricsProvider
 import app.natune.shared.data.lyrics.UnisonLyricsProvider
 import app.natune.shared.data.lyrics.YouLyPlusLyricsProvider
@@ -320,10 +316,6 @@ fun sharedLyricsProviders(
         SimpMusicLyricsProvider(http),
         UnisonLyricsProvider(http),
         PaxsenixAppleMusicLyricsProvider(http, settings = paxsenix),
-        PaxsenixNeteaseLyricsProvider(http, paxsenix),
-        PaxsenixSpotifyLyricsProvider(http, paxsenix),
-        PaxsenixMusixmatchLyricsProvider(http, paxsenix),
-        PaxsenixYouTubeLyricsProvider(http, paxsenix),
         GeniusLyricsProvider(http),
     )
 }
@@ -331,6 +323,6 @@ fun sharedLyricsProviders(
 private val SHARED_PROVIDER_NAMES = setOf(
     "Bundled", "lrc.red", "BiniLyrics", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib",
     "Kugou", "Megalobiz", "SimpMusic", "Unison",
-    "Paxsenix: Apple Music", "Paxsenix: NetEase", "Paxsenix: Spotify", "Paxsenix: Musixmatch", "Paxsenix: YouTube",
+    "Paxsenix: Apple Music",
     "Genius",
 )
