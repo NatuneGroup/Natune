@@ -98,6 +98,7 @@ fun playerLyricsSlotFactory(
             credits = credits,
         )
         PlayerSlots(
+            lyricsStatus = PlayerLyricsStatus(occurrenceId, matching && lines.isNotEmpty()),
             artwork = media.artwork,
             canvas = { id, active, modifier ->
                 media.canvas(id, active && surfaces.artwork && resumed && !settings.reduceMotion &&

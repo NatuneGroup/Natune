@@ -85,7 +85,8 @@ fun BottomSheetPlayer(
         val styleLandscape=landscape && !desktop
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
-        val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
+        val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),
+            visible=surfaces.background || interaction.fullscreenLyrics && state.active)
         val handoff=rememberPlayerHandoff(state,optical.motion && !state.reducedMotion)
         val content=slots(preferences,surfaces).withHandoff(handoff)
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical)
@@ -95,8 +96,9 @@ fun BottomSheetPlayer(
             visibilityCallback(showingLyrics)
             onDispose { visibilityCallback(false) }
         }
-        val forceDark=presentation.style.capabilities.monochrome ||
-            presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
+        val forceDark=if(interaction.fullscreenLyrics) presentation.effectiveLyricsBackground() != "FOLLOW_THEME"
+            else presentation.style.capabilities.monochrome ||
+                presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
         MaterialTheme(colorScheme=if(forceDark) darkColorScheme() else MaterialTheme.colorScheme) {
             CompositionLocalProvider(
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
@@ -107,7 +109,7 @@ fun BottomSheetPlayer(
                 // host's status-bar and home-indicator strips, and only the controls are inset by the host safe area.
                 // A host with no measured safe area (Android, desktop) gets an inset of zero and this is unchanged.
                 Box(Modifier.fillMaxSize().testTag("player-${presentation.style.name}-${if(landscape) "landscape" else "portrait"}")) {
-                    PlayerBackground(c)
+                    if (interaction.fullscreenLyrics) PlayerLyricsBackground(c) else PlayerBackground(c)
                     Box(Modifier.fillMaxSize().safeAreaPadding(LocalHostSafeArea.current)) {
                     if(interaction.fullscreenLyrics) {
                         FullscreenLyricsChrome(c)
