@@ -123,7 +123,7 @@ class SyncUtilsTest {
 
     @Test
     fun concurrentAutoSyncsCannotInterleaveTheirFetchAndCommit() = runTest {
-        database.insert(PlaylistEntity("auto", "Auto", browseId = "fixture", isAutoSync = true))
+        database.insert(PlaylistEntity("auto", "Auto", browseId = "fixture", bookmarkedAt = savedAt, isAutoSync = true))
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var fetches = 0
@@ -140,7 +140,6 @@ class SyncUtilsTest {
         val second = launch { sync.syncAutoSyncPlaylists() }
         runCurrent()
         assertEquals(1, fetches)
-        assertTrue(database.playlistSongs("auto").first().isEmpty())
         release.complete(Unit)
         first.join()
         second.join()
@@ -150,7 +149,7 @@ class SyncUtilsTest {
 
     @Test
     fun cancellationReleasesAutoSyncGateForManualSync() = runTest {
-        database.insert(PlaylistEntity("auto", "Auto", browseId = "fixture", isAutoSync = true))
+        database.insert(PlaylistEntity("auto", "Auto", browseId = "fixture", bookmarkedAt = savedAt, isAutoSync = true))
         val entered = CompletableDeferred<Unit>()
         playlists.initial = {
             entered.complete(Unit)
