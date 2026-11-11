@@ -1,20 +1,39 @@
 package moe.rukamori.archivetune.discord
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Test
 import java.io.IOException
 
 class DiscordSessionRulesTest {
     private val expiresAt = 1_000_000_000L
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun installMain() {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    @After
+    fun releaseMain() {
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun renewalStartsOneSkewWindowBeforeExpiry() {
@@ -87,6 +106,26 @@ class DiscordSessionRulesTest {
         } catch (expected: CancellationException) {
             assertFalse(expected is TimeoutCancellationException)
         }
+    }
+
+    @Test
+    fun closingWithPendingRefreshFailsItSoRenewalFallsBackToHttp() = runTest(dispatcher) {
+        val pendingRefresh = CompletableDeferred<DiscordSdkTokenGrant>()
+        DiscordNativeSdkBridge.grants[1L] = pendingRefresh
+
+        DiscordNativeSdkBridge.close()
+
+        // Close settles the waiting refresh at once, so renewal does not wait out the SDK timeout.
+        assertTrue(pendingRefresh.isCompleted)
+        val closed = runCatching { pendingRefresh.await() }.exceptionOrNull()
+        // A cancellation would be rethrown by refreshCatching and never reach the HTTP fallback.
+        assertFalse(closed is CancellationException)
+        assertEquals("SDK_CLOSED", closed?.message)
+
+        val renewal = refreshCatching { pendingRefresh.await() }
+        assertTrue(renewal.isFailure)
+        // A closed SDK is not a refused grant, so the saved session is kept rather than shown as expired.
+        assertFalse(DiscordSessionRules.needsAuthorization(renewal.exceptionOrNull()))
     }
 
     private fun sdkTimeout(): TimeoutCancellationException {
