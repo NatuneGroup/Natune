@@ -10,11 +10,15 @@ package moe.rukamori.archivetune.discord
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -59,7 +63,7 @@ class DiscordOAuthHttpException(
     val statusCode: Int,
 ) : IOException("Discord OAuth request failed with HTTP $statusCode") {
     val isAuthorizationRejected: Boolean
-        get() = statusCode == HttpURLConnection.HTTP_UNAUTHORIZED || statusCode == HttpURLConnection.HTTP_FORBIDDEN
+        get() = DiscordSessionRules.needsAuthorization(this)
 }
 
 object DiscordAuthCoordinator {
@@ -79,10 +83,12 @@ object DiscordOAuthRepository {
     private const val TOKEN_ENDPOINT = "https://discord.com/api/oauth2/token"
     private const val CURRENT_USER_ENDPOINT = "https://discord.com/api/v10/users/@me"
     private const val REQUEST_TIMEOUT_MS = 12_000
-    private const val EXPIRY_SKEW_MS = 60_000L
 
     private val json = Json { ignoreUnknownKeys = true }
     private val secureRandom = SecureRandom()
+
+    // Discord rotates refresh tokens, so two renewals from one token would spend it twice.
+    private val renewalMutex = Mutex()
 
     val applicationId: Long
         get() = BuildConfig.DISCORD_APPLICATION_ID_LONG
@@ -156,30 +162,57 @@ object DiscordOAuthRepository {
             }
         }
 
-    suspend fun getValidAccessToken(context: Context): String? =
+    suspend fun getValidAccessToken(context: Context): String? = validAccessToken(context).getOrNull()
+
+    /**
+     * The stored token, renewed first when it is due. A failure says why: [DiscordSessionRules.needsAuthorization]
+     * means the user has to authorize again. Any other error leaves the saved session in place.
+     */
+    suspend fun validAccessToken(context: Context): Result<String> =
         withContext(Dispatchers.IO) {
-            val prefs = context.dataStore.data.first()
-            val currentToken = prefs[DiscordTokenKey]?.trim().orEmpty()
-            if (currentToken.isBlank()) {
-                return@withContext null
-            }
-
-            val expiresAt = prefs[DiscordTokenExpiresAtKey] ?: 0L
-            if (expiresAt == 0L || System.currentTimeMillis() + EXPIRY_SKEW_MS < expiresAt) {
-                return@withContext currentToken
-            }
-
-            val refreshToken = prefs[DiscordRefreshTokenKey]?.trim().orEmpty()
-            if (refreshToken.isBlank()) {
-                return@withContext null
-            }
-
-            if (DiscordSocialPresenceClient.isAvailable) {
-                DiscordSocialPresenceClient.refreshAuthorization(context, refreshToken)?.accessToken
-            } else {
-                refreshAccessToken(context, refreshToken).getOrNull()?.accessToken
+            currentAccessToken(context.dataStore.data.first())?.let { return@withContext it }
+            renewalMutex.withLock {
+                // A renewal that finished while this caller waited has already rotated the refresh
+                // token, so the saved session is read again before anything is spent.
+                val prefs = context.dataStore.data.first()
+                currentAccessToken(prefs)
+                    ?: renewStoredSession(context, prefs[DiscordRefreshTokenKey]?.trim().orEmpty())
             }
         }
+
+    /** The saved token while it needs no renewal. Null when a renewal is due. */
+    private fun currentAccessToken(prefs: Preferences): Result<String>? {
+        val token = prefs[DiscordTokenKey]?.trim().orEmpty()
+        if (token.isBlank()) return Result.failure(DiscordAuthorizationRequiredException())
+        val expiresAt = prefs[DiscordTokenExpiresAtKey] ?: 0L
+        if (DiscordSessionRules.isRenewalDue(expiresAt, System.currentTimeMillis())) return null
+        return Result.success(token)
+    }
+
+    /**
+     * Not cancellable: Discord spends the old refresh token when it answers, so the rotated token
+     * must be saved even if the caller has gone away.
+     */
+    private suspend fun renewStoredSession(
+        context: Context,
+        refreshToken: String,
+    ): Result<String> {
+        if (refreshToken.isBlank()) return Result.failure(DiscordAuthorizationRequiredException())
+        return withContext(NonCancellable) { renewSession(context, refreshToken) }.map { it.accessToken }
+    }
+
+    private suspend fun renewSession(
+        context: Context,
+        refreshToken: String,
+    ): Result<DiscordAuthSession> {
+        if (DiscordSocialPresenceClient.isAvailable) {
+            val renewed = DiscordSocialPresenceClient.refreshAuthorization(context, refreshToken)
+            if (renewed.isSuccess) return renewed
+        }
+        // The SDK can fail for its own reasons, such as a timeout or a client that is not ready.
+        // Try the HTTP token endpoint with the same refresh token before reporting a failure.
+        return refreshAccessToken(context, refreshToken)
+    }
 
     suspend fun fetchAccount(accessToken: String): DiscordAccount =
         withContext(Dispatchers.IO) {
@@ -235,7 +268,7 @@ object DiscordOAuthRepository {
         refreshToken: String,
     ): Result<DiscordAuthSession> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            refreshCatching {
                 val token =
                     postForm(
                         url = TOKEN_ENDPOINT,
@@ -270,7 +303,11 @@ object DiscordOAuthRepository {
                 ),
         ).let { json.decodeFromString(it) }
 
-    internal suspend fun storeSdkGrant(context: Context, grant: DiscordSdkTokenGrant): DiscordAuthSession {
+    internal suspend fun storeSdkGrant(
+        context: Context,
+        grant: DiscordSdkTokenGrant,
+        usedRefreshToken: String? = null,
+    ): DiscordAuthSession {
         val account =
             try {
                 fetchAccount(grant.accessToken)
@@ -285,7 +322,8 @@ object DiscordOAuthRepository {
             } else {
                 0L
             }
-        val session = DiscordAuthSession(grant.accessToken, grant.refreshToken, expiresAt, account)
+        val refreshToken = DiscordSessionRules.refreshTokenToKeep(grant.refreshToken, usedRefreshToken)
+        val session = DiscordAuthSession(grant.accessToken, refreshToken, expiresAt, account)
         storeSession(context, session)
         return session
     }
@@ -353,7 +391,7 @@ object DiscordOAuthRepository {
 
         return DiscordAuthSession(
             accessToken = accessToken,
-            refreshToken = refreshToken ?: fallbackRefreshToken,
+            refreshToken = DiscordSessionRules.refreshTokenToKeep(refreshToken, fallbackRefreshToken),
             expiresAtMillis = expiresAt,
             account = account,
         )

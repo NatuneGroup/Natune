@@ -48,14 +48,13 @@ object DiscordSocialPresenceClient {
         }
     }
 
-    internal suspend fun refreshAuthorization(context: android.content.Context, refreshToken: String): DiscordAuthSession? {
-        if (!isAvailable) return null
-        return try {
-            DiscordOAuthRepository.storeSdkGrant(context, DiscordNativeSdkBridge.refresh(refreshToken))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            null
+    internal suspend fun refreshAuthorization(
+        context: android.content.Context,
+        refreshToken: String,
+    ): Result<DiscordAuthSession> {
+        if (!isAvailable) return Result.failure(DiscordSdkUnavailableException())
+        return refreshCatching {
+            DiscordOAuthRepository.storeSdkGrant(context, DiscordNativeSdkBridge.refresh(refreshToken), refreshToken)
         }
     }
 }
