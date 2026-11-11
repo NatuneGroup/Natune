@@ -103,7 +103,7 @@ fun LocalSongsScreen(
                 supportingContent = { Text(listOf(song.row.item.subtitle, song.album).filter { it.isNotBlank() }.joinToString(" · ")) },
                 leadingContent = { artwork(song.row.item, Modifier.size(48.dp)) },
                 trailingContent = actions.more?.let { more -> {
-                    TextButton({ more(song.row) }) { Text(stringResource(Res.string.m4_more)) }
+                    ItemMenuButton({ more(song.row) })
                 } },
                 modifier = Modifier.testTag("local-song-${song.row.occurrenceId}")
                     .clickable { actions.play(song.row, queue) })
