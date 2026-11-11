@@ -46,7 +46,8 @@ class MetrolistPlayerStyleTest {
         runOnIdle {
             assertEquals(4,callbacks.plays)
             assertEquals(4,callbacks.actions.count { it==PlayerAction.SHUFFLE })
-            assertTrue(callbacks.visibility.contains(true))
+            // Side lyrics are mounted, not requested. A true report would switch the shell to fullscreen and hide the artwork.
+            assertFalse(callbacks.visibility.contains(true))
         }
         val directory=File(requireNotNull(System.getProperty("archivetune.screenshotDir"))).apply { mkdirs() }
         assertTrue(ImageIO.write(onRoot().captureToImage().toAwtImage(),"png",File(directory,"player-style-metrolist-kmp.png")))
