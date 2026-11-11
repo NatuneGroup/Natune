@@ -83,7 +83,7 @@ fun NewReleasesScreen(
                         Text(release.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(release.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         actions.more?.let { more ->
-                            TextButton({ more(release.item) }) { Text(stringResource(Res.string.m4_more)) }
+                            ItemMenuButton({ more(release.item) })
                         }
                     }
                 }

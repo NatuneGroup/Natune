@@ -1,11 +1,5 @@
 package moe.rukamori.archivetune.shared.ui.home
 
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import org.jetbrains.compose.resources.painterResource
-import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -14,7 +8,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
-import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.screens.ItemMenuButton
 
 /**
  * The common frame for every provider. Square sleeves are the default for songs, albums, playlists and the YouTube,
@@ -59,9 +53,7 @@ fun HomeShelfOccurrenceCard(
     }
     val menuControl: (@Composable () -> Unit)? = if (menu) {
         {
-            if (LocalAndroidPhonePresentation.current) IconButton(onClick = { more?.invoke(occurrence) }) {
-                Icon(painterResource(Res.drawable.m4hv_icon_more_vert), stringResource(Res.string.m4_more))
-            } else TextButton(onClick = { more?.invoke(occurrence) }) { Text(stringResource(Res.string.m4_more)) }
+            ItemMenuButton(onClick = { more?.invoke(occurrence) })
         }
     } else {
         null
