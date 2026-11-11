@@ -89,7 +89,14 @@ SDK-enabled builds add:
 `CreateAuthorizationCodeVerifier`, `AuthorizationArgs`/default presence scopes,
 `Authorize`, `GetToken`, `UpdateToken(Bearer, ...)` and `Connect`. Token
 persistence and refresh use the existing OAuth session repository, with SDK
-`RefreshToken` when the SDK is available.
+`RefreshToken` when the SDK is available. If that fails, the same refresh token
+is tried on the HTTP token endpoint. Renewals run one at a time, so a caller that
+waits reads the session again instead of spending a rotated refresh token twice.
+A renewal finishes even if its caller has gone, so the rotated token is saved.
+Only a refused grant (HTTP 400, 401 or 403) or a missing refresh token asks the
+user to authorize again. Other failures, such as offline or 5xx responses, keep
+the saved session and show it as unverified. A refresh that returns no refresh
+token keeps the one used.
 
 ### Permissions
 
