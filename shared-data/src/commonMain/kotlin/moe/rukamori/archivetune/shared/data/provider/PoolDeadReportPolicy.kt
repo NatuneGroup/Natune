@@ -35,6 +35,7 @@ enum class PoolFailureKind {
 fun classifyPoolFailure(error: Throwable?): PoolFailureKind = when (error) {
     is TerminalPlaybackAuthentication -> PoolFailureKind.AUTH_REJECTED
     is AppleAuthException -> PoolFailureKind.AUTH_REJECTED
+    is TidalPlaybackFailure -> error.kind.toPoolFailureKind()
     is ProviderHttpFailure -> when (error.status) {
         401, 403 -> PoolFailureKind.AUTH_REJECTED
         402 -> PoolFailureKind.ENTITLEMENT_LOST

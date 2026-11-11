@@ -1,0 +1,8 @@
+<resources>
+    <string name="builtin_jio_web_player">Use JioSaavn web player (no decoder key)</string>
+    <string name="builtin_qobuz_password_login">Sign in with email and app credentials</string>
+    <string name="builtin_qobuz_email">Email</string>
+    <string name="builtin_qobuz_password">Password</string>
+    <string name="builtin_tidal_quality_fallback">Try lower TIDAL quality when the account restricts it</string>
+    <string name="builtin_qobuz_sign_in_failed">Qobuz sign-in failed. Check your account and app credentials.</string>
+</resources>

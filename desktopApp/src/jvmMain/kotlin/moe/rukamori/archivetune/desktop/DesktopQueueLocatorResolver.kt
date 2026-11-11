@@ -200,7 +200,7 @@ internal fun desktopAudioProviders(
     DesktopTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
     DesktopDeezerSource(http, accounts, pool, preferences),
-    desktopJioSaavnSource(http),
+    desktopJioSaavnSource(http, preferences),
     DesktopQqMusicSource(http, accounts),
 )
 
