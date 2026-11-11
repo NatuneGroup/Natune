@@ -63,6 +63,7 @@ class BackupRestoreArchiveTest {
     @Test fun inspectionOffersAccountOnlyWhenTheXmlActuallyContainsIt() = kotlinx.coroutines.test.runTest {
         val root = java.nio.file.Files.createTempDirectory("xml-backup-inspection")
         try {
+            java.nio.file.Files.createDirectory(root.resolve("fonts"))
             val gateway = JvmBackupArchiveGateway(root, root.resolve("fonts"),
                 object : moe.rukamori.archivetune.shared.domain.persistence.RestorePreferences {
                     override suspend fun snapshot(): PreferenceSnapshot = error("Unused")
