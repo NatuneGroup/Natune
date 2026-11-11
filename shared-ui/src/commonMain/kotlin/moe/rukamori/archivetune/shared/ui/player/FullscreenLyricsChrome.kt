@@ -43,13 +43,17 @@ internal fun FullscreenLyricsChrome(c: PlayerRenderContext) {
                 stringResource(Res.string.m5_seek), foreground,
                 duration != null && c.state.canSeek && c.state.playback?.isSeekable == true,
                 { c.interaction.preview(it, c.state) }, { c.interaction.commit(c.state, c.actions.seekTo) })
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(playerTime(position), style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .54f))
+            // Centred on the row, not spaced between the timestamps: a gap that moves with each clock digit would shift the badge.
+            Box(Modifier.fillMaxWidth().testTag("fullscreen-lyrics-time")) {
+                Text(playerTime(position), modifier = Modifier.align(Alignment.CenterStart),
+                    style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .54f))
                 c.state.formatLabel?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .7f),
-                        modifier = Modifier.testTag("fullscreen-lyrics-quality"))
+                    QualityBadge(it, c.state.formatLossless,
+                        Modifier.align(Alignment.Center).padding(horizontal = 8.dp).testTag("fullscreen-lyrics-quality"),
+                        foreground)
                 }
                 Text(if (duration == null) "" else "−${playerTime((duration - position).coerceAtLeast(0))}",
+                    modifier = Modifier.align(Alignment.CenterEnd),
                     style = MaterialTheme.typography.labelMedium, color = foreground.copy(alpha = .54f))
             }
             CompositionLocalProvider(LocalPlayerGlyphStyle provides PlayerDesignStyle.Default) {

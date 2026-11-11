@@ -255,7 +255,12 @@ internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, e
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = PlayerSliderStyle.Simple, remaining: Boolean = false) {
+internal fun PlayerSeek(
+    c: PlayerRenderContext,
+    native: PlayerSliderStyle = PlayerSliderStyle.Simple,
+    remaining: Boolean = false,
+    codec: Boolean = false,
+) {
     val duration = c.state.playback?.durationMs?.takeIf { it > 0L }
     val position = (c.interaction.previewMs ?: c.state.positionMs).coerceAtLeast(0)
     val fraction = if(duration != null) (position.toDouble()/duration).toFloat().coerceIn(0f,1f) else 0f
@@ -313,10 +318,16 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
                     }
                 }
             })
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+        val quality = c.state.formatLabel?.takeIf { codec && c.preferences.showCodec && it.isNotBlank() }
+        val endText = if(duration==null) "—" else if(remaining) "−${playerTime((duration-position).coerceAtLeast(0))}" else playerTime(duration)
+        if (quality == null) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             Text(playerTime(position),style=MaterialTheme.typography.labelSmall)
-            Text(if(duration==null) "—" else if(remaining) "−${playerTime((duration-position).coerceAtLeast(0))}" else playerTime(duration),
-                style=MaterialTheme.typography.labelSmall)
+            Text(endText,style=MaterialTheme.typography.labelSmall)
+        } else Box(Modifier.fillMaxWidth().testTag("player-seek-quality-row")) {
+            // Centred rather than spaced between the timestamps, so the badge holds still as the digits change.
+            Text(playerTime(position),modifier=Modifier.align(Alignment.CenterStart),style=MaterialTheme.typography.labelSmall)
+            QualityBadge(quality,c.state.formatLossless,Modifier.align(Alignment.Center).padding(horizontal=8.dp).testTag("player-seek-quality"))
+            Text(endText,modifier=Modifier.align(Alignment.CenterEnd),style=MaterialTheme.typography.labelSmall)
         }
     }
 }
