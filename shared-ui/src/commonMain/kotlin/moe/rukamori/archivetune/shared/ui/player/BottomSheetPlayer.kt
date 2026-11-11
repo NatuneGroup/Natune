@@ -147,15 +147,20 @@ fun BottomSheetPlayer(
                         }
                     } else {
                         val cinematicPhone = phonePresentation && presentation.style == PlayerDesignStyle.V4
-                        Box(Modifier.fillMaxSize().padding(top=if(cinematicPhone) 0.dp else 48.dp).padding(horizontal=horizontalPadding,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        if (!(phonePresentation && interaction.panel == PlayerPanel.QUEUE)) {
+                            Box(Modifier.fillMaxSize().padding(top=if(cinematicPhone) 0.dp else 48.dp).padding(horizontal=horizontalPadding,vertical=12.dp)) { PlayerStyleDispatch(c) }
+                        }
                         if(interaction.panel!=PlayerPanel.ARTWORK && presentation.style!=PlayerDesignStyle.FLAMINGO) {
-                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(top=48.dp).padding(16.dp))
+                            val phoneQueue = phonePresentation && interaction.panel == PlayerPanel.QUEUE
+                            SelectedPlayerPanel(c,Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                                .then(if(phoneQueue) Modifier else Modifier.padding(top=48.dp).padding(16.dp)))
                         }
                     }
                     // Every phone/tablet style shares this hit target above artwork and panels.
                     // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
                     if (!desktop && !interaction.fullscreenLyrics &&
-                        !(phonePresentation && presentation.style == PlayerDesignStyle.V4 && !landscape && interaction.panel == PlayerPanel.ARTWORK)) {
+                        !(phonePresentation && !landscape && (interaction.panel == PlayerPanel.QUEUE ||
+                            presentation.style == PlayerDesignStyle.V4 && interaction.panel == PlayerPanel.ARTWORK))) {
                         PlayerIcon(
                             if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) PlayerSymbol.DOWN else PlayerSymbol.BACK,
                             stringResource(Res.string.m5_back),
@@ -180,6 +185,16 @@ private fun SelectedPlayerPanel(c: PlayerRenderContext,modifier: Modifier) {
 
 @Composable
 internal fun PlayerSidePanel(c: PlayerRenderContext,modifier: Modifier) {
+    if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current && !c.landscape &&
+        c.interaction.panel == PlayerPanel.QUEUE) {
+        CompositionLocalProvider(moe.rukamori.archivetune.shared.ui.queue.LocalPhoneQueuePlayerActions provides
+            moe.rukamori.archivetune.shared.ui.queue.PhoneQueuePlayerActions(c.state.displayedOccurrenceId, c.state.liked,
+                if (PlayerAction.LIKE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.LIKE) } } else null,
+                if (PlayerAction.MORE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.MORE) } } else null)) {
+            c.slots.queue(modifier)
+        }
+        return
+    }
     Column(modifier.testTag("player-side-panel")) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             PlayerIcon(PlayerSymbol.BACK,stringResource(Res.string.m5_back),{ c.interaction.panel=PlayerPanel.ARTWORK })
