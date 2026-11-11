@@ -35,8 +35,8 @@ interface BackupSnapshotSource {
  * process and share it with the prepared-restore registry. A fatal rollback failure is remembered by the instance
  * that hit it, so a second instance would not see it.
  *
- * The codec throws generic IllegalArgumentException failures and exposes no section listing. Typed problems are
- * therefore derived from archive entry names, and the codec still validates every section it is asked to restore.
+ * The codec validates every selected section. Inspection derives restore choices from its parsed preference names
+ * and validated library/font entries, so a settings payload does not imply that credentials are present.
  * Restart is requested for every applied section because library and settings replacement can leave in-memory
  * caches and restart-scoped preferences stale.
  */
@@ -89,8 +89,13 @@ class JvmBackupArchiveGateway(
         }
         if (names.isEmpty()) throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
         val sections = sectionsIn(names)
-        if (sections.isNotEmpty()) validate(archive, sections)
-        BackupArchiveInspection(sections.map { it.toDataCategory() }.toSet())
+        val prepared = if (sections.isNotEmpty()) validate(archive, sections) else null
+        BackupArchiveInspection(buildSet {
+            if (prepared != null) {
+                addAll(backupCategoriesOf(LIBRARY_DATABASE in prepared.libraryFiles, prepared.settings))
+                if (prepared.fonts.isNotEmpty()) add(BackupDataCategory.SETTINGS)
+            }
+        })
     }
 
     override suspend fun restore(archive: ByteArray, selected: Set<BackupDataCategory>): BackupRestoreOutcome {
@@ -110,8 +115,8 @@ class JvmBackupArchiveGateway(
     }
 
     /** Validates the sections the names point at. The codec is the only content validator. */
-    private fun validate(archive: ByteArray, sections: Set<BackupCategory>) {
-        try {
+    private fun validate(archive: ByteArray, sections: Set<BackupCategory>): PreparedBackup {
+        return try {
             codec.prepare(archive, sections)
         } catch (invalid: IllegalArgumentException) {
             throw BackupArchiveException(BackupArchiveProblem.CORRUPTED, invalid)
@@ -132,7 +137,7 @@ class JvmBackupArchiveGateway(
 
     private fun sectionsIn(names: Set<String>): Set<BackupCategory> = buildSet {
         if (LIBRARY_DATABASE in names) add(BackupCategory.LIBRARY)
-        // The codec reads settings for both SETTINGS and ACCOUNT, so a settings payload offers both sections.
+        // Validate both owners, then offer only the sections present in the parsed preference names.
         if (SETTINGS_XML in names || SETTINGS_LEGACY in names) {
             add(BackupCategory.SETTINGS)
             add(BackupCategory.ACCOUNT)
@@ -148,11 +153,6 @@ class JvmBackupArchiveGateway(
         BackupDataCategory.SETTINGS -> BackupCategory.SETTINGS
     }
 
-    private fun BackupCategory.toDataCategory(): BackupDataCategory = when (this) {
-        BackupCategory.LIBRARY -> BackupDataCategory.LIBRARY
-        BackupCategory.ACCOUNT -> BackupDataCategory.ACCOUNT
-        BackupCategory.SETTINGS -> BackupDataCategory.SETTINGS
-    }
 
     private companion object {
         /**

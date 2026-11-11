@@ -204,7 +204,7 @@ class DriveAppDataBackupOwner(
     }
 
     private suspend fun uploadArchive(accountName: String) {
-        val archive = archives.create(BackupDataCategory.entries.toSet())
+        val archive = createSyncBackup(archives)
         if (archive.isEmpty() || archive.size > DriveAppDataLimits.MAX_ARCHIVE_BYTES) {
             throw DriveAppDataBackupException(DriveAppDataBackupFailure.STORAGE)
         }

@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
+import moe.rukamori.archivetune.shared.data.backup.BackupSecretPolicy
+
 enum class BackupCategory { LIBRARY, ACCOUNT, SETTINGS }
 
 /** Host vault ciphertext/keys are NEVER preference values and must never enter an archive. */
@@ -45,6 +47,11 @@ object BackupPreferencePolicy {
         // (the provider is build-configured now) and its signing key was a credential.
         "lyprioEndpoint", "lyprioSigningKey")
 
+    /** Plaintext exports omit all account state and secret-shaped keys, including unknown future providers. */
+    fun includesForExport(name: String, selected: Set<BackupCategory>): Boolean =
+        !BackupSecretPolicy.isSecret(name) && includes(name, selected - BackupCategory.ACCOUNT)
+
+    /** Legacy restore ownership stays independent of the stricter export policy. */
     fun includes(name: String, selected: Set<BackupCategory>): Boolean {
         if (name in deviceKeys) return false
         // Vault blobs cannot be made portable simply by selecting ACCOUNT, so a raw reference never exports.

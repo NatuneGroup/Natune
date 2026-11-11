@@ -17,7 +17,7 @@ class SettingsVaultUnavailable : IllegalStateException("Secure settings storage 
 /**
  * Own the underlying settings store exclusively. Only opaque references enter it; logical values
  * exist in memory/the scoped native vault. Pass snapshot() to M7's existing category-aware codec,
- * never the underlying file: ACCOUNT export retains logical names, not device vault references.
+ * never the underlying file: exports exclude sign-ins; old ACCOUNT restores retain logical names.
  *
  * New immutable vault entries are prepared before the atomic metadata edit. A failed edit cannot
  * overwrite the credentials a restart still references. This is not a new crypto or backup format.

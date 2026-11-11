@@ -319,7 +319,7 @@ internal object IosRestoreStartup {
         val current = settings.snapshot()
         val before = IosRestoreRecovery.settingsBeforePath(pending.directory)
         if (!ops.exists(before)) {
-            ops.writeAtomically(before, PortableBackupFormat.encodeSettings(current))
+            ops.writeAtomically(before, PortableBackupFormat.encodeRestoreSettings(current))
         }
         settings.replaceAll(mergedRestoredSettings(current, restored, owned))
     }
