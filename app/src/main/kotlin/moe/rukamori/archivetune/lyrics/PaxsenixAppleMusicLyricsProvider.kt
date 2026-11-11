@@ -9,6 +9,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import moe.rukamori.archivetune.constants.EnablePaxsenixLyricsKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
 import moe.rukamori.archivetune.utils.dataStore
@@ -17,7 +18,8 @@ import moe.rukamori.archivetune.utils.get
 object PaxsenixAppleMusicLyricsProvider : LyricsProvider {
     override val name = "Paxsenix: Apple Music"
 
-    override fun isEnabled(context: Context): Boolean = context.dataStore[EnablePaxsenixAppleMusicLyricsKey] ?: true
+    override fun isEnabled(context: Context): Boolean = (context.dataStore[EnablePaxsenixLyricsKey] ?: true) &&
+            (context.dataStore[EnablePaxsenixAppleMusicLyricsKey] ?: true)
 
     override suspend fun getLyrics(
         id: String,

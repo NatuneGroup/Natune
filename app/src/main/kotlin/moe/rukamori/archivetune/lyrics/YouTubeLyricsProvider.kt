@@ -9,13 +9,16 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import moe.rukamori.archivetune.constants.EnableYouTubeMusicLyricsKey
+import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 
 object YouTubeLyricsProvider : LyricsProvider {
     override val name = "YouTube Music"
 
-    override fun isEnabled(context: Context) = true
+    override fun isEnabled(context: Context) = context.dataStore[EnableYouTubeMusicLyricsKey] ?: true
 
     override suspend fun getLyrics(
         id: String,

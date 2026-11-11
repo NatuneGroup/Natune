@@ -162,14 +162,14 @@ class LyricsHelper(
         // The entry is skipped, not purged, so re-enabling the provider can reuse it when no other
         // provider answers.
         resultCache.get(key)?.let { cached ->
-            if (isCachedProviderSelectable(cached.providerName, request, prioritize) &&
+            if (isCachedProviderSelectable(cached.providerName, request) &&
                 (!prioritize || LyricsDetection.hasWordSyncedLyrics(cached.lyrics))
             ) {
                 return cached
             }
         }
         allResultsCache.get(key)?.let { cached ->
-            val first = cached.firstOrNull { isCachedProviderSelectable(it.providerName, request, prioritize) }
+            val first = cached.firstOrNull { isCachedProviderSelectable(it.providerName, request) }
             if (first != null && (!prioritize || LyricsDetection.hasWordSyncedLyrics(first.lyrics))) return first
         }
         return null
@@ -178,28 +178,18 @@ class LyricsHelper(
     private fun isCachedProviderSelectable(
         providerName: String,
         request: LyricsRequest,
-        sweepActive: Boolean,
     ): Boolean {
         val provider = providers.firstOrNull { it.name == providerName } ?: return false
-        return isLookupEligible(provider, request, sweepActive)
+        return isLookupEligible(provider, request)
     }
 
-    /**
-     * One eligibility authority for the fetch path and its cache. [sweepActive] keeps the documented
-     * word-sync exception: the three canonical sweep providers are queried regardless of their
-     * fallback switches, so their answers must remain reusable in that lookup mode. Every other
-     * mode accepts only providers the user has enabled. Availability and media-id capability always
-     * apply.
-     */
     private fun isLookupEligible(
         provider: LyricsProvider,
         request: LyricsRequest,
-        sweepActive: Boolean,
     ): Boolean {
         if (!isAvailable(provider.name)) return false
         if (!LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)) return false
-        return (sweepActive && provider.name in LyricsProviderOrder.WORD_SYNC_NAMES) ||
-            isEnabled(provider.name)
+        return isEnabled(provider.name)
     }
 
     private fun isCachedProviderEnabled(providerName: String): Boolean {
@@ -213,48 +203,22 @@ class LyricsHelper(
         preferredProviderOnly: Boolean,
         prioritize: Boolean,
     ): LyricsResult {
-        if (prioritize) {
-            val wordSynced = sweepWordSynced(request)
-            if (wordSynced != null && isMeaningful(wordSynced.lyrics)) {
-                resultCache.put(key, wordSynced)
-                return wordSynced
-            }
-        }
-
-        val usable = providers.filter { isLookupEligible(it, request, sweepActive = false) }
+        val usable = providers.filter { isLookupEligible(it, request) }
         // Android takes the first of the user-ordered list. The host's list order plays that role here.
         val candidates = if (preferredProviderOnly) usable.take(1) else usable
-        val result = fetchPriority(candidates, request)
+        val result = fetchPriority(candidates, request, prioritize)
         if (isMeaningful(result.lyrics)) resultCache.put(key, result)
         return result
-    }
-
-    /**
-     * The word-synced sweep. It asks the three word-capable providers in parallel with the longer
-     * timeout and returns the first word-synced answer in the fixed order. Anything else is ignored.
-     */
-    private suspend fun sweepWordSynced(request: LyricsRequest): LyricsResult? {
-        val sweepProviders =
-            LyricsProviderOrder.WORD_SYNC_NAMES
-                .mapNotNull { name -> providers.firstOrNull { it.name == name } }
-                .filter { isLookupEligible(it, request, sweepActive = true) }
-        if (sweepProviders.isEmpty()) return null
-
-        val answers =
-            calls.fanOut(sweepProviders, LyricsFetchPolicy.WORD_SYNCED_TIMEOUT_MS) { provider ->
-                calls.fetchUsable(provider, request)
-            }
-        val candidates = answers.map { (provider, lyrics) -> LyricsResult(provider.name, lyrics) }
-        return LyricsRanking.firstWordSynced(candidates)
     }
 
     private suspend fun fetchPriority(
         candidates: List<LyricsProvider>,
         request: LyricsRequest,
+        prioritize: Boolean,
     ): LyricsResult {
         if (candidates.isEmpty()) return LyricsResult.NOT_FOUND
         val answers =
-            calls.fanOut(candidates, LyricsFetchPolicy.FAN_OUT_TIMEOUT_MS) { provider ->
+            calls.fanOut(candidates, if (prioritize) LyricsFetchPolicy.WORD_SYNCED_TIMEOUT_MS else LyricsFetchPolicy.FAN_OUT_TIMEOUT_MS) { provider ->
                 calls.fetchUsable(provider, request)
             }
         return LyricsRanking.rank(answers.map { (provider, lyrics) -> LyricsResult(provider.name, lyrics) })
