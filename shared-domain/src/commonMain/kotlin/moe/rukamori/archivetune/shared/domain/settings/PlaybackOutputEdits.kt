@@ -4,10 +4,18 @@ val playbackOutputPreferenceKeys = setOf(CrossfadeEnabledKey, AutomixEnabledKey,
 val audioProcessingPreferenceKeys = setOf(AudioProcessingEnabledKey)
 
 /** Baseline RestartPreferenceActions: output choices and their exclusions commit together. */
-fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enabled: Boolean) {
-    require(key in playbackOutputPreferenceKeys)
+fun PreferenceEditor.setPlaybackOutputPreference(
+    key: BooleanPreferenceKey,
+    enabled: Boolean,
+    bitPerfectPlatformSupported: Boolean = true,
+    directUsbDriverAvailable: Boolean = false,
+) {
+    require(key in playbackOutputPreferenceKeys || key == DirectUsbDriverKey)
     // Also guard a stale dialog/search action. Never silently turn off the user's rejection policy.
     if (key == AudioOffload && enabled && this[RejectSuspectedUpscaledAudioKey, false]) return
+    if (key == DirectUsbDriverKey && enabled &&
+        !snapshot().directUsbDriverSelectable(bitPerfectPlatformSupported, directUsbDriverAvailable)
+    ) return
     this[key] = enabled
     if (!enabled) return
     when (key) {
@@ -59,6 +67,12 @@ fun PreferenceEditor.setPcmProcessingPreference(key: BooleanPreferenceKey, enabl
 /** Native latched sink state must be checked in addition to this persisted selection. */
 fun PreferenceSnapshot.bitPerfectOutputSelected(): Boolean =
     this[BitPerfectUsbOutputKey, false] && !this[CrossfadeEnabledKey, false] && !this[AutomixEnabledKey, false]
+
+fun bitPerfectOutputSupported(platformSupported: Boolean, directPreference: Boolean, directDriverAvailable: Boolean): Boolean =
+    platformSupported || (directPreference && directDriverAvailable)
+
+fun PreferenceSnapshot.directUsbDriverSelectable(platformSupported: Boolean, directDriverAvailable: Boolean): Boolean =
+    directDriverAvailable && (bitPerfectOutputSelected() || !platformSupported)
 
 /** The caller additionally checks the actual active native sink, after persistence succeeds. */
 fun SettingsChange.needsBitPerfectSinkRelease(): Boolean =

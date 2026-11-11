@@ -96,6 +96,16 @@ credits below.
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
 | [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Historical 1.11.0 dependency, removed in the APK-size pass after the LastWave engine retired; credit and [full upstream notice](../shared-ui/src/commonMain/composeResources/files/notices/Google-Oboe-Apache-2.0.txt) retained in the bundled About licenses. |
 
+The direct USB output port follows [rukamori/ArchiveTune](https://github.com/rukamori/ArchiveTune)
+commit `38670c8b6ecef127d9d5a059986b9635fce2023a` (GPL-3.0). Its descriptor and
+hardware-volume code in `playback/usbdirect/UsbDescriptors.kt` and `UsbVolume.kt`
+retains attribution to [BitChord](https://github.com/kushagrasinghx/BitChord)
+(Copyright 2026 BitChord Project) and [Mornye](https://github.com/mornyeapp/Mornye)
+(Copyright 2026 zarzet), LGPL-3.0-only. The packet clock and native session lineage
+retain Mornye attribution. Natune replaces the libusb transport with USBFS and reuses
+its existing PCM converter and output setting. The [bundled notice and licence texts](../shared-ui/src/commonMain/composeResources/files/notices/Direct-USB-GPL-LGPL-3.0.txt)
+appear in About licences on every host; the actual transport is Android-only.
+
 The removed native work went with its notices: the LastWave engine library
 (`app/src/main/cpp/lastwave`) and the SoX Resampler 0.1.3 subset it vendored
 (`third_party/soxr`, LGPL-2.1), the Tryptify DSP core

@@ -9,6 +9,7 @@ import moe.rukamori.archivetune.constants.AUDIO_PROCESSING_ENABLED_DEFAULT
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.AudioOffload
 import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
+import moe.rukamori.archivetune.constants.BitPerfectUsbOutputKey
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
@@ -49,6 +50,8 @@ internal fun playbackSettingsItem(
             SettingsChild("Skip silence", "skip_silence", listOf("silence", "skip silence", "blank", "quiet")) { SearchResultSwitch(SkipSilenceKey, false) },
             SettingsChild("Audio normalization", "audio_normalization", listOf("normalization", "loudness", "normalize", "volume level")) { SearchResultSwitch(AudioNormalizationKey, true) },
             SettingsChild("Audio offload", "audio_offload", listOf("offload", "audio offload", "hardware decoder")) { SearchResultSwitch(AudioOffload, false) },
+            SettingsChild(context.getString(R.string.bit_perfect_usb_title), "bit_perfect_usb", listOf("usb", "dac", "bit perfect")) { SearchResultSwitch(BitPerfectUsbOutputKey, false) },
+            SettingsChild(context.getString(R.string.direct_usb_driver_title), "direct_usb_driver", listOf("usb", "dac", "direct", "experimental", "driver")) { SearchResultSwitch(moe.rukamori.archivetune.constants.DirectUsbDriverKey, false) },
             SettingsChild("USB exclusive output", "usb_exclusive_audio", listOf("usb", "exclusive", "usb exclusive", "dac", "usb dac", "aaudio", "direct", "bypass mixer", "experimental audio")),
             SettingsChild("Audio processing", "audio_processing",
                 listOf("audio processing", "dsp", "dsp engine", "audio engine", "equalizer", "equaliser",

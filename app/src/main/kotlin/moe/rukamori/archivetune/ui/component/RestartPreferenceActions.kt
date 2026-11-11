@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
+import moe.rukamori.archivetune.playback.usbdirect.UsbDirectNative
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.RestartScopedSettings
 import moe.rukamori.archivetune.utils.SnapshotPreferenceState
@@ -67,6 +68,9 @@ fun setPlaybackOutputPreference(
             BitPerfectUsbOutput.setEnabled(context, false)
         }
     }) {
-        applySharedPreferenceEdit { setPlaybackOutputPreference(BooleanPreferenceKey(key.name), enabled) }
+        applySharedPreferenceEdit {
+            setPlaybackOutputPreference(BooleanPreferenceKey(key.name), enabled,
+                BitPerfectUsbOutput.isPlatformSupported, UsbDirectNative.available)
+        }
     }
 }

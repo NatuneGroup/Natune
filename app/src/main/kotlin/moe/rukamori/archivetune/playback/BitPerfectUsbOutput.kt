@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import moe.rukamori.archivetune.playback.usbdirect.UsbDirectDevices
+import moe.rukamori.archivetune.playback.usbdirect.UsbDirectNative
 
 /**
  * Android 14+ bit-perfect output to USB DACs, via the platform's preferred-mixer API.
@@ -61,6 +63,7 @@ object BitPerfectUsbOutput {
         data class Active(
             val deviceName: String,
             val format: String,
+            val exact: Boolean = true,
         ) : Status
 
         /** A DAC is attached but the current track could not go bit-perfect, for [reason]. */
@@ -99,6 +102,45 @@ object BitPerfectUsbOutput {
     val isPlatformSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
+    @Volatile var directEnabled: Boolean = false
+        private set
+
+    fun configureDirect(value: Boolean) { directEnabled = value }
+
+    fun supportedWith(directPreference: Boolean): Boolean =
+        isPlatformSupported || (directPreference && UsbDirectNative.available)
+
+    val isSupported: Boolean get() = supportedWith(directEnabled)
+
+    @Volatile private var devices: UsbDirectDevices? = null
+    @Volatile private var directDeviceId: Int? = null
+
+    @Synchronized internal fun directDevices(context: Context): UsbDirectDevices = devices
+        ?: UsbDirectDevices(context.applicationContext) { refreshDeviceStatus(context.applicationContext) }
+            .also { devices = it }
+
+    internal fun directActive(deviceId: Int, name: String, format: String) {
+        directDeviceId = deviceId
+        _status.value = Status.Active(name, format)
+    }
+
+    internal fun directInexact(context: Context) {
+        val active = _status.value as? Status.Active ?: return
+        _status.value = Status.Active(active.deviceName, context.getString(R.string.bit_perfect_usb_direct_rounded), exact = false)
+    }
+
+    internal fun directFailed(context: Context) {
+        directDeviceId = null
+        _status.value = Status.Fallback("", context.getString(R.string.bit_perfect_usb_direct_failed))
+    }
+
+    fun releaseDirect() {
+        enabled = false
+        val retiring = synchronized(this) { devices.also { devices = null; directDeviceId = null } }
+        retiring?.release()
+        _status.value = Status.Off
+    }
+
     /**
      * Applies the user's switch. Turning it off removes the preference this app registered so the
      * DAC returns to the shared mixer immediately rather than after the next device reconnect.
@@ -109,9 +151,11 @@ object BitPerfectUsbOutput {
     ) {
         enabled = value
         if (!value) {
+            releaseDirect()
             clear(context)
             _status.value = Status.Off
         } else {
+            if (directEnabled && UsbDirectNative.available) directDevices(context).watch()
             refreshDeviceStatus(context)
         }
     }
@@ -122,8 +166,23 @@ object BitPerfectUsbOutput {
             _status.value = Status.Off
             return
         }
+        if (directEnabled && UsbDirectNative.available) {
+            val usb = directDevices(context)
+            val attached = usb.audioDevices()
+            if (directDeviceId != null && usb.hasActiveOutput() && attached.any { it.deviceId == directDeviceId }) return
+            directDeviceId = null
+            val device = attached.firstOrNull()
+            val fallback = _status.value as? Status.Fallback
+            if (device != null && (fallback == null ||
+                    fallback.reason == context.getString(R.string.bit_perfect_usb_direct_permission))) {
+                _status.value = if (usb.manager?.hasPermission(device) == true) Status.Ready(device.productName.orEmpty())
+                else Status.Fallback(device.productName.orEmpty(), context.getString(R.string.bit_perfect_usb_direct_permission))
+                return
+            }
+            if (device != null && !isPlatformSupported) return
+        }
         if (!isPlatformSupported) {
-            _status.value = Status.Unsupported
+            _status.value = if (isSupported) Status.NoDevice else Status.Unsupported
             return
         }
         val device = findUsbOutput(context)
@@ -138,7 +197,8 @@ object BitPerfectUsbOutput {
     }
 
     /** True when a USB audio output is attached right now. */
-    fun hasUsbOutput(context: Context): Boolean = findUsbOutput(context) != null
+    fun hasUsbOutput(context: Context): Boolean = findUsbOutput(context) != null ||
+        (directEnabled && UsbDirectNative.available && directDevices(context).audioDevices().isNotEmpty())
 
     /**
      * Decides how the AudioTrack for [config] should be created. Returns the encoding to create it
@@ -151,7 +211,9 @@ object BitPerfectUsbOutput {
     ): Plan? {
         if (!enabled) return null
         if (!isPlatformSupported) {
-            _status.value = Status.Unsupported
+            val device = if (directEnabled && UsbDirectNative.available) directDevices(context).audioDevices().firstOrNull() else null
+            _status.value = if (device != null) Status.Fallback(device.productName.orEmpty(),
+                context.getString(R.string.bit_perfect_usb_direct_unavailable)) else if (directEnabled && UsbDirectNative.available) Status.NoDevice else Status.Unsupported
             return null
         }
         if (config.isOffload || config.isTunneling || !isLinearPcm(config.encoding)) return null

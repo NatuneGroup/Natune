@@ -1420,17 +1420,7 @@ class MusicService :
             reportException(e)
         }
 
-        // The sink is fixed for the life of this player, so a default read before the first
-        // settings snapshot lands would silently ignore the switch until the next restart.
-        // Bounded (1.5 s), and on every API level because the USB exclusive switch exists on all.
-        moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
-        bitPerfectOutputActive =
-            BitPerfectUsbOutput.isPlatformSupported &&
-            dataStore.get(BitPerfectUsbOutputKey, false) &&
-            !dataStore.get(CrossfadeEnabledKey, false) &&
-            !dataStore.get(AutomixEnabledKey, false)
-        BitPerfectUsbOutput.sinkActive = bitPerfectOutputActive
-        BitPerfectUsbOutput.setEnabled(this, bitPerfectOutputActive)
+        bitPerfectOutputActive = initializeBitPerfectOutput(this)
         if (bitPerfectOutputActive) registerBitPerfectDeviceCallback()
         // The bit-perfect sink owns the DAC when it is on; the exclusive route lives in the
         // standard sink only.
@@ -11778,22 +11768,9 @@ class MusicService :
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ): DefaultAudioSink {
+            ): androidx.media3.exoplayer.audio.AudioSink {
                 if (bitPerfectOutputActive) {
-                    // Bit-perfect USB: decoders hand over float (exact for 16/24-bit sources),
-                    // the float path skips every processor in the chain, and the provider
-                    // negotiates the DAC's native container per AudioTrack. No speed, silence
-                    // skipping, haptics or transition filtering can touch the samples here.
-                    return DefaultAudioSink
-                        .Builder(context)
-                        .setEnableFloatOutput(true)
-                        .setEnableAudioTrackPlaybackParams(false)
-                        .setAudioOutputProvider(
-                            BitPerfectAudioOutputProvider(
-                                context,
-                                AudioTrackAudioOutputProvider.Builder(context).build(),
-                            ),
-                        ).build()
+                    return newBitPerfectAudioSink(context)
                 }
                 return buildStandardAudioSink(context, enableAudioTrackPlaybackParams)
             }
@@ -12249,6 +12226,7 @@ class MusicService :
         bitPerfectDeviceCallback = null
         // Hands the DAC back to the shared mixer; the preference would otherwise outlive the app.
         BitPerfectUsbOutput.clear(this)
+        BitPerfectUsbOutput.releaseDirect()
         BitPerfectUsbOutput.sinkActive = false
         UsbExclusiveAudioOutputProvider.installed = false
         unregisterBluetoothReceiver()
