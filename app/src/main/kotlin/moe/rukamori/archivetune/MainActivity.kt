@@ -4101,94 +4101,10 @@ class MainActivity : ComponentActivity() {
         uri: Uri,
         viewModel: BackupRestoreViewModel = hiltViewModel(),
     ) {
-        var selected by remember { mutableStateOf(BackupCategory.entries.toSet()) }
-
-        AlertDialog(
-            onDismissRequest = { pendingBackupRestoreUri = null },
-            icon = { Icon(painterResource(R.drawable.restore), null) },
-            title = { Text(stringResource(R.string.restore_options_title)) },
-            text = {
-                Column {
-                    BackupCategory.entries.forEach { category ->
-                        val isChecked = category in selected
-                        val labelRes =
-                            when (category) {
-                                BackupCategory.LIBRARY -> R.string.backup_category_library
-                                BackupCategory.ACCOUNT -> R.string.backup_category_account
-                                BackupCategory.SETTINGS -> R.string.backup_category_settings
-                            }
-                        val descRes =
-                            when (category) {
-                                BackupCategory.LIBRARY -> R.string.backup_category_library_desc
-                                BackupCategory.ACCOUNT -> R.string.backup_category_account_desc
-                                BackupCategory.SETTINGS -> R.string.backup_category_settings_desc
-                            }
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = Color.Transparent,
-                            onClick = {
-                                selected = if (isChecked) selected - category else selected + category
-                            },
-                        ) {
-                            Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 72.dp)
-                                        .padding(horizontal = 4.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(labelRes),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = stringResource(descRes),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                androidx.compose.material3.Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = { checked ->
-                                        selected = if (checked) selected + category else selected - category
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val uri = pendingBackupRestoreUri ?: return@TextButton
-                        pendingBackupRestoreUri = null
-                        viewModel.restore(this@MainActivity, uri, selected)
-                    },
-                    enabled = selected.isNotEmpty(),
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(stringResource(R.string.action_restore))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { pendingBackupRestoreUri = null },
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
+        moe.rukamori.archivetune.ui.screens.settings.BackupRestoreIntentDialog(
+            uri = uri,
+            viewModel = viewModel,
+            onDismiss = { pendingBackupRestoreUri = null },
         )
     }
 

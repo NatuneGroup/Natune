@@ -1,11 +1,13 @@
 package moe.rukamori.archivetune.ui.screens.settings
 
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -14,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.viewmodels.BackupCategory
+import moe.rukamori.archivetune.viewmodels.BackupRestoreViewModel
+import moe.rukamori.archivetune.viewmodels.BackupValidationResult
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -117,4 +121,38 @@ internal fun BackupOptionsDialog(
         }
         Spacer(Modifier.height(4.dp))
     }
+}
+
+/** Intent restores use the same inspection and category choices as file-picker restores. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun BackupRestoreIntentDialog(uri: Uri, viewModel: BackupRestoreViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var validation by remember(uri) { mutableStateOf<BackupValidationResult?>(null) }
+    LaunchedEffect(uri) { validation = viewModel.validateBackup(context, uri) }
+    val result = validation
+    if (result == null || !result.isValid) {
+        DefaultDialog(
+            onDismiss = onDismiss,
+            title = { Text(stringResource(if (result == null) R.string.restore_in_progress else R.string.restore_failed)) },
+            buttons = {
+                TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
+                    Text(stringResource(if (result == null) android.R.string.cancel else android.R.string.ok))
+                }
+            },
+        ) {
+            Text(result?.errorMessage ?: stringResource(R.string.restore_step_verifying))
+        }
+        return
+    }
+    BackupOptionsDialog(
+        title = stringResource(R.string.restore_options_title),
+        availableCategories = BackupCategory.entries.filter { it in result.availableCategories },
+        confirmLabel = stringResource(R.string.action_restore),
+        onConfirm = { selected ->
+            onDismiss()
+            viewModel.restore(context, uri, selected)
+        },
+        onDismiss = onDismiss,
+    )
 }
