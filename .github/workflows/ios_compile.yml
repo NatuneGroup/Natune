@@ -11,6 +11,10 @@ on:
       - dev
       - main
     paths:
+      - 'native/core/**'
+      - 'shared-core/**'
+      - 'scripts/build_rust_core.py'
+      - 'settings.gradle.kts'
       - 'shared-ui/src/iosMain/**'
       - 'shared-ui/src/iosTest/**'
       - 'shared-ui/src/commonTest/**'
@@ -204,6 +208,16 @@ jobs:
             sleep $((attempt * 15))
           done
           exit 1
+
+      - name: Set up Rust core targets
+        uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Load Rust on simulator and link the device framework
+        run: >-
+          ./gradlew -Pnatune.rustCore=true :shared-core:iosSimulatorArm64Test
+          :shared-ui:linkDebugFrameworkIosArm64 :shared-ui:linkDebugFrameworkIosSimulatorArm64 --stacktrace
 
       - name: Compile shared modules and iosTest sources for the iOS simulator
         # Test-source compilation only: this does not link a test binary, execute tests, build the native

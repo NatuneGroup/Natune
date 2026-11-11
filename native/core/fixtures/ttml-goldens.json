@@ -1,0 +1,6 @@
+{
+  "added/minimal": {
+    "lines": [{ "time": 1000, "text": "Hello", "agent": null, "isInstrumental": false, "durationMs": 0, "providerRomanizedText": null, "providerRomanizedWords": null, "providerRomanizedLanguage": null, "providerTranslationText": null, "words": null }],
+    "credits": { "songwriters": [], "translationAutoCreated": false, "transliterationAutoCreated": false }
+  }
+}

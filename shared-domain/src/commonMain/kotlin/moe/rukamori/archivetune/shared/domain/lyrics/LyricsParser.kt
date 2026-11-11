@@ -37,9 +37,16 @@ object LyricsParser {
 
     fun parseTtml(lyrics: String): List<LyricsLine> {
         val parsedLines = TtmlParser.parseTtml(LyricsNormalizer.normalize(lyrics))
-        if (parsedLines.isEmpty()) return emptyList()
+        return ttmlLines(parsedLines)
+    }
 
-        return parsedLines
+    fun readTtmlDocument(lyrics: String): TtmlDocument {
+        val (lines, credits) = TtmlParser.readDocument(LyricsNormalizer.normalize(lyrics))
+        return TtmlDocument(ttmlLines(lines), credits)
+    }
+
+    private fun ttmlLines(parsedLines: List<TtmlParser.ParsedLine>): List<LyricsLine> =
+        parsedLines
             .map { line ->
                 val words =
                     line.words
@@ -65,7 +72,6 @@ object LyricsParser {
                 )
             }.sortedBy { it.time }
             .map { it.toLine() }
-    }
 
     /** The document-level credits of a TTML document, or an empty value for non-TTML and malformed input. */
     fun parseTtmlCredits(lyrics: String): LyricsCredits =

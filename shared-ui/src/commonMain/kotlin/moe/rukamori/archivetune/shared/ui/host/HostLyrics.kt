@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.rukamori.archivetune.shared.data.lyrics.ttmlDocumentReader
+import moe.rukamori.archivetune.shared.domain.lyrics.TtmlDocument
 import moe.rukamori.archivetune.shared.data.lyrics.BetterLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.BiniLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.GeniusLyricsProvider
@@ -109,7 +111,7 @@ interface HostLyricsStorage {
 class HostLyrics(
     private val scope: CoroutineScope,
     http: HttpClient,
-    settings: VaultSettingsStore,
+    private val settings: VaultSettingsStore,
     private val player: MusicPlayerController,
     private val queue: StateFlow<QueueState>,
     private val networkAvailable: () -> Boolean,
@@ -210,7 +212,7 @@ class HostLyrics(
         val readRevision = revision
         var status = HostLyricsStatus.NOT_FOUND
         var fetched = false
-        val (raw, lines) = try {
+        val (raw, parsed) = try {
             val saved = item?.let { readSaved(it) }?.takeIf { !force || it.edited }
             val cached = if (saved?.edited == true) saved.raw else storage?.read(requireNotNull(item), force) ?: saved?.raw
             if (cached != null) {
@@ -219,7 +221,7 @@ class HostLyrics(
             } else {
                 val result = runtime.lyrics(request, forceRefresh = force)
                 status = if (result.providerName.isEmpty()) HostLyricsStatus.NOT_FOUND else HostLyricsStatus.READY
-                if (result.providerName.isEmpty()) "" to emptyList() else {
+                if (result.providerName.isEmpty()) "" to TtmlDocument(emptyList()) else {
                     fetched = true
                     result.lyrics to parse(result.lyrics)
                 }
@@ -229,13 +231,14 @@ class HostLyrics(
         } catch (failure: Exception) {
             status = HostLyricsStatus.FAILED
             report("lyrics lookup failed: ${failure.describe()}")
-            "" to emptyList()
+            "" to TtmlDocument(emptyList())
         }
         if (status == HostLyricsStatus.NOT_FOUND) {
             // One line naming the track, so a miss for a track no provider knows is not mistaken for a broken lookup.
             report("lyrics lookup found nothing for \"${request.title} — ${request.artist}\"")
         }
-        val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
+        val lines = parsed.lines
+        val credits = if (LyricsDetection.isTtml(raw)) parsed.credits else null
         documentGate.withLock {
             if (revision != readRevision || state.value?.occurrenceId != occurrenceId) return@withLock
             if (status == HostLyricsStatus.READY && lines.isNotEmpty() && fetched && item != null) {
@@ -249,8 +252,9 @@ class HostLyrics(
         }
     }
 
-    private fun parse(text: String): List<LyricsLine> =
-        if (LyricsDetection.isTtml(text)) LyricsParser.parseTtml(text) else LyricsParser.parse(text)
+    private suspend fun parse(text: String): TtmlDocument =
+        if (LyricsDetection.isTtml(text)) ttmlDocumentReader(settings.snapshots.value).readTtml(text)
+        else TtmlDocument(LyricsParser.parse(text))
 
     private companion object {
         /** The runtime caps preloading at ten upcoming songs, whatever the setting says. */

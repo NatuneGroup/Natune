@@ -1,0 +1,133 @@
+name: Rust core
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'native/core/**'
+      - 'shared-core/**'
+      - 'shared-domain/**'
+      - 'shared-data/**'
+      - 'settings.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'scripts/*rust_core*'
+      - 'scripts/*ttml*'
+      - '.github/workflows/rust_core.yml'
+  push:
+    branches: [dev]
+    paths: ['native/core/**', 'shared-core/**', '.github/workflows/rust_core.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rust-core-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  rust-tests:
+    name: Rust unit, parity, lint and benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/shared-core/build/cargo
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: clippy,rustfmt
+      - run: python3 scripts/extract_ttml_fixtures.py --check
+      - working-directory: native/core
+        run: |
+          cargo test --locked --workspace
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo fmt --all --check
+          cargo bench --locked -p natune-lyrics --bench ttml | tee ../../shared-core/build/ttml-rust-benchmark.txt
+      - uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: rust-core-benchmark
+          path: shared-core/build/ttml-rust-benchmark.txt
+  jvm-bindings:
+    name: Native JVM binding (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: ''
+      ANDROID_SDK_ROOT: ''
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Generate, package and execute real binding parity and timing
+        shell: bash
+        run: ./gradlew -Pnatune.androidSdk=false -Pnatune.rustCore=true :shared-core:jvmTest :shared-core:jvmJar --stacktrace --console=plain
+      - name: Verify the pure Rust crate against Kotlin-generated goldens
+        if: runner.os == 'Linux'
+        working-directory: native/core
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/shared-core/build/cargo
+          TTML_GOLDENS: ${{ github.workspace }}/shared-core/build/ttml-kotlin-goldens.json
+          TTML_REQUIRE_ALL_GOLDENS: '1'
+        run: cargo test --locked -p natune-lyrics --test parity
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: rust-core-jvm-${{ matrix.os }}
+          path: |
+            shared-core/build/ttml-*.json
+            shared-core/build/libs/*.jar
+            shared-core/build/test-results/**/TEST-*.xml
+  android:
+    name: Android native ABIs, bindings and APK delta
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install the repository NDK in CI
+        run: sdkmanager 'ndk;30.0.16248370' 'platforms;android-37' 'build-tools;37.0.0'
+      - name: Build baseline APK, then the opt-in Rust APK
+        env:
+          PULL_REQUEST: 'true'
+        run: |
+          ./gradlew :app:assembleGmsMobileUniversalDebug --stacktrace --console=plain
+          mkdir -p shared-core/build/apk-comparison
+          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/baseline.apk")' 
+          ./gradlew -Pnatune.rustCore=true :app:assembleGmsMobileUniversalDebug --stacktrace --console=plain
+          python3 -c 'import pathlib, shutil; apks=list(pathlib.Path("app/build/outputs/apk").rglob("*.apk")); assert len(apks)==1, apks; shutil.copy2(apks[0], "shared-core/build/apk-comparison/rust.apk")' 
+          python3 scripts/rust_core_apk_report.py shared-core/build/apk-comparison/baseline.apk shared-core/build/apk-comparison/rust.apk > shared-core/build/apk-comparison/report.json
+          cat shared-core/build/apk-comparison/report.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: rust-core-android-size
+          path: |
+            shared-core/build/apk-comparison/*
+            shared-core/build/generated/androidJniLibs/**
