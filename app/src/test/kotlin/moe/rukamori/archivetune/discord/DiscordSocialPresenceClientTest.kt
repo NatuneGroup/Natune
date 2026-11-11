@@ -35,9 +35,11 @@ class DiscordSocialPresenceClientTest {
     @Test
     fun oauthHttpErrorsIdentifyRejectedAuthorizationWithoutResponseBody() {
         val rejected = DiscordOAuthHttpException(401)
+        val refusedGrant = DiscordOAuthHttpException(400)
         val unavailable = DiscordOAuthHttpException(503)
 
         assertTrue(rejected.isAuthorizationRejected)
+        assertTrue(refusedGrant.isAuthorizationRejected)
         assertFalse(unavailable.isAuthorizationRejected)
         assertEquals("Discord OAuth request failed with HTTP 401", rejected.message)
     }

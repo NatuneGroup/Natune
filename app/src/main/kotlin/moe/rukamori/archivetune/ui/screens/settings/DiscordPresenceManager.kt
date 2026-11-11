@@ -28,7 +28,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import moe.rukamori.archivetune.db.entities.Song
-import moe.rukamori.archivetune.discord.DiscordAuthorizationRequiredException
 import moe.rukamori.archivetune.discord.DiscordOAuthRepository
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.utils.DiscordImageResolver
@@ -91,9 +90,8 @@ object DiscordPresenceManager {
     }
 
     private suspend fun getOrCreateRpc(context: Context): DiscordRPC {
-        val activeToken =
-            DiscordOAuthRepository.getValidAccessToken(context)
-                ?: throw DiscordAuthorizationRequiredException()
+        // Surfaces the real failure: a network error is not a request for the user to sign in again.
+        val activeToken = DiscordOAuthRepository.validAccessToken(context).getOrThrow()
         if (rpcInstance == null || rpcToken != activeToken) {
             runCatching { rpcInstance?.stopActivity() }
                 .onFailure { Timber.tag(LOG_TAG).v(it, "failed to stop previous activity") }

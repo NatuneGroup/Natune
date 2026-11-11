@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.discord.DiscordAuthCoordinator
 import moe.rukamori.archivetune.discord.DiscordAuthorizationSession
 import moe.rukamori.archivetune.discord.DiscordOAuthHttpException
 import moe.rukamori.archivetune.discord.DiscordOAuthRepository
+import moe.rukamori.archivetune.discord.DiscordSessionRules
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.component.EditTextPreference
 import moe.rukamori.archivetune.ui.component.EnumListPreference
@@ -172,14 +173,16 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Checking
         if (discordTokenExpiresAt > 0L && System.currentTimeMillis() >= discordTokenExpiresAt) {
             // Discord access tokens last about a week; the stored refresh token renews them without
-            // a new sign-in. Only a failed renewal means the user has to authorize again.
-            val renewed = runCatching { DiscordOAuthRepository.getValidAccessToken(context) }.getOrNull()
-            if (renewed.isNullOrBlank() || renewed == token) {
-                savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Expired
+            // a new sign-in. Only a refused renewal means the user has to authorize again.
+            token = DiscordOAuthRepository.validAccessToken(context).getOrElse { error ->
+                savedAuthorizationStatus = if (DiscordSessionRules.needsAuthorization(error)) {
+                    DiscordSavedAuthorizationStatus.Expired
+                } else {
+                    DiscordSavedAuthorizationStatus.Unverified
+                }
+                Timber.tag("DiscordSettings").w(error, "Discord token renewal failed")
                 return@LaunchedEffect
             }
-            // The renewed token and expiry are stored, which restarts this effect with fresh values.
-            token = renewed
         }
         runCatching { DiscordOAuthRepository.fetchAccount(token) }
             .onSuccess {
@@ -212,11 +215,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         }
     }
 
+    // Only a refused renewal ends the session. A token that merely could not be renewed yet is not expired.
     val isAccessTokenExpired =
-        remember(discordToken, discordTokenExpiresAt, currentTimeMillis, savedAuthorizationStatus) {
-            discordToken.isNotBlank() && discordTokenExpiresAt > 0L && currentTimeMillis >= discordTokenExpiresAt &&
-                savedAuthorizationStatus != DiscordSavedAuthorizationStatus.Checking
-        }
+        discordToken.isNotBlank() && savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Expired
     val isLoggedIn =
         !isAccessTokenExpired &&
             (authorizedToken.isNotBlank() || savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Linked)
@@ -545,13 +546,11 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         // opening transition.
         LazyColumn(
             state = listState,
-            contentPadding =
-                PaddingValues(
-                    top = innerPadding.calculateTopPadding() + 16.dp,
-                    bottom = 32.dp,
-                ),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
             modifier =
                 Modifier
+                    // Inside the measured viewport, so scrollToKey lines rows up below the app bar.
+                    .padding(top = innerPadding.calculateTopPadding())
                     .fillMaxSize()
                     .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
                     .then(positions.containerModifier()),
