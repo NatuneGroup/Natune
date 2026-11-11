@@ -432,6 +432,7 @@ class SyncUtils internal constructor(
                     .initial("FEmusic_liked_videos")
                     .completedForSync(librarySource)
                     .onSuccess { page ->
+                        val removeMissing = authoritative && page.complete
                         if (!isSyncStillEnabled(gen)) return@onSuccess
                         val rawRemoteSongs = page.items.filterIsInstance<SongItem>().reversed()
                         if (rawRemoteSongs.isEmpty() && !authoritative) {
@@ -447,7 +448,7 @@ class SyncUtils internal constructor(
                         val staleLibrarySongs =
                             localSongs
                                 .asSequence()
-                                .filter { mayRemoveMissingLibraryEntry(authoritative, it.song.isLocal) }
+                                .filter { mayRemoveMissingLibraryEntry(removeMissing, it.song.isLocal) }
                                 .filterNot { it.id in remoteIds }
                                 .filterNot { it.id in pendingLikes }
                                 .map { it.song.copy(inLibrary = null) }
@@ -507,6 +508,7 @@ class SyncUtils internal constructor(
                     .initial("FEmusic_liked_albums")
                     .completedForSync(librarySource)
                     .onSuccess { page ->
+                        val removeMissing = authoritative && page.complete
                         if (!isSyncStillEnabled(gen)) return@onSuccess
                         val remoteAlbums = page.items.filterIsInstance<AlbumItem>().reversed()
                         if (remoteAlbums.isEmpty() && !authoritative) {
@@ -520,7 +522,7 @@ class SyncUtils internal constructor(
                         val staleAlbums =
                             localAlbums
                                 .asSequence()
-                                .filter { mayRemoveMissingLibraryEntry(authoritative, it.album.isLocal) }
+                                .filter { mayRemoveMissingLibraryEntry(removeMissing, it.album.isLocal) }
                                 .filterNot { it.id in remoteIds }
                                 .map { it.album.localToggleLike() }
                                 .toList()
@@ -582,6 +584,7 @@ class SyncUtils internal constructor(
                     .initial("FEmusic_library_corpus_artists")
                     .completedForSync(librarySource)
                     .onSuccess { page ->
+                        val removeMissing = authoritative && page.complete
                         if (!isSyncStillEnabled(gen)) return@onSuccess
                         val remoteArtists = page.items.filterIsInstance<ArtistItem>().distinctBy { it.id }
                         if (remoteArtists.isEmpty() && !authoritative) {
@@ -596,7 +599,7 @@ class SyncUtils internal constructor(
                         val staleArtists =
                             localArtists
                                 .asSequence()
-                                .filter { mayRemoveMissingLibraryEntry(authoritative, it.artist.isLocal) }
+                                .filter { mayRemoveMissingLibraryEntry(removeMissing, it.artist.isLocal) }
                                 .filterNot { it.id in remoteIds }
                                 .map { it.artist.copy(bookmarkedAt = null, lastUpdateTime = now) }
                                 .toList()
@@ -672,8 +675,9 @@ class SyncUtils internal constructor(
                     .initial("FEmusic_liked_playlists")
                     .completedForSync(librarySource)
                     .onSuccess { page ->
+                        val removeMissing = authoritative && page.complete
                         if (!isSyncStillEnabled(gen)) return@onSuccess
-                        cleanupDuplicatePlaylists()
+                        if (page.complete) cleanupDuplicatePlaylists()
                         val remotePlaylists =
                             page.items
                                 .filterIsInstance<PlaylistItem>()
@@ -703,7 +707,7 @@ class SyncUtils internal constructor(
                             localPlaylists
                                 .asSequence()
                                 .map { it.playlist }
-                                .filter { mayRemoveMissingLibraryEntry(authoritative, it.isLocal || it.browseId == null) }
+                                .filter { mayRemoveMissingLibraryEntry(removeMissing, it.isLocal || it.browseId == null) }
                                 .filter { it.browseId !in remoteLikedIds }
                                 .map { it.copy(bookmarkedAt = null, lastUpdateTime = now) }
                                 .toList()

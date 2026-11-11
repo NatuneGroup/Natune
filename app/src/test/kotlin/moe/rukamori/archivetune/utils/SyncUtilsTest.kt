@@ -107,7 +107,7 @@ class SyncUtilsTest {
     @Test
     fun partialFailedOrMalformedRemotePagesDeleteNothing() = runTest {
         database.insert(PlaylistEntity("duplicate-playlist", "Duplicate", browseId = "absent", bookmarkedAt = savedAt))
-        for (mode in listOf("initial-failure", "continuation-failure", "cycle", "malformed", "empty", "ceiling")) {
+        for (mode in listOf("initial-failure", "empty", "continuation-failure", "cycle", "malformed", "ceiling")) {
             remote.mode = mode
             sync.syncLibrarySongs(authoritative = true)
             sync.syncLikedAlbums(authoritative = true)
@@ -115,7 +115,9 @@ class SyncUtilsTest {
             sync.syncSavedPlaylists(authoritative = true)
             assertSavedContentUnchanged()
             assertNotNull(database.getPlaylistById("duplicate-playlist"))
-            assertNull(database.song("remote").first())
+            // Nothing arrives without a first page; an interrupted listing still adds what it read.
+            val added = database.song("remote").first()?.song?.inLibrary
+            if (mode == "initial-failure" || mode == "empty") assertNull(mode, added) else assertNotNull(mode, added)
         }
     }
 
