@@ -160,9 +160,9 @@ private class MenuInsertQueue(private val queue: QueueController) : QueueControl
 }
 
 /**
- * The row menu as an anchored dropdown over the page it opened on. The navigation host does not key the route body,
- * so the effect is keyed on the route itself: leaving a page closes its menu, and a menu opened on one page is never
- * shown again on another page.
+ * The row menu as an anchored dropdown over the page it opened on. The navigation host keys the route body by entry
+ * id, so leaving a page disposes the effect below, which dismisses the menu. The effect is also keyed on the route, so
+ * a menu opened on one route is dismissed when the route key changes.
  */
 @Composable
 internal fun DesktopItemMenuDialog(

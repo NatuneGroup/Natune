@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.DesktopProtocolRegistration
 import moe.rukamori.archivetune.desktop.integration.NativeDesktopBridge
 import java.nio.file.Path
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     // A restart after a staged restore starts this process while the old one is still leaving the instance lock.
@@ -54,7 +55,7 @@ fun main(args: Array<String>) {
         rememberedSystemFrame = DesktopWindowFramePolicy.read(instanceDirectory),
     )
     var windowState: WindowState? = null
-    try { application {
+    try { application(exitProcessOnExit = false) {
         val state = rememberWindowState(
             placement = savedWindow.placement,
             position = savedWindow.position,
@@ -82,4 +83,7 @@ fun main(args: Array<String>) {
         sessions.close()
         instance.close()
     }
+    // Compose no longer exits the process, so it ends here after the cleanup. System.exit still runs the shutdown
+    // hooks: the restart after a staged restore and the stop of the token helper.
+    exitProcess(0)
 }
