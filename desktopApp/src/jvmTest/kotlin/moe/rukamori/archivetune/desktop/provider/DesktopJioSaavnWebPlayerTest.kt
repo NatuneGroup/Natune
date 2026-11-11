@@ -23,10 +23,10 @@ class DesktopJioSaavnWebPlayerTest {
             val request = AudioResolveRequest("song", TrackMatching.Target("Song", listOf("Artist"), null, 180_000),
                 directIds = mapOf(AudioSourceType.JIOSAAVN to "7"))
             assertEquals("https://cdn.invalid/song_320.mp4", assertIs<PreparedAudio.Progressive>(source.resolve(request)).stream.uri)
-            assertEquals(listOf("web6dot0", "web6dot0"), contexts)
+            assertEquals(listOf<String?>("web6dot0", "web6dot0"), contexts)
             prefs = PreferenceSnapshot.EMPTY
             assertFailsWith<Exception> { source.resolve(request) } // fixture is not valid DES ciphertext
-            assertEquals(listOf("web6dot0", "web6dot0", "android"), contexts)
+            assertEquals(listOf<String?>("web6dot0", "web6dot0", "android"), contexts)
         } finally { http.close() }
     }
 }
