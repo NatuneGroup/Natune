@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
+import moe.rukamori.archivetune.shared.ui.player.LocalSystemReducedMotion
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,7 +82,10 @@ private fun IosMountedState(host: IosHost, session: IosSessionState, active: Boo
                 val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
                 DisposableEffect(state.graph) { onDispose { recognition.close() } }
                 val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
-                CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
+                CompositionLocalProvider(
+                    LocalAndroidPhonePresentation provides true,
+                    LocalSystemReducedMotion provides rememberIosReduceMotion(),
+                ) {
                 ArchiveTuneRoot(
                     host = bindings,
                     visible = active,

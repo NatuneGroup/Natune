@@ -322,10 +322,8 @@ fun PlayerTitleSection(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
-            AnimatedContent(
+            PlayerTrackTextTransition(
                 targetState = mediaMetadata.title,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "player_title",
             ) { title ->
                 PlayerTitleText(
                     title = title,
@@ -349,8 +347,9 @@ fun PlayerTitleSection(
 
             Spacer(Modifier.height(6.dp))
 
+            PlayerTrackTextTransition(mediaMetadata.artists) { artists ->
             ClickableArtists(
-                artists = mediaMetadata.artists,
+                artists = artists,
                 onArtistClick = actions.onArtistClick,
                 style = MaterialTheme.typography.titleMedium.copy(color = textBackgroundColor, fontSize = 16.sp),
                 onLongClick = actions.onCopyArtists,
@@ -358,6 +357,7 @@ fun PlayerTitleSection(
                 fadeWidth = PlayerFadeConfig.forStyle(playerDesignStyle).fadeWidth,
                 modifier = Modifier.fillMaxWidth(),
             )
+            }
         }
     }
 
@@ -771,7 +771,7 @@ fun PlayerSlider(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StyledPlaybackSlider(
+internal fun StyledPlaybackSliderContent(
     sliderStyle: SliderStyle,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -780,6 +780,7 @@ fun StyledPlaybackSlider(
     activeColor: Color,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource,
 ) {
     // Shared by Wavy and Circular below; remembered so the position ticks driving `value`
     // don't allocate a fresh SquigglesSpec on every recomposition.
@@ -794,6 +795,7 @@ fun StyledPlaybackSlider(
     when (sliderStyle) {
         SliderStyle.Standard -> {
             Slider(
+                interactionSource = interactionSource,
                 value = value,
                 valueRange = valueRange,
                 onValueChange = onValueChange,
@@ -817,12 +819,13 @@ fun StyledPlaybackSlider(
 
         SliderStyle.Thick -> {
             Slider(
+                interactionSource = interactionSource,
                 value = value,
                 valueRange = valueRange,
                 onValueChange = onValueChange,
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.thickSliderColors(activeColor),
-                thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                thumb = { PlayerSeekThumb(interactionSource, activeColor) },
                 track = { sliderState ->
                     PlayerSliderTrack(
                         sliderState = sliderState,
@@ -848,12 +851,13 @@ fun StyledPlaybackSlider(
 
         SliderStyle.Simple -> {
             Slider(
+                interactionSource = interactionSource,
                 value = value,
                 valueRange = valueRange,
                 onValueChange = onValueChange,
                 onValueChangeFinished = onValueChangeFinished,
                 colors = PlayerSliderColors.simpleSliderColors(activeColor),
-                thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                thumb = { PlayerSeekThumb(interactionSource, activeColor) },
                 track = { sliderState ->
                     PlayerSliderTrack(
                         sliderState = sliderState,
@@ -998,7 +1002,7 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(width = sideButtonWidth, height = sideButtonHeight)
-                                .clip(RoundedCornerShape(32.dp)),
+                                .playerPressFeedback().clip(RoundedCornerShape(32.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.player_skip_previous),
@@ -1022,14 +1026,14 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(width = playButtonWidth, height = playButtonHeight)
-                                .clip(RoundedCornerShape(32.dp)),
+                                .playerPressFeedback().clip(rememberPlayerPlayShape(isPlaying, RoundedCornerShape(32.dp))),
                     ) {
-                        if (isLoading) {
+                        PlayerLoadingCrossfade(isLoading, {
                             CircularWavyProgressIndicator(
                                 modifier = Modifier.size(42.dp),
                                 color = iconButtonColor,
                             )
-                        } else {
+                        }) {
                             PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 42.dp)
                         }
                     }
@@ -1051,7 +1055,7 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(width = sideButtonWidth, height = sideButtonHeight)
-                                .clip(RoundedCornerShape(32.dp)),
+                                .playerPressFeedback().clip(RoundedCornerShape(32.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.player_skip_next),
@@ -1131,12 +1135,12 @@ fun PlayerPlaybackControls(
                                 },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (isLoading) {
+                        PlayerLoadingCrossfade(isLoading, {
                             CircularWavyProgressIndicator(
                                 modifier = Modifier.size(32.dp),
                                 color = icBackgroundColor,
                             )
-                        } else {
+                        }) {
                             PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 34.dp, tint = icBackgroundColor)
                         }
                     }
@@ -1304,12 +1308,12 @@ fun PlayerPlaybackControls(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (isLoading) {
+                            PlayerLoadingCrossfade(isLoading, {
                                 CircularWavyProgressIndicator(
                                     modifier = Modifier.size(40.dp),
                                     color = icBackgroundColor,
                                 )
-                            } else {
+                            }) {
                                 PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 44.dp, tint = icBackgroundColor)
                             }
                         }
@@ -1436,6 +1440,7 @@ fun PlayerPlaybackControls(
                 Spacer(Modifier.width(8.dp))
 
                 Box(
+                    contentAlignment = Alignment.Center,
                     modifier =
                         Modifier
                             .size(72.dp)
@@ -1446,15 +1451,12 @@ fun PlayerPlaybackControls(
                                 playerConnection.replayOrTogglePlayPause(playbackState)
                             },
                 ) {
-                    if (isLoading) {
+                    PlayerLoadingCrossfade(isLoading, {
                         CircularWavyProgressIndicator(
-                            modifier =
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .size(36.dp),
+                            modifier = Modifier.size(36.dp),
                             color = iconButtonColor,
                         )
-                    } else {
+                    }) {
                         PlayerPlayPauseIcon(
                             playbackState == STATE_ENDED, isPlaying, playPauseMotion, 36.dp,
                             Modifier.align(Alignment.Center), tint = iconButtonColor,
@@ -1570,12 +1572,12 @@ fun PlayerPlaybackControls(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (isLoading) {
+                                PlayerLoadingCrossfade(isLoading, {
                                     CircularWavyProgressIndicator(
                                         modifier = Modifier.size(40.dp),
                                         color = iconButtonColor,
                                     )
-                                } else {
+                                }) {
                                     PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 44.dp, tint = iconButtonColor)
                                 }
                             }
@@ -2749,12 +2751,12 @@ private fun V8TransportControls(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                if (isLoading) {
+                PlayerLoadingCrossfade(isLoading, {
                     CircularWavyProgressIndicator(
                         modifier = Modifier.size(44.dp),
                         color = foreground,
                     )
-                } else {
+                }) {
                     PlayerPlayPauseIcon(
                         playbackState == STATE_ENDED, isPlaying, playPauseMotion, 52.dp, tint = foreground,
                         contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
@@ -3618,36 +3620,14 @@ private fun V9TransportControls(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                if (isLoading) {
+                PlayerLoadingCrossfade(isLoading, {
                     CircularWavyProgressIndicator(
                         modifier = Modifier.size(46.dp),
                         color = primaryIconColor,
                     )
-                } else {
-                    AnimatedContent(
-                        targetState =
-                            when {
-                                playbackState == STATE_ENDED -> R.drawable.player_replay
-                                isPlaying -> R.drawable.player_pause
-                                else -> R.drawable.player_play
-                            },
-                        transitionSpec = {
-                            fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) togetherWith fadeOut(tween(90))
-                        },
-                        label = "v9PlayPauseIcon",
-                    ) { iconRes ->
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription =
-                                if (isPlaying) {
-                                    stringResource(R.string.widget_pause)
-                                } else {
-                                    stringResource(R.string.play)
-                                },
-                            tint = primaryIconColor,
-                            modifier = Modifier.size(42.dp).then(playPauseMotion.modifier),
-                        )
-                    }
+                }) {
+                    PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 42.dp,
+                        tint = primaryIconColor, contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play))
                 }
             }
         }

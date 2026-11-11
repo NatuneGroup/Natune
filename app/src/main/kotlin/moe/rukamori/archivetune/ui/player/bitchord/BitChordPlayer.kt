@@ -109,9 +109,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.PlayerLoadingCrossfade
 import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -165,8 +168,10 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
+import moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController
 import moe.rukamori.archivetune.ui.player.rememberLyricsSyncOffset
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
+import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
@@ -192,6 +197,7 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.playerControlMotion
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
+import moe.rukamori.archivetune.ui.player.volumeDisplayFraction
 
 // ── Geometry & timing constants (verbatim from BitChord's NowPlayingScreen) ──
 
@@ -478,7 +484,6 @@ fun BitChordPlayerContent(
     val lyricsSynced = parsedLyrics?.isSynced ?: true
     val lyricsProviderName = lyricsEntity?.displayProviderName.orEmpty()
     val lyricsUnavailable = lyricsEntity?.lyrics == LyricsEntityNotFound
-
     // ── Auto translation (ArchiveTune addition) ──
     // The same gate the standalone lyrics screen (LyricsScreen.kt) runs: when
     // "Auto translate lyrics" is on, and this track's lyrics are in a language
@@ -492,8 +497,7 @@ fun BitChordPlayerContent(
     }
     val (autoTranslateLyrics) = rememberPreference(AutoTranslateLyricsKey, defaultValue = false)
     val (translatorTargetLang) = rememberPreference(TranslatorTargetLangKey, defaultValue = "")
-    val (swipeUpToOpenQueue) =
-        rememberPreference(moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey, defaultValue = true)
+    val (swipeUpToOpenQueue) = rememberPreference(SwipeUpToOpenQueueKey, defaultValue = true)
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val translationDismissedMediaIds by lyricsMenuViewModel.translationDismissedMediaIds
@@ -670,7 +674,6 @@ fun BitChordPlayerContent(
         pendingSeek = null
     }
     LaunchedEffect(mediaMetadata.id) { pendingSeek = null }
-
     // Signature Apple Music touch: the sleeve shrinks back while paused.
     val artScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.86f,
@@ -680,11 +683,9 @@ fun BitChordPlayerContent(
         ),
         label = "artScale",
     )
-
-    val presentation = moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current
-    val volumeController = moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController()
-    val volume = moe.rukamori.archivetune.ui.player.volumeDisplayFraction(volumeController)
-
+    val presentation = LocalPlayerPresentation.current
+    val volumeController = rememberDeviceMusicVolumeController()
+    val volume = volumeDisplayFraction(volumeController)
     // 0 = the ordinary square sleeve, 1 = the artwork as a full-bleed banner.
     val p by animateFloatAsState(
         targetValue = if (lyricsOpen || queueOpen) 1f else 0f,
@@ -804,12 +805,11 @@ fun BitChordPlayerContent(
                                     startY = size.height * (1f - HERO_FADE_FRACTION),
                                     endY = size.height,
                                 ),
-                                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                                blendMode = BlendMode.DstIn,
                             )
                         },
                 )
             }
-
             // The clock, the signal bars and the drag handle are all white, and
             // the banner puts whatever the artwork happens to have up there
             // directly behind them — a bright frame or a pale sleeve leaves the
@@ -1506,7 +1506,7 @@ fun BitChordPlayerContent(
                 )
                 // While the stream URL resolves and buffers, the play glyph
                 // would be a lie — show progress instead.
-                if (isLoading) {
+                PlayerLoadingCrossfade(isLoading, {
                     // Same footprint as TransportGlyph(72.dp) — a smaller box
                     // here would shunt everything below it on every load.
                     Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
@@ -1516,7 +1516,7 @@ fun BitChordPlayerContent(
                             modifier = Modifier.size(38.dp),
                         )
                     }
-                } else {
+                }) {
                     TransportGlyph(
                         icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
@@ -1932,7 +1932,7 @@ private fun BitChordScrubTimes(
         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             ScrubTime { formatTime((shownFraction() * duration).toLong()) }
         }
-        if (moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current.showCodec) LosslessOrStats(
+        if (LocalPlayerPresentation.current.showCodec) LosslessOrStats(
             format = format,
             modifier = Modifier.padding(horizontal = 8.dp),
         )

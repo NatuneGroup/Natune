@@ -9,6 +9,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FastRewind
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import moe.rukamori.archivetune.ui.player.playerPressFeedback
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.shared.ui.player.PlayerPlayPauseGlyph
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,7 +96,7 @@ internal fun TransportGlyph(
     )
     Box(
         modifier = Modifier
-            .size(size + 12.dp)
+            .size(size + 12.dp).playerPressFeedback()
             .clip(CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -103,7 +109,11 @@ internal fun TransportGlyph(
             },
         contentAlignment = Alignment.Center,
     ) {
-        PlayerControlCrossfade(icon) { glyph ->
+        if (icon == Icons.Rounded.Pause || icon == Icons.Rounded.PlayArrow) {
+            PlayerPlayPauseGlyph(icon == Icons.Rounded.Pause, Color.White.copy(alpha = alpha),
+                Modifier.size(size).then(motion?.modifier ?: Modifier),
+                !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f, contentDescription)
+        } else PlayerControlCrossfade(icon) { glyph ->
             Icon(
                 imageVector = glyph,
                 contentDescription = contentDescription,
