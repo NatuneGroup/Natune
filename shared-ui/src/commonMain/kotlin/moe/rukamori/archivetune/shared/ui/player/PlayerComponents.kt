@@ -1,5 +1,10 @@
 package moe.rukamori.archivetune.shared.ui.player
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -69,6 +75,7 @@ internal fun PlayerAction.label(): StringResource = when (this) {
     else -> Res.string.m5_more
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun PlayerIcon(
     symbol: PlayerSymbol,
@@ -103,26 +110,47 @@ internal fun PlayerIcon(
         rememberPlayerControlMotion(controlKind, when (controlKind) {
             PlayerControlKind.PlayPause -> symbol
             PlayerControlKind.Repeat -> if (selected == false) PlayerRepeat.OFF else environment.repeat
-            PlayerControlKind.Shuffle, PlayerControlKind.Like -> selected
+            PlayerControlKind.Shuffle, PlayerControlKind.Like, PlayerControlKind.Queue, PlayerControlKind.Lyrics -> selected
             PlayerControlKind.Next, PlayerControlKind.Previous -> null
         }, environment.active)
     }
-    IconButton(
-        onClick = if (motion == null) click else { { motion.tap(); click() } }, enabled = enabled,
-        modifier = modifier.then(if (symbol == PlayerSymbol.MORE) Modifier.onGloballyPositioned { bounds = it.boundsInWindow() } else Modifier).size(width ?: size, size).then(
-            if (containerColor != null) Modifier.background(containerColor, shape) else Modifier,
-        ).semantics {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val pressScale = animateFloatAsState(if (pressed && enabled && environment.active) PlayerMotionSpecs.PressScale else 1f,
+        if (environment.active) PlayerMotionSpecs.response() else snap(), label = "playerControlPress")
+    val animatedShape = rememberPlayerButtonShape(symbol == PlayerSymbol.PAUSE, pressed, shape, environment.active)
+    val fill by animateColorAsState(containerColor ?: Color.Transparent,
+        if (environment.fades) tween(PlayerMotionSpecs.FadeMillis) else snap(), label = "playerControlFill")
+    val tint by animateColorAsState(color,
+        if (environment.fades) tween(PlayerMotionSpecs.FadeMillis) else snap(), label = "playerControlColor")
+    val onButtonClick = if (motion == null) click else { { motion.tap(); click() } }
+    val buttonModifier = modifier
+        .then(if (symbol == PlayerSymbol.MORE) Modifier.onGloballyPositioned { bounds = it.boundsInWindow() } else Modifier)
+        .size(width ?: size, size)
+        .graphicsLayer { scaleX = pressScale.value; scaleY = pressScale.value }
+        .then(if (containerColor != null) Modifier.background(fill, animatedShape) else Modifier)
+        .semantics {
             contentDescription = label
             if (selected != null) this.selected = selected
             if (stateLabel != null) stateDescription = stateLabel
-        },
-    ) {
+        }
+    IconButton(onClick = onButtonClick, enabled = enabled, interactionSource = source, modifier = buttonModifier) {
         val glyphModifier = Modifier.size(iconSize).then(motion?.modifier ?: Modifier)
-        if (kind == PlayerControlKind.PlayPause) {
-            PlayerControlCrossfade(symbol, environment.active, glyphModifier) {
-                PlayerGlyph(it, color, enabled, selected, Modifier.size(iconSize))
+        if (kind == PlayerControlKind.PlayPause && !environment.active) {
+            PlayerControlCrossfade(symbol, environment.fades, glyphModifier) { icon ->
+                PlayerGlyph(icon, tint, enabled, selected, Modifier.size(iconSize))
             }
-        } else PlayerGlyph(symbol, color, enabled, selected, glyphModifier)
+        } else if (kind == PlayerControlKind.PlayPause) {
+            PlayerControlCrossfade(symbol == PlayerSymbol.REPLAY, environment.fades, glyphModifier) { replay ->
+                if (replay) PlayerGlyph(PlayerSymbol.REPLAY, tint, enabled, selected, Modifier.size(iconSize))
+                else PlayerPlayPauseGlyph(symbol == PlayerSymbol.PAUSE,
+                    tint.copy(alpha = tint.alpha * if (enabled) 1f else .38f), Modifier.size(iconSize), environment.active)
+            }
+        } else {
+            PlayerControlCrossfade(Triple(symbol, selected, if (symbol == PlayerSymbol.REPEAT) environment.repeat else PlayerRepeat.OFF), environment.fades, glyphModifier) { (icon, chosen, repeat) ->
+                PlayerGlyph(icon, tint, enabled, chosen, Modifier.size(iconSize), repeat)
+            }
+        }
     }
 }
 
@@ -133,11 +161,13 @@ private fun PlayerSymbol.controlKind(): PlayerControlKind? = when (this) {
     PlayerSymbol.SHUFFLE -> PlayerControlKind.Shuffle
     PlayerSymbol.REPEAT -> PlayerControlKind.Repeat
     PlayerSymbol.HEART -> PlayerControlKind.Like
+    PlayerSymbol.QUEUE -> PlayerControlKind.Queue
+    PlayerSymbol.LYRICS -> PlayerControlKind.Lyrics
     else -> null
 }
 
 @Composable
-internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, selected: Boolean?, modifier: Modifier) {
+internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, selected: Boolean?, modifier: Modifier, repeat: PlayerRepeat = LocalPlayerControlMotion.current.repeat) {
     val drawable = when (symbol) {
         PlayerSymbol.PREVIOUS -> Res.drawable.solar_skip_previous_linear
         PlayerSymbol.NEXT -> Res.drawable.solar_skip_next_linear
@@ -145,7 +175,7 @@ internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, s
         PlayerSymbol.PAUSE -> Res.drawable.solar_pause_linear
         PlayerSymbol.REPLAY -> Res.drawable.solar_replay_linear
         PlayerSymbol.SHUFFLE -> Res.drawable.solar_shuffle
-        PlayerSymbol.REPEAT -> if (LocalPlayerControlMotion.current.repeat == PlayerRepeat.ONE)
+        PlayerSymbol.REPEAT -> if (repeat == PlayerRepeat.ONE)
             Res.drawable.solar_repeat_one else Res.drawable.solar_repeat
         PlayerSymbol.HEART -> if (selected == true) Res.drawable.solar_heart_bold else Res.drawable.solar_heart_linear
         PlayerSymbol.SHARE -> Res.drawable.solar_share_linear
@@ -213,7 +243,7 @@ internal fun PlayButton(c: PlayerRenderContext, large: Boolean = true, square: B
             else -> PlayerSymbol.PLAY
         }, label, c.actions.playPause, enabled = playback != null, large = large, square = square)
         // Pause stays reachable while buffering; intent and observed advancement are not conflated.
-        if (loading) {
+        PlayerBufferingFade(loading, c.fadeActive) {
             val modifier = Modifier.size(if(large) 72.dp else 44.dp).testTag("player-loading")
             if(c.motionActive) CircularProgressIndicator(modifier, strokeWidth = 2.dp)
             else CircularProgressIndicator(progress = { .7f }, modifier = modifier, strokeWidth = 2.dp)
@@ -226,17 +256,24 @@ internal fun PlayButton(c: PlayerRenderContext, large: Boolean = true, square: B
 internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, editorial: Boolean = false) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if(centered) Alignment.CenterHorizontally else Alignment.Start) {
         val title: @Composable () -> Unit = {
-            Text(c.state.title.ifBlank { stringResource(Res.string.m5_no_track) }, maxLines = if(editorial) 3 else 2,
-                overflow = TextOverflow.Ellipsis,
-                style = if(editorial) MaterialTheme.typography.displaySmall else MaterialTheme.typography.titleLarge,
-                fontFamily = c.state.spatialFont.takeIf { c.preferences.style.name == "SPATIALFLOW" })
+            PlayerTextSwap(c.state.title.ifBlank { stringResource(Res.string.m5_no_track) }, c.fadeActive,
+                alignment = if(centered) Alignment.TopCenter else Alignment.TopStart) { text ->
+                Text(text, maxLines = if(editorial) 3 else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = if(editorial) MaterialTheme.typography.displaySmall else MaterialTheme.typography.titleLarge,
+                    fontFamily = c.state.spatialFont.takeIf { c.preferences.style.name == "SPATIALFLOW" })
+            }
         }
         if (PlayerAction.TITLE in c.state.actionSupport) {
             TextButton(onClick = { c.actions.onAction(PlayerAction.TITLE) }) { title() }
         } else {
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { title() }
         }
-        val artist: @Composable () -> Unit = { MarqueeText(c.state.artist, style = MaterialTheme.typography.bodyLarge) }
+        val artist: @Composable () -> Unit = {
+            PlayerTextSwap(c.state.artist, c.fadeActive, alignment = if(centered) Alignment.TopCenter else Alignment.TopStart) {
+                MarqueeText(it, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
         if (PlayerAction.ARTIST in c.state.actionSupport) {
             TextButton(onClick = { c.actions.onAction(PlayerAction.ARTIST) }) { artist() }
         } else {
@@ -249,8 +286,7 @@ internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, e
 @Composable
 internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = PlayerSliderStyle.Simple, remaining: Boolean = false) {
     val duration = c.state.playback?.durationMs?.takeIf { it > 0L }
-    val position = (c.interaction.previewMs ?: c.state.positionMs).coerceAtLeast(0)
-    val fraction = if(duration != null) (position.toDouble()/duration).toFloat().coerceIn(0f,1f) else 0f
+    val progress = rememberPlayerProgress(c)
     val style = if(c.preferences.style.capabilities.sharedControls) c.preferences.slider else native
     val label = stringResource(Res.string.m5_seek)
     val color = LocalContentColor.current
@@ -261,13 +297,15 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
         }
     }
     Column(Modifier.fillMaxWidth().testTag("seek-${style.name}")) {
-        Slider(value = fraction, onValueChange = { c.interaction.preview(it,c.state) },
-            interactionSource = interactionSource,
-            onValueChangeFinished = { c.interaction.commit(c.state,c.actions.seekTo) },
+        PlayerSeekSlider(progress, duration,
+            onPreview = { c.interaction.preview(it,c.state) },
+            source = interactionSource, motion = c.motionActive,
+            onCommit = { c.interaction.commit(c.state,c.actions.seekTo) },
             enabled = duration != null && c.state.canSeek && c.state.playback?.isSeekable == true,
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
             track = {
                 Canvas(Modifier.fillMaxWidth().height(if(style==PlayerSliderStyle.Thick) 12.dp else 5.dp)) {
+                    val fraction = progress.fraction(duration)
                     val h = size.height
                     drawLine(color.copy(alpha=.2f),Offset(0f,h/2),Offset(size.width,h/2),h,StrokeCap.Round)
                     val buffered = c.state.playback?.bufferedPositionMs
@@ -285,11 +323,17 @@ internal fun PlayerSeek(c: PlayerRenderContext, native: PlayerSliderStyle = Play
                     if(style==PlayerSliderStyle.Circular) drawCircle(color,8.dp.toPx(),Offset(size.width*fraction,h/2),style=Stroke(2.dp.toPx()))
                 }
             })
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-            Text(playerTime(position),style=MaterialTheme.typography.labelSmall)
-            Text(if(duration==null) "—" else if(remaining) "−${playerTime((duration-position).coerceAtLeast(0))}" else playerTime(duration),
-                style=MaterialTheme.typography.labelSmall)
-        }
+        PlayerSeekLabels(progress, duration, remaining)
+    }
+}
+
+@Composable
+private fun PlayerSeekLabels(progress: PlayerProgress, duration: Long?, remaining: Boolean) {
+    val seconds by remember(progress) { derivedStateOf { progress.positionMs / 1000L } }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(playerTime(seconds * 1000L), style = MaterialTheme.typography.labelSmall.tabularFigures())
+        Text(if (duration == null) "—" else if (remaining) "−${playerTime((duration - seconds * 1000L).coerceAtLeast(0))}" else playerTime(duration),
+            style = MaterialTheme.typography.labelSmall.tabularFigures())
     }
 }
 

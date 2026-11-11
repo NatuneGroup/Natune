@@ -26,6 +26,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,12 +41,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.ui.player.LocalPlayerControlMotion
+import moe.rukamori.archivetune.shared.ui.player.LocalPlayerTrackMotion
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerControlMotionEnvironment
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
+import moe.rukamori.archivetune.shared.ui.player.PlayerInteractionState
+import moe.rukamori.archivetune.shared.ui.player.PlayerProgress
 import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
+import moe.rukamori.archivetune.shared.ui.player.PlayerSeekSlider
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.PlayerState
+import moe.rukamori.archivetune.shared.ui.player.PlayerSurfaceTransition
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
+import moe.rukamori.archivetune.shared.ui.player.PlayerTextSwap
+import moe.rukamori.archivetune.shared.ui.player.PlayerTrackSwap
+import moe.rukamori.archivetune.shared.ui.player.fades
+import moe.rukamori.archivetune.shared.ui.player.moves
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerMotionLevel
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerProgress
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerTrackMotion
+import moe.rukamori.archivetune.shared.ui.player.tabularFigures
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatTrackDuration
 import moe.rukamori.archivetune.shared.ui.theme.IconSizes
@@ -82,80 +102,98 @@ fun DesktopExpandedPlayer(
             .fillMaxSize()
             .testTag("desktop-expanded-player"),
     ) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val twoColumns = maxHeight >= DesktopShellMetrics.expandedTwoColumnMinHeight
-            val content: @Composable (Modifier) -> Unit = { columnModifier ->
-                if (twoColumns) {
-                    // The reference layout is not a 50/50 split: the player keeps its own 648 dp measure and the lyrics
-                    // take the rest of the row. The measure narrows only when the window cannot carry both columns.
-                    BoxWithConstraints(
-                        columnModifier.fillMaxSize().padding(DesktopShellMetrics.expandedPlayerPadding),
-                    ) {
-                        val playerColumn = desktopExpandedPlayerColumnWidth(maxWidth)
-                        Row(
-                            Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.expandedPlayerPadding),
+        CompositionLocalProvider(
+            LocalPlayerControlMotion provides rememberPlayerMotionLevel(!state.reducedMotion).let { PlayerControlMotionEnvironment(it.moves, state.repeat, it.fades) },
+            LocalPlayerTrackMotion provides rememberPlayerTrackMotion(state.displayedOccurrenceId, state.occurrenceIds, rememberPlayerMotionLevel(!state.reducedMotion)),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val twoColumns = maxHeight >= DesktopShellMetrics.expandedTwoColumnMinHeight
+                val content: @Composable (Modifier) -> Unit = { columnModifier ->
+                    if (twoColumns) {
+                        // The reference layout is not a 50/50 split: the player keeps its own 648 dp measure and the lyrics
+                        // take the rest of the row. The measure narrows only when the window cannot carry both columns.
+                        BoxWithConstraints(
+                            columnModifier.fillMaxSize().padding(DesktopShellMetrics.expandedPlayerPadding),
                         ) {
-                            Box(Modifier.width(playerColumn).fillMaxHeight().testTag("desktop-expanded-column")) {
-                                DesktopPlayerColumn(
-                                    state, slots, artworkModifier, Modifier.fillMaxSize(),
-                                    onPlayPause, onSeekTo, onAction, onVolumeChange,
-                                )
+                            val playerColumn = desktopExpandedPlayerColumnWidth(maxWidth)
+                            Row(
+                                Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(DesktopShellMetrics.expandedPlayerPadding),
+                            ) {
+                                Box(Modifier.width(playerColumn).fillMaxHeight().testTag("desktop-expanded-column")) {
+                                    DesktopPlayerColumn(
+                                        state, slots, artworkModifier, Modifier.fillMaxSize(),
+                                        onPlayPause, onSeekTo, onAction, onVolumeChange,
+                                    )
+                                }
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
+                                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                                        .testTag("desktop-expanded-lyrics"),
+                                ) { slots.lyrics(Modifier.fillMaxSize()) }
                             }
+                        }
+                    } else {
+                        Column(
+                            columnModifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(DesktopShellMetrics.expandedPlayerPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Space.md),
+                        ) {
+                            DesktopPlayerColumn(
+                                state, slots, artworkModifier, Modifier.fillMaxWidth(),
+                                onPlayPause, onSeekTo, onAction, onVolumeChange,
+                            )
                             Box(
                                 Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
+                                    .fillMaxWidth()
+                                    .heightIn(min = 320.dp)
                                     .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
                                     .background(MaterialTheme.colorScheme.surfaceContainer)
                                     .testTag("desktop-expanded-lyrics"),
                             ) { slots.lyrics(Modifier.fillMaxSize()) }
                         }
                     }
-                } else {
-                    Column(
-                        columnModifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(DesktopShellMetrics.expandedPlayerPadding),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(Space.md),
-                    ) {
-                        DesktopPlayerColumn(
-                            state, slots, artworkModifier, Modifier.fillMaxWidth(),
-                            onPlayPause, onSeekTo, onAction, onVolumeChange,
-                        )
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 320.dp)
-                                .clip(RoundedCornerShape(DesktopShellMetrics.contentCorner))
-                                .background(MaterialTheme.colorScheme.surfaceContainer)
-                                .testTag("desktop-expanded-lyrics"),
-                        ) { slots.lyrics(Modifier.fillMaxSize()) }
+                }
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                        content(Modifier.widthIn(max = DesktopShellMetrics.expandedPlayerMaxWidth))
                     }
                 }
-            }
-            Row(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
-                    content(Modifier.widthIn(max = DesktopShellMetrics.expandedPlayerMaxWidth))
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(Space.xs)
+                        .testTag("desktop-expanded-close"),
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.m4c_icon_close),
+                        contentDescription = stringResource(Res.string.desktop_shell_close_player),
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-            }
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(Space.xs)
-                    .testTag("desktop-expanded-close"),
-            ) {
-                Icon(
-                    painter = painterResource(Res.drawable.m4c_icon_close),
-                    contentDescription = stringResource(Res.string.desktop_shell_close_player),
-                    modifier = Modifier.size(20.dp),
-                )
             }
         }
     }
+}
+
+/**
+ * Lifts the expanded player in over the shell and lowers it out again. A close or reopen mid-way reverses from where the
+ * transition is; the last occurrence stays on screen while it leaves. Without motion it simply appears and disappears.
+ */
+@Composable
+internal fun DesktopExpandedPlayerTransition(
+    current: ContentOccurrence?,
+    motion: Boolean,
+    content: @Composable (ContentOccurrence) -> Unit,
+) {
+    PlayerSurfaceTransition(current, rememberPlayerMotionLevel(motion), content = content)
 }
 
 @Composable
@@ -177,23 +215,27 @@ private fun DesktopPlayerColumn(
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            slots.artwork(state.playback?.occurrenceId, artworkModifier)
+            PlayerTrackSwap(state.displayedOccurrenceId, rememberPlayerMotionLevel(!state.reducedMotion), artworkModifier) { slots.artwork(it, Modifier.fillMaxSize()) }
         }
-        Text(
-            state.title,
-            style = MaterialTheme.typography.headlineSmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.testTag("desktop-expanded-title"),
-        )
-        if (state.artist.isNotBlank()) {
+        PlayerTextSwap(state.title, !state.reducedMotion) {
             Text(
-                state.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                it,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("desktop-expanded-title"),
             )
+        }
+        if (state.artist.isNotBlank()) {
+            PlayerTextSwap(state.artist, !state.reducedMotion) {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         DesktopExpandedSeek(state, onSeekTo)
         Row(
@@ -261,32 +303,31 @@ private fun DesktopPlayerColumn(
 @Composable
 private fun DesktopExpandedSeek(state: PlayerState, onSeekTo: (Long) -> Unit) {
     val duration = state.playback?.durationMs?.takeIf { it > 0L } ?: return
-    val live = state.playback?.positionMs ?: 0L
-    var preview by remember(state.playback?.occurrenceId) { mutableStateOf<Float?>(null) }
-    val fraction = preview ?: (live.toFloat() / duration).coerceIn(0f, 1f)
-    val enabled = state.canSeek && state.playback?.isSeekable == true
+    val draft = remember { PlayerInteractionState() }
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val progress = rememberPlayerProgress(state.playback, state.active, { draft.previewMs }, state.positionMs)
+    LaunchedEffect(state.playback?.occurrenceId, state.playback?.playbackGeneration, state.playback?.discontinuityGeneration) {
+        draft.reconcile(state.playback)
+    }
+    LaunchedEffect(source) {
+        source.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Cancel) draft.cancelPreview() }
+    }
+    DisposableEffect(draft) { onDispose { draft.cancelPreview() } }
     Column(Modifier.fillMaxWidth()) {
-        Slider(
-            value = fraction,
-            onValueChange = { if (enabled) preview = it },
-            onValueChangeFinished = {
-                preview?.let { value -> onSeekTo((duration * value.toDouble()).toLong().coerceIn(0L, duration)) }
-                preview = null
-            },
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth().testTag("desktop-expanded-seek"),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                formatTrackDuration((duration * fraction.toDouble()).toLong()) ?: "0:00",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Unspecified,
-            )
-            Text(
-                formatTrackDuration(duration) ?: "0:00",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        PlayerSeekSlider(progress, duration, state.canSeek && state.playback?.isSeekable == true,
+            rememberPlayerMotionLevel(!state.reducedMotion).moves, source,
+            { draft.preview(it, state) }, { draft.commit(state, onSeekTo) },
+            Modifier.fillMaxWidth().testTag("desktop-expanded-seek"))
+        DesktopExpandedTime(progress, duration)
+    }
+}
+
+@Composable
+private fun DesktopExpandedTime(progress: PlayerProgress, duration: Long) {
+    val seconds by remember(progress) { derivedStateOf { progress.positionMs / 1000L } }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(formatTrackDuration(seconds * 1000L) ?: "0:00", style = MaterialTheme.typography.labelSmall.tabularFigures())
+        Text(formatTrackDuration(duration) ?: "0:00", style = MaterialTheme.typography.labelSmall.tabularFigures(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

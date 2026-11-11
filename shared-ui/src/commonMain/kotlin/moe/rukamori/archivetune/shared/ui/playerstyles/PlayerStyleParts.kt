@@ -59,10 +59,16 @@ import kotlin.math.PI
 import kotlin.math.sin
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerBufferingFade
 import moe.rukamori.archivetune.shared.ui.player.PlayerGlyph
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
+import moe.rukamori.archivetune.shared.ui.player.*
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.snap
 import moe.rukamori.archivetune.shared.ui.player.label
 import moe.rukamori.archivetune.shared.ui.player.playerTime
 import moe.rukamori.archivetune.shared.ui.resources.Res
@@ -109,19 +115,22 @@ internal fun TitleLine(
     } else {
         modifier
     }
-    Row(
-        titleModifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
-    ) {
-        MarqueeText(
-            c.state.title.ifBlank { stringResource(Res.string.m5_no_track) },
-            Modifier.weight(1f, fill = false), color = color, style = style, fontWeight = fontWeight,
-            fontFamily = fontFamily, centered = centered,
-        )
-        if (c.state.explicit) {
-            Spacer(Modifier.width(6.dp))
-            ExplicitBadge(if (color != Color.Unspecified) color else LocalTextStyle.current.color)
+    val title = c.state.title.ifBlank { stringResource(Res.string.m5_no_track) }
+    PlayerTextSwap(title to c.state.explicit, c.fadeActive, titleModifier,
+        if (centered) Alignment.TopCenter else Alignment.TopStart) { (text, explicit) ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
+        ) {
+            MarqueeText(
+                text,
+                Modifier.weight(1f, fill = false), color = color, style = style, fontWeight = fontWeight,
+                fontFamily = fontFamily, centered = centered,
+            )
+            if (explicit) {
+                Spacer(Modifier.width(6.dp))
+                ExplicitBadge(if (color != Color.Unspecified) color else LocalTextStyle.current.color)
+            }
         }
     }
 }
@@ -146,13 +155,14 @@ internal fun ArtistLine(
     } else {
         modifier
     }
-    MarqueeText(
-        artist,
-        artistModifier,
-        color = color.copy(alpha = color.alpha * alpha),
-        style = style, fontWeight = fontWeight, fontFamily = fontFamily, centered = centered,
-        letterSpacing = letterSpacing,
-    )
+    PlayerTextSwap(artist, c.fadeActive, artistModifier, if (centered) Alignment.TopCenter else Alignment.TopStart) {
+        MarqueeText(
+            it,
+            color = color.copy(alpha = color.alpha * alpha),
+            style = style, fontWeight = fontWeight, fontFamily = fontFamily, centered = centered,
+            letterSpacing = letterSpacing,
+        )
+    }
 }
 
 /** "Playing from X" when the queue or album title is known, otherwise "Now playing". */
@@ -184,22 +194,29 @@ internal fun SeekScrubber(
     c: PlayerRenderContext,
     modifier: Modifier = Modifier,
     height: Dp = 24.dp,
-    content: DrawScope.(fraction: Float, dragging: Boolean) -> Unit,
+    content: DrawScope.(fraction: Float, emphasis: Float) -> Unit,
 ) {
     val playback = c.state.playback
     val duration = playback?.durationMs?.takeIf { it > 0L }
-    val position = (c.interaction.previewMs ?: c.state.positionMs).coerceAtLeast(0)
-    val fraction = if (duration != null) (position.toDouble() / duration).toFloat().coerceIn(0f, 1f) else 0f
+    val progress = rememberPlayerProgress(c)
     val seekable = duration != null && c.state.canSeek && playback?.isSeekable == true
     val label = stringResource(Res.string.m5_seek)
+    val thumb = androidx.compose.material3.LocalContentColor.current
     var dragging by remember { mutableStateOf(false) }
+    val latest by rememberUpdatedState(c)
+    val emphasis = animateFloatAsState(if (dragging && seekable) 1f else 0f,
+        if (c.motionActive) PlayerMotionSpecs.response() else snap(), label = "playerScrubEmphasis")
+    LaunchedEffect(seekable, playback?.occurrenceId, playback?.discontinuityGeneration) {
+        dragging = false
+        c.interaction.reconcile(playback)
+    }
     Canvas(
         modifier
             .fillMaxWidth()
             .height(height)
             .semantics {
                 contentDescription = label
-                if (duration != null) progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                if (duration != null) progressBarRangeInfo = ProgressBarRangeInfo(progress.fraction(duration), 0f..1f)
             }
             .pointerInput(seekable, duration) {
                 if (!seekable || duration == null) return@pointerInput
@@ -208,19 +225,19 @@ internal fun SeekScrubber(
                     onDragStart = { o ->
                         frac = (o.x / size.width).coerceIn(0f, 1f)
                         dragging = true
-                        c.interaction.preview(frac, c.state)
+                        latest.interaction.preview(frac, latest.state)
                     },
                     onDrag = { change, _ ->
                         change.consume()
                         frac = (change.position.x / size.width).coerceIn(0f, 1f)
-                        c.interaction.preview(frac, c.state)
+                        latest.interaction.preview(frac, latest.state)
                     },
                     onDragEnd = {
-                        c.interaction.commit(c.state, c.actions.seekTo)
+                        latest.interaction.commit(latest.state, latest.actions.seekTo)
                         dragging = false
                     },
                     onDragCancel = {
-                        c.interaction.cancelPreview()
+                        latest.interaction.cancelPreview()
                         dragging = false
                     },
                 )
@@ -228,11 +245,13 @@ internal fun SeekScrubber(
             .pointerInput(seekable, duration) {
                 if (!seekable || duration == null) return@pointerInput
                 detectTapGestures { off ->
-                    c.actions.seekTo((duration * (off.x / size.width)).toLong().coerceIn(0L, duration))
+                    latest.actions.seekTo((duration * (off.x / size.width)).toLong().coerceIn(0L, duration))
                 }
             },
     ) {
-        content(fraction, dragging)
+        val fraction = progress.fraction(duration)
+        content(fraction, emphasis.value)
+        if (emphasis.value > 0f) drawCircle(thumb, 8.dp.toPx() * emphasis.value, Offset(size.width * fraction, size.height / 2))
     }
 }
 
@@ -251,7 +270,7 @@ internal fun ThinSeekBar(
     SeekScrubber(c, modifier, height) { fraction, dragging ->
         val h = size.height
         val cy = h / 2
-        val bar = (if (dragging) dragTrackHeight else trackHeight).toPx()
+        val bar = (trackHeight + (dragTrackHeight - trackHeight) * dragging).toPx()
         drawLine(color.copy(alpha = trackAlpha), Offset(0f, cy), Offset(size.width, cy), bar, StrokeCap.Round)
         drawLine(color.copy(alpha = fillAlpha), Offset(0f, cy), Offset(size.width * fraction, cy), bar, StrokeCap.Round)
     }
@@ -281,9 +300,9 @@ internal fun SquigglySeekBar(
     wavelength: Dp = 26.dp,
 ) {
     val playing = c.state.playback?.playWhenReady == true && c.state.playback?.isEnded != true
-    val amp by animateFloatAsState(
+    val amp = animateFloatAsState(
         if (playing && c.motionActive) amplitude.value else 0f,
-        animationSpec = tween(400), label = "squigglyAmp",
+        animationSpec = if (c.motionActive) PlayerMotionSpecs.settle() else snap(), label = "squigglyAmp",
     )
     SeekScrubber(c, modifier, height) { fraction, _ ->
         val h = size.height
@@ -294,7 +313,7 @@ internal fun SquigglySeekBar(
         val path = Path()
         val step = wavePx / 8f
         var x = 0f
-        val ampPx = amp.dp.toPx()
+        val ampPx = amp.value.dp.toPx()
         path.moveTo(0f, cy)
         while (x < activeX) {
             x += step
@@ -317,10 +336,12 @@ internal fun SeekTimeRow(
     remaining: Boolean = true,
     center: (@Composable () -> Unit)? = null,
 ) {
-    val position = (c.interaction.previewMs ?: c.state.positionMs).coerceAtLeast(0)
+    val progress = rememberPlayerProgress(c)
+    val seconds by remember(progress) { derivedStateOf { progress.positionMs / 1000L } }
+    val position = seconds * 1000L
     val duration = c.state.playback?.durationMs
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(playerTime(position), color = color.copy(alpha = alpha), style = style)
+        Text(playerTime(position), color = color.copy(alpha = alpha), style = style.tabularFigures())
         if (center != null) Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { center() }
         else Spacer(Modifier.weight(1f))
         Text(
@@ -510,7 +531,11 @@ internal fun StylePlayButton(
             enabled = playback != null,
             size = size, iconSize = iconSize, width = width, container = container, contentColor = iconColor, shape = shape,
         )
-        if (loading) CircularProgressIndicator(Modifier.size(spinnerSize).testTag("player-loading"), strokeWidth = 3.dp)
+        PlayerBufferingFade(loading, c.fadeActive) {
+            val spinner = Modifier.size(spinnerSize).testTag("player-loading")
+            if (c.motionActive) CircularProgressIndicator(spinner, strokeWidth = 3.dp)
+            else CircularProgressIndicator(progress = { .7f }, modifier = spinner, strokeWidth = 3.dp)
+        }
     }
 }
 
