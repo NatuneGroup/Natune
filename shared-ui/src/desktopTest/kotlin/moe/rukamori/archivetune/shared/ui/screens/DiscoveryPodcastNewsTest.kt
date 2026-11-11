@@ -81,7 +81,7 @@ class DiscoveryPodcastNewsTest {
         runOnIdle { busy = true }
         onNodeWithTag("podcast-subscribe").assertIsNotEnabled()
         onNodeWithText("Shuffle").assertDoesNotExist()
-        onNodeWithText("More").assertDoesNotExist()
+        onNodeWithContentDescription("More").assertDoesNotExist()
         onNodeWithTag("podcast-episodes").performScrollToNode(hasTestTag("content-load-more"))
         onNodeWithTag("content-load-more").assertIsDisplayed()
         onRoot().writeM4Screenshot("m4-podcast-detail.png")
