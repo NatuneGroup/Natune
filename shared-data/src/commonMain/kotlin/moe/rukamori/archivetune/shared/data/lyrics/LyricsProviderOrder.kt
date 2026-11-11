@@ -18,10 +18,6 @@ object LyricsProviderOrder {
             "SimpMusic",
             "Unison",
             "Paxsenix: Apple Music",
-            "Paxsenix: NetEase",
-            "Paxsenix: Spotify",
-            "Paxsenix: Musixmatch",
-            "Paxsenix: YouTube",
         )
 
     /**
