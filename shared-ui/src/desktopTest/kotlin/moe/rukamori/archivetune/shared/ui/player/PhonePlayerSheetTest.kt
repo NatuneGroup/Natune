@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,20 @@ import kotlin.test.*
 
 @OptIn(ExperimentalTestApi::class)
 class PhonePlayerSheetTest {
+    @Test fun accessibilityCollapseDismissesTheSheet() = runComposeUiTest {
+        var expanded by mutableStateOf(true)
+        setContent {
+            MaterialTheme {
+                PhonePlayerSheet(expanded, { expanded = it }, false) { Box(Modifier.fillMaxSize()) }
+            }
+        }
+        onNodeWithTag("phone-player-sheet").performSemanticsAction(SemanticsActions.CustomActions) { actions ->
+            assertTrue(actions.single { it.label == "Collapse player" }.action())
+        }
+        onNodeWithTag("phone-player-sheet").assertDoesNotExist()
+        runOnIdle { assertFalse(expanded) }
+    }
+
     @Test fun springHasIntermediateFramesAndRetainsContentDuringCollapse() = runComposeUiTest {
         mainClock.autoAdvance = false
         var expanded by mutableStateOf(false)

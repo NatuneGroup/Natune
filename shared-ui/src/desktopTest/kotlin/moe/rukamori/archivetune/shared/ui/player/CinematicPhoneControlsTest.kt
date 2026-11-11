@@ -18,20 +18,28 @@ class CinematicPhoneControlsTest {
         var codec by mutableStateOf(true)
         val interaction = PlayerInteractionState()
         val actions = PlayerTestActions()
+        var expanded by mutableStateOf(true)
+        val callbacks = PlayerActions(actions.callbacks.playPause, actions.callbacks.seekTo,
+            actions.callbacks.selectOccurrence, actions.callbacks.setVolume, { action ->
+            actions.actions += action
+            if (action == PlayerAction.COLLAPSE) expanded = false
+        }, actions.callbacks.onLyricsVisibility)
         setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
                     Box(Modifier.requiredSize(393.dp, 760.dp)) {
-                        BottomSheetPlayer(playerFixture().copy(queueTitle = "Local", formatLabel = "X-WAV • 8.0 kHz • 3.7 MB"),
-                            actions.callbacks, PreferenceSnapshot.of(PlayerDesignStyleKey to "V4", ShowCodecOnPlayerKey to codec),
-                            playerSlots(), false, interaction = interaction)
+                        PhonePlayerSheet(expanded, { expanded = it }, false) {
+                            BottomSheetPlayer(playerFixture().copy(queueTitle = "Local", formatLabel = "X-WAV • 8.0 kHz • 3.7 MB"),
+                                callbacks, PreferenceSnapshot.of(PlayerDesignStyleKey to "V4", ShowCodecOnPlayerKey to codec),
+                                playerSlots(), false, interaction = interaction)
+                        }
                     }
                 }
             }
         }
         onNodeWithText("Now Playing").assertIsDisplayed()
         onNodeWithText("Local").assertIsDisplayed()
-        onNodeWithTag("player-close").assertDoesNotExist()
+        onNodeWithTag("player-close").assertIsDisplayed()
         onNodeWithTag("player-cinematic-format").performScrollTo().assertIsDisplayed()
         onNodeWithTag("player-cinematic-sleep").performScrollTo().performClick()
         assertEquals(listOf(PlayerAction.SLEEP), actions.actions)
@@ -40,5 +48,40 @@ class CinematicPhoneControlsTest {
         onNodeWithTag("player-cinematic-format").assertDoesNotExist()
         onNodeWithTag("player-cinematic-lyrics").performScrollTo().performClick()
         runOnIdle { assertEquals(PlayerPanel.LYRICS, interaction.panel) }
+        runOnIdle { interaction.panel = PlayerPanel.ARTWORK }
+        onNodeWithTag("player-close").performClick()
+        onNodeWithTag("phone-player-sheet").assertDoesNotExist()
+        runOnIdle { assertFalse(expanded); assertEquals(PlayerAction.COLLAPSE, actions.actions.last()) }
+    }
+
+    @Test fun everyPhoneStyleHasAReachableCollapseInBothOrientations() = runComposeUiTest {
+        var style by mutableStateOf(PlayerDesignStyle.Default)
+        var landscape by mutableStateOf(false)
+        var expanded by mutableStateOf(true)
+        val actions = PlayerTestActions()
+        val callbacks = PlayerActions(actions.callbacks.playPause, actions.callbacks.seekTo,
+            actions.callbacks.selectOccurrence, actions.callbacks.setVolume, { action ->
+            actions.actions += action
+            if (action == PlayerAction.COLLAPSE) expanded = false
+        }, actions.callbacks.onLyricsVisibility)
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
+                    Box(Modifier.requiredSize(if (landscape) 852.dp else 393.dp, if (landscape) 393.dp else 852.dp)) {
+                        PhonePlayerSheet(expanded, { expanded = it }, false) {
+                            BottomSheetPlayer(playerFixture(), callbacks, PreferenceSnapshot.of(PlayerDesignStyleKey to style.name),
+                                playerSlots(), false)
+                        }
+                    }
+                }
+            }
+        }
+        for (orientation in listOf(false, true)) for (look in PlayerDesignStyle.entries) {
+            runOnIdle { landscape = orientation; style = look; expanded = true }
+            onAllNodesWithTag("player-close").assertCountEquals(1)
+            onNodeWithTag("player-close").assertIsDisplayed().performClick()
+            onNodeWithTag("phone-player-sheet").assertDoesNotExist()
+            runOnIdle { assertFalse(expanded, "${look.name}, landscape=$orientation"); assertEquals(PlayerAction.COLLAPSE, actions.actions.last()) }
+        }
     }
 }
