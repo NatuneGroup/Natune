@@ -88,6 +88,7 @@ data class PlayerPreferences(
     val metrolistPresentation: MetrolistPresentation,
     /** The swipe-sensitivity setting, 0 to 1. A higher value commits an artwork swipe after less drag. */
     val swipeSensitivity: Float = DEFAULT_SWIPE_SENSITIVITY,
+    val showCodec: Boolean = true,
 )
 
 /** The sleeve is transparent but still laid out, so morphs and pagers keep their bounds. */
@@ -118,5 +119,6 @@ fun PreferenceSnapshot.playerPreferences(): PlayerPreferences {
         flamingoMotion = this[FlamingoBackgroundEffectKey] ?: false,
         metrolistPresentation = this[MetrolistPresentationKey].toEnum(MetrolistPresentation.MODERN),
         swipeSensitivity = bounded(this[SwipeSensitivityKey], DEFAULT_SWIPE_SENSITIVITY, 0f..1f),
+        showCodec = this[ShowCodecOnPlayerKey] ?: true,
     )
 }

@@ -144,9 +144,16 @@ internal fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, s
         PlayerSymbol.PLAY -> Res.drawable.solar_play_linear
         PlayerSymbol.PAUSE -> Res.drawable.solar_pause_linear
         PlayerSymbol.REPLAY -> Res.drawable.solar_replay_linear
-        PlayerSymbol.SHUFFLE -> Res.drawable.solar_shuffle
+        PlayerSymbol.SHUFFLE -> if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+            LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+            Res.drawable.reference_cinematic_shuffle else Res.drawable.solar_shuffle
         PlayerSymbol.REPEAT -> if (LocalPlayerControlMotion.current.repeat == PlayerRepeat.ONE)
-            Res.drawable.solar_repeat_one else Res.drawable.solar_repeat
+            if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+                LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+                Res.drawable.reference_cinematic_repeat_one else Res.drawable.solar_repeat_one
+            else if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
+                LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.V4)
+                Res.drawable.reference_cinematic_repeat else Res.drawable.solar_repeat
         PlayerSymbol.HEART -> if (selected == true) Res.drawable.solar_heart_bold else Res.drawable.solar_heart_linear
         PlayerSymbol.SHARE -> if (LocalPlayerGlyphStyle.current == moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.TIKTOK)
             Res.drawable.solar_share_linear else Res.drawable.reference_player_share
