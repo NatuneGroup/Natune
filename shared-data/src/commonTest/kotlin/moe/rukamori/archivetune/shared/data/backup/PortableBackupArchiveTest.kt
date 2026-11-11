@@ -159,11 +159,13 @@ class PortableBackupArchiveTest {
 
     @Test
     fun parseRejectsUnownedPreferenceKeys() {
-        val settings = snapshot(StringPreferenceKey("secure_store_blob") to "blob")
-        val archive = PortableBackupArchive.create(
-            PortableBackupFormat.PLATFORM_IOS, null, settings, nowMillis = 0L,
-        )
-        // The crafted key is not exported by the policy, so the archive it made reads as having no restorable data.
+        // A malicious archive must bypass the safe export encoder so this still tests the import policy.
+        val archive = PortableZip.write(listOf(
+            PortableBackupFormat.MANIFEST to PortableBackupFormat.manifest(PortableBackupFormat.PLATFORM_IOS, 0L),
+            PortableBackupFormat.SETTINGS to """{"formatVersion":1,"entries":[
+                {"name":"secure_store_blob","kind":"STRING","value":"blob"},
+                {"name":"theme","kind":"STRING","value":"dark"}]}""".encodeToByteArray(),
+        ), nowMillis = 0L)
         assertProblem(BackupArchiveProblem.CORRUPTED) { PortableBackupArchive.parse(archive) }
     }
 
