@@ -17,6 +17,7 @@ import android.webkit.WebView
 import android.widget.Toast
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.datastore.preferences.core.edit
 import androidx.navigation.NavController
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import moe.rukamori.archivetune.shared.data.provider.QobuzAccountExchange
+import moe.rukamori.archivetune.shared.ui.settings.QobuzPasswordLogin
+import moe.rukamori.archivetune.utils.withAppProxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -206,6 +212,17 @@ fun QobuzLoginScreen(navController: NavController) {
         provider = "qobuz",
         title = stringResource(R.string.qobuz_login),
         subtitle = stringResource(R.string.auth_webview_qobuz_subtitle),
+        statusContent = {
+            val http = remember { HttpClient(OkHttp) { engine { config { withAppProxy() } } } }
+            DisposableEffect(http) { onDispose { http.close() } }
+            val exchange = remember(http) { QobuzAccountExchange(http) }
+            QobuzPasswordLogin(exchange::signIn, save = { entry ->
+                val token = QobuzToken(entry.token, entry.userId, entry.appId, entry.appSecret, entry.label)
+                val health = withContext(Dispatchers.IO) { QobuzAudioProvider.verifyToken(token, null, 0) }
+                check(health != TidalAudioProvider.InstanceHealth.UNREACHABLE)
+                save(token)
+            }, onFailure = {})
+        },
         // A leaked WebView keeps its in-flight bundle re-fetches alive for the rest of the process,
         // which is part of why the second visit felt slower than the first.
         onRelease = { it.releaseAuthWebView("QobuzAuth") },

@@ -37,6 +37,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.data.provider.QobuzAccountExchange
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
 import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
@@ -162,6 +163,7 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
         graph.instanceDirectory.toAbsolutePath().normalize().resolve("feedback").resolve("records"),
     )
 
+    val qobuzExchange = QobuzAccountExchange(graph.http)
     private val qobuzVerifier = QobuzAccountVerifier(graph.http)
     private val qobuzScrape = QobuzBundleScrape(graph.http)
     private val qobuzProbe = QobuzInstanceProbe(graph.http)
@@ -550,6 +552,7 @@ private fun DesktopSettingsRouteBody(
                 controller = owners.controller,
                 scrapeCandidates = owners::qobuzSecretCandidates,
                 verify = owners::verifyQobuzToken,
+                exchange = owners.qobuzExchange::signIn,
                 openWebPlayer = { openDesktopUri("https://play.qobuz.com/", graph::report) },
                 navigateUp = { navigation.back() },
                 onFailure = onFailure,
