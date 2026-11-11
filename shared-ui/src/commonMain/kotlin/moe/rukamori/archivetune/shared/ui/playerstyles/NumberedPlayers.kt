@@ -61,6 +61,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
 import moe.rukamori.archivetune.shared.ui.player.ActionButton
+import moe.rukamori.archivetune.shared.ui.player.collapseSymbolAndLabel
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerArtworkPager
 import moe.rukamori.archivetune.shared.ui.player.PlayerControlCrossfade
@@ -79,6 +80,7 @@ import moe.rukamori.archivetune.shared.ui.player.rememberPlayerControlMotion
 import moe.rukamori.archivetune.shared.ui.player.resolveBackground
 import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
 import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
+import moe.rukamori.archivetune.shared.ui.player.STYLE_COLLAPSE_TAG
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_now_playing
 import moe.rukamori.archivetune.shared.ui.resources.phone_reference_queue_music
@@ -646,8 +648,10 @@ private fun LittlePlayerContent(c: PlayerRenderContext) {
             Spacer(Modifier.height(14.dp * scale))
             Spacer(Modifier.height(6.dp * scale))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PlayerIcon(PlayerSymbol.DOWN, stringResource(Res.string.m5_collapse),
+                val (collapseSymbol, collapseLabel) = collapseSymbolAndLabel(c)
+                PlayerIcon(collapseSymbol, stringResource(collapseLabel),
                     { c.actions.onAction(PlayerAction.COLLAPSE) },
+                    Modifier.testTag(STYLE_COLLAPSE_TAG),
                     size = collapseIconSize, iconSize = collapseIconSize,
                     contentColor = textColor.copy(alpha = .8f))
                 Spacer(Modifier.weight(1f))
