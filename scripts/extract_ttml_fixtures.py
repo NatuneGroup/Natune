@@ -14,7 +14,11 @@ DEST = ROOT / "native/core/fixtures/ttml-inputs.json"
 def corpus():
     result = []
     tests = ROOT / "shared-domain/src/commonTest/kotlin/moe/rukamori/archivetune/shared/domain/lyrics"
-    for path in sorted(tests.rglob("*.kt")):
+    paths = list(tests.rglob("*.kt"))
+    paths += list((ROOT / "app/src/test/kotlin").rglob("*.kt"))
+    paths += list((ROOT / "shared-ui/src/commonTest/kotlin").rglob("*.kt"))
+    for path in sorted(paths):
+        prefix = "" if path.is_relative_to(tests) else str(path.relative_to(ROOT))
         source = path.read_text()
         literals = re.finditer(r'"""([\s\S]*?)"""|"((?:\\.|[^"\\\n])*)"', source)
         for index, match in enumerate(literals):
@@ -37,7 +41,7 @@ def corpus():
                     pass
             if "&lt;tt" in xml:
                 xml = html.unescape(xml)
-            result.append({"id": f"{path.relative_to(tests)}:{index}", "raw": raw, "xml": xml})
+            result.append({"id": f"{prefix or str(path.relative_to(tests))}:{index}", "raw": raw, "xml": xml})
     extras = {
         "minimal": '<tt><body><p begin="1s">Hello</p></body></tt>',
         "nested-duplicate": '<tt><div><p begin="2s">A</p><div><p begin="1s">B</p></div></div></tt>',
