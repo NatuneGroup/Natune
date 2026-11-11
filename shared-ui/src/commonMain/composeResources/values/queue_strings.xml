@@ -13,6 +13,9 @@
     <string name="queue_unlock_edits">Unlock queue editing</string>
     <string name="queue_source_title">Playing from %1$s</string>
     <string name="queue_summary">%1$d tracks · %2$s total · %3$s remaining</string>
+    <string name="queue_phone_summary">%1$d songs • %2$s • %3$s remaining</string>
+    <string name="queue_continue_playing">Continue Playing</string>
+    <string name="queue_autoplaying_similar">Autoplaying similar music</string>
     <string name="queue_unknown_duration">Unknown duration</string>
     <string name="queue_selection_count">%1$d selected</string>
     <string name="queue_select_tracks">Select tracks</string>

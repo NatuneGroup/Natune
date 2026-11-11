@@ -6,6 +6,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
 import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import moe.rukamori.archivetune.shared.ui.navigation.LocalDesktopLayout
@@ -26,6 +27,8 @@ class QueueInitialViewportTest {
         onNodeWithTag("player-cinematic-lyrics").assertIsDisplayed()
         onNodeWithTag("player-cinematic-queue").assertIsDisplayed().performClick()
         onNodeWithTag("queue-jump").assertIsDisplayed()
+        onNodeWithTag("queue-drag-strip").assertIsDisplayed()
+        onNodeWithText("Lyrics").assertDoesNotExist()
     }
 
     @Test fun openingAtTheFirstTrackKeepsTheExpandedHeader() = runSkikoComposeUiTest(size = Size(393f, 852f)) {
@@ -40,5 +43,6 @@ class QueueInitialViewportTest {
         onNodeWithTag("queue-infinite").assertIsDisplayed()
         onNodeWithTag("queue-compact-shuffle").assertDoesNotExist()
         onNodeWithTag("queue-row-s1@1").assertIsDisplayed()
+        onNodeWithTag("queue-current-play-overlay", useUnmergedTree = true).assertExists()
     }
 }

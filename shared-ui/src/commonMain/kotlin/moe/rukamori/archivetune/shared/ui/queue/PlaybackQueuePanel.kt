@@ -69,6 +69,7 @@ fun PlaybackQueuePanel(
     modifier: Modifier = Modifier,
     artwork: @Composable (ContentOccurrence, Modifier) -> Unit,
 ) {
+    val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
     val state by queue.state.collectAsState()
     val playback by queue.player.snapshot.collectAsState()
     val preferences by settings.snapshots.collectAsState()
@@ -160,7 +161,7 @@ fun PlaybackQueuePanel(
     } else 0L
     val times = queueTimes(rows, state.currentOccurrenceId, position)
     val unknown = stringResource(Res.string.queue_unknown_duration)
-    val summary = stringResource(Res.string.queue_summary, rows.size,
+    val summary = stringResource(if (phone) Res.string.queue_phone_summary else Res.string.queue_summary, rows.size,
         times.totalMs?.let(::queueTimeString) ?: unknown, times.remainingMs?.let(::queueTimeString) ?: unknown)
     val sourceLabel = source?.text?.takeIf { it.isNotBlank() } ?: source?.parent?.id ?: rows.firstOrNull()?.let {
         stringResource(if (it.item.ref.provider == ContentProvider.YOUTUBE.id) Res.string.queue_source_youtube
@@ -187,7 +188,12 @@ fun PlaybackQueuePanel(
     val onClear: () -> Unit = { remove { edits.clearUpcoming() } }
     val onSelect: () -> Unit = { selected = rows.mapTo(HashSet()) { it.occurrenceId } }
     val header: @Composable () -> Unit = {
-        QueuePanelHeader(
+        if (phone) PhoneQueueHeader(rows.firstOrNull { it.occurrenceId == state.currentOccurrenceId },
+            summary, sourceLabel, infinite, loading, locked, state.shuffleEnabled, repeat,
+            ready = preferences != null, hasTracks = rows.isNotEmpty(), artwork = artwork,
+            onInfinite = onInfinite, onShuffle = onShuffle, onRepeat = onRepeat, onLock = onLock,
+            onJump = onJump, onSave = onSave, onClear = onClear)
+        else QueuePanelHeader(
             summary, sourceLabel, infinite, loading, locked, state.shuffleEnabled, repeat,
             ready = preferences != null,
             hasTracks = rows.isNotEmpty(),
@@ -208,6 +214,7 @@ fun PlaybackQueuePanel(
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
+            if (phone) PhoneQueueDragStrip()
             if (rows.isEmpty()) {
                 header()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -243,6 +250,7 @@ fun PlaybackQueuePanel(
                             } },
                             onUp = rows.getOrNull(index - 1)?.let { before -> { move(entry.occurrenceId, before.occurrenceId, false) } },
                             onDown = rows.getOrNull(index + 1)?.let { after -> { move(entry.occurrenceId, after.occurrenceId, true) } },
+                            playing = playback?.occurrenceId == entry.occurrenceId && playback?.playWhenReady == true,
                         )
                     }
                 }
@@ -250,7 +258,7 @@ fun PlaybackQueuePanel(
         }
         AnimatedVisibility(
             visible = listScrolled && rows.isNotEmpty(),
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.TopCenter).then(if (phone) Modifier.padding(top = 12.dp) else Modifier),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
