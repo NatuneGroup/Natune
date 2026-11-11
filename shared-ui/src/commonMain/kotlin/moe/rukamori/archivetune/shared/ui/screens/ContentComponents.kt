@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.glass.BusyLinearProgress
 import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import moe.rukamori.archivetune.shared.ui.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /** The injected host renders real resolved artwork. No URL loader, credential or decoder owner is created here. */
@@ -25,6 +26,16 @@ class ContentActions(
     val loadMore: () -> Unit,
     val retry: () -> Unit,
 )
+
+/**
+ * The per-item overflow control. An icon rather than a text label so it does not take width from the item's title.
+ */
+@Composable
+internal fun ItemMenuButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(painterResource(Res.drawable.m4hv_icon_more_vert), stringResource(Res.string.m4_more))
+    }
+}
 
 @Composable
 fun ContentRow(
@@ -69,9 +80,7 @@ fun ContentRow(
                         modifier = Modifier.padding(horizontal = 8.dp).testTag("track-duration-${occurrence.occurrenceId}")) }
                     trailingControls?.invoke()
                     actions.more?.let { more ->
-                        TextButton(onClick = { more(occurrence) }, modifier = Modifier.testTag("more-${occurrence.occurrenceId}")) {
-                            Text(stringResource(Res.string.m4_more))
-                        }
+                        ItemMenuButton(onClick = { more(occurrence) }, modifier = Modifier.testTag("more-${occurrence.occurrenceId}"))
                     }
                 }
             }

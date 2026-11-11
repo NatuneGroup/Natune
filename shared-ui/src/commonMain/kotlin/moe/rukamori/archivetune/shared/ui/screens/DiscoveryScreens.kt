@@ -190,7 +190,7 @@ private fun Shelf(
                                     }
                                 },
                                 trailingContent = more?.let { menu -> {
-                                    TextButton({ menu(occurrence) }) { Text(stringResource(Res.string.m4_more)) }
+                                    ItemMenuButton({ menu(occurrence) })
                                 } },
                                 modifier = Modifier.clickable { open(occurrence, shelf.collection) }
                                     .testTag("chart-${shelf.key}-${occurrence.occurrenceId}"))
@@ -214,7 +214,7 @@ internal fun CatalogCard(row: ContentOccurrence, open: () -> Unit, more: (() -> 
         artwork(row.item, Modifier.fillMaxWidth().aspectRatio(1f))
         Text(effectiveSong(row.item).title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(effectiveSong(row.item).subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        more?.let { TextButton(it) { Text(stringResource(Res.string.m4_more)) } }
+        more?.let { ItemMenuButton(it) }
     }
 }
 
@@ -280,7 +280,7 @@ fun BrowseScreen(
                 Text(effectiveSong(row.item).title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(effectiveSong(row.item).subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 actions.more?.let { more ->
-                    TextButton({ more(row) }) { Text(stringResource(Res.string.m4_more)) }
+                    ItemMenuButton({ more(row) })
                 }
             }
         }
