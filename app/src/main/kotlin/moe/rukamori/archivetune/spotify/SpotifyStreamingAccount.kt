@@ -41,9 +41,7 @@ import moe.rukamori.archivetune.constants.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.constants.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
-import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
-import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
@@ -99,24 +97,9 @@ object SpotifyStreamingAccount {
      * resolves as signed-in-but-unavailable: `accessToken` refuses the dedicated token and playback
      * falls through to the next source. Synchronous like every dataStore.get at the call site.
      */
-    fun effectiveEngine(dataStore: DataStore<Preferences>): SpotifyStreamEngine {
-        val stored = SpotifyStreamEngine.fromPreference(dataStore[SpotifyStreamEngineKey])
-        val boundProduct =
-            when (stored.streamAccountBinding()) {
-                SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(dataStore[SpotifyStreamProductKey])
-                SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(dataStore[SpotifyProductKey])
-            }
-        return SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)
-    }
+    fun effectiveEngine(dataStore: DataStore<Preferences>): SpotifyStreamEngine = SpotifyProviderPreferences.effectiveEngine(dataStore)
 
-    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean {
-        return when (effectiveEngine(dataStore)) {
-            SpotifyStreamEngine.UNOFFICIAL -> dataStore.get(SpotifyAlternateEnabledKey, !dataStore[SpotifyStreamSpDcKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
-                !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
-            SpotifyStreamEngine.LIBRESPOT -> dataStore.get(SpotifyLibrespotEnabledKey, !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
-                !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
-        }
-    }
+    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean = SpotifyProviderPreferences.playbackAvailable(dataStore)
 
     /** React to the same preference snapshot as the source picker, including extension disablement. */
     fun streamingSessionPresent(preferences: Preferences): Boolean = SpotifyProviderPreferences.playbackAvailable(preferences)
