@@ -75,14 +75,21 @@ def jvm(target=None):
         library = host_library()
         arch = "aarch64" if platform.machine().lower() in ("aarch64", "arm64") else "x86-64"
         prefix = {"Linux": "linux", "Darwin": "darwin", "Windows": "win32"}[platform.system()] + "-" + arch
-    destination = BUILD / "generated/rustResources" / prefix
+    resources = BUILD / "generated/rustResources"
+    if resources.exists():
+        shutil.rmtree(resources)
+    destination = resources / prefix
     destination.mkdir(parents=True, exist_ok=True)
     shutil.copy2(library, destination / library.name)
 
 
 def android(abis):
     sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
-    ndk = Path(os.environ.get("ANDROID_NDK_HOME") or str(Path(sdk or "") / "ndk/30.0.16248370"))
+    pinned = Path(sdk or "") / "ndk/30.0.16248370"
+    ndk = pinned if pinned.is_dir() else Path(os.environ.get("ANDROID_NDK_HOME") or str(pinned))
+    properties = ndk / "source.properties"
+    if not properties.is_file() or not any(line.strip() == "Pkg.Revision = 30.0.16248370" for line in properties.read_text().splitlines()):
+        raise SystemExit(f"Expected repository NDK 30.0.16248370: {ndk}")
     host = {"Linux": "linux-x86_64", "Darwin": "darwin-x86_64", "Windows": "windows-x86_64"}[platform.system()]
     toolchain = ndk / "toolchains/llvm/prebuilt" / host / "bin"
     for abi in abis.split(","):

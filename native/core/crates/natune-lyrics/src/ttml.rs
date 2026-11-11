@@ -4,7 +4,7 @@ use crate::{
     reader::{self, Arena, Node, ends_ignore_case, eq_ignore_case, kotlin_space, regex_space},
     time::{self, Timing},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 struct Romanization {
@@ -64,6 +64,7 @@ fn roman_nodes(arena: &Arena, id: usize, text: &mut String, words: &mut Vec<Stri
 
 pub fn document(arena: &Arena, cancelled: &impl Fn() -> bool) -> Result<Document, Cancelled> {
     let mut credits = Credits::default();
+    let mut seen_writers = HashSet::new();
     let mut latin = HashMap::new();
     let mut romanizations = HashMap::new();
     let mut translations = HashMap::new();
@@ -82,7 +83,7 @@ pub fn document(arena: &Arena, cancelled: &impl Fn() -> bool) -> Result<Document
                 Some(name.to_owned())
             };
             if let Some(name) = name
-                && !credits.songwriters.contains(&name)
+                && seen_writers.insert(name.clone())
             {
                 credits.songwriters.push(name);
             }
