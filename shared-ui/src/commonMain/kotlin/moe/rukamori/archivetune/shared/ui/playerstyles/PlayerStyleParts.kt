@@ -483,13 +483,15 @@ internal fun StyleIconButton(
         )
         return
     }
+    // COLLAPSE takes its icon and label from what its tap does, as ActionButton does.
+    val collapse = if (action == PlayerAction.COLLAPSE) collapseSymbolAndLabel(c) else null
     PlayerIcon(
-        symbol = symbol,
-        label = label ?: action?.let { stringResource(actionLabel(it)) } ?: "",
+        symbol = collapse?.first ?: symbol,
+        label = label ?: collapse?.let { stringResource(it.second) } ?: action?.let { stringResource(actionLabel(it)) } ?: "",
         onClick = onClick ?: {
             if (action != null) c.actions.onAction(action)
         },
-        modifier = modifier,
+        modifier = if (action == PlayerAction.COLLAPSE) modifier.testTag(STYLE_COLLAPSE_TAG) else modifier,
         enabled = enabled,
         selected = selected,
         size = size,
