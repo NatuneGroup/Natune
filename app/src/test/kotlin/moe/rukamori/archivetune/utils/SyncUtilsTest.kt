@@ -28,6 +28,7 @@ import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.innertube.pages.AlbumPage
 import moe.rukamori.archivetune.innertube.pages.LibraryPage
 import moe.rukamori.archivetune.playback.queues.FiniteFixtureSource
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistChunk
 import moe.rukamori.archivetune.playback.queues.finitePage
 import org.junit.After
 import org.junit.Assert.*
@@ -166,6 +167,34 @@ class SyncUtilsTest {
         manual.join()
         assertEquals(2, playlists.calls.size)
         assertEquals(listOf("remote"), database.playlistSongs("auto").first().map { it.song.id })
+    }
+
+    @Test
+    fun incompleteAutoSyncListingCannotWipeLocalPlaylistSongs() = runTest {
+        database.insert(PlaylistEntity("auto", "Auto", browseId = "fixture", bookmarkedAt = savedAt, isAutoSync = true))
+        sync.syncAutoSyncPlaylists()
+        assertEquals(listOf("remote"), database.playlistSongs("auto").first().map { it.song.id })
+
+        // Pin the gate that decides when automatic sync may wipe local data: syncPlaylist commits
+        // (clears and rebuilds the local rows) only inside withCompleteYouTubePlaylist, which runs
+        // its commit solely after FinitePlaylistLoader.complete has read the remote listing to its
+        // end. This test FAILS if that completeness requirement is weakened, e.g. if complete()
+        // returned after the first page while a continuation is still pending, if a failed or
+        // malformed (empty/null) continuation were treated as end-of-list, or if syncPlaylist
+        // rebuilt the local rows after an incomplete fetch: the intruder page below would then
+        // replace the local songs.
+        playlists.first = finitePage(songs = listOf(song("intruder")), token = "p2", count = "2")
+        val healthy = playlists.next
+        for (mode in listOf("failure", "malformed")) {
+            playlists.next = when (mode) {
+                "failure" -> { _ -> throw IllegalStateException("synthetic transport failure") }
+                else -> { _ -> FinitePlaylistChunk(emptyList(), null) }
+            }
+            sync.syncAutoSyncPlaylists()
+            assertEquals(mode, listOf("remote"), database.playlistSongs("auto").first().map { it.song.id })
+            assertNull(mode, database.song("intruder").first())
+        }
+        playlists.next = healthy
     }
 
     private suspend fun assertSavedContentUnchanged() {

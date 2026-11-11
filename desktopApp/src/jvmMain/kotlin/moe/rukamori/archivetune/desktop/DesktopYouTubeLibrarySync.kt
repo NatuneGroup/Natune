@@ -33,8 +33,9 @@ import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
  *
  * A listing is applied only once it was read to its end; a failed or incomplete read changes nothing. Songs liked here
  * but missing remotely are unliked only by an authoritative sync, which follows an account switch, as in the baseline.
- * Stale liked albums and artists are cleared on every sync, as the baseline clears them. The library-songs corpus and
- * saved playlists have no listing on this host yet, so they stay local.
+ * Stale liked albums and artists are cleared from any complete listing, as the baseline clears them, but an empty
+ * listing carries no validity marker, so it never justifies removals on any sync, again as the baseline. The
+ * library-songs corpus and saved playlists have no listing on this host yet, so they stay local.
  */
 internal class DesktopYouTubeLibrarySync(
     private val content: YouTubeContentRepository,
@@ -55,8 +56,8 @@ internal class DesktopYouTubeLibrarySync(
             beforeSync()
             val admission = admitted() ?: return
             step("liked songs") { syncLikedSongs(admission, authoritative) }
-            step("liked albums") { syncLikedAlbums(admission, authoritative) }
-            step("artist subscriptions") { syncArtists(admission, authoritative) }
+            step("liked albums") { syncLikedAlbums(admission) }
+            step("artist subscriptions") { syncArtists(admission) }
         } finally {
             mutex.unlock()
         }
@@ -162,7 +163,9 @@ internal class DesktopYouTubeLibrarySync(
 
     private suspend fun syncLikedSongs(admission: AccountAdmission, authoritative: Boolean) {
         val remote = readRemote(ContentSurface.LIBRARY_LIKED, admission).filter { it.ref.kind == ContentKind.SONG }
-        if (remote.isEmpty() && !authoritative) return
+        // An empty listing carries no validity marker (the first-page envelope may simply be
+        // unrecognized), so it never justifies removals, as the baseline's LibrarySyncSnapshot.
+        if (remote.isEmpty()) return
         val local = readLocalLiked()
         fence(admission)
         val remoteIds = remote.mapTo(hashSetOf()) { it.ref.id }
@@ -175,9 +178,10 @@ internal class DesktopYouTubeLibrarySync(
         library.likeAll(remote.filterNot { it.ref in likedHere }.reversed())
     }
 
-    private suspend fun syncLikedAlbums(admission: AccountAdmission, authoritative: Boolean) {
+    private suspend fun syncLikedAlbums(admission: AccountAdmission) {
         val remote = readRemote(ContentSurface.LIBRARY_ALBUMS, admission).filter { it.ref.kind == ContentKind.ALBUM }
-        if (remote.isEmpty() && !authoritative) return
+        // An empty listing never justifies removals, as in syncLikedSongs.
+        if (remote.isEmpty()) return
         val local = library.observeLikedAlbums(LibrarySortState(AlbumSortType.NAME, false), naturalOrder(), flowOf(emptySet()))
             .first().orEmpty().map { it.album }
         fence(admission)
@@ -189,9 +193,10 @@ internal class DesktopYouTubeLibrarySync(
             .forEach { library.mutate(LibraryMutation.LikeAlbum(it, liked = true)) }
     }
 
-    private suspend fun syncArtists(admission: AccountAdmission, authoritative: Boolean) {
+    private suspend fun syncArtists(admission: AccountAdmission) {
         val remote = readRemote(ContentSurface.LIBRARY_ARTISTS, admission).filter { it.ref.kind == ContentKind.ARTIST }
-        if (remote.isEmpty() && !authoritative) return
+        // An empty listing never justifies removals, as in syncLikedSongs.
+        if (remote.isEmpty()) return
         val local = library.observeLikedArtists(LibrarySortState(ArtistSortType.NAME, false), naturalOrder(), flowOf(emptySet()))
             .first().orEmpty().map { it.artist }
         fence(admission)
