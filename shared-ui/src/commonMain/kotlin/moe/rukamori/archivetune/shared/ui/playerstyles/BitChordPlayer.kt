@@ -31,7 +31,7 @@ internal fun BitChordPlayer(c: PlayerRenderContext) {
                 if (c.landscape) {
                     PlayerMetadata(c, centered = true)
                     BitChordLyricStrip(c)
-                    PlayerSeek(c)
+                    PlayerSeek(c, codec = true)
                     NativeTransport(c, square = true)
                 }
                 Row { ActionButton(PlayerAction.LIKE, c); ActionButton(PlayerAction.SHARE, c) }
@@ -40,7 +40,7 @@ internal fun BitChordPlayer(c: PlayerRenderContext) {
         if (!c.landscape) {
             PlayerMetadata(c, centered = true)
             BitChordLyricStrip(c)
-            PlayerSeek(c)
+            PlayerSeek(c, codec = true)
             NativeTransport(c, square = true)
         }
         PlayerVolume(c)
