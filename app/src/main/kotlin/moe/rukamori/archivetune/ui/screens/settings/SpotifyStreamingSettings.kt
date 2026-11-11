@@ -78,10 +78,10 @@ import moe.rukamori.archivetune.spotify.SpotifyLibrespotAccountNameKey
 import moe.rukamori.archivetune.spotify.SpotifyLibrespotRefreshTokenKey
 import moe.rukamori.archivetune.spotify.SpotifyProductKey
 import moe.rukamori.archivetune.spotify.SpotifyStreamEngineKey
-import moe.rukamori.archivetune.modules.SpotifyAlternateExtensionEnabledKey
-import moe.rukamori.archivetune.modules.SpotifyOfficialExtensionEnabledKey
-import moe.rukamori.archivetune.modules.NativeExtensionIds
-import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.spotify.SpotifyAlternateEnabledKey
+import moe.rukamori.archivetune.spotify.SpotifyLibrespotEnabledKey
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProviderIds
+import moe.rukamori.archivetune.spotify.SpotifyProviderPreferences
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
 import moe.rukamori.archivetune.ui.component.DefaultDialog
@@ -115,10 +115,10 @@ fun SpotifyStreamingSettings(
     val (catalogSpDc, _) = rememberPreference(SpotifySpDcKey, "")
     val (libraryProduct, _) = rememberPreference(SpotifyProductKey, "")
     val extensionPrefs = rememberPreferenceSnapshot()
-    val (alternateEnabled, onAlternateEnabledChange) = extensionPrefs.state(SpotifyAlternateExtensionEnabledKey,
-        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_ALTERNATE, extensionPrefs.current))
-    val (officialEnabled, onOfficialEnabledChange) = extensionPrefs.state(SpotifyOfficialExtensionEnabledKey,
-        NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_OFFICIAL, extensionPrefs.current))
+    val (alternateEnabled, onAlternateEnabledChange) = extensionPrefs.state(SpotifyAlternateEnabledKey,
+        SpotifyProviderPreferences.legacyEnabled(SpotifyProviderIds.ALTERNATE, extensionPrefs.current))
+    val (officialEnabled, onOfficialEnabledChange) = extensionPrefs.state(SpotifyLibrespotEnabledKey,
+        SpotifyProviderPreferences.legacyEnabled(SpotifyProviderIds.LIBRESPOT, extensionPrefs.current))
     val accountEngine = when (scrollTo) {
         "extension_alternate" -> SpotifyStreamEngine.UNOFFICIAL
         "extension_official" -> SpotifyStreamEngine.LIBRESPOT

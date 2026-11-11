@@ -29,9 +29,9 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
-import moe.rukamori.archivetune.modules.NativeExtensionIds
-import moe.rukamori.archivetune.modules.NativeExtensionPolicy
-import moe.rukamori.archivetune.modules.SpotifyMetadataExtensionEnabledKey
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProviderIds
+import moe.rukamori.archivetune.spotify.SpotifyProviderPreferences
+import moe.rukamori.archivetune.spotify.SpotifyCatalogEnabledKey
 import moe.rukamori.archivetune.spotify.SpotifyAccountViewModel
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -57,8 +57,8 @@ fun SpotifyCatalogSettings(
     val extensionPrefs = rememberPreferenceSnapshot()
     val (metadataExtensionEnabled, onMetadataExtensionEnabledChange) =
         extensionPrefs.state(
-            SpotifyMetadataExtensionEnabledKey,
-            NativeExtensionPolicy.legacyEnabled(NativeExtensionIds.SPOTIFY_METADATA, extensionPrefs.current),
+            SpotifyCatalogEnabledKey,
+            SpotifyProviderPreferences.legacyEnabled(SpotifyProviderIds.CATALOG, extensionPrefs.current),
         )
     val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) = rememberPreference(ShowSpotifyPlaylistsKey, false)
     val (syncSpotifyHistory, onSyncSpotifyHistoryChange) = rememberPreference(SpotifyHistorySyncEnabledKey, false)

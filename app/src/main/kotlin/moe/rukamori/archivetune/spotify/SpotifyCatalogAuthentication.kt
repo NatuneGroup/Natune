@@ -7,14 +7,13 @@ import moe.rukamori.archivetune.constants.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.constants.SpotifyAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
 import moe.rukamori.archivetune.constants.SpotifySpKeyKey
-import moe.rukamori.archivetune.modules.NativeExtensionIds
-import moe.rukamori.archivetune.modules.NativeExtensionPolicy
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProviderIds
 import moe.rukamori.archivetune.utils.dataStore
 
 /** Catalog reads use the catalog account only; playback token owners keep their own guards. */
 internal suspend fun ensureSpotifyCatalogAuthenticated(context: Context, refresh: suspend (String, String) -> Unit) {
     val prefs = context.dataStore.data.first()
-    check(NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_METADATA, prefs)) { context.getString(R.string.extensions_disabled) }
+    check(SpotifyProviderPreferences.enabled(SpotifyProviderIds.CATALOG, prefs)) { context.getString(R.string.extensions_disabled) }
     val token = prefs[SpotifyAccessTokenKey].orEmpty()
     val expiresAt = prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L
     if (token.isNotBlank() && expiresAt > System.currentTimeMillis() + 60_000L) {

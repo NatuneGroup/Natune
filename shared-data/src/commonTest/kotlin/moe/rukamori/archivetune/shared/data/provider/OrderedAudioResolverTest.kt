@@ -134,4 +134,24 @@ class OrderedAudioResolverTest {
             AudioAttempt(AudioSourceType.YOUTUBE, AudioAttemptResult.RESOLVED),
         ), result.attempts)
     }
+
+    @Test fun legacyModulesAttemptKeepsItsSlotBetweenNativeProvidersAndTerminal() = runTest {
+        val seen = mutableListOf<String>()
+        val sources = listOf(AudioSourceType.SPOTIFY, AudioSourceType.MODULES, AudioSourceType.TIDAL).map { type ->
+            provider(type) { seen += type.name; null }
+        }
+        val resolver = OrderedAudioResolver(sources, youtube(primary = { seen += "YOUTUBE"; audio(AudioSourceType.YOUTUBE) }))
+        val enabled = settings(AudioSourceType.TIDAL, AudioSourceType.MODULES, AudioSourceType.SPOTIFY, AudioSourceType.YOUTUBE)
+        assertIs<AudioResolution.Resolved>(resolver.resolve(request, enabled))
+        assertEquals(listOf("TIDAL", "MODULES", "SPOTIFY", "YOUTUBE"), seen)
+        seen.clear()
+        assertIs<AudioResolution.Resolved>(resolver.resolve(request, enabled.copy(
+            order = AudioSourceConfig.parseOrder("SPOTIFY,MODULES,TIDAL,YOUTUBE"))))
+        assertEquals(listOf("SPOTIFY", "MODULES", "TIDAL", "YOUTUBE"), seen)
+        seen.clear()
+        assertIs<AudioResolution.Unavailable>(resolver.resolve(request, enabled.copy(
+            order = listOf(AudioSourceType.TIDAL, AudioSourceType.YOUTUBE, AudioSourceType.MODULES),
+            enabled = enabled.enabled - AudioSourceType.YOUTUBE)))
+        assertEquals(listOf("TIDAL"), seen)
+    }
 }
