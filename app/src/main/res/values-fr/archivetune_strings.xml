@@ -440,7 +440,7 @@
     <string name="internal_service">Service interne</string>
     <string name="spotify_show_playlist_desc">Afficher les playlists Spotify dans la bibliothèque.</string>
     <string name="year_in_music_ranked_artists">Les artistes que vous écoutez en boucle</string>
-    <string name="backup_create_backup_desc">Exporter la bibliothèque, les paramètres et les informations de compte.</string>
+    <string name="backup_create_backup_desc">Exporter la bibliothèque et les paramètres.</string>
     <string name="local_songs_scan_included_folders_add">Inclure un dossier</string>
     <string name="aod_customize_control_style">Style de contrôle</string>
     <string name="aod_background_ambient_glow">Lueur d\'ambiance</string>
