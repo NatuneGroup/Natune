@@ -31,6 +31,7 @@ import moe.rukamori.archivetune.musixmatch.models.RichSyncLine
 import moe.rukamori.archivetune.musixmatch.models.RichSyncResponse
 import moe.rukamori.archivetune.musixmatch.models.SubtitleLine
 import moe.rukamori.archivetune.musixmatch.models.TokenResponse
+import java.io.IOException
 import java.util.Locale
 
 /** Native Musixmatch provider ported from Spicetify's lyrics-plus `ProviderMusixmatch.js`. */
@@ -49,7 +50,12 @@ object Musixmatch {
         }
     }
 
-    private val client by lazy {
+    internal var clientForTests: HttpClient? = null
+    private val client: HttpClient get() = clientForTests ?: defaultClient
+
+    internal fun resetTokenForTests() { cachedToken = null }
+
+    private val defaultClient by lazy {
         HttpClient(OkHttp) {
             engine {
                 config {
@@ -111,58 +117,56 @@ object Musixmatch {
         artist: String,
         album: String? = null,
         duration: Int = -1,
+        onFailure: (Throwable) -> Unit = {},
         callback: (String) -> Unit,
     ) {
         val cleanTitle = title.trim()
         val cleanArtist = artist.trim()
         if (cleanTitle.isBlank() || cleanArtist.isBlank()) return
 
-        val token =
-            try {
-                getToken()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger?.invoke("Musixmatch getAllLyrics: token fetch failed: ${e.message}")
+        try {
+            val token = getToken()
+            val macro = fetchMacro(cleanTitle, cleanArtist, album, duration, token) ?: return
+            val track = macro.message.body.macroCalls.matcherTrackGet?.message?.body?.track ?: return
+            val instrumental = track.instrumental == 1
+            val hasRichSync = track.hasRichSync == 1
+
+            if (instrumental) {
+                callback("♪ Instrumental ♪")
                 return
             }
 
-        val macro = fetchMacro(cleanTitle, cleanArtist, album, duration, token) ?: return
-        val track = macro.message.body.macroCalls.matcherTrackGet?.message?.body?.track ?: return
-        val instrumental = track.instrumental == 1
-        val hasRichSync = track.hasRichSync == 1
+            // Cooperative cancellation between the richsync / subtitle / plain-lyrics
+            // branches — mirrors the pattern used by LrcLib.getAllLyrics so a cancelled
+            // fetch aborts promptly at branch boundaries, not just at suspend points.
+            currentCoroutineContext().ensureActive()
 
-        if (instrumental) {
-            callback("♪ Instrumental ♪")
-            return
-        }
-
-        // Cooperative cancellation between the richsync / subtitle / plain-lyrics
-        // branches — mirrors the pattern used by LrcLib.getAllLyrics so a cancelled
-        // fetch aborts promptly at branch boundaries, not just at suspend points.
-        currentCoroutineContext().ensureActive()
-
-        if (hasRichSync) {
-            val ttml = fetchRichSyncTtml(track, token)
-            if (ttml != null) {
-                callback(ttml)
+            if (hasRichSync) {
+                val ttml = fetchRichSyncTtml(track, token)
+                if (ttml != null) {
+                    callback(ttml)
+                }
             }
-        }
 
-        currentCoroutineContext().ensureActive()
+            currentCoroutineContext().ensureActive()
 
-        val subtitleBody = macro.message.body.macroCalls.trackSubtitlesGet?.message?.body?.subtitleList?.subtitleList
-            ?.firstOrNull()?.subtitle?.subtitleBody
-        if (!subtitleBody.isNullOrBlank()) {
-            val lrc = subtitleBodyToLrc(subtitleBody)
-            if (lrc.isNotBlank()) callback(lrc)
-        }
+            val subtitleBody = macro.message.body.macroCalls.trackSubtitlesGet?.message?.body?.subtitleList?.subtitleList
+                ?.firstOrNull()?.subtitle?.subtitleBody
+            if (!subtitleBody.isNullOrBlank()) {
+                val lrc = subtitleBodyToLrc(subtitleBody)
+                if (lrc.isNotBlank()) callback(lrc)
+            }
 
-        currentCoroutineContext().ensureActive()
+            currentCoroutineContext().ensureActive()
 
-        val lyricsBody = macro.message.body.macroCalls.trackLyricsGet?.message?.body?.lyrics?.lyricsBody
-        if (!lyricsBody.isNullOrBlank()) {
-            callback(lyricsBody.trim())
+            val lyricsBody = macro.message.body.macroCalls.trackLyricsGet?.message?.body?.lyrics?.lyricsBody
+            if (!lyricsBody.isNullOrBlank()) {
+                callback(lyricsBody.trim())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onFailure(e)
         }
     }
 
@@ -236,12 +240,11 @@ object Musixmatch {
                 parameter("app_id", APP_ID)
                 musixmatchHeaders()
             }
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("Musixmatch token.get HTTP ${response.status.value}")
-        }
+        ensureSuccessfulResponse(response.status.value, "token.get")
         val body = response.bodyAsText()
         val parsed = jsonFormat.decodeFromString<TokenResponse>(body)
         val header = parsed.message.header
+        ensureNotTransient(header.statusCode, "api response")
         if (header.statusCode != 200) {
             throw IllegalStateException("Musixmatch token.get api status ${header.statusCode}")
         }
@@ -279,12 +282,15 @@ object Musixmatch {
             }
         if (!response.status.isSuccess()) {
             logger?.invoke("Musixmatch macro.subtitles HTTP ${response.status.value}")
+            ensureNotTransient(response.status.value, "macro.subtitles")
             return null
         }
         val body = response.bodyAsText()
         val parsed =
             try {
                 decodeMacroSubtitlesResponse(jsonFormat, body)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger?.invoke("Musixmatch macro.subtitles parse failed: ${e.message}")
                 return null
@@ -293,6 +299,7 @@ object Musixmatch {
                 return null
             }
         val header = parsed.message.header
+        ensureNotTransient(header.statusCode, "api response")
         if (header.statusCode != 200) {
             logger?.invoke("Musixmatch macro.subtitles api status=${header.statusCode}, mode=${header.mode}")
             return null
@@ -321,17 +328,21 @@ object Musixmatch {
             }
         if (!response.status.isSuccess()) {
             logger?.invoke("Musixmatch track.richsync HTTP ${response.status.value}")
+            ensureNotTransient(response.status.value, "track.richsync")
             return null
         }
         val body = response.bodyAsText()
         val parsed =
             try {
                 jsonFormat.decodeFromString<RichSyncResponse>(body)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger?.invoke("Musixmatch track.richsync parse failed: ${e.message}")
                 return null
             }
         val header = parsed.message.header
+        ensureNotTransient(header.statusCode, "api response")
         if (header.statusCode != 200) {
             logger?.invoke("Musixmatch track.richsync api status=${header.statusCode}")
             return null
@@ -341,6 +352,8 @@ object Musixmatch {
         val lines =
             try {
                 jsonFormat.decodeFromString<List<RichSyncLine>>(richsyncBody)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger?.invoke("Musixmatch richsync_body decode failed: ${e.message}")
                 return null
@@ -384,5 +397,14 @@ object Musixmatch {
         headers.append("X-Cookie", "x-mxm-token-guid=")
         headers.append("x-mxm-app-version", "10.1.1")
         headers.append("X-User-Agent", "Musixmatch/2025120901 CFNetwork/3860.300.31 Darwin/25.2.0")
+    }
+
+    private fun ensureSuccessfulResponse(status: Int, request: String) {
+        ensureNotTransient(status, request)
+        if (status !in 200..299) throw IllegalStateException("Musixmatch $request HTTP $status")
+    }
+
+    private fun ensureNotTransient(status: Int, request: String) {
+        if (status == 429 || status in 500..599) throw IOException("Musixmatch $request HTTP $status")
     }
 }

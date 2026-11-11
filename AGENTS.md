@@ -21,7 +21,7 @@ There are only these two channels; Canary is retired (see
 - `iosApp/`: the Xcode project, the SwiftUI shell and the native audio/Telegram bridges.
 - Library modules: `:spotifycore :canvas :jiosaavn :lastfm :musixmatch :shazamkit
   :modules` and `:lyrics:*`.
-- Git submodules: `core` → `vossgraves/core`, `lyrics` → `4nx3b/lyrics`,
+- Git submodules: `core` → `vossgraves/core`, `lyrics` → `NatuneGroup/lyrics` (upstream `4nx3b/lyrics`),
   `IconPack` → `NatuneGroup/IconPack`, `deobfuscator` → `rukamori/morideobfuscator`.
   Commit and push inside a submodule before you move its gitlink; never leave a dirty
   or unpushed pointer. Never point `core` at a `rukamori/core` revision: its
@@ -77,6 +77,15 @@ There are only these two channels; Canary is retired (see
   compatibility; the minimum compatible app version is the upstream contract floor
   `15.1.0`, not Natune's version. Never restore `NetworkGatekeeper` or hardcoded-key
   envelope decryption. See [modules](docs/modules.md).
+- **Bit-perfect USB.** The Android `BitPerfectUsbOutputKey` owns the platform route.
+  Its experimental `DirectUsbDriverKey` sub-option is default off and restart-scoped;
+  off preserves the dev platform behavior without USB receivers, permission requests
+  or a direct sink, including Android 14 support semantics. Keep exact PCM rates/channels/depth, verified hardware
+  volume, feedback failure recovery and interface restoration. `native/usbdirect/`
+  uses USBFS with no libusb tree; preserve stripped 16 KB-aligned libraries and limited
+  JNI exports. No duplicate bit-perfect settings home. Unsupported devices/formats and
+  permission refusal retain the existing platform route. See
+  [direct USB output](docs/engineering/direct-usb-output.md).
 - **Presentation.** Material 3 Expressive is the default style. Each Apple Music option
   changes only its own surface; only the full Apple Music preset changes several at
   once. Album and playlist pages keep the artwork-backed Material hero. Keep all saved

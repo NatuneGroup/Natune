@@ -53,6 +53,7 @@ object MusixmatchExperimentalLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         Musixmatch.getAllLyrics(
@@ -60,6 +61,7 @@ object MusixmatchExperimentalLyricsProvider : LyricsProvider {
             artist = artist,
             album = album,
             duration = duration,
+            onFailure = onFailure,
             callback = callback,
         )
     }

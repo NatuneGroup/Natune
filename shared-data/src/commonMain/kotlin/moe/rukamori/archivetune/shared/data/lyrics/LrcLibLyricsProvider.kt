@@ -39,48 +39,55 @@ class LrcLibLyricsProvider(
         album: String?,
         durationSec: Int,
         isrc: String?,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        // A decorated title that answers nothing usable is retried once with the cleaned pair, like getLyrics.
-        val tracks = firstSelection(title, artist) { candidates ->
-            candidates.takeIf { page -> page.any { track -> track.matchesDuration(durationSec) } }
-        } ?: return
-        var count = 0
-        var emittedPlainLyrics = false
+        try {
+            // A decorated title that answers nothing usable is retried once with the cleaned pair, like getLyrics.
+            val tracks = firstSelection(title, artist) { candidates ->
+                candidates.takeIf { page -> page.any { track -> track.matchesDuration(durationSec) } }
+            } ?: return
+            var count = 0
+            var emittedPlainLyrics = false
 
-        val sortedTracks =
-            if (durationSec == -1) {
-                tracks.sortedByDescending { track ->
-                    var score = 0.0
-                    if (track.syncedLyrics.isUsableLyrics()) score += 1.0
-                    if (track.plainLyrics.isUsableLyrics()) score += 0.25
+            val sortedTracks =
+                if (durationSec == -1) {
+                    tracks.sortedByDescending { track ->
+                        var score = 0.0
+                        if (track.syncedLyrics.isUsableLyrics()) score += 1.0
+                        if (track.plainLyrics.isUsableLyrics()) score += 0.25
 
-                    val titleSimilarity = calculateStringSimilarity(title, track.trackName)
-                    val artistSimilarity = calculateStringSimilarity(artist, track.artistName)
-                    score + (titleSimilarity + artistSimilarity) / 2.0
+                        val titleSimilarity = calculateStringSimilarity(title, track.trackName)
+                        val artistSimilarity = calculateStringSimilarity(artist, track.artistName)
+                        score + (titleSimilarity + artistSimilarity) / 2.0
+                    }
+                } else {
+                    tracks.sortedBy { track -> abs(track.duration.toInt() - durationSec) }
                 }
-            } else {
-                tracks.sortedBy { track -> abs(track.duration.toInt() - durationSec) }
-            }
 
-        // Plain-text lyrics are emitted at most once, after the synced candidates that fit the budget.
-        for (track in sortedTracks) {
-            currentCoroutineContext().ensureActive()
-            if (count >= MAX_SEARCH_RESULTS) return
-            if (!track.matchesDuration(durationSec)) continue
+            // Plain-text lyrics are emitted at most once, after the synced candidates that fit the budget.
+            for (track in sortedTracks) {
+                currentCoroutineContext().ensureActive()
+                if (count >= MAX_SEARCH_RESULTS) return
+                if (!track.matchesDuration(durationSec)) continue
 
-            track.syncedLyrics?.takeIf { it.isNotBlank() }?.let { lyrics ->
-                callback(lyrics)
-                count++
-            }
-
-            if (!emittedPlainLyrics && count < MAX_SEARCH_RESULTS) {
-                track.plainLyrics?.takeIf { it.isNotBlank() }?.let { lyrics ->
+                track.syncedLyrics?.takeIf { it.isNotBlank() }?.let { lyrics ->
                     callback(lyrics)
                     count++
-                    emittedPlainLyrics = true
+                }
+
+                if (!emittedPlainLyrics && count < MAX_SEARCH_RESULTS) {
+                    track.plainLyrics?.takeIf { it.isNotBlank() }?.let { lyrics ->
+                        callback(lyrics)
+                        count++
+                        emittedPlainLyrics = true
+                    }
                 }
             }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) onFailure(error)
         }
     }
 

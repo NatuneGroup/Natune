@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.lyrics
 
 import kotlinx.coroutines.test.runTest
+import io.ktor.utils.io.errors.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -117,6 +118,42 @@ class LyricsHelperCacheTest {
         }
 
     @Test
+    fun getAllLyricsCachesSiblingResultsAfterAnOrdinaryNoLyricsMiss() =
+        runTest {
+            val miss = FailedLyricsProvider("No lyrics", IllegalStateException("No lyrics"))
+            val sibling = answering("Kugou", PLAIN_TEXT)
+            val helper = helperOf(listOf(miss, sibling), backgroundScope)
+            val first = mutableListOf<LyricsResult>()
+            val replayed = mutableListOf<LyricsResult>()
+
+            helper.getAllLyrics(request(), forceRefresh = true) { first += it }
+            helper.getAllLyrics(request()) { replayed += it }
+
+            assertEquals(listOf(LyricsResult("Kugou", PLAIN_TEXT)), first)
+            assertEquals(first, replayed)
+            assertEquals(1, miss.calls)
+            assertEquals(1, sibling.calls)
+        }
+
+    @Test
+    fun getAllLyricsRetriesAfterATransientProviderFailure() =
+        runTest {
+            val unavailable = FailedLyricsProvider("No connection", IOException("network timeout"))
+            val sibling = answering("Kugou", PLAIN_TEXT)
+            val helper = helperOf(listOf(unavailable, sibling), backgroundScope)
+            val first = mutableListOf<LyricsResult>()
+            val retried = mutableListOf<LyricsResult>()
+
+            helper.getAllLyrics(request(), forceRefresh = true) { first += it }
+            helper.getAllLyrics(request()) { retried += it }
+
+            assertEquals(listOf(LyricsResult("Kugou", PLAIN_TEXT)), first)
+            assertEquals(first, retried)
+            assertEquals(2, unavailable.calls)
+            assertEquals(2, sibling.calls)
+        }
+
+    @Test
     fun theWordSyncedUpgradeMemoRemembersASettledRowUntilItChanges() =
         runTest {
             val helper = helperOf(listOf(answering("LrcLib", PLAIN_TEXT)), backgroundScope, prioritizeWordSynced = true)
@@ -147,4 +184,23 @@ class LyricsHelperCacheTest {
             assertFalse(helper.shouldAttemptWordSyncedUpgrade("id", WORD_SYNCED_TTML, isRemoteSource = true))
             assertFalse(helper.shouldAttemptWordSyncedUpgrade("id", PLAIN_TEXT, isRemoteSource = false))
         }
+}
+
+private class FailedLyricsProvider(
+    override val name: String,
+    private val failure: Throwable,
+) : LyricsProvider {
+    var calls = 0
+
+    override suspend fun getLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        durationSec: Int,
+        isrc: String?,
+    ): Result<String> {
+        calls++
+        return Result.failure(failure)
+    }
 }

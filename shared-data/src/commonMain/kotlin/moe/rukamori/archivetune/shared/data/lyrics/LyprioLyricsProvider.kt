@@ -149,10 +149,17 @@ class LyprioLyricsProvider(
         album: String?,
         durationSec: Int,
         isrc: String?,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         if (title.isBlank() || artist.isBlank()) return
-        search(id, title, artist, album, durationSec, allSources = true).forEach(callback)
+        try {
+            search(id, title, artist, album, durationSec, allSources = true).forEach(callback)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) onFailure(error)
+        }
     }
 
     private suspend fun search(

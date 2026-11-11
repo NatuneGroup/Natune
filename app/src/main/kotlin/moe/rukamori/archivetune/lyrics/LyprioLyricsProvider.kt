@@ -73,6 +73,7 @@ object LyprioLyricsProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
         current?.getAllLyrics(id, title, artist, album, duration, callback = callback)

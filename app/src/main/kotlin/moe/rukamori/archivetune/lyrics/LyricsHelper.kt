@@ -35,7 +35,6 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.reportException
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 class LyricsHelper
@@ -45,7 +44,7 @@ class LyricsHelper
         private val networkConnectivity: NetworkConnectivityObserver,
         private val moduleLyrics: ModuleLyricsProviders,
     ) {
-        private val baseProviders =
+        private val defaultProviders =
             listOf(
                 LyprioLyricsProvider,
                 LrcRedLyricsProvider,
@@ -72,6 +71,10 @@ class LyricsHelper
                 MusixmatchExperimentalLyricsProvider,
                 GeniusLyricsProvider,
             )
+
+        internal var providerOverrideForTests: List<LyricsProvider>? = null
+        internal var networkAvailableForTests: Boolean? = null
+        private val baseProviders: List<LyricsProvider> get() = providerOverrideForTests ?: defaultProviders
 
         private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
         private val singleLyricsCache = LruCache<String, LyricsResult>(MAX_CACHE_SIZE)
@@ -228,7 +231,7 @@ class LyricsHelper
             )
 
             val isNetworkAvailable =
-                try {
+                networkAvailableForTests ?: try {
                     networkConnectivity.isCurrentlyConnected()
                 } catch (e: Exception) {
                     true
@@ -360,7 +363,7 @@ class LyricsHelper
             }
 
             val isNetworkAvailable =
-                try {
+                networkAvailableForTests ?: try {
                     networkConnectivity.isCurrentlyConnected()
                 } catch (e: Exception) {
                     true
@@ -370,10 +373,10 @@ class LyricsHelper
                 return
             }
 
-            val allResult = mutableListOf<LyricsResult>()
             // A search that lost a provider to a timeout or error is incomplete, and replaying it
-            // from the cache would hide that provider's results until the entry is evicted.
-            val hadProviderFailure = AtomicBoolean(false)
+            // from the cache would hide that provider's results until the entry is evicted. A
+            // provider's ordinary no-lyrics Result.failure is still a conclusive miss.
+            val searchResults = LyricsSearchResults()
             val providers = orderedProviders().filter { it.isEnabled(context) }
 
             // Fan out all enabled providers in parallel. The previous implementation
@@ -392,30 +395,34 @@ class LyricsHelper
                         async {
                             try {
                                 val completed = providerRequests.run(provider !in baseProviders, PROVIDER_TIMEOUT_MS) {
-                                    provider.getAllLyrics(mediaId, songTitle, songArtists, songAlbum, duration) lyricsCallback@{ lyrics ->
+                                    provider.getAllLyrics(
+                                        mediaId, songTitle, songArtists, songAlbum, duration,
+                                        onFailure = { error ->
+                                            if (searchResults.recordFailure(error) == ProviderLyricsAnswer.FAILED) {
+                                                reportException(error)
+                                            }
+                                        },
+                                    ) lyricsCallback@{ lyrics ->
                                         val normalizedLyrics = LyricsUtils.lyricsOrNotFound(lyrics)
                                         if (normalizedLyrics == LYRICS_NOT_FOUND) return@lyricsCallback
                                         val result = LyricsResult(provider.name, normalizedLyrics)
-                                        synchronized(allResult) {
-                                            allResult += result
-                                        }
+                                        searchResults.add(result)
                                         callback(result)
                                     }
                                 }
-                                if (completed == null) hadProviderFailure.set(true)
+                                if (completed == null) searchResults.failed()
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                hadProviderFailure.set(true)
-                                reportException(e)
+                                if (searchResults.recordFailure(e) == ProviderLyricsAnswer.FAILED) {
+                                    reportException(e)
+                                }
                             }
                         }
                     }.forEach { it.await() }
                 }
             }
-            if (allResult.isNotEmpty() && !hadProviderFailure.get()) {
-                cache.put(cacheKey, allResult.toList())
-            }
+            searchResults.cacheableResults()?.let { cache.put(cacheKey, it) }
         }
 
         /**
@@ -500,6 +507,7 @@ class LyricsHelper
             }
 
         private suspend fun orderedProviders(): List<LyricsProvider> {
+            providerOverrideForTests?.let { return it }
             val orderStr = context.dataStore.data.first()[LyricsProviderOrderKey]
             val orderedEnums = deserializeLyricsProviderOrder(orderStr)
             val providerMap: Map<PreferredLyricsProvider, LyricsProvider> =

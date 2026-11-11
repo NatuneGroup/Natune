@@ -32,14 +32,16 @@ interface LyricsProvider {
         isrc: String?,
     ): Result<String> = getLyrics(id, title, artist, album, duration)
 
+    /** Report failed results so callers can detect an incomplete search. */
     suspend fun getAllLyrics(
         id: String,
         title: String,
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit = {},
         callback: (String) -> Unit,
     ) {
-        getLyrics(id, title, artist, album, duration).onSuccess(callback)
+        getLyrics(id, title, artist, album, duration).onSuccess(callback).onFailure(onFailure)
     }
 }

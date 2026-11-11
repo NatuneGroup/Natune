@@ -19,7 +19,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -30,6 +29,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import java.io.IOException
 import java.net.URLEncoder
 import java.util.Locale
 import moe.rukamori.archivetune.utils.withAppProxy
@@ -56,6 +56,9 @@ internal object LyricsProviderHttp {
             isLenient = true
         }
 
+    @Volatile
+    private var clientOverride: HttpClient? = null
+
     private val client by lazy {
         HttpClient(OkHttp) {
             engine {
@@ -73,6 +76,12 @@ internal object LyricsProviderHttp {
         }
     }
 
+    internal fun setClientForTests(client: HttpClient?) {
+        clientOverride = client
+    }
+
+    private fun activeClient(): HttpClient = clientOverride ?: client
+
     /** An answered request: [body] is only read for a 2xx [status]. */
     class Response(
         val status: Int,
@@ -82,32 +91,31 @@ internal object LyricsProviderHttp {
     suspend fun get(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): String? = getWithStatus(url, headers)?.body
+        client: HttpClient? = null,
+    ): String? = getWithStatus(url, headers, client ?: activeClient()).body
 
-    /** Like [get], but keeps the status of a non-2xx answer; null only when nothing came back. */
+    /** Keeps non-retryable statuses; transport and retryable HTTP failures reach the caller. */
     suspend fun getWithStatus(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): Response? =
-        try {
-            val response =
-                client.get(url) {
-                    var sentAgent = false
-                    headers.forEach { (name, value) ->
-                        header(name, value)
-                        if (name.equals("User-Agent", ignoreCase = true)) sentAgent = true
-                    }
-                    if (!sentAgent) header("User-Agent", USER_AGENT)
+        client: HttpClient? = null,
+    ): Response {
+        val response =
+            (client ?: activeClient()).get(url) {
+                var sentAgent = false
+                headers.forEach { (name, value) ->
+                    header(name, value)
+                    if (name.equals("User-Agent", ignoreCase = true)) sentAgent = true
                 }
-            Response(
-                status = response.status.value,
-                body = if (response.status.isSuccess()) response.bodyAsText() else null,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+                if (!sentAgent) header("User-Agent", USER_AGENT)
+            }
+        val status = response.status.value
+        if (status == 429 || status in 500..599) throw IOException("Lyrics provider HTTP $status")
+        return Response(
+            status = status,
+            body = if (response.status.isSuccess()) response.bodyAsText().takeIf { it.isNotBlank() } else null,
+        )
+    }
 
     fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 

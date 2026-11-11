@@ -2,6 +2,8 @@
 
 package moe.rukamori.archivetune.shared.ui.player
 
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.animateTo
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +44,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.LayoutDirection
 import kotlin.time.TimeSource
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlin.math.abs
 import kotlin.math.exp
 import androidx.compose.ui.Alignment
@@ -74,11 +79,13 @@ internal fun ArchiveMiniPlayer(
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
+    playOrder: List<String> = listOf(current.occurrenceId),
+    active: Boolean = true,
 ) {
     val phone = LocalAndroidPhonePresentation.current
     val playing = playback?.playWhenReady == true && playback.isEnded != true
     val matching = nativeState.matches(playback)
-    val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, motion)
+    val motionLevel = rememberPlayerMotionLevel(motion)
     val seekInteraction = remember { PlayerInteractionState() }
     val seekInteractionSource = remember { MutableInteractionSource() }
     val seekState = PlayerState(
@@ -98,7 +105,8 @@ internal fun ArchiveMiniPlayer(
         }
     }
     CompositionLocalProvider(
-        LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motion, nativeState.repeat),
+        LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motionLevel.moves, nativeState.repeat, motionLevel.fades),
+        LocalPlayerTrackMotion provides rememberPlayerTrackMotion(current.occurrenceId, playOrder, motionLevel),
     ) {
         // Space stays the player's key on each clickable expansion surface, not on this container: a focused bar would
         // otherwise click itself and re-open the sheet after Escape returns focus here, while an ancestor handler would
@@ -108,30 +116,47 @@ internal fun ArchiveMiniPlayer(
             val compact = barWidth < 300.dp || (phone && preferences[CompactMiniPlayerKey, false])
             val direction = LocalLayoutDirection.current
             val haptic = LocalHapticFeedback.current
-            var dragOffset by remember(playback?.occurrenceId) { mutableFloatStateOf(0f) }
+            // Not keyed on the track: after a swipe changes it, the bar springs back while the new title fades in.
+            val dragOffset = remember { mutableFloatStateOf(0f) }
+            val dragReturn = remember { arrayOfNulls<Job>(1) }
+            val dragScope = rememberCoroutineScope()
+            val dragSprings by rememberUpdatedState(motionLevel.moves)
+            // The bar springs back after a swipe the way the Android mini player does.
+            val settleDrag = {
+                dragReturn[0]?.cancel()
+                if (!dragSprings) dragOffset.floatValue = 0f
+                else dragReturn[0] = dragScope.launch {
+                    AnimationState(dragOffset.floatValue).animateTo(0f, PlayerMotionSpecs.travel()) {
+                        dragOffset.floatValue = value
+                    }
+                }
+            }
+            LaunchedEffect(playback?.occurrenceId, motionLevel) { settleDrag() }
             val sensitivity = preferences[SwipeSensitivityKey, .73f].takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: .73f
             val swipe = if (phone && preferences[SwipeThumbnailKey, true]) Modifier.pointerInput(playback?.occurrenceId, playback?.playbackGeneration, sensitivity, nativeState.canNext, nativeState.canPrevious) {
                 var started = TimeSource.Monotonic.markNow()
                 var distance = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = { started = TimeSource.Monotonic.markNow(); distance = 0f; dragOffset = 0f },
-                    onDragCancel = { dragOffset = 0f },
+                    onDragStart = { dragReturn[0]?.cancel(); started = TimeSource.Monotonic.markNow(); distance = 0f },
+                    onDragCancel = { settleDrag() },
                     onHorizontalDrag = { change, amount ->
                         val logical = if (direction == LayoutDirection.Rtl) -amount else amount
                         if ((logical < 0 && nativeState.canNext) || (logical > 0 && nativeState.canPrevious)) {
-                            change.consume(); dragOffset += logical; distance += abs(logical)
+                            change.consume(); distance += abs(logical)
+                            dragOffset.floatValue += logical
                         }
                     },
                     onDragEnd = {
+                        val offset = dragOffset.floatValue
                         val velocity = distance / started.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
                         val autoThreshold = (600.0 / (1.0 + exp(-(-11.44748 * sensitivity + 9.04945)))).toFloat()
-                        val changeSong = (abs(dragOffset) > 50f && velocity > sensitivity * -8.25f + 8.5f) || abs(dragOffset) > autoThreshold
+                        val changeSong = (abs(offset) > 50f && velocity > sensitivity * -8.25f + 8.5f) || abs(offset) > autoThreshold
                         if (changeSong && matching) {
                             if (preferences[EnableHapticFeedbackKey, true]) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (dragOffset > 0 && nativeState.canPrevious) onAction(PlayerAction.PREVIOUS)
-                            else if (dragOffset < 0 && nativeState.canNext) onAction(PlayerAction.NEXT)
+                            if (offset > 0 && nativeState.canPrevious) onAction(PlayerAction.PREVIOUS)
+                            else if (offset < 0 && nativeState.canNext) onAction(PlayerAction.NEXT)
                         }
-                        dragOffset = 0f
+                        settleDrag()
                     },
                 )
             } else Modifier
@@ -143,7 +168,9 @@ internal fun ArchiveMiniPlayer(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = if (phone) { if (compact) 64.dp else 70.dp } else 56.dp)
-                        .then(swipe).graphicsLayer { translationX = if (direction == LayoutDirection.Rtl) -dragOffset else dragOffset }
+                        .then(swipe).graphicsLayer {
+                            translationX = if (direction == LayoutDirection.Rtl) -dragOffset.floatValue else dragOffset.floatValue
+                        }
                         .spaceTogglesPlayback(onPlayPause)
                         .clickable(onClick = onExpand)
                         .padding(horizontal = if (compact) 6.dp else 12.dp, vertical = 4.dp)
@@ -157,17 +184,25 @@ internal fun ArchiveMiniPlayer(
                             val progress = if (duration == null) 0f else (playback.positionMs.toDouble() / duration).toFloat().coerceIn(0f, 1f)
                             CircularWavyProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxSize(),
                                 color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .12f))
-                            artwork(current.item, Modifier.size(if (compact) 34.dp else 42.dp).clip(CircleShape))
+                            PlayerTrackSwap(current, motionLevel, Modifier.size(if (compact) 34.dp else 42.dp).clip(CircleShape)) {
+                                artwork(it.item, Modifier.fillMaxSize())
+                            }
                         }
-                    } else artwork(current.item, Modifier.size(if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(8.dp)))
+                    } else PlayerTrackSwap(current, motionLevel, Modifier.size(if (compact) 36.dp else 44.dp).clip(RoundedCornerShape(8.dp))) {
+                        artwork(it.item, Modifier.fillMaxSize())
+                    }
                     Column(Modifier.weight(1f)) {
-                        MarqueeText(current.item.title, style = MaterialTheme.typography.bodyMedium)
+                        PlayerTextSwap(current.item.title, motionLevel.fades) {
+                            MarqueeText(it, style = MaterialTheme.typography.bodyMedium)
+                        }
                         if (current.item.subtitle.isNotBlank()) {
-                            MarqueeText(
-                                current.item.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            PlayerTextSwap(current.item.subtitle, motionLevel.fades) {
+                                MarqueeText(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                     if (phone && !compact) PlayerIcon(
@@ -191,8 +226,10 @@ internal fun ArchiveMiniPlayer(
                             shape = CircleShape,
                             modifier = Modifier.testTag("mini-player-play-pause"),
                         )
-                        if (playback?.isBuffering == true) {
-                            CircularProgressIndicator(Modifier.size(34.dp), strokeWidth = 2.dp)
+                        PlayerBufferingFade(playback?.isBuffering == true, motionLevel.fades) {
+                            val spinner = Modifier.size(34.dp)
+                            if (motionLevel.moves) CircularProgressIndicator(spinner, strokeWidth = 2.dp)
+                            else CircularProgressIndicator(progress = { .7f }, modifier = spinner, strokeWidth = 2.dp)
                         }
                     }
                     if (!compact) PlayerIcon(
@@ -204,7 +241,7 @@ internal fun ArchiveMiniPlayer(
                         iconSize = 24.dp,
                     )
                 }
-                if (!phone) MiniPlayerProgressLine(playback, Modifier.fillMaxWidth())
+                if (!phone) MiniPlayerProgressLine(playback, active, Modifier.fillMaxWidth())
                 }
             } else {
                 Row(
@@ -231,15 +268,21 @@ internal fun ArchiveMiniPlayer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            artwork(current.item, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)))
+                            PlayerTrackSwap(current, motionLevel, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp))) {
+                                artwork(it.item, Modifier.fillMaxSize())
+                            }
                             Column(Modifier.weight(1f)) {
-                                MarqueeText(current.item.title, style = MaterialTheme.typography.titleSmall)
+                                PlayerTextSwap(current.item.title, motionLevel.fades) {
+                                    MarqueeText(it, style = MaterialTheme.typography.titleSmall)
+                                }
                                 if (current.item.subtitle.isNotBlank()) {
-                                    MarqueeText(
-                                        current.item.subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    PlayerTextSwap(current.item.subtitle, motionLevel.fades) {
+                                        MarqueeText(
+                                            it,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -276,12 +319,10 @@ internal fun ArchiveMiniPlayer(
                                 size = 36.dp,
                                 iconSize = 20.dp,
                             )
-                            TextButton(onClick = onPlayPause) {
-                                Text(
-                                    stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
-                                    playMotion.modifier,
-                                )
-                            }
+                            PlayerIcon(if (playing) PlayerSymbol.PAUSE else PlayerSymbol.PLAY,
+                                stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
+                                onPlayPause, enabled = playback != null, size = 44.dp, large = true,
+                                modifier = Modifier.testTag("mini-player-play-pause"))
                             PlayerIcon(
                                 symbol = PlayerSymbol.NEXT,
                                 label = stringResource(Res.string.m5_next),
@@ -304,36 +345,8 @@ internal fun ArchiveMiniPlayer(
                                 iconSize = 18.dp,
                             )
                         }
-                        val duration = playback?.durationMs?.takeIf { it > 0L }
-                        val position = (seekInteraction.previewMs ?: playback?.positionMs ?: 0L).coerceAtLeast(0L)
-                        val seekable = duration != null && matching && nativeState.canSeek && playback.isSeekable
-                        Row(
-                            Modifier.fillMaxWidth().testTag("mini-player-seek"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(playerTime(position), style = MaterialTheme.typography.labelSmall)
-                            Slider(
-                                value = if (duration != null) {
-                                    (position.toDouble() / duration).toFloat().coerceIn(0f, 1f)
-                                } else {
-                                    0f
-                                },
-                                onValueChange = { fraction ->
-                                    seekInteraction.preview(fraction, seekState)
-                                },
-                                onValueChangeFinished = {
-                                    seekInteraction.commit(seekState, onSeekTo)
-                                },
-                                interactionSource = seekInteractionSource,
-                                enabled = seekable,
-                                modifier = Modifier.weight(1f).height(24.dp),
-                            )
-                            Text(
-                                if (duration != null) playerTime(duration) else "—",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+                        MiniPlayerSeek(playback, seekState, seekInteraction, seekInteractionSource, motionLevel.moves, active, onSeekTo)
+
                     }
                     Row(
                         Modifier.weight(0.25f),
@@ -382,13 +395,13 @@ internal fun ArchiveMiniPlayer(
  * a live stream, a preview or an unread native snapshot shows no position this UI did not observe.
  */
 @Composable
-private fun MiniPlayerProgressLine(playback: PlaybackSnapshot?, modifier: Modifier = Modifier) {
+private fun MiniPlayerProgressLine(playback: PlaybackSnapshot?, active: Boolean, modifier: Modifier = Modifier) {
     val snapshot = playback ?: return
     val duration = snapshot.durationMs ?: return
     if (duration <= 0L || !snapshot.isSeekable) return
-    val fraction = (snapshot.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val progress = rememberPlayerProgress(snapshot, active = active)
     LinearProgressIndicator(
-        progress = { fraction },
+        progress = { progress.fraction(duration) },
         modifier = modifier.height(2.dp),
         color = MaterialTheme.colorScheme.primary,
         trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -396,4 +409,25 @@ private fun MiniPlayerProgressLine(playback: PlaybackSnapshot?, modifier: Modifi
         gapSize = 0.dp,
         drawStopIndicator = {},
     )
+}
+
+@Composable
+private fun MiniPlayerSeek(playback: PlaybackSnapshot?, state: PlayerState, draft: PlayerInteractionState,
+    source: MutableInteractionSource, motion: Boolean, active: Boolean, onSeekTo: (Long) -> Unit) {
+    val duration = playback?.durationMs?.takeIf { it > 0L }
+    val progress = rememberPlayerProgress(playback, active, { draft.previewMs })
+    Row(Modifier.fillMaxWidth().testTag("mini-player-seek"), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MiniPlayerTime(progress)
+        PlayerSeekSlider(progress, duration, duration != null && state.canSeek && playback?.isSeekable == true,
+            motion, source, { draft.preview(it, state) }, { draft.commit(state, onSeekTo) },
+            Modifier.weight(1f).height(24.dp))
+        Text(if (duration != null) playerTime(duration) else "—", style = MaterialTheme.typography.labelSmall.tabularFigures())
+    }
+}
+
+@Composable
+private fun MiniPlayerTime(progress: PlayerProgress) {
+    val seconds by remember(progress) { derivedStateOf { progress.positionMs / 1000L } }
+    Text(playerTime(seconds * 1000L), style = MaterialTheme.typography.labelSmall.tabularFigures())
 }

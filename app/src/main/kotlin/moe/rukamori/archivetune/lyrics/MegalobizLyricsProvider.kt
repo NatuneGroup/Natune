@@ -90,7 +90,7 @@ object MegalobizLyricsProvider : LyricsProvider {
             LyricsProviderHttp.getWithStatus(
                 url,
                 mapOf("Authorization" to "Bearer $key", "Accept" to "application/json"),
-            ) ?: return SearchOutcome.Miss
+            )
         if (response.status == 401 || response.status == 403) return SearchOutcome.Unauthorized
         val body = response.body ?: return SearchOutcome.Miss
         val root = LyricsProviderHttp.parseJson(body).asObject() ?: return SearchOutcome.Miss
