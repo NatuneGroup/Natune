@@ -88,7 +88,11 @@ kotlin {
             }
             if (hasAndroidSdk) androidMain {
                 kotlin.srcDir(generated.map { it.dir("androidMain/kotlin") })
-                dependencies { implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}") { artifact { type = "aar"; extension = "aar" } } }
+                dependencies {
+                    implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}") { artifact { type = "aar"; extension = "aar" } }
+                    // The generated Android binding annotates its Cleaner path with androidx RequiresApi.
+                    implementation(libs.annotation)
+                }
             }
         }
     }
