@@ -27,6 +27,20 @@ class QualityBadgeTest {
         assertBadgeCentred("player-seek-quality-row", "player-seek-quality")
     }
 
+    @Test fun simpMusicSeekRowCentresTheLosslessBadge() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(400.dp, 740.dp)) {
+                    BottomSheetPlayer(playerFixture().copy(formatLabel = "Lossless", formatLossless = true),
+                        PlayerTestActions().callbacks,
+                        PreferenceSnapshot.of(PlayerDesignStyleKey to PlayerDesignStyle.SIMPMUSIC.name), playerSlots(), false)
+                }
+            }
+        }
+        onNodeWithText("Lossless").assertIsDisplayed()
+        assertBadgeCentred("player-seek-quality-row", "player-seek-quality")
+    }
+
     @Test fun fullscreenLyricsTimeRowCentresTheLosslessBadge() = runComposeUiTest {
         val interaction = PlayerInteractionState().apply { fullscreenLyrics = true; panel = PlayerPanel.LYRICS }
         setContent {
