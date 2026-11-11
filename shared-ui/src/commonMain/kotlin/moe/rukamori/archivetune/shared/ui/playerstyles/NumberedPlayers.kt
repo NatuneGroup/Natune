@@ -162,9 +162,16 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current &&
             c.preferences.style == PlayerDesignStyle.V4 && !c.landscape) {
-            Text(stringResource(Res.string.m5pq_now_playing), style = MaterialTheme.typography.titleMedium, color = textColor)
-            (c.state.queueTitle ?: c.state.albumTitle)?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.titleMedium, color = textColor.copy(alpha = .8f))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PlayerIcon(PlayerSymbol.DOWN, stringResource(Res.string.m5_collapse),
+                    { c.actions.onAction(PlayerAction.COLLAPSE) }, Modifier.testTag("player-close"), contentColor = textColor)
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(Res.string.m5pq_now_playing), style = MaterialTheme.typography.titleMedium, color = textColor)
+                    (c.state.queueTitle ?: c.state.albumTitle)?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.titleMedium, color = textColor.copy(alpha = .8f))
+                    }
+                }
+                Spacer(Modifier.width(48.dp))
             }
         } else PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

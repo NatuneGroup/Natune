@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -23,6 +25,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
+import org.jetbrains.compose.resources.stringResource
 
 @Stable
 internal class PhonePlayerSheetState(private val scope: CoroutineScope) {
@@ -88,13 +93,17 @@ internal fun PhonePlayerSheet(
     content: @Composable () -> Unit,
 ) {
     LaunchedEffect(expanded, motion) { state.animate(expanded, motion) }
+    val collapseLabel = stringResource(Res.string.m5_collapse)
     if (expanded || state.visible) {
         BoxWithConstraints(modifier.fillMaxSize()) {
             val heightPx = with(LocalDensity.current) { maxHeight.toPx() }.coerceAtLeast(1f)
             val density = LocalDensity.current.density
             Box(Modifier.fillMaxSize().testTag("phone-player-sheet")
                 .graphicsLayer { translationY = (1f - state.progress) * size.height }
-                .semantics { progressBarRangeInfo = ProgressBarRangeInfo(state.progress, 0f..1f) }
+                .semantics {
+                    progressBarRangeInfo = ProgressBarRangeInfo(state.progress, 0f..1f)
+                    customActions = listOf(CustomAccessibilityAction(collapseLabel) { onExpanded(false); true })
+                }
                 .draggable(rememberDraggableState { state.drag(-it / heightPx) }, Orientation.Vertical,
                     enabled = dragEnabled,
                     onDragStopped = { state.settle(it / density, expanded, motion, onExpanded) })) {
