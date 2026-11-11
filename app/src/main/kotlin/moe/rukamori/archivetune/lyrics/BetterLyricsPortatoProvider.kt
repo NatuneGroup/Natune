@@ -39,14 +39,9 @@ object BetterLyricsPortatoProvider : LyricsProvider {
         artist: String,
         album: String?,
         duration: Int,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        BetterLyrics.getAllPortatoLyrics(
-            title = title,
-            artist = artist,
-            album = album,
-            durationSeconds = duration,
-            callback = callback,
-        )
+        getLyrics(id, title, artist, album, duration).onSuccess(callback).onFailure(onFailure)
     }
 }

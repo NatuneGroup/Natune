@@ -107,7 +107,7 @@ class LyricsHelper(
 
     /**
      * Streams every enabled provider's results through [callback] as they arrive. A cache hit replays
-     * the stored list. Every completed run is stored, including an empty one, as on Android.
+     * the stored list. A run with transient provider errors is not cached so it can be retried.
      *
      * Callbacks run one at a time on a single collector, so a host does not need its own lock. This
      * is stricter than Android, which called the callback from each provider's thread.
@@ -137,8 +137,10 @@ class LyricsHelper(
         if (!networkAvailable()) return
 
         val enabled = providers.filter { isEnabled(it.name) && isAvailable(it.name) }
-        val collected = streamAllProviders(enabled, request, callback)
-        allResultsCache.put(key, collected)
+        val run = streamAllProviders(enabled, request, callback)
+        if (!run.hadTransientFailure) {
+            allResultsCache.put(key, run.results)
+        }
     }
 
     /** Drops the result caches. The word-synced upgrade memo is kept, as the Android helper keeps it. */
@@ -262,15 +264,19 @@ class LyricsHelper(
         enabled: List<LyricsProvider>,
         request: LyricsRequest,
         callback: (LyricsResult) -> Unit,
-    ): List<LyricsResult> {
-        val channel = Channel<LyricsResult>(Channel.UNLIMITED)
+    ): StreamedLyricsRun {
+        val channel = Channel<StreamedLyricsResult>(Channel.UNLIMITED)
         val collected = mutableListOf<LyricsResult>()
+        var hadTransientFailure = false
         return coroutineScope {
             val collector =
                 launch {
-                    for (result in channel) {
-                        collected += result
-                        callback(result)
+                    for (item in channel) {
+                        item.result?.let { result ->
+                            collected += result
+                            callback(result)
+                        }
+                        hadTransientFailure = hadTransientFailure || item.isTransientFailure
                     }
                 }
             try {
@@ -282,7 +288,8 @@ class LyricsHelper(
                                     provider = provider,
                                     request = request,
                                     timeoutMs = LyricsFetchPolicy.FAN_OUT_TIMEOUT_MS,
-                                    emit = { result -> channel.trySend(result) },
+                                    emit = { result -> channel.trySend(StreamedLyricsResult(result, false)) },
+                                    onFailure = { channel.trySend(StreamedLyricsResult(null, true)) },
                                 )
                             }
                         }.awaitAll()
@@ -291,7 +298,10 @@ class LyricsHelper(
                 channel.close()
             }
             collector.join()
-            collected.toList()
+            StreamedLyricsRun(
+                results = collected.toList(),
+                hadTransientFailure = hadTransientFailure,
+            )
         }
     }
 
@@ -310,3 +320,7 @@ private data class LyricsFlightKey(
     val preferredProviderOnly: Boolean,
     val prioritizeWordSynced: Boolean,
 )
+
+private data class StreamedLyricsResult(val result: LyricsResult?, val isTransientFailure: Boolean)
+
+private data class StreamedLyricsRun(val results: List<LyricsResult>, val hadTransientFailure: Boolean)

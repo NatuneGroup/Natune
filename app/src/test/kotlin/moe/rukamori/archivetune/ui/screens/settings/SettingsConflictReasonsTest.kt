@@ -11,7 +11,8 @@ class SettingsConflictReasonsTest {
     @Test fun searchHasTheSameAudioVideoCacheAndBlurDependenciesAsTheOwningPage() {
         fun reason(key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
             preferences: androidx.datastore.preferences.core.Preferences, active: Boolean = false, blur: Boolean = true) =
-            settingsSwitchDisabledReason(key, preferences, active, blur)
+            settingsSwitchDisabledReason(key, preferences, active, blur, bitPerfectPlatformSupported = true,
+                directUsbDriverAvailable = true)
         val bitPerfect = mutablePreferencesOf(BitPerfectUsbOutputKey to true)
         listOf(SkipSilenceKey, AudioNormalizationKey, AudioProcessingEnabledKey,
             RejectSuspectedUpscaledAudioKey).forEach { key ->
@@ -41,4 +42,45 @@ class SettingsConflictReasonsTest {
             miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.LIQUID_GLASS, false, true, false))
         assertNull(miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.THEME, true, false, false))
     }
+    @Test fun directUsbSearchRequiresTheStoredParentEvenWhileItsOldSinkIsRunning() {
+        val preferences = mutablePreferencesOf()
+        assertEquals(R.string.direct_usb_driver_requires_bit_perfect,
+            settingsSwitchDisabledReason(DirectUsbDriverKey, preferences, true, true,
+                bitPerfectPlatformSupported = true, directUsbDriverAvailable = true))
+    }
+
+    @Test fun olderPlatformsCanEnableTheDriverFirstAndThenTheParentInSearch() {
+        val preferences = mutablePreferencesOf()
+        fun reason(key: androidx.datastore.preferences.core.Preferences.Key<Boolean>, active: Boolean = false) =
+            settingsSwitchDisabledReason(key, preferences, active, true,
+                bitPerfectPlatformSupported = false, directUsbDriverAvailable = true)
+        assertNull(reason(DirectUsbDriverKey))
+        assertEquals(R.string.bit_perfect_usb_unsupported, reason(BitPerfectUsbOutputKey))
+        preferences[DirectUsbDriverKey] = true
+        assertNull(reason(BitPerfectUsbOutputKey))
+        preferences[BitPerfectUsbOutputKey] = true
+        assertEquals(R.string.settings_processing_bypassed_bit_perfect, reason(AudioProcessingEnabledKey))
+        preferences[DirectUsbDriverKey] = false
+        assertEquals(R.string.bit_perfect_usb_unsupported, reason(BitPerfectUsbOutputKey))
+        assertEquals(R.string.settings_processing_bypassed_bit_perfect, reason(AudioProcessingEnabledKey))
+        assertEquals(R.string.settings_processing_bypassed_bit_perfect, reason(AudioProcessingEnabledKey, active = true))
+        assertEquals(true, preferences[BitPerfectUsbOutputKey])
+    }
+
+    @Test fun android14DriverRequiresTheStoredParentAndUnavailableNativeCodeHasItsOwnReason() {
+        for (platform in listOf(false, true)) {
+            for (parent in listOf(false, true)) {
+                val preferences = mutablePreferencesOf(BitPerfectUsbOutputKey to parent, DirectUsbDriverKey to true)
+                fun reason(key: androidx.datastore.preferences.core.Preferences.Key<Boolean>, native: Boolean) =
+                    settingsSwitchDisabledReason(key, preferences, false, true,
+                        bitPerfectPlatformSupported = platform, directUsbDriverAvailable = native)
+                assertEquals(if (platform && !parent) R.string.direct_usb_driver_requires_bit_perfect else null,
+                    reason(DirectUsbDriverKey, true))
+                assertEquals(R.string.direct_usb_driver_unavailable, reason(DirectUsbDriverKey, false))
+                assertEquals(if (platform) null else R.string.bit_perfect_usb_unsupported,
+                    reason(BitPerfectUsbOutputKey, false))
+            }
+        }
+    }
+
 }

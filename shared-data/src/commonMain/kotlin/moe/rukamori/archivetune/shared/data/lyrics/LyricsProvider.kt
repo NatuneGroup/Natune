@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.data.lyrics
 
+import kotlinx.coroutines.CancellationException
+
 /**
  * A source of raw lyric text (LRC, TTML, QRC or plain). Parsing belongs to the shared domain
  * `LyricsParser`, so providers return exactly what the upstream service returned.
@@ -26,8 +28,12 @@ interface LyricsProvider {
         album: String?,
         durationSec: Int,
         isrc: String? = null,
+        onFailure: (Throwable) -> Unit = {},
         callback: (String) -> Unit,
     ) {
-        getLyrics(id, title, artist, album, durationSec, isrc).onSuccess(callback)
+        getLyrics(id, title, artist, album, durationSec, isrc).onSuccess(callback).onFailure { error ->
+            if (error is CancellationException) throw error
+            onFailure(error)
+        }
     }
 }

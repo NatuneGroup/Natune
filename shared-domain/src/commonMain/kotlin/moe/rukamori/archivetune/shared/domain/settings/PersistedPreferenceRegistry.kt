@@ -261,6 +261,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         AudioNormalizationKey,
         AudioOffload,
         BitPerfectUsbOutputKey,
+        DirectUsbDriverKey,
         CrossfadeEnabledKey,
         CrossfadeDurationKey,
         CrossfadeGaplessKey,

@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.SYSTEM_DEFAULT
 import moe.rukamori.archivetune.constants.YouTubeMusicRegionKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
+import moe.rukamori.archivetune.playback.usbdirect.UsbDirectNative
 import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
 import moe.rukamori.archivetune.utils.*
 import java.util.UUID
@@ -62,11 +63,11 @@ class RestartPromptViewModel @Inject constructor(
                 edits.withLock {
                     val result = preferences.editAndAwait(change)
                     policy.committed(
-                        restartSettingValues(result.before, BitPerfectUsbOutput.isPlatformSupported),
-                        restartSettingValues(result.after, BitPerfectUsbOutput.isPlatformSupported),
+                        restartSettingValues(result.before, BitPerfectUsbOutput.isPlatformSupported, UsbDirectNative.available),
+                        restartSettingValues(result.after, BitPerfectUsbOutput.isPlatformSupported, UsbDirectNative.available),
                         runningAppearance + mapOf(
                             // These describe the actual service's fixed sinks, not app-start preferences.
-                            RestartReason.USB_OUTPUT to "${BitPerfectUsbOutput.sinkActive}|${UsbExclusiveAudioOutputProvider.installed}",
+                            RestartReason.USB_OUTPUT to "${BitPerfectUsbOutput.sinkActive}|${UsbExclusiveAudioOutputProvider.installed}|${BitPerfectUsbOutput.sinkActive && BitPerfectUsbOutput.directEnabled}",
                             RestartReason.REGION to runningRegion,
                         ),
                     )

@@ -43,18 +43,25 @@ class KuGouLyricsProvider(
         album: String?,
         durationSec: Int,
         isrc: String?,
+        onFailure: (Throwable) -> Unit,
         callback: (String) -> Unit,
     ) {
-        val keyword = generateKeyword(title, artist)
-        searchSongs(keyword).data.info.forEach { song ->
-            if (durationSec == -1 || abs(song.duration - durationSec) <= DURATION_TOLERANCE) {
-                searchLyricsByHash(song.hash).candidates.firstOrNull()?.let { candidate ->
-                    callback(downloadLyrics(candidate.id, candidate.accessCode))
+        try {
+            val keyword = generateKeyword(title, artist)
+            searchSongs(keyword).data.info.forEach { song ->
+                if (durationSec == -1 || abs(song.duration - durationSec) <= DURATION_TOLERANCE) {
+                    searchLyricsByHash(song.hash).candidates.firstOrNull()?.let { candidate ->
+                        callback(downloadLyrics(candidate.id, candidate.accessCode))
+                    }
                 }
             }
-        }
-        searchLyricsByKeyword(keyword, durationSec).candidates.forEach { candidate ->
-            callback(downloadLyrics(candidate.id, candidate.accessCode))
+            searchLyricsByKeyword(keyword, durationSec).candidates.forEach { candidate ->
+                callback(downloadLyrics(candidate.id, candidate.accessCode))
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (error.isTransientLyricsFailure()) onFailure(error)
         }
     }
 

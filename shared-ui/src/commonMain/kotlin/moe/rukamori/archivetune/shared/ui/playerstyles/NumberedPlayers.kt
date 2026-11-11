@@ -399,10 +399,6 @@ internal fun NumberedTransport(c: PlayerRenderContext) {
                 contentColor = textColor.copy(alpha = if (repeatOn) 1f else .4f), selected = repeatOn)
         }
         PlayerDesignStyle.V4 -> {
-            val corner by animateDpAsState(
-                if (playing) 28.dp else 44.dp,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-                label = "v4PlayCorner")
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val baseLarge = 56.dp
                 val baseSmall = 46.dp
@@ -429,7 +425,7 @@ internal fun NumberedTransport(c: PlayerRenderContext) {
                             shape = RoundedCornerShape(18.dp * scale))
                     }
                     StylePlayButton(c, size = centerSize, iconSize = 44.dp, container = buttonBg,
-                        iconColor = buttonIcon, shape = RoundedCornerShape(corner), spinnerSize = 40.dp,
+                        iconColor = buttonIcon, shape = CircleShape, spinnerSize = 40.dp,
                         modifier = Modifier.padding(horizontal = 20.dp))
                     Row(Modifier.weight(1f), Arrangement.Start, Alignment.CenterVertically) {
                         PlayerIcon(PlayerSymbol.NEXT, stringResource(actionLabel(PlayerAction.NEXT)),
@@ -471,28 +467,8 @@ internal fun NumberedTransport(c: PlayerRenderContext) {
                         }
                     }
                     Spacer(Modifier.width(6.dp))
-                    Surface(
-                        onClick = c.actions.playPause,
-                        shape = RoundedCornerShape(28.dp),
-                        color = buttonBg,
-                        modifier = Modifier.size(width = 88.dp, height = 80.dp),
-                    ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            val symbol = when {
-                                playback?.isEnded == true -> PlayerSymbol.REPLAY
-                                playing -> PlayerSymbol.PAUSE
-                                else -> PlayerSymbol.PLAY
-                            }
-                            val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, symbol, c.motionActive)
-                            if (playback?.isBuffering == true) {
-                                CircularProgressIndicator(Modifier.size(40.dp), color = buttonIcon)
-                            } else {
-                                PlayerControlCrossfade(symbol, c.motionActive, Modifier.size(44.dp).then(playMotion.modifier)) {
-                                    Canvas(Modifier.size(44.dp)) { drawGlyphFor(it, buttonIcon) }
-                                }
-                            }
-                        }
-                    }
+                    StylePlayButton(c, size = 80.dp, width = 88.dp, iconSize = 44.dp,
+                        container = buttonBg, iconColor = buttonIcon, shape = RoundedCornerShape(28.dp), spinnerSize = 40.dp)
                     Spacer(Modifier.width(6.dp))
                     Surface(
                         onClick = { c.actions.onAction(PlayerAction.NEXT) },
