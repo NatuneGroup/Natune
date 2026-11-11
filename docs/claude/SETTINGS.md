@@ -168,8 +168,10 @@ Also shipped since this note was written:
   `collapsedBound`, not a translation. On History and Local songs the Search button opens the
   page's own search field (`openInPageSearch` on the entry's saved state).
 - **Home pages** — the Home tab's pages are a multi-select set (`ActiveHomeSourcesKey`) with a
-  single-choice switcher sheet in the top bar when more than one is active; YouTube and Spotify
-  today, and the enum/selector take more.
+  single-choice popup menu anchored under the toggle in the top bar when more than one is active.
+  The menu takes the navigation bar's look (liquid glass when Liquid Glass is on, frosted or tinted
+  when the bar is, otherwise an opaque surface); YouTube and Spotify today, and the enum/selector
+  take more.
 - **Player and lyrics overflow** — the player's more button opens the shared menus, which carry the
   Apple Music sleep-timer sheet and the lyrics menu. The lyrics three-dot (`AnchoredLyricsOverflowMenu`)
   opens the ordinary lyrics sheet unless `AppleMusicMenusKey` is on; then it is Apple Music's anchored
