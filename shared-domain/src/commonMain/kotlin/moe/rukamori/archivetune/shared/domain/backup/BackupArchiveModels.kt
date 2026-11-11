@@ -6,6 +6,12 @@ package moe.rukamori.archivetune.shared.domain.backup
  */
 enum class BackupDataCategory { LIBRARY, ACCOUNT, SETTINGS }
 
+/** Unattended exports cannot carry sign-ins. ACCOUNT remains available for legacy restores. */
+val DEFAULT_BACKUP_EXPORT_CATEGORIES: Set<BackupDataCategory> = setOf(BackupDataCategory.LIBRARY, BackupDataCategory.SETTINGS)
+
+/** The archive bytes folder sync and app-data uploads hand to their transports. */
+suspend fun createSyncBackup(archives: BackupArchiveGateway): ByteArray = archives.create(DEFAULT_BACKUP_EXPORT_CATEGORIES)
+
 /** Why an archive cannot be restored. Hosts turn these into their own user-facing text. */
 enum class BackupArchiveProblem {
     /** The bytes are not a readable archive or carry no archive entries. */

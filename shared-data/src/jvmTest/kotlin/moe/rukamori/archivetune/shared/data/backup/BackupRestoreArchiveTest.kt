@@ -25,14 +25,55 @@ class BackupRestoreArchiveTest {
         assertNull(prepared.settings[pool])
         assertNull(prepared.settings[device])
     }
-    @Test fun accountOnlyPreservesDistinctCredentialKeysWithoutChangingStyles() {
+    @Test fun legacyAccountOnlyPreservesDistinctCredentialKeysWithoutChangingStyles() {
         val codec = JvmBackupArchiveCodec()
-        val archive = codec.create(snapshot(), setOf(BackupCategory.ACCOUNT))
+        val archive = zip("settings.xml" to """<ArchiveTuneBackup><Settings>
+            <string name="spotify_sp_dc" value="catalog-fixture"/>
+            <string name="spotifyStreamSpDc" value="stream-fixture"/>
+            <string name="poolTidalAccounts" value="pool-fixture"/>
+            <string name="playerDesignStyle" value="FLAMINGO"/>
+            </Settings></ArchiveTuneBackup>""".toByteArray())
         val prepared = codec.prepare(archive, setOf(BackupCategory.ACCOUNT))
         assertNull(prepared.settings[style])
         assertEquals("catalog-fixture", prepared.settings[catalog])
         assertEquals("stream-fixture", prepared.settings[stream])
         assertEquals("pool-fixture", prepared.settings[pool])
+    }
+    @Test fun newXmlArchivesNeverContainSecretsEvenWhenAccountIsSelected() {
+        for (selected in listOf(setOf(BackupCategory.SETTINGS), BackupCategory.entries.toSet(), setOf(BackupCategory.ACCOUNT))) {
+            val archive = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), selected)
+            assertCredentialFreePayload(archive)
+            ZipInputStream(archive.inputStream()).use { zip ->
+                assertEquals("settings.xml", zip.nextEntry.name)
+                val xml = zip.readBytes()
+                assertCredentialFreePayload(xml)
+                if (BackupCategory.SETTINGS in selected) assertTrue(xml.decodeToString().contains("dark"))
+                assertNull(zip.nextEntry)
+            }
+        }
+    }
+    @Test fun inspectionOffersAccountOnlyWhenTheXmlActuallyContainsIt() = kotlinx.coroutines.test.runTest {
+        val root = java.nio.file.Files.createTempDirectory("xml-backup-inspection")
+        try {
+            val gateway = JvmBackupArchiveGateway(root, root.resolve("fonts"),
+                object : moe.rukamori.archivetune.shared.domain.persistence.RestorePreferences {
+                    override suspend fun snapshot(): PreferenceSnapshot = error("Unused")
+                    override suspend fun replaceAll(snapshot: PreferenceSnapshot) = error("Unused")
+                }, object : moe.rukamori.archivetune.shared.domain.persistence.RestoreLifecycle {
+                    override suspend fun <T> withExclusiveAccess(operation: suspend () -> T): T = error("Unused")
+                    override suspend fun closeDatabase() = error("Unused")
+                    override suspend fun reopenAndValidateDatabase() = error("Unused")
+                }, object : BackupSnapshotSource {
+                    override suspend fun libraryFiles(): Map<String, ByteArray> = error("Unused")
+                    override suspend fun fontFiles(): Map<String, ByteArray> = error("Unused")
+                })
+            val fresh = JvmBackupArchiveCodec().create(credentialBackupSnapshot(), BackupCategory.entries.toSet())
+            assertEquals(setOf(moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory.SETTINGS), gateway.inspect(fresh).categories)
+            val legacy = zip("settings.xml" to """<ArchiveTuneBackup><Settings>
+                <string name="spotify_sp_dc" value="legacy-cookie"/>
+                </Settings></ArchiveTuneBackup>""".toByteArray())
+            assertEquals(setOf(moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory.ACCOUNT), gateway.inspect(legacy).categories)
+        } finally { root.toFile().deleteRecursively() }
     }
     @Test fun validatesAllSelectedContentBeforeReturningAnyPlan() {
         val codec = JvmBackupArchiveCodec()

@@ -37,12 +37,12 @@ import moe.rukamori.archivetune.shared.domain.settings.normalizeRestoredSettings
  *
  * - `backup.json`: the manifest (format name and version, platform, portable schema version, creation time).
  * - `portable-state.db`: a VACUUM INTO copy of the library, queue and history, present with LIBRARY.
- * - `settings.json`: typed logical preferences, filtered by [BackupPreferencePolicy] for ACCOUNT and SETTINGS.
+ * - `settings.json`: typed logical settings, with accounts and credentials excluded by [BackupPreferencePolicy].
  *
  * Every entry name, size and count is bounded before anything is written, and an archive is inspected again before a
- * restore. Vault references never enter the archive: account values are exported by their logical names and go back
- * through the vault on restore. The format name stays `natune.desktop.backup` because the desktop host wrote it
- * first; both platforms read each other's archives.
+ * restore. New exports omit account values and vault references. Old archives still restore their logical account
+ * values through the vault when ACCOUNT is selected. The format name stays `natune.desktop.backup` because desktop
+ * wrote it first; both platforms read each other's archives.
  */
 object PortableBackupFormat {
     const val FORMAT = "natune.desktop.backup"
@@ -94,10 +94,18 @@ object PortableBackupFormat {
         }
     }
 
-    fun encodeSettings(snapshot: PreferenceSnapshot): ByteArray = buildJsonObject {
+    /** Export encoding is always credential-free, even if a caller supplies an unfiltered logical snapshot. */
+    fun encodeSettings(snapshot: PreferenceSnapshot): ByteArray = encodeSettingsSnapshot(snapshot) {
+        BackupPreferencePolicy.includesForExport(it, setOf(BackupCategory.SETTINGS))
+    }
+
+    /** Local restore staging/rollback must retain old-archive credentials; never use this for an export. */
+    fun encodeRestoreSettings(snapshot: PreferenceSnapshot): ByteArray = encodeSettingsSnapshot(snapshot) { true }
+
+    private fun encodeSettingsSnapshot(snapshot: PreferenceSnapshot, include: (String) -> Boolean): ByteArray = buildJsonObject {
         put("formatVersion", FORMAT_VERSION)
         put("entries", buildJsonArray {
-            snapshot.keys.sortedWith(compareBy({ it.name }, { it.kind.name })).forEach { key ->
+            snapshot.keys.filter { include(it.name) }.sortedWith(compareBy({ it.name }, { it.kind.name })).forEach { key ->
                 add(buildJsonObject {
                     put("name", key.name)
                     put("kind", key.kind.name)
@@ -190,7 +198,7 @@ object PortableBackupFormat {
     private fun JsonObject.string(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 }
 
-/** The preferences of [snapshot] that the ACCOUNT and SETTINGS choices in [selected] export, or null for neither. */
+/** Restore subset for the ACCOUNT and SETTINGS choices; export encoders apply the stricter policy separately. */
 fun settingsSubset(snapshot: PreferenceSnapshot, selected: Set<BackupDataCategory>): PreferenceSnapshot? {
     val categories = selected.mapNotNull { category ->
         when (category) {

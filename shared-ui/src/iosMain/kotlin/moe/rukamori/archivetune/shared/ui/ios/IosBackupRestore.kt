@@ -281,7 +281,7 @@ internal class IosPendingRestore private constructor(
         if (!journal.settingsStaged) {
             val previous = "$directory/$PREVIOUS_DIRECTORY"
             ensureDirectory(previous)
-            writePortableFileBytes("$previous/${PortableBackupFormat.SETTINGS}", PortableBackupFormat.encodeSettings(current))
+            writePortableFileBytes("$previous/${PortableBackupFormat.SETTINGS}", PortableBackupFormat.encodeRestoreSettings(current))
             journal.settingsStaged = true
             persistJournal()
         }
@@ -393,7 +393,7 @@ internal class IosPendingRestore private constructor(
                 settings?.let {
                     writePortableFileBytes(
                         "$staging/${PortableBackupFormat.SETTINGS}",
-                        PortableBackupFormat.encodeSettings(it),
+                        PortableBackupFormat.encodeRestoreSettings(it),
                     )
                 }
                 writePortableFileBytes("$staging/$MARKER", PortableBackupFormat.encodePendingMarker(categories))

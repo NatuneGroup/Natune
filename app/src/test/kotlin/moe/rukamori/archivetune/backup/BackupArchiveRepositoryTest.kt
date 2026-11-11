@@ -54,6 +54,51 @@ class BackupArchiveRepositoryTest {
     }
 
     @Test
+    fun newSettingsPayloadHidesAccountWhileLegacyPayloadStillOffersIt() {
+        val output = ByteArrayOutputStream()
+        writeBackupSettingsToXml(output, mutablePreferencesOf(
+            stringPreferencesKey("playerDesignStyle") to "FLAMINGO",
+            stringPreferencesKey("innerTubeCookie") to "synthetic-credential",
+        ), BackupArchiveCategory.entries.toSet())
+        assertEquals(setOf(BackupArchiveCategory.SETTINGS), inspectBackupSettings("settings.xml", output.toByteArray().inputStream()))
+        val legacy = """<ArchiveTuneBackup><Settings>
+            <string name="playerDesignStyle" value="FLAMINGO"/>
+            <string name="innerTubeCookie" value="legacy-cookie"/>
+            </Settings></ArchiveTuneBackup>""".byteInputStream()
+        assertEquals(setOf(BackupArchiveCategory.SETTINGS, BackupArchiveCategory.ACCOUNT), inspectBackupSettings("settings.xml", legacy))
+    }
+
+    @Test
+    fun actualArchiveInspectionHidesAccountForNewExportsAndOffersLegacyCredentials() = kotlinx.coroutines.runBlocking {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val file = File.createTempFile("backup-inspection", ".backup", context.cacheDir)
+        try {
+            fun archive(legacy: Boolean) {
+                ZipOutputStream(file.outputStream()).use { zip ->
+                    zip.putNextEntry(ZipEntry("settings.xml"))
+                    if (legacy) {
+                        zip.write("""<ArchiveTuneBackup><Settings><string name="innerTubeCookie" value="legacy-cookie"/></Settings></ArchiveTuneBackup>""".toByteArray())
+                    } else {
+                        writeBackupSettingsToXml(zip, mutablePreferencesOf(
+                            stringPreferencesKey("playerDesignStyle") to "FLAMINGO",
+                            stringPreferencesKey("innerTubeCookie") to "synthetic-credential",
+                        ), BackupArchiveCategory.entries.toSet())
+                    }
+                    zip.closeEntry()
+                }
+            }
+            archive(false)
+            val fresh = validateBackupArchive(context, android.net.Uri.fromFile(file))
+            assertTrue(fresh.isValid)
+            assertEquals(setOf(moe.rukamori.archivetune.viewmodels.BackupCategory.SETTINGS), fresh.availableCategories)
+            archive(true)
+            val old = validateBackupArchive(context, android.net.Uri.fromFile(file))
+            assertTrue(old.isValid)
+            assertEquals(setOf(moe.rukamori.archivetune.viewmodels.BackupCategory.ACCOUNT), old.availableCategories)
+        } finally { file.delete() }
+    }
+
+    @Test
     fun unattendedDefaultsContainOnlyLibraryAndSettings() {
         assertEquals(setOf(BackupArchiveCategory.LIBRARY, BackupArchiveCategory.SETTINGS), BackupExportPolicy.DEFAULT_CATEGORIES)
         assertFalse(BackupExportPolicy.includes("innerTubeCookie", BackupExportPolicy.DEFAULT_CATEGORIES))
