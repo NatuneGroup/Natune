@@ -41,16 +41,11 @@ import moe.rukamori.archivetune.constants.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.constants.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
-import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
-import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.modules.NativeExtensionIds
-import moe.rukamori.archivetune.modules.NativeExtensionPolicy
-import moe.rukamori.archivetune.modules.SpotifyAlternateExtensionEnabledKey
-import moe.rukamori.archivetune.modules.SpotifyOfficialExtensionEnabledKey
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProviderIds
 import moe.rukamori.archivetune.utils.get
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -102,39 +97,12 @@ object SpotifyStreamingAccount {
      * resolves as signed-in-but-unavailable: `accessToken` refuses the dedicated token and playback
      * falls through to the next source. Synchronous like every dataStore.get at the call site.
      */
-    fun effectiveEngine(dataStore: DataStore<Preferences>): SpotifyStreamEngine {
-        val stored = SpotifyStreamEngine.fromPreference(dataStore[SpotifyStreamEngineKey])
-        val boundProduct =
-            when (stored.streamAccountBinding()) {
-                SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(dataStore[SpotifyStreamProductKey])
-                SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(dataStore[SpotifyProductKey])
-            }
-        return SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)
-    }
+    fun effectiveEngine(dataStore: DataStore<Preferences>): SpotifyStreamEngine = SpotifyProviderPreferences.effectiveEngine(dataStore)
 
-    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean {
-        return when (effectiveEngine(dataStore)) {
-            SpotifyStreamEngine.UNOFFICIAL -> dataStore.get(SpotifyAlternateExtensionEnabledKey, !dataStore[SpotifyStreamSpDcKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
-                !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
-            SpotifyStreamEngine.LIBRESPOT -> dataStore.get(SpotifyOfficialExtensionEnabledKey, !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank() || dataStore.get(SpotifyStreamEnabledKey, false)) &&
-                !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
-        }
-    }
+    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean = SpotifyProviderPreferences.playbackAvailable(dataStore)
 
     /** React to the same preference snapshot as the source picker, including extension disablement. */
-    fun streamingSessionPresent(preferences: Preferences): Boolean {
-        val stored = SpotifyStreamEngine.fromPreference(preferences[SpotifyStreamEngineKey])
-        val product = when (stored.streamAccountBinding()) {
-            SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(preferences[SpotifyStreamProductKey])
-            SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(preferences[SpotifyProductKey])
-        }
-        return when (SpotifyPremiumPolicy.effectiveEngine(stored, product)) {
-            SpotifyStreamEngine.UNOFFICIAL -> NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, preferences) &&
-                !preferences[SpotifyStreamSpDcKey].isNullOrBlank()
-            SpotifyStreamEngine.LIBRESPOT -> NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_OFFICIAL, preferences) &&
-                !preferences[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
-        }
-    }
+    fun streamingSessionPresent(preferences: Preferences): Boolean = SpotifyProviderPreferences.playbackAvailable(preferences)
 
     data class Profile(
         val userId: String,
@@ -171,7 +139,7 @@ object SpotifyStreamingAccount {
 
     suspend fun isActive(context: Context): Boolean {
         val prefs = context.dataStore.data.first()
-        return prefs[SpotifyStreamEnabledKey] == true && NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, prefs) && isSignedIn(context)
+        return prefs[SpotifyStreamEnabledKey] == true && SpotifyProviderPreferences.enabled(SpotifyProviderIds.ALTERNATE, prefs) && isSignedIn(context)
     }
 
     suspend fun spDc(context: Context): String = pref(context, SpotifyStreamSpDcKey).orEmpty()
@@ -205,7 +173,7 @@ object SpotifyStreamingAccount {
     private suspend fun lockedAccessToken(context: Context): String? =
         tokenMutex.withLock {
             val prefs = context.dataStore.data.first()
-            if (!NativeExtensionPolicy.enabled(NativeExtensionIds.SPOTIFY_ALTERNATE, prefs)) return@withLock null
+            if (!SpotifyProviderPreferences.enabled(SpotifyProviderIds.ALTERNATE, prefs)) return@withLock null
             // While the effective engine is Librespot (stored choice plus observed Premium) the
             // unofficial pipelines get no token at all: they stand down and playback falls through
             // to the next source until the native librespot session lands.

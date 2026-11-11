@@ -28,7 +28,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.rememberSpotifyCatalogEnabled
 import moe.rukamori.archivetune.constants.SearchProvider
 import moe.rukamori.archivetune.constants.SearchSource
 
@@ -41,7 +41,7 @@ fun SearchSourcePicker(
     includeLocal: Boolean = true,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val spotifyEnabled = rememberSpotifyMetadataExtensionEnabled()
+    val spotifyEnabled = rememberSpotifyCatalogEnabled()
 
     Box {
         IconButton(onClick = { expanded = true }) {

@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.modules.ExtensionRegistration
 import moe.rukamori.archivetune.modules.ModuleKind
-import moe.rukamori.archivetune.modules.NativeExtensionIds
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProviderIds
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 
@@ -59,7 +59,7 @@ internal fun NativeExtensionCard(
                 checked = extension.enabled,
                 onCheckedChange = onEnabled,
             )
-            if (extension.id == NativeExtensionIds.SPOTIFY_OFFICIAL) Text(
+            if (extension.id == SpotifyProviderIds.LIBRESPOT) Text(
                 stringResource(R.string.extensions_spotify_official_unavailable),
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.bodySmall,

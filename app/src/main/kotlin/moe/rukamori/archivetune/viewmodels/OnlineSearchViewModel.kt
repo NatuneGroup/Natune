@@ -31,7 +31,7 @@ import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_FEATURED_PLAYLIST
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_SONG
 import moe.rukamori.archivetune.constants.SearchProvider
-import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.spotifyCatalogEnabled
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_VIDEO
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.YTItem
@@ -70,7 +70,7 @@ class OnlineSearchViewModel
             savedStateHandle
                 .get<String>(OnlineSearchProviderArgument)
                 .toEnum(SearchProvider.YOUTUBE).let { provider ->
-                    if (provider == SearchProvider.SPOTIFY && !context.spotifyMetadataExtensionEnabled()) SearchProvider.YOUTUBE else provider
+                    if (provider == SearchProvider.SPOTIFY && !context.spotifyCatalogEnabled()) SearchProvider.YOUTUBE else provider
                 }
         val filter = MutableStateFlow<YouTube.SearchFilter?>(null)
         var summaryPage by mutableStateOf<SearchSummaryPage?>(null)

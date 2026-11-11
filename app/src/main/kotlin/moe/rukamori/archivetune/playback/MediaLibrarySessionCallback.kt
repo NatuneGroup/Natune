@@ -66,7 +66,7 @@ import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.filterExplicit
 import moe.rukamori.archivetune.innertube.models.filterVideo
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
-import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.spotifyCatalogEnabled
 import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
 import moe.rukamori.archivetune.utils.dataStore
@@ -646,7 +646,7 @@ class MediaLibrarySessionCallback
                 }
                 // The queue folder mirrors the live player, so it is never served from a snapshot.
                 val items = if (parentId == MusicService.QUEUE) load() else browseFolderUpdates.children(parentId, cacheEmpty = !autoOfflineSongs.isOffline(), load = load)
-                val visibleItems = spotifyAutoVisibleChildren(autoOfflineSongs.filterBrowseItems(items), context.spotifyMetadataExtensionEnabled()) { it.mediaId }
+                val visibleItems = spotifyAutoVisibleChildren(autoOfflineSongs.filterBrowseItems(items), context.spotifyCatalogEnabled()) { it.mediaId }
                 LibraryResult.ofItemList(visibleItems.autoBrowsePage(page, pageSize), params)
             }
 
@@ -1044,7 +1044,7 @@ class MediaLibrarySessionCallback
          * browse callback that times out.
          */
         private suspend fun spotifyLikedMediaItems(): List<MediaItem> {
-            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
+            if (!context.spotifyCatalogEnabled()) return emptyList()
             if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) return emptyList()
             val resolved = spotifyPlaylistItemCache.children(SPOTIFY_LIKED_CACHE_KEY) {
                 if (autoOfflineSongs.isOffline()) emptyList() else runCatching {
@@ -1073,7 +1073,7 @@ class MediaLibrarySessionCallback
         private suspend fun spotifyPlaylistFolder(
             showSpotifyPlaylists: Boolean = context.dataStore.get(ShowSpotifyPlaylistsKey, false),
         ): List<MediaItem> {
-            if (!showSpotifyPlaylists || !context.spotifyMetadataExtensionEnabled()) return emptyList()
+            if (!showSpotifyPlaylists || !context.spotifyCatalogEnabled()) return emptyList()
             spotifyLibraryRepository.restoreCachedPlaylists()
             val cached = spotifyLibraryRepository.playlists.value.orEmpty()
             return listOf(
@@ -1091,7 +1091,7 @@ class MediaLibrarySessionCallback
 
         /** The playlists themselves — fetched when the folder is opened, not when it is listed. */
         private suspend fun spotifyPlaylistsForAuto() =
-            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyMetadataExtensionEnabled()) {
+            if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false) || !context.spotifyCatalogEnabled()) {
                 emptyList()
             } else {
                 spotifyLibraryRepository.restoreCachedPlaylists()
@@ -1142,7 +1142,7 @@ class MediaLibrarySessionCallback
         }
 
         private suspend fun spotifyPlaylistMediaItems(playlistId: String): List<MediaItem> {
-            if (!context.spotifyMetadataExtensionEnabled()) return emptyList()
+            if (!context.spotifyCatalogEnabled()) return emptyList()
             val resolved = spotifyPlaylistItemCache.children(playlistId) {
                 if (autoOfflineSongs.isOffline()) emptyList() else runCatching {
                     spotifyLibraryRepository

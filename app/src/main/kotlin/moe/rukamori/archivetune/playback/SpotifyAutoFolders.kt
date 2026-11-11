@@ -5,7 +5,7 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
+import moe.rukamori.archivetune.spotify.spotifyCatalogEnabled
 
 /** Apply the current gate after loading, including when later pages reuse a browse snapshot. */
 internal fun <T> spotifyAutoVisibleChildren(children: List<T>, enabled: Boolean, mediaId: (T) -> String): List<T> =
@@ -21,7 +21,7 @@ internal fun spotifyAutoLikedFolder(
     icon: Uri,
     browsable: (String, String, String?, Uri?, Int) -> MediaItem,
 ): List<MediaItem> {
-    if (!showSpotifyPlaylists || !context.spotifyMetadataExtensionEnabled()) return emptyList()
+    if (!showSpotifyPlaylists || !context.spotifyCatalogEnabled()) return emptyList()
     return listOf(browsable(MusicService.SPOTIFY_LIKED, context.getString(R.string.spotify_liked_songs),
         null, icon, MediaMetadata.MEDIA_TYPE_PLAYLIST))
 }

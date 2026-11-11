@@ -45,13 +45,14 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             require(request.purpose == AudioPurpose.PLAYBACK) { "Native routes require the host download preparer" }
             return AudioResolution.NativeRoute(nativeUri)
         }
+        val plan = DefaultSourceAttemptPlan.plan(SourceAttemptPlanRequest(settings, pinned, rejected))
         val chain = ExternalChain()
         // The external sources share one whole-chain budget; YouTube below keeps its own per-tier deadlines.
-        withTimeoutOrNull(FALLBACK_CHAIN_MS) { resolveExternal(request, settings, pinned, rejected, chain) }?.let { return it }
+        withTimeoutOrNull(FALLBACK_CHAIN_MS) { resolveExternal(request, plan, chain) }?.let { return it }
         // The chain deadline can cut an attempt in flight. That source timed out; it did not find no match.
         chain.inFlight?.let { chain.attempts += AudioAttempt(it, AudioAttemptResult.TIMEOUT) }
         val attempts = chain.attempts
-        if (PlaybackSourceChain.youTubeTerminalAllowed(settings, rejected)) {
+        if (plan.youTubeTerminalAllowed) {
             var failure = false
             var primaryDetail: String? = null
             val primary = try { withTimeoutOrNull(30_000) { youtube.primary(request) } }
@@ -90,11 +91,11 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
     /** Wraps a provider answer so its own budget expiring (null) stays distinct from a provider's no-match (audio null). */
     private class ProviderOutcome(val audio: PreparedAudio?)
 
-    private suspend fun resolveExternal(request: AudioResolveRequest, settings: PlaybackSourceSnapshot,
-        pinned: AudioSourceType?, rejected: Set<AudioSourceType>, chain: ExternalChain): AudioResolution.Resolved? {
-        for (source in PlaybackSourceChain.configuredChain(settings, pinned?.takeUnless { it in rejected }, rejected).distinct()) {
-            if (source in rejected || source !in settings.enabled ||
-                request.purpose == AudioPurpose.DOWNLOAD && source == AudioSourceType.SPOTIFY) continue
+    private suspend fun resolveExternal(request: AudioResolveRequest, plan: SourceAttemptPlan,
+        chain: ExternalChain): AudioResolution.Resolved? {
+        for (attempt in plan.attempts) {
+            val source = attempt.sourceId
+            if (request.purpose == AudioPurpose.DOWNLOAD && source == AudioSourceType.SPOTIFY) continue
             val provider = providers[source]
             if (provider == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE); continue }
             chain.inFlight = source

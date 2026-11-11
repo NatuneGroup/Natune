@@ -7,9 +7,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
-import moe.rukamori.archivetune.spotify.SpotifyStreamEngineKey
+import moe.rukamori.archivetune.shared.domain.provider.CompiledProviderDescriptor
+import moe.rukamori.archivetune.shared.domain.provider.ProviderPurpose
+import moe.rukamori.archivetune.spotify.SpotifyProviderPreferences
+import moe.rukamori.archivetune.spotify.SpotifyProviderRegistrations
 import moe.rukamori.archivetune.utils.dataStore
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,26 +41,22 @@ class ExtensionRegistry @Inject constructor(
     private val modules: ModuleRepository,
 ) {
     private inner class BuiltIn(
-        override val id: String,
-        override val kind: ModuleKind,
-        name: Int,
-        override val settingsRoute: String,
+        descriptor: CompiledProviderDescriptor,
     ) : NativeExtension {
-        override val displayName: String = context.getString(name)
-        override val enabled = context.dataStore.data.map { NativeExtensionPolicy.enabled(id, it) }.distinctUntilChanged()
-        override val priority = context.dataStore.data.map { NativeExtensionPolicy.priority(id, it) }.distinctUntilChanged()
+        override val id: String = descriptor.id.stableId
+        override val kind: ModuleKind = if (ProviderPurpose.CATALOG in descriptor.purposes) ModuleKind.METADATA else ModuleKind.PLAYBACK
+        override val displayName: String = context.getString(SpotifyProviderRegistrations.nameResource(descriptor.id))
+        override val settingsRoute: String = SpotifyProviderRegistrations.settingsPath(descriptor.settingsRoute)
+        override val enabled = context.dataStore.data.map { SpotifyProviderPreferences.enabled(id, it) }.distinctUntilChanged()
+        override val priority = context.dataStore.data.map { SpotifyProviderPreferences.priority(id, it) }.distinctUntilChanged()
     }
 
-    val nativeExtensions: List<NativeExtension> = listOf(
-        BuiltIn(NativeExtensionIds.SPOTIFY_METADATA, ModuleKind.METADATA, R.string.extensions_spotify_metadata, "settings/spotify?scrollTo=extensions_spotify_metadata"),
-        BuiltIn(NativeExtensionIds.SPOTIFY_ALTERNATE, ModuleKind.PLAYBACK, R.string.extensions_spotify_alternate, "settings/spotify_streaming?scrollTo=extension_alternate"),
-        BuiltIn(NativeExtensionIds.SPOTIFY_OFFICIAL, ModuleKind.PLAYBACK, R.string.extensions_spotify_official, "settings/spotify_streaming?scrollTo=extension_official"),
-    )
+    val nativeExtensions: List<NativeExtension> = SpotifyProviderRegistrations.descriptors.map { BuiltIn(it) }
 
     val state: Flow<List<ExtensionRegistration>> = combine(modules.state, context.dataStore.data) { registry, prefs ->
         nativeExtensions.map { native ->
-            ExtensionRegistration(native.id, native.kind, native.displayName, NativeExtensionPolicy.enabled(native.id, prefs),
-                NativeExtensionPolicy.priority(native.id, prefs), true, native.settingsRoute)
+            ExtensionRegistration(native.id, native.kind, native.displayName, SpotifyProviderPreferences.enabled(native.id, prefs),
+                SpotifyProviderPreferences.priority(native.id, prefs), true, native.settingsRoute)
         } + registry?.modules.orEmpty().mapIndexed { index, module ->
             ExtensionRegistration(module.id, module.manifest.kind, module.metadata?.name ?: module.manifest.displayName.ifBlank { module.manifest.name },
                 module.enabled, index + 1, false, null)
@@ -67,24 +64,18 @@ class ExtensionRegistry @Inject constructor(
     }
 
     suspend fun initialize() {
-        context.dataStore.edit { NativeExtensionPolicy.migrate(it) }
+        context.dataStore.edit { SpotifyProviderPreferences.migrate(it) }
         modules.snapshot()
     }
 
     suspend fun setEnabled(id: String, enabled: Boolean) {
         val native = nativeExtensions.firstOrNull { it.id == id }
         if (native == null) modules.setModuleEnabled(id, enabled)
-        else context.dataStore.edit { it[NativeExtensionPolicy.keys.getValue(id)] = enabled }
+        else context.dataStore.edit { it[SpotifyProviderPreferences.keys.getValue(id)] = enabled }
     }
 
     /** Native Spotify playback shares its existing SPOTIFY source slot and engine preference. */
     suspend fun moveNative(id: String, delta: Int) {
-        if (id !in listOf(NativeExtensionIds.SPOTIFY_ALTERNATE, NativeExtensionIds.SPOTIFY_OFFICIAL) || delta !in listOf(-1, 1)) return
-        context.dataStore.edit { prefs ->
-            val current = NativeExtensionPolicy.priority(id, prefs)
-            if (current + delta !in 1..2) return@edit
-            val officialFirst = (id == NativeExtensionIds.SPOTIFY_OFFICIAL) == (delta < 0)
-            prefs[SpotifyStreamEngineKey] = if (officialFirst) SpotifyStreamEngine.LIBRESPOT.name else SpotifyStreamEngine.UNOFFICIAL.name
-        }
+        context.dataStore.edit { SpotifyProviderPreferences.move(id, delta, it) }
     }
 }
