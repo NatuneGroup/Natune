@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -74,6 +75,17 @@ internal fun PlayerAction.label(): StringResource = when (this) {
     PlayerAction.OUTPUT -> Res.string.m5_output
     else -> Res.string.m5_more
 }
+
+/** Only a phone's artwork page collapses; with a panel open or fullscreen lyrics the same control steps back. */
+@Composable
+internal fun collapseSymbolAndLabel(c: PlayerRenderContext): Pair<PlayerSymbol, StringResource> =
+    if (LocalAndroidPhonePresentation.current && c.interaction.panel == PlayerPanel.ARTWORK && !c.interaction.fullscreenLyrics) {
+        PlayerSymbol.DOWN to Res.string.m5_collapse
+    } else {
+        PlayerSymbol.BACK to Res.string.m5_back
+    }
+
+internal const val STYLE_COLLAPSE_TAG = "player-style-collapse"
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -226,7 +238,9 @@ internal fun ActionButton(action: PlayerAction, c: PlayerRenderContext, modifier
         selected != null -> stringResource(if(selected) Res.string.m5_on else Res.string.m5_off)
         else -> null
     }
-    PlayerIcon(action.symbol(), stringResource(action.label()) + if (supported) "" else " • " + stringResource(Res.string.phone_not_available_on_ios), { c.actions.onAction(action) }, modifier,
+    val (symbol, labelRes) = if (action == PlayerAction.COLLAPSE) collapseSymbolAndLabel(c) else action.symbol() to action.label()
+    PlayerIcon(symbol, stringResource(labelRes) + if (supported) "" else " • " + stringResource(Res.string.phone_not_available_on_ios), { c.actions.onAction(action) },
+        if (action == PlayerAction.COLLAPSE) modifier.testTag(STYLE_COLLAPSE_TAG) else modifier,
         enabled = supported && when(action) {
             PlayerAction.PREVIOUS -> c.state.canPrevious
             PlayerAction.NEXT -> c.state.canNext
