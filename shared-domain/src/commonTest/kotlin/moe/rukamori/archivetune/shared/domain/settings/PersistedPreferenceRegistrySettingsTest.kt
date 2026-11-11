@@ -11,8 +11,10 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        // The retained 676-key surface plus desktop application icon, desktop output device and iOS USB-rate preferences.
-        assertEquals(679, PersistedPreferenceKeys.size)
+        // The retained surface also includes desktop/iOS output preferences and the experimental Android USB driver.
+        assertEquals(680, PersistedPreferenceKeys.size)
+        assertEquals(1, PersistedPreferenceKeys.count { it == DirectUsbDriverKey })
+        assertEquals(PreferenceKind.BOOLEAN, DirectUsbDriverKey.kind)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
         assertEquals(1, PersistedPreferenceKeys.count { it == DesktopAppIconPathKey })
         assertEquals(1, PersistedPreferenceKeys.count { it == IosUsbOutputSampleRateKey })

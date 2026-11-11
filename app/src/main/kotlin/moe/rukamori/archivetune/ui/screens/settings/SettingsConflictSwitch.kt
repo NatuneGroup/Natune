@@ -18,10 +18,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
+import moe.rukamori.archivetune.playback.usbdirect.UsbDirectNative
 import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.bitPerfectOutputSelected
+import moe.rukamori.archivetune.shared.domain.settings.bitPerfectOutputSupported
+import moe.rukamori.archivetune.shared.domain.settings.directUsbDriverSelectable
 import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.navigationTreatmentKeys
 import moe.rukamori.archivetune.ui.component.rememberPlayerMenuStyleSetter
@@ -36,8 +39,13 @@ internal fun settingsSwitchDisabledReason(
     bitPerfectSinkActive: Boolean,
     blurSupported: Boolean,
     blurOverridden: Boolean = false,
+    bitPerfectPlatformSupported: Boolean = BitPerfectUsbOutput.isPlatformSupported,
+    directUsbDriverAvailable: Boolean = UsbDirectNative.available,
 ): Int? {
-    val bitPerfect = preferences.sharedSnapshot().bitPerfectOutputSelected() || bitPerfectSinkActive
+    val snapshot = preferences.sharedSnapshot()
+    val supported = bitPerfectOutputSupported(bitPerfectPlatformSupported, preferences[DirectUsbDriverKey] == true,
+        directUsbDriverAvailable)
+    val bitPerfect = snapshot.bitPerfectOutputSelected() || bitPerfectSinkActive
     val blurConsumer = key in navigationTreatmentKeys || key == LiquidGlassEnabledKey || key == BackdropEnabledKey
     return when {
         (blurOverridden || blurConsumer) && preferences[DisableBlurKey] == true -> R.string.blur_setting_overridden
@@ -47,6 +55,10 @@ internal fun settingsSwitchDisabledReason(
             RejectSuspectedUpscaledAudioKey) && bitPerfect -> R.string.settings_processing_bypassed_bit_perfect
         key == SkipSilenceKey && preferences[AudioOffload] == true -> R.string.settings_processing_unavailable_offload
         key == AudioOffload && preferences[RejectSuspectedUpscaledAudioKey] == true -> R.string.settings_offload_unavailable_authenticity
+        key == BitPerfectUsbOutputKey && !supported -> R.string.bit_perfect_usb_unsupported
+        key == DirectUsbDriverKey && !directUsbDriverAvailable -> R.string.direct_usb_driver_unavailable
+        key == DirectUsbDriverKey && !snapshot.directUsbDriverSelectable(bitPerfectPlatformSupported, directUsbDriverAvailable) ->
+            R.string.direct_usb_driver_requires_bit_perfect
         key == CrossfadeGaplessKey && preferences[CrossfadeEnabledKey] != true -> R.string.settings_crossfade_required
         key == EnablePipModeKey && preferences[EnableVideoPlaybackKey] != true -> R.string.settings_video_required
         key == SmartTrimmerKey && preferences[MaxSongCacheSizeKey] == 0 && preferences[MaxImageCacheSizeKey] == 0 ->
@@ -63,7 +75,11 @@ internal fun ConflictAwareSearchSwitch(key: Preferences.Key<Boolean>, defaultVal
     val (storedChecked, setValue) = prefs.conflictAwareState(key, defaultValue)
     val setMenuStyle = rememberPlayerMenuStyleSetter()
     // The menus surface is the effective menu look, so the search result matches the Apple Music page row.
-    val checked = if (key == AppleMusicMenusKey) prefs.current.sharedSnapshot().appleMusicMenus() else storedChecked
+    val checked = when (key) {
+        AppleMusicMenusKey -> prefs.current.sharedSnapshot().appleMusicMenus()
+        BitPerfectUsbOutputKey -> storedChecked && BitPerfectUsbOutput.supportedWith(prefs.current[DirectUsbDriverKey] == true)
+        else -> storedChecked
+    }
     val sinkStatus by BitPerfectUsbOutput.status.collectAsStateWithLifecycle()
     val reason = settingsSwitchDisabledReason(key, prefs.current, sinkStatus.let { BitPerfectUsbOutput.sinkActive },
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S, blurOverridden)
@@ -72,7 +88,7 @@ internal fun ConflictAwareSearchSwitch(key: Preferences.Key<Boolean>, defaultVal
             when (key) {
                 in navigationTreatmentKeys -> setNavigationTreatment(restartPrompt, prefs, key, enabled)
                 LiquidGlassEnabledKey, TabletModeEnabledKey -> restartPrompt.edit(prefs) { this[key] = enabled }
-                CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey ->
+                CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey, DirectUsbDriverKey ->
                     setPlaybackOutputPreference(restartPrompt, prefs, context, key, enabled)
                 AppleMusicMenusKey -> setMenuStyle(if (enabled) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3)
                 else -> setValue(enabled)

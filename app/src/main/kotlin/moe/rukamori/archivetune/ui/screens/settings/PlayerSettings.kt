@@ -187,12 +187,6 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val (swipeUpToOpenQueue, onSwipeUpToOpenQueueChange) =
         prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
-    val (bitPerfectUsb) =
-        prefs.state(
-            BitPerfectUsbOutputKey,
-            defaultValue = false,
-        )
-    val bitPerfectStatus by BitPerfectUsbOutput.status.collectAsState()
     val bitPerfectContext = LocalContext.current
     val (audioProcessing, onAudioProcessingChange) =
         prefs.conflictAwareState(AudioProcessingEnabledKey, defaultValue = AUDIO_PROCESSING_ENABLED_DEFAULT)
@@ -713,23 +707,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     )
                 }
 
-                item {
-                    Column(modifier = positions.modifierFor("bit_perfect_usb")) {
-                        val bitPerfectDescription = bitPerfectOutputDescription(bitPerfectUsb, bitPerfectStatus)
-                        SwitchPreference(
-                            title = { Text(stringResource(R.string.bit_perfect_usb_title)) },
-                            description = bitPerfectDescription,
-                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = bitPerfectUsb && BitPerfectUsbOutput.isPlatformSupported,
-                            isEnabled = BitPerfectUsbOutput.isPlatformSupported,
-                            onCheckedChange = { enabled ->
-                                setPlaybackOutputPreference(
-                                    restartPrompt, prefs, bitPerfectContext, BitPerfectUsbOutputKey, enabled,
-                                )
-                            },
-                        )
-                    }
-                }
+                item { BitPerfectUsbPreference(positions.modifierFor("bit_perfect_usb")) }
+
+                item { DirectUsbDriverPreference(positions.modifierFor("direct_usb_driver")) }
 
                 item {
                     Column(modifier = positions.modifierFor("usb_exclusive_audio")) {
