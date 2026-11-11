@@ -25,7 +25,7 @@ class SettingsLyricsRuntime(
 ) {
     private data class Config(
         val order: List<String>, val enabled: Map<String, Boolean>, val wordSync: Boolean,
-        val preloadCount: Int, val credential: String, val endpoint: String, val available: Set<String>, val providerRevision: Long,
+        val preloadCount: Int, val preferExtensions: Boolean, val credential: String, val endpoint: String, val available: Set<String>, val providerRevision: Long,
     ) {
         override fun toString(): String = "LyricsConfig(<redacted>)"
     }
@@ -37,18 +37,18 @@ class SettingsLyricsRuntime(
     init {
         scope.launch {
             combine(store.snapshots.filterNotNull(), availableProviderNames, providerRevision) { prefs, available, revision ->
-                val names = LyricsProviderPreference.entries.map { it.providerName } +
-                    listOf("BiniLyrics", "lrc.red", "Genius", "YouTube Music", "YouTube Subtitle")
+                val names = LyricsProviderPreference.entries.map { it.providerName }
                 prefs to Config(
                     prefs.lyricsProviderOrder().map { it.providerName },
                     names.associateWith(prefs::lyricsProviderEnabled),
                     prefs[PrioritizeWordSyncedLyricsKey, true],
                     prefs[QueueLyricsPreloadCountKey, 3].coerceIn(0, 10),
+                    prefs[PreferLyricsExtensionsKey, false],
                     prefs[PaxsenixApiKeyKey].orEmpty(), prefs[PaxsenixEndpointKey].orEmpty(), available.toSet(), revision,
                 )
             }.distinctUntilChangedBy { it.second }.collectLatest { (prefs, config) ->
                 coroutineScope {
-                    val providers = orderLyricsProviders(providerFactory(prefs), config.order)
+                    val providers = orderLyricsProviders(providerFactory(prefs), config.order, config.preferExtensions)
                     val helper = LyricsHelper(
                         providers,
                         { name -> name in config.available && config.enabled[name] != false },
@@ -85,8 +85,11 @@ class SettingsLyricsRuntime(
         currentRuntime.filterNotNull().first().helper.getLyricsWithProvider(request, forceRefresh = forceRefresh)
 }
 
-/** Extra providers keep their established slots; the persisted picker only orders its 18 members. */
-internal fun orderLyricsProviders(providers: List<LyricsProvider>, order: List<String>): List<LyricsProvider> {
-    val members = providers.filter { it.name in order }.sortedBy { order.indexOf(it.name) }.iterator()
-    return providers.map { if (it.name in order) members.next() else it }
+internal fun orderLyricsProviders(
+    providers: List<LyricsProvider>,
+    order: List<String>,
+    preferExtensions: Boolean = false,
+): List<LyricsProvider> {
+    val sorted = moe.rukamori.archivetune.shared.domain.settings.orderLyricsProviders(providers, order) { it.name }
+    return if (preferExtensions) sorted.filterNot { it.name in order } + sorted.filter { it.name in order } else sorted
 }

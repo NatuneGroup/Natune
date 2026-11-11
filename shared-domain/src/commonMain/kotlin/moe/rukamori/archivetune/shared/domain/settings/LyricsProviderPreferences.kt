@@ -13,26 +13,25 @@ enum class LyricsProviderPreference(val providerName: String, val key: BooleanPr
     SIMPMUSIC("SimpMusic", EnableSimpMusicLyricsKey),
     UNISON("Unison", EnableUnisonLyricsKey),
     PAXSENIX_APPLE_MUSIC("Paxsenix: Apple Music", EnablePaxsenixAppleMusicLyricsKey),
-    APPLE_MUSIC("Apple Music", null),
-    PAXSENIX_NETEASE("Paxsenix: NetEase", EnablePaxsenixNeteaseLyricsKey, false),
-    PAXSENIX_SPOTIFY("Paxsenix: Spotify", EnablePaxsenixSpotifyLyricsKey, false),
-    PAXSENIX_MUSIXMATCH("Paxsenix: Musixmatch", EnablePaxsenixMusixmatchLyricsKey, false),
-    PAXSENIX_YOUTUBE("Paxsenix: YouTube", EnablePaxsenixYouTubeLyricsKey, false),
+    APPLE_MUSIC("Apple Music", EnableAppleMusicLyricsKey),
     TIDAL("Tidal", EnableTidalLyricsKey),
     DEEZER("Deezer", EnableDeezerLyricsKey),
     MUSIXMATCH_EXPERIMENTAL("Musixmatch (experimental)", EnableMusixmatchExperimentalKey, false),
+    LRC_RED("lrc.red", EnableLrcRedKey),
+    BINI("BiniLyrics", EnableBiniLyricsKey),
+    YOUTUBE_SUBTITLE("YouTube Subtitle", EnableYouTubeSubtitleLyricsKey),
+    YOUTUBE_MUSIC("YouTube Music", EnableYouTubeMusicLyricsKey),
+    GENIUS("Genius", EnableGeniusLyricsKey, false),
 }
 
-fun PreferenceSnapshot.lyricsProviderOrder(): List<LyricsProviderPreference> {
-    val parsed = this[LyricsProviderOrderKey].orEmpty().split(',').mapNotNull { raw ->
+fun parseLyricsProviderOrder(order: String?): List<LyricsProviderPreference> {
+    val parsed = order.orEmpty().split(',').mapNotNull { raw ->
         LyricsProviderPreference.entries.firstOrNull { it.name == raw.trim() }
     }.distinct()
-    val normalized = if (parsed.take(3) == listOf(
-        LyricsProviderPreference.LRCLIB, LyricsProviderPreference.KUGOU, LyricsProviderPreference.BETTER_LYRICS,
-    )) listOf(LyricsProviderPreference.BETTER_LYRICS) + parsed.filterNot { it == LyricsProviderPreference.BETTER_LYRICS }
-    else parsed
-    return normalized + LyricsProviderPreference.entries.filterNot { it in normalized }
+    return parsed + LyricsProviderPreference.entries.filterNot { it in parsed }
 }
+
+fun PreferenceSnapshot.lyricsProviderOrder(): List<LyricsProviderPreference> = parseLyricsProviderOrder(this[LyricsProviderOrderKey])
 
 fun PreferenceEditor.setLyricsProviderOrder(order: List<LyricsProviderPreference>) {
     require(order.distinct().size == order.size)
@@ -41,12 +40,10 @@ fun PreferenceEditor.setLyricsProviderOrder(order: List<LyricsProviderPreference
 }
 
 fun PreferenceSnapshot.lyricsProviderEnabled(providerName: String): Boolean {
-    val preference = LyricsProviderPreference.entries.firstOrNull { it.providerName == providerName }
-    if (preference != null) return preference.key?.let { this[it, preference.defaultEnabled] } ?: true
-    return when (providerName) {
-        "BiniLyrics" -> this[EnableBiniLyricsKey, true]
-        "lrc.red" -> this[EnableLrcRedKey, true]
-        "Genius" -> this[EnableGeniusLyricsKey, false]
-        else -> true
-    }
+    val preference = LyricsProviderPreference.entries.firstOrNull { it.providerName == providerName } ?: return true
+    if (preference == LyricsProviderPreference.PAXSENIX_APPLE_MUSIC && !this[EnablePaxsenixLyricsKey, true]) return false
+    return preference.key?.let { this[it, preference.defaultEnabled] } ?: true
 }
+
+fun <T> orderLyricsProviders(providers: List<T>, order: List<String>, name: (T) -> String): List<T> =
+    providers.sortedBy { provider -> order.indexOf(name(provider)).takeIf { it >= 0 } ?: Int.MAX_VALUE }

@@ -13,7 +13,4 @@ internal object LyricsRanking {
             ?: candidates.firstOrNull { LyricsDetection.isLineSyncedLrc(it.lyrics) }
             ?: candidates.firstOrNull()
             ?: LyricsResult.NOT_FOUND
-
-    fun firstWordSynced(candidates: List<LyricsResult>): LyricsResult? =
-        candidates.firstOrNull { LyricsDetection.hasWordSyncedLyrics(it.lyrics) }
 }

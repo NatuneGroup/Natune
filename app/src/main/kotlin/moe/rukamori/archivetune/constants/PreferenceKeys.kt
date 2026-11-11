@@ -303,10 +303,6 @@ val EnableSimpMusicLyricsKey = booleanPreferencesKey("enableSimpMusicLyrics")
 val EnableMegalobizLyricsKey = booleanPreferencesKey("enableMegalobizLyrics")
 val EnablePaxsenixLyricsKey = booleanPreferencesKey("enablePaxsenixLyrics")
 val EnablePaxsenixAppleMusicLyricsKey = booleanPreferencesKey("enablePaxsenixAppleMusicLyrics")
-val EnablePaxsenixNeteaseLyricsKey = booleanPreferencesKey("enablePaxsenixNeteaseLyrics")
-val EnablePaxsenixSpotifyLyricsKey = booleanPreferencesKey("enablePaxsenixSpotifyLyrics")
-val EnablePaxsenixMusixmatchLyricsKey = booleanPreferencesKey("enablePaxsenixMusixmatchLyrics")
-val EnablePaxsenixYouTubeLyricsKey = booleanPreferencesKey("enablePaxsenixYouTubeLyrics")
 // User-configurable PaxSenix API key. When blank, PaxsenixLyrics falls
 // back to the default (no-auth) behavior. When set, it's sent as an
 // Authorization: Bearer header on every Paxsenix API request.
@@ -320,9 +316,10 @@ val EnableUnisonLyricsKey = booleanPreferencesKey("enableUnisonLyrics")
 val EnableLyprioLyricsKey = booleanPreferencesKey("enableLyprioLyrics")
 val EnableTidalLyricsKey = booleanPreferencesKey("enableTidalLyrics")
 val EnableDeezerLyricsKey = booleanPreferencesKey("enableDeezerLyrics")
-// When ON, lyrics lookup first queries the four word-sync-capable providers
-// (BetterLyrics, BetterLyrics Portato, YouLyPlus, Unison) in parallel and uses
-// whichever returns word-synced lyrics (QRC/YRC/TTML with word timings). If none
+val EnableAppleMusicLyricsKey = booleanPreferencesKey("enableAppleMusicLyrics")
+val EnableYouTubeMusicLyricsKey = booleanPreferencesKey("enableYouTubeMusicLyrics")
+val EnableYouTubeSubtitleLyricsKey = booleanPreferencesKey("enableYouTubeSubtitleLyrics")
+// When ON, word-sync lookups have a longer provider timeout. If none
 // of those four return word-synced lyrics, the lookup falls back to the normal
 // priority flow across all enabled providers.
 val PrioritizeWordSyncedLyricsKey = booleanPreferencesKey("prioritizeWordSyncedLyrics")
@@ -1096,75 +1093,12 @@ enum class QuickPicks {
     DONT_SHOW,
 }
 
-enum class PreferredLyricsProvider {
-    LYPRIO,
-    BETTER_LYRICS,
-    BETTER_LYRICS_PORTATO,
-    YOULY_PLUS,
-    LRCLIB,
-    KUGOU,
-    MEGALOBIZ,
-    SIMPMUSIC,
-    UNISON,
-    PAXSENIX_APPLE_MUSIC,
-    APPLE_MUSIC,
-    PAXSENIX_NETEASE,
-    PAXSENIX_SPOTIFY,
-    PAXSENIX_MUSIXMATCH,
-    PAXSENIX_YOUTUBE,
-    TIDAL,
-    DEEZER,
-    MUSIXMATCH_EXPERIMENTAL,
-}
+typealias PreferredLyricsProvider = moe.rukamori.archivetune.shared.domain.settings.LyricsProviderPreference
 
-val DefaultLyricsProviderOrder =
-    listOf(
-        PreferredLyricsProvider.LYPRIO,
-        PreferredLyricsProvider.BETTER_LYRICS,
-        PreferredLyricsProvider.BETTER_LYRICS_PORTATO,
-        PreferredLyricsProvider.YOULY_PLUS,
-        PreferredLyricsProvider.LRCLIB,
-        PreferredLyricsProvider.KUGOU,
-        PreferredLyricsProvider.MEGALOBIZ,
-        PreferredLyricsProvider.SIMPMUSIC,
-        PreferredLyricsProvider.UNISON,
-        PreferredLyricsProvider.PAXSENIX_APPLE_MUSIC,
-        PreferredLyricsProvider.APPLE_MUSIC,
-        PreferredLyricsProvider.PAXSENIX_NETEASE,
-        PreferredLyricsProvider.PAXSENIX_SPOTIFY,
-        PreferredLyricsProvider.PAXSENIX_MUSIXMATCH,
-        PreferredLyricsProvider.PAXSENIX_YOUTUBE,
-        PreferredLyricsProvider.TIDAL,
-        PreferredLyricsProvider.DEEZER,
-        PreferredLyricsProvider.MUSIXMATCH_EXPERIMENTAL,
-    )
+val DefaultLyricsProviderOrder = PreferredLyricsProvider.entries.toList()
 
-fun deserializeLyricsProviderOrder(orderStr: String?): List<PreferredLyricsProvider> {
-    if (orderStr.isNullOrBlank()) return DefaultLyricsProviderOrder
-
-    val parsed =
-        orderStr
-            .split(",")
-            .mapNotNull { name ->
-                PreferredLyricsProvider.entries.find { it.name == name.trim() }
-            }.distinct()
-
-    val normalized =
-        when {
-            parsed.take(3) ==
-                listOf(
-                    PreferredLyricsProvider.LRCLIB,
-                    PreferredLyricsProvider.KUGOU,
-                    PreferredLyricsProvider.BETTER_LYRICS,
-                )
-            -> listOf(PreferredLyricsProvider.BETTER_LYRICS) + parsed.filterNot { it == PreferredLyricsProvider.BETTER_LYRICS }
-
-            else -> parsed
-        }
-
-    val missing = DefaultLyricsProviderOrder.filterNot { it in normalized }
-    return normalized + missing
-}
+fun deserializeLyricsProviderOrder(orderStr: String?): List<PreferredLyricsProvider> =
+    moe.rukamori.archivetune.shared.domain.settings.parseLyricsProviderOrder(orderStr)
 
 /**
  * Artwork providers that can be prioritised by the user. The order in this enum is NOT the priority

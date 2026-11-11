@@ -64,38 +64,6 @@ class LyricsProviderCancellationTest {
         }
 
     @Test
-    fun paxsenixMusixmatchRethrowsCancellationInsteadOfReturningAFailure() =
-        runTest {
-            val provider = PaxsenixMusixmatchLyricsProvider(cancellingClient())
-
-            assertFailsWith<CancellationException> { provider.getLyrics("id", "Song", "Artist", null, 200) }
-        }
-
-    @Test
-    fun paxsenixNeteaseRethrowsCancellationInsteadOfReturningAFailure() =
-        runTest {
-            val provider = PaxsenixNeteaseLyricsProvider(cancellingClient())
-
-            assertFailsWith<CancellationException> { provider.getLyrics("id", "Song", "Artist", null, 200) }
-        }
-
-    @Test
-    fun paxsenixSpotifyRethrowsCancellationInsteadOfReturningAFailure() =
-        runTest {
-            val provider = PaxsenixSpotifyLyricsProvider(cancellingClient())
-
-            assertFailsWith<CancellationException> { provider.getLyrics("id", "Song", "Artist", null, 200) }
-        }
-
-    @Test
-    fun paxsenixYouTubeRethrowsCancellationInsteadOfReturningAFailure() =
-        runTest {
-            val provider = PaxsenixYouTubeLyricsProvider(cancellingClient())
-
-            assertFailsWith<CancellationException> { provider.getLyrics("id", "Song", "Artist", null, 200) }
-        }
-
-    @Test
     fun paxsenixAppleMusicRethrowsCancellationFromTheTokenScrape() =
         runTest {
             val provider = PaxsenixAppleMusicLyricsProvider(cancellingClient())

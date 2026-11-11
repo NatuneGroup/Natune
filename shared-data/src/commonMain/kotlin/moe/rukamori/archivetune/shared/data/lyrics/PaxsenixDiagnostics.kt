@@ -35,7 +35,7 @@ class PaxsenixDiagnostics(
     data class PathCheck(
         /** Human-readable provider name, for example "Apple Music". */
         val provider: String,
-        /** Path relative to the configured endpoint, for example "netease/search". */
+        /** Path relative to the configured endpoint, for example "apple-music/lyrics". */
         val path: String,
         val status: PathStatus,
         /** HTTP status code, or null when the request never completed. */
@@ -93,10 +93,6 @@ class PaxsenixDiagnostics(
         val PROBES =
             listOf(
                 Probe("Apple Music", "apple-music/lyrics", "id", "1440857781"),
-                Probe("NetEase", "netease/search", "q", "test"),
-                Probe("Spotify", "spotify/search", "q", "test"),
-                Probe("YouTube", "youtube/search", "q", "test"),
-                Probe("Musixmatch", "musixmatch/lyrics", "q", "test"),
             )
     }
 }
