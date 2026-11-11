@@ -31,6 +31,7 @@ import org.jetbrains.compose.resources.stringResource
 internal data class PhoneQueuePlayerActions(
     val occurrenceId: String?, val liked: Boolean,
     val onLike: (() -> Unit)?, val onMore: (() -> Unit)?,
+    val onClose: (() -> Unit)? = null,
 )
 
 internal val LocalPhoneQueuePlayerActions = staticCompositionLocalOf {
@@ -39,7 +40,11 @@ internal val LocalPhoneQueuePlayerActions = staticCompositionLocalOf {
 
 @Composable
 internal fun PhoneQueueDragStrip() {
-    Box(Modifier.fillMaxWidth().height(12.dp).testTag("queue-drag-strip"), contentAlignment = Alignment.Center) {
+    val onClose = LocalPhoneQueuePlayerActions.current.onClose
+    val closeLabel = stringResource(Res.string.m5_back)
+    Box(Modifier.fillMaxWidth().height(12.dp).testTag("queue-drag-strip")
+        .then(if (onClose != null) Modifier.phoneQueueClose(closeLabel, onClose) else Modifier),
+        contentAlignment = Alignment.Center) {
         Box(Modifier.size(48.dp, 5.dp).clip(RoundedCornerShape(2.5.dp))
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .4f)))
     }

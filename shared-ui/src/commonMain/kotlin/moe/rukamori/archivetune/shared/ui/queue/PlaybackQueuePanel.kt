@@ -70,6 +70,7 @@ fun PlaybackQueuePanel(
     artwork: @Composable (ContentOccurrence, Modifier) -> Unit,
 ) {
     val phone = moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current
+    val phoneClose = if (phone) LocalPhoneQueuePlayerActions.current.onClose else null
     val state by queue.state.collectAsState()
     val playback by queue.player.snapshot.collectAsState()
     val preferences by settings.snapshots.collectAsState()
@@ -216,7 +217,7 @@ fun PlaybackQueuePanel(
         Column(Modifier.fillMaxSize()) {
             if (phone) PhoneQueueDragStrip()
             if (rows.isEmpty()) {
-                header()
+                Box(phoneClose?.let { Modifier.phoneQueueDismissOnDrag(it) } ?: Modifier) { header() }
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(stringResource(Res.string.queue_empty))
                 }
@@ -263,7 +264,8 @@ fun PlaybackQueuePanel(
             exit = fadeOut(),
         ) {
             // The selection actions scroll away with the expanded header, so the overlay repeats them once the list scrolls.
-            Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.background(MaterialTheme.colorScheme.surface)
+                .then(phoneClose?.let { Modifier.phoneQueueDismissOnDrag(it) } ?: Modifier)) {
                 QueuePanelCompactHeader(
                     hasTracks = rows.isNotEmpty(), ready = preferences != null, infinite = infinite, locked = locked,
                     shuffle = state.shuffleEnabled, repeat = repeat,
