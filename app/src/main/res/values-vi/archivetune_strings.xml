@@ -507,7 +507,7 @@
     <string name="restore_corrupted">Tệp sao lưu có vẻ bị hỏng và không thể đọc được.</string>
     <string name="restore_file_not_found">Không thể mở tệp đã chọn.</string>
     <string name="restore_select_backup">Chọn tệp sao lưu để khôi phục.</string>
-    <string name="backup_create_backup_desc">Xuất thư viện, cài đặt và chi tiết tài khoản.</string>
+    <string name="backup_create_backup_desc">Xuất thư viện và cài đặt.</string>
     <string name="android_auto_suggested_songs">Bài hát đề xuất</string>
     <string name="android_auto_mixes_and_radios">Tổng hợp và radio</string>
     <string name="android_auto_sort_playlist">Sắp xếp danh sách phát</string>

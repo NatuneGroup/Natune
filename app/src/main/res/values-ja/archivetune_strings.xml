@@ -505,7 +505,7 @@
     <string name="restore_corrupted">バックアップファイルが破損しているようで、読み取れなかった。</string>
     <string name="restore_file_not_found">選択したファイルを開けなかった。</string>
     <string name="restore_select_backup">復元するバックアップファイルを選んでね。</string>
-    <string name="backup_create_backup_desc">ライブラリ、設定、アカウント詳細をエクスポート。</string>
+    <string name="backup_create_backup_desc">ライブラリと設定をエクスポート。</string>
     <string name="import_m3u_format">M3U音声プレイリスト</string>
     <string name="import_csv_format">CSVプレイリストファイル</string>
     <string name="spotify_connect">Spotifyに接続</string>

@@ -10,7 +10,6 @@ package moe.rukamori.archivetune.backup
 
 import android.content.Context
 import android.net.Uri
-import androidx.datastore.preferences.core.Preferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.db.InternalDatabase
@@ -18,7 +17,6 @@ import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.extensions.zipOutputStream
 import moe.rukamori.archivetune.utils.dataStore
 import java.io.FileInputStream
-import java.io.OutputStream
 import java.util.zip.ZipEntry
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,12 +50,12 @@ class BackupArchiveRepository
             categories: Set<BackupArchiveCategory>,
             onProgress: (BackupArchiveProgress) -> Unit = {},
         ) = operationCoordinator.withLock {
-            require(categories.isNotEmpty()) { "At least one backup category is required" }
+            val exportCategories = categories.intersect(BackupExportPolicy.DEFAULT_CATEGORIES)
+            require(exportCategories.isNotEmpty()) { "A library or settings backup category is required" }
 
-            val includeSettings = BackupArchiveCategory.SETTINGS in categories
-            val includeAccount = BackupArchiveCategory.ACCOUNT in categories
-            val includeLibrary = BackupArchiveCategory.LIBRARY in categories
-            val includePreferences = BackupPreferenceSelection.carriesPreferences(includeSettings, includeAccount)
+            val includeSettings = BackupArchiveCategory.SETTINGS in exportCategories
+            val includeLibrary = BackupArchiveCategory.LIBRARY in exportCategories
+            val includePreferences = includeSettings
             val dbFile = context.getDatabasePath(InternalDatabase.DB_NAME)
             val dbFiles =
                 if (includeLibrary) {
@@ -105,7 +103,7 @@ class BackupArchiveRepository
                 if (includePreferences) {
                     emit(BackupArchiveStep.EXPORT_SETTINGS, indeterminate = true)
                     zipStream.putNextEntry(ZipEntry(SETTINGS_XML_FILENAME))
-                    writeSettingsToXml(zipStream) { BackupPreferenceSelection.includes(it, includeSettings, includeAccount) }
+                    writeBackupSettingsToXml(zipStream, context.dataStore.data.first(), exportCategories)
                     zipStream.closeEntry()
                     completedUnits++
                 }
@@ -183,63 +181,6 @@ class BackupArchiveRepository
             }
         }
 
-        private suspend fun writeSettingsToXml(
-            outputStream: OutputStream,
-            includeKey: (String) -> Boolean,
-        ) {
-            val preferences =
-                context.dataStore.data
-                    .first()
-                    .asMap()
-            val serializer = android.util.Xml.newSerializer()
-            serializer.setOutput(outputStream, Charsets.UTF_8.name())
-            serializer.startDocument(Charsets.UTF_8.name(), true)
-            serializer.startTag(null, "ArchiveTuneBackup")
-            serializer.startTag(null, "Settings")
-
-            preferences.forEach { (key, value) ->
-                if (
-                    includeKey(key.name) &&
-                    key.name !in ScheduledBackupRepository.NON_PORTABLE_PREFERENCE_KEYS
-                ) {
-                    serializer.writePreference(key, value)
-                }
-            }
-
-            serializer.endTag(null, "Settings")
-            serializer.endTag(null, "ArchiveTuneBackup")
-            serializer.endDocument()
-            serializer.flush()
-        }
-
-        private fun org.xmlpull.v1.XmlSerializer.writePreference(
-            key: Preferences.Key<*>,
-            value: Any,
-        ) {
-            val tagName =
-                when (value) {
-                    is Boolean -> "boolean"
-                    is Int -> "int"
-                    is Long -> "long"
-                    is Float -> "float"
-                    is String -> "string"
-                    is Set<*> -> "string-set"
-                    else -> return
-                }
-            startTag(null, tagName)
-            attribute(null, "name", key.name)
-            if (value is Set<*>) {
-                value.forEach { item ->
-                    startTag(null, "item")
-                    text(item.toString())
-                    endTag(null, "item")
-                }
-            } else {
-                attribute(null, "value", value.toString())
-            }
-            endTag(null, tagName)
-        }
-
         companion object {
             const val SETTINGS_XML_FILENAME = "settings.xml"
             const val CUSTOM_FONTS_DIR_NAME = "custom_fonts"
@@ -310,8 +251,7 @@ class BackupArchiveRepository
                     "spotifyStreamAccountName",
                     "spotifyStreamProduct",
                     "spotifyStreamProductCheckedAt",
-                    // Tidal login/session (sensitive) — travels with an Account backup, not a
-                    // Settings-only one. Instance URL lists (tidalInstances) stay under Settings.
+                    // Tidal login/session keys also classify account payloads in legacy restores.
                     "tidalAccessToken",
                     "tidalRefreshToken",
                     "tidalTokenExpiry",

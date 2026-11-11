@@ -857,7 +857,7 @@
     <string name="restore_corrupted">The backup file appears to be corrupted and could not be read.</string>
     <string name="restore_file_not_found">Could not open the selected file.</string>
     <string name="restore_select_backup">Select a backup file to restore.</string>
-    <string name="backup_create_backup_desc">Export library, settings, and account details.</string>
+    <string name="backup_create_backup_desc">Export library and settings. Sign-ins and API keys are not included.</string>
     <string name="import_m3u_format">M3U audio playlist</string>
     <string name="import_csv_format">CSV playlist file</string>
     <string name="spotify_connect">Connect Spotify</string>

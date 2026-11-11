@@ -428,7 +428,7 @@
     <string name="backup_category_settings_desc">Darstellung, Wiedergabe &amp; Einstellungen</string>
     <string name="backup_category_account">Kontodetails</string>
     <string name="internal_service">Interner Service</string>
-    <string name="backup_create_backup_desc">Bibliothek, Einstellungen und Kontodaten exportieren.</string>
+    <string name="backup_create_backup_desc">Bibliothek und Einstellungen exportieren.</string>
     <string name="import_m3u_format">M3U Audioplaylist</string>
     <string name="import_csv_format">CSV-Playlistdatei</string>
     <string name="spotify_connect">Verbinde Spotify</string>

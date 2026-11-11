@@ -464,7 +464,7 @@
     <string name="internal_service">내부 서비스</string>
     <string name="spotify_show_playlist_desc">보관함에 Spotify 재생목록을 표시합니다.</string>
     <string name="year_in_music_ranked_artists">자주 들은 아티스트</string>
-    <string name="backup_create_backup_desc">보관함, 설정 및 계정 정보를 내보냅니다.</string>
+    <string name="backup_create_backup_desc">보관함 및 설정을 내보냅니다.</string>
     <string name="local_songs_scan_included_folders_add">폴더 추가</string>
     <string name="aod_customize_control_style">컨트롤 스타일</string>
     <string name="aod_background_ambient_glow">앰비언트 글로우</string>

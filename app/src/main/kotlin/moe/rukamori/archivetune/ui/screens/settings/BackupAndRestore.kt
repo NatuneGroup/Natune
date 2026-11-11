@@ -141,7 +141,7 @@ fun BackupAndRestore(
     var showRestoreOptionsDialog by rememberSaveable { mutableStateOf(false) }
     var showRestoreValidationError by rememberSaveable { mutableStateOf(false) }
     var restoreValidationErrorMessage by remember { mutableStateOf("") }
-    var pendingBackupCategories by remember { mutableStateOf(BackupCategory.entries.toSet()) }
+    var pendingBackupCategories by remember { mutableStateOf(BackupCategory.entries.filterNot { it == BackupCategory.ACCOUNT }.toSet()) }
     var pendingRestoreCategories by remember { mutableStateOf(BackupCategory.entries.toSet()) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     // Drive-folder picker UX state:
@@ -482,10 +482,8 @@ fun BackupAndRestore(
                     )
                 }
             }
-
         }
     }
-
     val scheduledBackupData = (scheduledBackupState as? ScheduledBackupScreenState.Success)?.data
     if (scheduledBackupData?.showCustomDatePicker == true) {
         ScheduledBackupDatePickerDialog(
@@ -499,6 +497,7 @@ fun BackupAndRestore(
         BackupOptionsDialog(
             title = stringResource(R.string.backup_options_title),
             confirmLabel = stringResource(R.string.action_backup),
+            availableCategories = BackupCategory.entries.filterNot { it == BackupCategory.ACCOUNT },
             onConfirm = { categories ->
                 pendingBackupCategories = categories
                 showBackupOptionsDialog = false
@@ -1200,11 +1199,12 @@ private fun IconBubble(
 @Composable
 private fun BackupOptionsDialog(
     title: String,
+    availableCategories: List<BackupCategory> = BackupCategory.entries,
     confirmLabel: String,
     onConfirm: (Set<BackupCategory>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selected by remember { mutableStateOf(BackupCategory.entries.toSet()) }
+    var selected by remember { mutableStateOf(availableCategories.toSet()) }
 
     DefaultDialog(
         onDismiss = onDismiss,
@@ -1223,7 +1223,7 @@ private fun BackupOptionsDialog(
         },
     ) {
         Spacer(Modifier.height(8.dp))
-        BackupCategory.entries.forEach { category ->
+        availableCategories.forEach { category ->
             val isChecked = category in selected
             val labelRes =
                 when (category) {

@@ -505,7 +505,7 @@
     <string name="restore_corrupted">ملف النسخة الاحتياطية شكله معطوب ومقدرناش نقراه.</string>
     <string name="restore_file_not_found">مقدرناش نفتح الملف المحدد.</string>
     <string name="restore_select_backup">اختار ملف نسخة احتياطية لاستعادته.</string>
-    <string name="backup_create_backup_desc">تصدير المكتبة، الإعدادات، وتفاصيل الحساب.</string>
+    <string name="backup_create_backup_desc">تصدير المكتبة والإعدادات.</string>
     <string name="import_m3u_format">بلاي ليست صوتية M3U</string>
     <string name="import_csv_format">ملف بلاي ليست CSV</string>
     <string name="spotify_connect">ربط سبوتيفاي</string>
