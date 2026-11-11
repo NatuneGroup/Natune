@@ -95,3 +95,17 @@ fn bounded_mutation_corpus_never_panics() {
         parse_ttml(std::str::from_utf8(&seed[..i]).unwrap(), || false).unwrap();
     }
 }
+
+#[test]
+fn large_credit_lists_preserve_first_occurrence_order() {
+    let names: Vec<_> = (0..3000).map(|i| format!("Writer {i}")).collect();
+    let writers: String = names
+        .iter()
+        .chain(names.iter().rev())
+        .map(|n| format!("<songwriter>{n}</songwriter>"))
+        .collect();
+    let xml = format!("<tt><p begin=\"0\">A</p>{writers}</tt>");
+    let document = parse_ttml(&xml, || false).unwrap();
+    assert_eq!(document.credits.songwriters, names);
+    assert_eq!(document.lines.len(), 1);
+}

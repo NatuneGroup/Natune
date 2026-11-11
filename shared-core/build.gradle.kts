@@ -16,6 +16,8 @@ val generated = layout.buildDirectory.dir("generated/bindings")
 val rustInputs = rootProject.fileTree("native/core") { exclude("target/**", "benchmark-results/**") }
 fun nativeTask(name: String, operation: String, vararg arguments: String) = tasks.register<Exec>(name) {
     inputs.files(rustInputs, rootProject.file("scripts/build_rust_core.py"))
+    inputs.property("operation", operation)
+    inputs.property("arguments", arguments.toList())
     workingDir(rootProject.projectDir)
     commandLine("python3", "scripts/build_rust_core.py", operation, *arguments)
     onlyIf { nativeEnabled }
@@ -75,7 +77,7 @@ kotlin {
         if (nativeEnabled) {
             jvmMain {
                 kotlin.srcDir(generated.map { it.dir("jvmMain/kotlin") })
-                resources.srcDir(layout.buildDirectory.dir("generated/rustResources"))
+                resources.srcDir(jvmLibrary)
                 dependencies { implementation(libs.jna) }
             }
             nativeMain { kotlin.srcDir(generated.map { it.dir("nativeMain/kotlin") }) }
@@ -105,7 +107,8 @@ kotlin {
 if (nativeEnabled) {
     tasks.matching { it.name == "compileTestKotlinJvm" }.configureEach { dependsOn(retainedAndroidParser) }
     tasks.matching { it.name.startsWith("compileTest") && it.name.contains("Kotlin") }.configureEach { dependsOn(fixtureTestData) }
-    tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(generateBindings) }
+    tasks.matching { it.name.startsWith("compile") && (it.name.contains("Kotlin") || it.name == "compileAndroidMain") }
+        .configureEach { dependsOn(generateBindings) }
     tasks.matching { it.name == "jvmProcessResources" }.configureEach { dependsOn(jvmLibrary) }
     tasks.withType<Test>().configureEach {
         dependsOn(jvmLibrary)
