@@ -1,0 +1,317 @@
+[
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsBackgroundVocalParseTest.kt:6",
+    "raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:10.000\" end=\"00:00:13.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:10.000\" end=\"00:00:10.500\">hold </span>\n        <span begin=\"00:00:10.500\" end=\"00:00:11.000\">on </span>\n        <span ttm:role=\"x-bg\">\n          <span begin=\"00:00:11.000\" end=\"00:00:11.400\">gimme </span>\n          <span begin=\"00:00:11.400\" end=\"00:00:11.700\">some </span>\n          <span begin=\"00:00:11.700\" end=\"00:00:12.300\">day</span>\n        </span>\n      </p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:10.000\" end=\"00:00:13.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:10.000\" end=\"00:00:10.500\">hold </span>\n        <span begin=\"00:00:10.500\" end=\"00:00:11.000\">on </span>\n        <span ttm:role=\"x-bg\">\n          <span begin=\"00:00:11.000\" end=\"00:00:11.400\">gimme </span>\n          <span begin=\"00:00:11.400\" end=\"00:00:11.700\">some </span>\n          <span begin=\"00:00:11.700\" end=\"00:00:12.300\">day</span>\n        </span>\n      </p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsBackgroundVocalParseTest.kt:7",
+    "raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:01.000\" end=\"00:00:03.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:01.000\" end=\"00:00:01.600\">hold </span>\n        <span begin=\"00:00:01.600\" end=\"00:00:02.400\">on</span>\n      </p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:01.000\" end=\"00:00:03.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:01.000\" end=\"00:00:01.600\">hold </span>\n        <span begin=\"00:00:01.600\" end=\"00:00:02.400\">on</span>\n      </p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsJsonEnvelopeTest.kt:0",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsJsonEnvelopeTest.kt:1",
+    "raw": "{\"lyrics\":\"<tt xmlns=\\\"http://www.w3.org/ns/ttml\\\"><body><div><p begin=\\\"0.0\\\" end=\\\"1.0\\\">Hello</p></div></body></tt>\"}",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsJsonEnvelopeTest.kt:2",
+    "raw": "{\"lyrics\":\"&lt;tt xmlns=&quot;http://www.w3.org/ns/ttml&quot;&gt;&lt;body&gt;&lt;div&gt;&lt;p begin=&quot;0.0&quot; end=&quot;1.0&quot;&gt;Hello&lt;/p&gt;&lt;/div&gt;&lt;/body&gt;&lt;/tt&gt;\"}",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/LyricsJsonEnvelopeTest.kt:7",
+    "raw": "<?xml version=\"1.0\"?><tt xmlns=\"http://www.w3.org/ns/ttml\"></tt>",
+    "xml": "<?xml version=\"1.0\"?><tt xmlns=\"http://www.w3.org/ns/ttml\"></tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/lyrics/TtmlAgentParseTest.kt:0",
+    "raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:01.000\" end=\"00:00:02.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:01.000\" end=\"00:00:02.000\">lead</span>\n      </p>\n      <p begin=\"00:00:03.000\" end=\"00:00:04.000\" ttm:agent=\"#v2\">\n        <span begin=\"00:00:03.000\" end=\"00:00:04.000\">answer</span>\n      </p>\n      <p begin=\"00:00:05.000\" end=\"00:00:06.000\" ttm:agent=\"v1 v2\">\n        <span begin=\"00:00:05.000\" end=\"00:00:06.000\">together</span>\n      </p>\n      <p begin=\"00:00:07.000\" end=\"00:00:08.000\" ttm:agent=\"v2 V2\">\n        <span begin=\"00:00:07.000\" end=\"00:00:08.000\">two voices</span>\n      </p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xml:lang=\"en\">\n  <body>\n    <div>\n      <p begin=\"00:00:01.000\" end=\"00:00:02.000\" ttm:agent=\"v1\">\n        <span begin=\"00:00:01.000\" end=\"00:00:02.000\">lead</span>\n      </p>\n      <p begin=\"00:00:03.000\" end=\"00:00:04.000\" ttm:agent=\"#v2\">\n        <span begin=\"00:00:03.000\" end=\"00:00:04.000\">answer</span>\n      </p>\n      <p begin=\"00:00:05.000\" end=\"00:00:06.000\" ttm:agent=\"v1 v2\">\n        <span begin=\"00:00:05.000\" end=\"00:00:06.000\">together</span>\n      </p>\n      <p begin=\"00:00:07.000\" end=\"00:00:08.000\" ttm:agent=\"v2 V2\">\n        <span begin=\"00:00:07.000\" end=\"00:00:08.000\">two voices</span>\n      </p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/repository/NewsRepositoryTest.kt:23",
+    "raw": "<!DOCTYPE html>",
+    "xml": "<!DOCTYPE html>"
+  },
+  {
+    "id": "app/src/test/kotlin/moe/rukamori/archivetune/utils/credits/TrackCreditMetadataTest.kt:5",
+    "raw": "<ttm:songwriter>Ada</ttm:songwriter><composer>Grace</composer><writer>Ada</writer>",
+    "xml": "<ttm:songwriter>Ada</ttm:songwriter><composer>Grace</composer><writer>Ada</writer>"
+  },
+  {
+    "id": "LyricsParseJsonEnvelopeTest.kt:0",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "LyricsParseJsonEnvelopeTest.kt:1",
+    "raw": "{\"lyrics\":\"<tt xmlns=\\\"http://www.w3.org/ns/ttml\\\"><body><div><p begin=\\\"0.0\\\" end=\\\"1.0\\\">Hello</p></div></body></tt>\"}",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "LyricsParseJsonEnvelopeTest.kt:2",
+    "raw": "{\"lyrics\":\"&lt;tt xmlns=&quot;http://www.w3.org/ns/ttml&quot;&gt;&lt;body&gt;&lt;div&gt;&lt;p begin=&quot;0.0&quot; end=&quot;1.0&quot;&gt;Hello&lt;/p&gt;&lt;/div&gt;&lt;/body&gt;&lt;/tt&gt;\"}",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.0\" end=\"1.0\">Hello</p></div></body></tt>"
+  },
+  {
+    "id": "LyricsParseJsonEnvelopeTest.kt:7",
+    "raw": "<?xml version=\"1.0\"?><tt xmlns=\"http://www.w3.org/ns/ttml\"></tt>",
+    "xml": "<?xml version=\"1.0\"?><tt xmlns=\"http://www.w3.org/ns/ttml\"></tt>"
+  },
+  {
+    "id": "LyricsParseSecurityTest.kt:0",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>"
+  },
+  {
+    "id": "LyricsParseSecurityTest.kt:2",
+    "raw": "<?xml version=\"1.0\"?>\n<!DOCTYPE tt [<!ENTITY xxe \"SECRET-PAYLOAD\">]>\n<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.000\" end=\"1.000\">&xxe;</p></div></body></tt>",
+    "xml": "<?xml version=\"1.0\"?>\n<!DOCTYPE tt [<!ENTITY xxe \"SECRET-PAYLOAD\">]>\n<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.000\" end=\"1.000\">&xxe;</p></div></body></tt>"
+  },
+  {
+    "id": "LyricsParseSecurityTest.kt:5",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:0",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xmlns:itunes=\"http://music.apple.com/lyric-ttml-internal\" xml:lang=\"en\">\n  <head>\n    <metadata>\n      <iTunesMetadata>\n        <translations>\n          <translation type=\"original\" xml:lang=\"es\">\n            <text for=\"L1\">Hola mundo</text>\n          </translation>\n        </translations>\n        <transliterations>\n          <transliteration xml:lang=\"es-Latn\">\n            <text for=\"L1\">hola mundo</text>\n          </transliteration>\n        </transliterations>\n      </iTunesMetadata>\n    </metadata>\n  </head>\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"3.000\" ttm:agent=\"v1\" itunes:key=\"L1\"><span begin=\"1.000\" end=\"1.500\">Hello</span> <span begin=\"1.500\" end=\"2.000\">world</span></p>\n      <p begin=\"4.000\" end=\"6.000\" ttm:agent=\"v2\" itunes:key=\"L2\"><span begin=\"4.000\" end=\"5.000\">Hi</span></p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\" xmlns:itunes=\"http://music.apple.com/lyric-ttml-internal\" xml:lang=\"en\">\n  <head>\n    <metadata>\n      <iTunesMetadata>\n        <translations>\n          <translation type=\"original\" xml:lang=\"es\">\n            <text for=\"L1\">Hola mundo</text>\n          </translation>\n        </translations>\n        <transliterations>\n          <transliteration xml:lang=\"es-Latn\">\n            <text for=\"L1\">hola mundo</text>\n          </transliteration>\n        </transliterations>\n      </iTunesMetadata>\n    </metadata>\n  </head>\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"3.000\" ttm:agent=\"v1\" itunes:key=\"L1\"><span begin=\"1.000\" end=\"1.500\">Hello</span> <span begin=\"1.500\" end=\"2.000\">world</span></p>\n      <p begin=\"4.000\" end=\"6.000\" ttm:agent=\"v2\" itunes:key=\"L2\"><span begin=\"4.000\" end=\"5.000\">Hi</span></p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:9",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"2.000\" end=\"3.000\">Plain line</p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"2.000\" end=\"3.000\">Plain line</p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:11",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div>\n<p begin=\"1.000\" end=\"4.000\" ttm:agent=\"v1\"><span begin=\"1.000\" end=\"2.000\">Hi</span><span ttm:role=\"x-bg\" begin=\"2.000\" end=\"3.000\">echo</span></p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div>\n<p begin=\"1.000\" end=\"4.000\" ttm:agent=\"v1\"><span begin=\"1.000\" end=\"2.000\">Hi</span><span ttm:role=\"x-bg\" begin=\"2.000\" end=\"3.000\">echo</span></p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:14",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"1.500\">Hello </span><span begin=\"1.500\" end=\"2.000\">a</span><span begin=\"2.000\" end=\"2.500\">gain</span><span begin=\"2.500\" end=\"3.000\"> my</span><span begin=\"3.000\" end=\"3.500\">  friend</span></p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"1.500\">Hello </span><span begin=\"1.500\" end=\"2.000\">a</span><span begin=\"2.000\" end=\"2.500\">gain</span><span begin=\"2.500\" end=\"3.000\"> my</span><span begin=\"3.000\" end=\"3.500\">  friend</span></p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:24",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"1.500\">Hello  world</span> <span begin=\"1.500\" end=\"2.000\">sing&#10;&#9;along</span></p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"1.000\" end=\"4.000\"><span begin=\"1.000\" end=\"1.500\">Hello  world</span> <span begin=\"1.500\" end=\"2.000\">sing&#10;&#9;along</span></p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:31",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div>\n<p begin=\"1.000\" end=\"4.000\" ttm:agent=\"v1\"><span begin=\"1.000\" end=\"2.000\">lead</span> <span ttm:role=\"x-bg\" begin=\"2.000\" end=\"3.000\">back  vocals</span></p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div>\n<p begin=\"1.000\" end=\"4.000\" ttm:agent=\"v1\"><span begin=\"1.000\" end=\"2.000\">lead</span> <span ttm:role=\"x-bg\" begin=\"2.000\" end=\"3.000\">back  vocals</span></p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:40",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"10.000\" end=\"12.000\"><span begin=\"0.000\" end=\"1.000\">Hi</span> <span begin=\"1.000\" end=\"2.000\">there</span></p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"10.000\" end=\"12.000\"><span begin=\"0.000\" end=\"1.000\">Hi</span> <span begin=\"1.000\" end=\"2.000\">there</span></p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:41",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttp=\"http://www.w3.org/ns/ttml#parameter\" ttp:frameRate=\"25\" ttp:tickRate=\"1000\"><body><div>\n<p begin=\"50f\" end=\"100f\">Frames</p>\n<p begin=\"1500t\" end=\"3000t\">Ticks</p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttp=\"http://www.w3.org/ns/ttml#parameter\" ttp:frameRate=\"25\" ttp:tickRate=\"1000\"><body><div>\n<p begin=\"50f\" end=\"100f\">Frames</p>\n<p begin=\"1500t\" end=\"3000t\">Ticks</p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:44",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"5.000\" end=\"6.000\">Second</p>\n<p begin=\"1.000\" end=\"2.000\">First</p>\n</div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>\n<p begin=\"5.000\" end=\"6.000\">Second</p>\n<p begin=\"1.000\" end=\"2.000\">First</p>\n</div></body></tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:47",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"1.0\"",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"1.0\""
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:50",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:itunes=\"http://music.apple.com/lyric-ttml-internal\" xml:lang=\"en\">\n  <head>\n    <metadata>\n      <iTunesMetadata>\n        <songwriters>\n          <songwriter>Ada Writer</songwriter>\n          <songwriter>Sam Tune</songwriter>\n        </songwriters>\n        <translations>\n          <translation xml:lang=\"es\" itunes:automaticallyCreated=\"true\">\n            <text for=\"L1\">Hola mundo</text>\n          </translation>\n        </translations>\n        <transliterations>\n          <transliteration xml:lang=\"es-Latn\">\n            <text for=\"L1\" itunes:automaticallyCreated=\"1\">hola mundo</text>\n          </transliteration>\n        </transliterations>\n      </iTunesMetadata>\n    </metadata>\n  </head>\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"3.000\" itunes:key=\"L1\">Hello world</p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:itunes=\"http://music.apple.com/lyric-ttml-internal\" xml:lang=\"en\">\n  <head>\n    <metadata>\n      <iTunesMetadata>\n        <songwriters>\n          <songwriter>Ada Writer</songwriter>\n          <songwriter>Sam Tune</songwriter>\n        </songwriters>\n        <translations>\n          <translation xml:lang=\"es\" itunes:automaticallyCreated=\"true\">\n            <text for=\"L1\">Hola mundo</text>\n          </translation>\n        </translations>\n        <transliterations>\n          <transliteration xml:lang=\"es-Latn\">\n            <text for=\"L1\" itunes:automaticallyCreated=\"1\">hola mundo</text>\n          </transliteration>\n        </transliterations>\n      </iTunesMetadata>\n    </metadata>\n  </head>\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"3.000\" itunes:key=\"L1\">Hello world</p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "LyricsParseTtmlTest.kt:55",
+    "raw": "<tt><unclosed",
+    "xml": "<tt><unclosed"
+  },
+  {
+    "id": "TtmlAgentTest.kt:17",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\">\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"2.000\" ttm:agent=\"#v2\"><span begin=\"1.000\" end=\"2.000\">Hi</span></p>\n      <p begin=\"3.000\" end=\"4.000\" ttm:agent=\"v1 v2\"><span begin=\"3.000\" end=\"4.000\">Both</span></p>\n      <p begin=\"5.000\" end=\"6.000\" ttm:agent=\"v2 V2\"><span begin=\"5.000\" end=\"6.000\">Two voices</span></p>\n    </div>\n  </body>\n</tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\">\n  <body>\n    <div>\n      <p begin=\"1.000\" end=\"2.000\" ttm:agent=\"#v2\"><span begin=\"1.000\" end=\"2.000\">Hi</span></p>\n      <p begin=\"3.000\" end=\"4.000\" ttm:agent=\"v1 v2\"><span begin=\"3.000\" end=\"4.000\">Both</span></p>\n      <p begin=\"5.000\" end=\"6.000\" ttm:agent=\"v2 V2\"><span begin=\"5.000\" end=\"6.000\">Two voices</span></p>\n    </div>\n  </body>\n</tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:23",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div><p begin=\"1s\" end=\"3s\" ttm:agent=\"v2\"><span begin=\"1s\" end=\"2s\">Hello</span><span ttm:role=\"x-bg\" begin=\"2s\" end=\"3s\"> world</span></p></div></body></tt>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\"><body><div><p begin=\"1s\" end=\"3s\" ttm:agent=\"v2\"><span begin=\"1s\" end=\"2s\">Hello</span><span ttm:role=\"x-bg\" begin=\"2s\" end=\"3s\"> world</span></p></div></body></tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:31",
+    "raw": "<tt><head><metadata><translation><text for=\"v\">Provider</text></translation></metadata></head><body><p key=\"v\" begin=\"1s\">Hello</p></body></tt>",
+    "xml": "<tt><head><metadata><translation><text for=\"v\">Provider</text></translation></metadata></head><body><p key=\"v\" begin=\"1s\">Hello</p></body></tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:41",
+    "raw": "<tt><body><p>Hello</p></body></tt>",
+    "xml": "<tt><body><p>Hello</p></body></tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:43",
+    "raw": "<t:tt xmlns:t=\"http://www.w3.org/ns/ttml\"><t:body><t:p begin=\"1s\">Hello</t:p></t:body></t:tt>",
+    "xml": "<t:tt xmlns:t=\"http://www.w3.org/ns/ttml\"><t:body><t:p begin=\"1s\">Hello</t:p></t:body></t:tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:47",
+    "raw": "<tt><head><metadata><p>Not sung</p></metadata></head><body><p begin=\"1s\">Sung</p></body></tt>",
+    "xml": "<tt><head><metadata><p>Not sung</p></metadata></head><body><p begin=\"1s\">Sung</p></body></tt>"
+  },
+  {
+    "id": "document/LyricsDocumentTest.kt:49",
+    "raw": "<!DOCTYPE tt [<!ENTITY x SYSTEM 'file:///private'>]><tt><p>&x;</p></tt>",
+    "xml": "<!DOCTYPE tt [<!ENTITY x SYSTEM 'file:///private'>]><tt><p>&x;</p></tt>"
+  },
+  {
+    "id": "language/RomanizationLanguagePolicyTest.kt:87",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xml:lang=\"es\"><body><div>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xml:lang=\"es\"><body><div>"
+  },
+  {
+    "id": "language/RomanizationLanguagePolicyTest.kt:90",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:x=\"http://www.w3.org/XML/1998/namespace\" x:lang=\"ko\">",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:x=\"http://www.w3.org/XML/1998/namespace\" x:lang=\"ko\">"
+  },
+  {
+    "id": "language/RomanizationLanguagePolicyTest.kt:93",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" lang=\"ko\">",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" lang=\"ko\">"
+  },
+  {
+    "id": "unicode/UnicodeLyricsRegressionTest.kt:27",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xml:lang=\"es\"><body><div>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\" xml:lang=\"es\"><body><div>"
+  },
+  {
+    "id": "unicode/UnicodeSemanticJoinerTest.kt:19",
+    "raw": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>",
+    "xml": "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div>"
+  },
+  {
+    "id": "added/minimal",
+    "raw": "<tt><body><p begin=\"1s\">Hello</p></body></tt>",
+    "xml": "<tt><body><p begin=\"1s\">Hello</p></body></tt>"
+  },
+  {
+    "id": "added/nested-duplicate",
+    "raw": "<tt><div><p begin=\"2s\">A</p><div><p begin=\"1s\">B</p></div></div></tt>",
+    "xml": "<tt><div><p begin=\"2s\">A</p><div><p begin=\"1s\">B</p></div></div></tt>"
+  },
+  {
+    "id": "added/metadata-after-body",
+    "raw": "<tt><p key=\"x\" begin=\"1s\">A</p><translation><text for=\"x\">B</text></translation><songwriter name=\"Writer\"/></tt>",
+    "xml": "<tt><p key=\"x\" begin=\"1s\">A</p><translation><text for=\"x\">B</text></translation><songwriter name=\"Writer\"/></tt>"
+  },
+  {
+    "id": "added/latin-priority",
+    "raw": "<tt><transliteration lang=\"ja\"><text for=\"a\">かな</text></transliteration><transliteration lang=\"ja-Latn\"><text for=\"a\"><span>ka</span> <span>na</span></text></transliteration><p key=\"a\" begin=\"1s\">仮名</p></tt>",
+    "xml": "<tt><transliteration lang=\"ja\"><text for=\"a\">かな</text></transliteration><transliteration lang=\"ja-Latn\"><text for=\"a\"><span>ka</span> <span>na</span></text></transliteration><p key=\"a\" begin=\"1s\">仮名</p></tt>"
+  },
+  {
+    "id": "added/duplicate-keys",
+    "raw": "<tt><translation><text for=\"a\">One</text><text for=\"a\">Two</text></translation><p key=\"a\" begin=\"1s\">A</p></tt>",
+    "xml": "<tt><translation><text for=\"a\">One</text><text for=\"a\">Two</text></translation><p key=\"a\" begin=\"1s\">A</p></tt>"
+  },
+  {
+    "id": "added/sorted-attributes",
+    "raw": "<tt z:frameRate=\"50\" a:frameRate=\"25\"><p z:agent=\"v2\" a:agent=\"v1\" begin=\"50f\">A</p></tt>",
+    "xml": "<tt z:frameRate=\"50\" a:frameRate=\"25\"><p z:agent=\"v2\" a:agent=\"v1\" begin=\"50f\">A</p></tt>"
+  },
+  {
+    "id": "added/cdata-comments-pi",
+    "raw": "<tt><p begin=\"1s\"><span begin=\"1s\" end=\"2s\">A<!--c--><![CDATA[B]]><?pi data?>C</span><span begin=\"2s\" end=\"3s\"><b><![CDATA[D]]></b></span></p><p begin=\"4s\"><![CDATA[ignored]]></p></tt>",
+    "xml": "<tt><p begin=\"1s\"><span begin=\"1s\" end=\"2s\">A<!--c--><![CDATA[B]]><?pi data?>C</span><span begin=\"2s\" end=\"3s\"><b><![CDATA[D]]></b></span></p><p begin=\"4s\"><![CDATA[ignored]]></p></tt>"
+  },
+  {
+    "id": "added/bom-crlf",
+    "raw": "﻿<tt>\r\n<p begin=\"1s\">A\rB</p></tt>",
+    "xml": "﻿<tt>\r\n<p begin=\"1s\">A\rB</p></tt>"
+  },
+  {
+    "id": "added/numeric-literals",
+    "raw": "<tt><p begin=\"inf\">inf</p><p begin=\"nan\">nan</p><p begin=\"+1.2f\">float</p><p begin=\"1d\">double</p><p begin=\"0x1.0p1\">hex</p><p begin=\"1e-3\">tiny</p><p begin=\"Infinity\">infinity</p><p begin=\"NaN\">NaN</p></tt>",
+    "xml": "<tt><p begin=\"inf\">inf</p><p begin=\"nan\">nan</p><p begin=\"+1.2f\">float</p><p begin=\"1d\">double</p><p begin=\"0x1.0p1\">hex</p><p begin=\"1e-3\">tiny</p><p begin=\"Infinity\">infinity</p><p begin=\"NaN\">NaN</p></tt>"
+  },
+  {
+    "id": "added/unicode-case-fold",
+    "raw": "<tt><p begin=\"1s\"><ſpan begin=\"1s\" end=\"2s\">A</ſpan></p><translation automatİcallyCreated=\"yeſ\"><text for=\"none\">B</text></translation></tt>",
+    "xml": "<tt><p begin=\"1s\"><ſpan begin=\"1s\" end=\"2s\">A</ſpan></p><translation automatİcallyCreated=\"yeſ\"><text for=\"none\">B</text></translation></tt>"
+  },
+  {
+    "id": "added/unicode-next-line",
+    "raw": "<tt><p begin=\"1s\">A</p></tt>",
+    "xml": "<tt><p begin=\"1s\">A</p></tt>"
+  },
+  {
+    "id": "added/odd-timing",
+    "raw": "<tt frameRate=\"30\" frameRateMultiplier=\"1000 1001\" tickRate=\"1000\"><p begin=\"00;00;01;15\" dur=\"500ms\"><span begin=\"0s\" dur=\"1000t\">A</span></p><p begin=\"1.234999\">B</p><p begin=\"bad\">C</p></tt>",
+    "xml": "<tt frameRate=\"30\" frameRateMultiplier=\"1000 1001\" tickRate=\"1000\"><p begin=\"00;00;01;15\" dur=\"500ms\"><span begin=\"0s\" dur=\"1000t\">A</span></p><p begin=\"1.234999\">B</p><p begin=\"bad\">C</p></tt>"
+  },
+  {
+    "id": "added/negative-interval",
+    "raw": "<tt><p begin=\"-10\" end=\"-9\"><span begin=\"-10\" end=\"-9\">A</span></p><songwriter>Ada</songwriter></tt>",
+    "xml": "<tt><p begin=\"-10\" end=\"-9\"><span begin=\"-10\" end=\"-9\">A</span></p><songwriter>Ada</songwriter></tt>"
+  },
+  {
+    "id": "added/xml-char-refs",
+    "raw": "<tt><p begin=\"1s\">&#127908;&#x20000;&#x10FFFF;&amp;&lt;</p></tt>",
+    "xml": "<tt><p begin=\"1s\">&#127908;&#x20000;&#x10FFFF;&amp;&lt;</p></tt>"
+  },
+  {
+    "id": "added/unknown-entity",
+    "raw": "<tt><p begin=\"0\">&xxe;</p></tt>",
+    "xml": "<tt><p begin=\"0\">&xxe;</p></tt>"
+  },
+  {
+    "id": "added/duplicate-attribute",
+    "raw": "<tt><p begin=\"0\" begin=\"1\">A</p></tt>",
+    "xml": "<tt><p begin=\"0\" begin=\"1\">A</p></tt>"
+  },
+  {
+    "id": "added/second-root",
+    "raw": "<tt/><tt/>",
+    "xml": "<tt/><tt/>"
+  },
+  {
+    "id": "added/bad-pi-name",
+    "raw": "<tt><p begin=\"0\">A</p><?0 invalid?></tt>",
+    "xml": "<tt><p begin=\"0\">A</p><?0 invalid?></tt>"
+  },
+  {
+    "id": "added/supplementary-name",
+    "raw": "<tt><𠀀:p begin=\"0\">A</𠀀:p></tt>",
+    "xml": "<tt><𠀀:p begin=\"0\">A</𠀀:p></tt>"
+  },
+  {
+    "id": "added/bad-comment",
+    "raw": "<tt><!-- a--b --></tt>",
+    "xml": "<tt><!-- a--b --></tt>"
+  },
+  {
+    "id": "added/bad-text-close",
+    "raw": "<tt><p begin=\"0\">a]]>b</p></tt>",
+    "xml": "<tt><p begin=\"0\">a]]>b</p></tt>"
+  },
+  {
+    "id": "added/invalid-scalar",
+    "raw": "<tt><p begin=\"0\">&#xD800;</p></tt>",
+    "xml": "<tt><p begin=\"0\">&#xD800;</p></tt>"
+  },
+  {
+    "id": "added/unicode",
+    "raw": "<tt><p begin=\"1s\"><span begin=\"1s\" end=\"2s\">می‌روم👩‍🎤​𠀀é</span></p></tt>",
+    "xml": "<tt><p begin=\"1s\"><span begin=\"1s\" end=\"2s\">می‌روم👩‍🎤​𠀀é</span></p></tt>"
+  }
+]

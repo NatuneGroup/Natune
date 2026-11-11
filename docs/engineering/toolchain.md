@@ -36,6 +36,7 @@ Release shrinking/signing or device behavior.
 
 - `:app`
 - `:shared-domain`
+- `:shared-core`
 - `:shared-data`
 - `:shared-ui`
 - `:desktopApp`

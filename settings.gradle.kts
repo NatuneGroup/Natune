@@ -110,6 +110,7 @@ dependencyResolutionManagement {
 rootProject.name = "ArchiveTune"
 include(":app")
 include(":shared-domain")
+include(":shared-core")
 include(":shared-data")
 include(":shared-ui")
 include(":desktopApp")

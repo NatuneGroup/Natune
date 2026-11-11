@@ -264,3 +264,15 @@ retains each author/profile. The complete CC BY-SA 4.0 license is bundled as
 from About. The selector and its previews live in the iOS source set, preserving
 every attributed iOS choice without bundling the previews in Android. iOS system
 assets are resized to 1024px and made opaque; the previews are unchanged.
+
+## Rust TTML core
+
+The Natune TTML implementation in `native/core` is GPL-3.0-only, ported from
+Natune's retained shared Kotlin behavior. Its pure parser depends on quick-xml
+0.42.0 (MIT). The separate facade uses UniFFI 0.29.4 (MPL-2.0) and thiserror
+(MIT OR Apache-2.0); Gobley 0.3.7 (MPL-2.0) generates KMP bindings. JNA 5.17.0
+(LGPL-2.1-or-later OR Apache-2.0) provides Android/JVM dispatch. Atomicfu 0.26.1 (Apache-2.0), the version in
+Gobley 0.3.7's dependency table, supplies generated JVM atomic operations. Cargo.lock pins
+transitive versions and their package license declarations. No provider lyrics,
+third-party parser source or dictionary data was imported. Test fixtures derive
+from existing GPL Natune tests and newly authored synthetic inputs.
