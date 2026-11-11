@@ -40,7 +40,7 @@ class ScheduledBackupWorker(
             val destination = createDestination(settings)
             dependencies.createBackupUseCase()(
                 uri = destination,
-                categories = BackupArchiveCategory.entries.toSet(),
+                categories = BackupExportPolicy.DEFAULT_CATEGORIES,
             )
             dependencies.scheduler().appendNext(settings)
             Result.success()

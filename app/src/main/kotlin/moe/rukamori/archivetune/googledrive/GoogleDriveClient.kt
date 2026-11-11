@@ -15,7 +15,7 @@ import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.rukamori.archivetune.backup.BackupArchiveCategory
+import moe.rukamori.archivetune.backup.BackupExportPolicy
 import moe.rukamori.archivetune.backup.CreateBackupUseCase
 import timber.log.Timber
 import java.io.File
@@ -87,7 +87,7 @@ class GoogleDriveClient
                     )
                     createBackupUseCase(
                         uri = tempUri,
-                        categories = BackupArchiveCategory.entries.toSet(),
+                        categories = BackupExportPolicy.DEFAULT_CATEGORIES,
                     )
 
                     val fullFileName = "$backupFileName.backup"
