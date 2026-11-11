@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,6 +31,23 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
  */
 @OptIn(ExperimentalTestApi::class)
 class MiniPlayerStripTest {
+    @Test fun phonePlayerAndNavigationHaveSeparateBoundsWithAGap() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalAndroidPhonePresentation provides true) {
+                    Box(Modifier.size(393.dp, 740.dp)) {
+                        ArchiveTuneShell(ShellNavigation(), PreferenceSnapshot.EMPTY, {},
+                            miniPlayer = { Box(Modifier.fillMaxWidth().height(70.dp)) }, content = {})
+                    }
+                }
+            }
+        }
+        onNodeWithTag("shell-player-navigation-gap").assertHeightIsEqualTo(4.dp)
+        val player = onNodeWithTag("shell-mini-player").getUnclippedBoundsInRoot()
+        val navigation = onNodeWithTag("shell-bottom-bar").getUnclippedBoundsInRoot()
+        assertTrue(navigation.top >= player.bottom + 4.dp)
+        assertTrue(player.left >= 12.dp)
+    }
     @Test fun aClickOnTheStripNeverReachesThePageCardAndItsOwnControlsStillWork() = runComposeUiTest {
         var cardClicks = 0
         var buttonClicks = 0
