@@ -31,7 +31,7 @@ internal object DiscordNativeSdkBridge {
         private set
     private val sequence = AtomicLong()
     private val operations = ConcurrentHashMap<Long, CompletableDeferred<Unit>>()
-    private val grants = ConcurrentHashMap<Long, CompletableDeferred<DiscordSdkTokenGrant>>()
+    internal val grants = ConcurrentHashMap<Long, CompletableDeferred<DiscordSdkTokenGrant>>()
     var onDisconnected: (() -> Unit)? = null
 
     private fun initialize() {
@@ -70,7 +70,8 @@ internal object DiscordNativeSdkBridge {
         initialized = false
         ready.value = false
         operations.values.forEach { it.cancel() }; operations.clear()
-        grants.values.forEach { it.cancel() }; grants.clear()
+        // Fail, don't cancel: refreshCatching rethrows a cancellation, which would skip the HTTP fallback.
+        grants.values.forEach { it.completeExceptionally(IllegalStateException("SDK_CLOSED")) }; grants.clear()
     }
 
     private suspend fun operation(start: (Long) -> Unit) = withContext(Dispatchers.Main.immediate) {
