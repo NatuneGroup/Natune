@@ -69,12 +69,11 @@ class CinematicPhoneControlsTest {
         var style by mutableStateOf(PlayerDesignStyle.Default)
         var landscape by mutableStateOf(false)
         var expanded by mutableStateOf(true)
-        val interaction = PlayerInteractionState()
         val actions = PlayerTestActions()
         val callbacks = PlayerActions(actions.callbacks.playPause, actions.callbacks.seekTo,
             actions.callbacks.selectOccurrence, actions.callbacks.setVolume, { action ->
             actions.actions += action
-            if (action == PlayerAction.COLLAPSE) interaction.backOrCollapse { expanded = false }
+            if (action == PlayerAction.COLLAPSE) expanded = false
         }, actions.callbacks.onLyricsVisibility)
         setContent {
             MaterialTheme {
@@ -82,7 +81,7 @@ class CinematicPhoneControlsTest {
                     Box(Modifier.requiredSize(if (landscape) 852.dp else 393.dp, if (landscape) 393.dp else 852.dp)) {
                         PhonePlayerSheet(expanded, { expanded = it }, false) {
                             BottomSheetPlayer(playerFixture(), callbacks, PreferenceSnapshot.of(PlayerDesignStyleKey to style.name),
-                                playerSlots(), false, interaction = interaction)
+                                playerSlots(), false)
                         }
                     }
                 }

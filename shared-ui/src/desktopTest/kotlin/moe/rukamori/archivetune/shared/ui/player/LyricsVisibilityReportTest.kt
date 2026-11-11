@@ -38,12 +38,15 @@ class LyricsVisibilityReportTest {
             }
         }
         for (orientation in listOf(false, true)) for (look in PlayerDesignStyle.entries) {
-            runOnIdle { landscape = orientation; style = look; interaction.panel = PlayerPanel.ARTWORK }
+            runOnIdle { landscape = orientation; style = look; interaction.fullscreenLyrics = false; interaction.panel = PlayerPanel.ARTWORK }
             waitForIdle()
-            runOnIdle { assertFalse(interaction.fullscreenLyrics, "${look.name} opened fullscreen lyrics, landscape=$orientation") }
+            // Flamingo opens its own lyrics page in landscape. That page is requested, so only artwork-page states are checked.
+            runOnIdle {
+                if (interaction.panel == PlayerPanel.ARTWORK) assertFalse(interaction.fullscreenLyrics, "${look.name} opened fullscreen lyrics, landscape=$orientation")
+            }
         }
         // Inline lyrics are mounted on the artwork page while the switch stays off.
-        runOnIdle { landscape = false; style = PlayerDesignStyle.SIMPMUSIC; interaction.panel = PlayerPanel.ARTWORK }
+        runOnIdle { landscape = false; style = PlayerDesignStyle.SIMPMUSIC; interaction.fullscreenLyrics = false; interaction.panel = PlayerPanel.ARTWORK }
         waitForIdle()
         onNodeWithTag("compact-lyrics-owner-slot").assertExists()
         runOnIdle { assertFalse(interaction.fullscreenLyrics) }
