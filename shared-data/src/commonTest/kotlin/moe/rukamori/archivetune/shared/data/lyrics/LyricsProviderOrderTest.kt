@@ -27,10 +27,6 @@ class LyricsProviderOrderTest {
                 "SimpMusic",
                 "Unison",
                 "Paxsenix: Apple Music",
-                "Paxsenix: NetEase",
-                "Paxsenix: Spotify",
-                "Paxsenix: Musixmatch",
-                "Paxsenix: YouTube",
             ),
             LyricsProviderOrder.CANONICAL_NAMES,
         )
@@ -51,10 +47,6 @@ class LyricsProviderOrderTest {
                 SimpMusicLyricsProvider(client),
                 UnisonLyricsProvider(client),
                 PaxsenixAppleMusicLyricsProvider(client),
-                PaxsenixNeteaseLyricsProvider(client),
-                PaxsenixSpotifyLyricsProvider(client),
-                PaxsenixMusixmatchLyricsProvider(client),
-                PaxsenixYouTubeLyricsProvider(client),
         )
 
         assertEquals(LyricsProviderOrder.CANONICAL_NAMES, providers.map { it.name })
@@ -65,14 +57,13 @@ class LyricsProviderOrderTest {
         val client = client()
         val shuffled =
             listOf(
-                PaxsenixYouTubeLyricsProvider(client),
                 UnisonLyricsProvider(client),
                 LrcLibLyricsProvider(client),
                 BetterLyricsProvider(client),
             )
 
         assertEquals(
-            listOf("BetterLyrics", "LrcLib", "Unison", "Paxsenix: YouTube"),
+            listOf("BetterLyrics", "LrcLib", "Unison"),
             LyricsProviderOrder.sortCanonical(shuffled).map { it.name },
         )
     }

@@ -25,11 +25,7 @@ import moe.rukamori.archivetune.shared.data.lyrics.resolveLyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsRequest
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixAppleMusicLyricsProvider
-import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixMusixmatchLyricsProvider
-import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixNeteaseLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixSettings
-import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixSpotifyLyricsProvider
-import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixYouTubeLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.SimpMusicLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.UnisonLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.YouLyPlusLyricsProvider
@@ -320,10 +316,6 @@ fun sharedLyricsProviders(
         SimpMusicLyricsProvider(http),
         UnisonLyricsProvider(http),
         PaxsenixAppleMusicLyricsProvider(http, settings = paxsenix),
-        PaxsenixNeteaseLyricsProvider(http, paxsenix),
-        PaxsenixSpotifyLyricsProvider(http, paxsenix),
-        PaxsenixMusixmatchLyricsProvider(http, paxsenix),
-        PaxsenixYouTubeLyricsProvider(http, paxsenix),
         GeniusLyricsProvider(http),
     )
 }
@@ -331,6 +323,6 @@ fun sharedLyricsProviders(
 private val SHARED_PROVIDER_NAMES = setOf(
     "Lyprio", "lrc.red", "BiniLyrics", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib",
     "Kugou", "Megalobiz", "SimpMusic", "Unison",
-    "Paxsenix: Apple Music", "Paxsenix: NetEase", "Paxsenix: Spotify", "Paxsenix: Musixmatch", "Paxsenix: YouTube",
+    "Paxsenix: Apple Music",
     "Genius",
 )

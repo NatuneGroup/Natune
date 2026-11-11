@@ -35,7 +35,7 @@ class M6PreferencesTest {
     @Test fun providerOrderMigrationNormalizesDuplicatesAndMissingMembers() {
         val legacy = PreferenceSnapshot.of(LyricsProviderOrderKey to "LRCLIB,KUGOU,BETTER_LYRICS,KUGOU,UNKNOWN")
         val order = legacy.lyricsProviderOrder()
-        assertEquals(LyricsProviderPreference.BETTER_LYRICS, order.first())
+        assertEquals(LyricsProviderPreference.LRCLIB, order.first())
         assertEquals(LyricsProviderPreference.entries.size, order.distinct().size)
         assertEquals(LyricsProviderPreference.entries.toSet(), order.toSet())
         val editor = legacy.toEditor()

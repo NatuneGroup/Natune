@@ -12,6 +12,9 @@ import android.content.Context
 import android.util.Log
 import android.util.LruCache
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -19,6 +22,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
+import moe.rukamori.archivetune.constants.PaxsenixApiKeyKey
+import moe.rukamori.archivetune.constants.PaxsenixEndpointKey
 import moe.rukamori.archivetune.constants.PreferredLyricsProvider
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
@@ -27,6 +32,8 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FO
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.modules.ModuleLyricsProviders
 import moe.rukamori.archivetune.modules.PreferLyricsExtensionsKey
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixSettings
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.GlobalLog
 import moe.rukamori.archivetune.utils.isLocalMediaId
@@ -59,10 +66,6 @@ class LyricsHelper
                 UnisonLyricsProvider,
                 PaxsenixAppleMusicLyricsProvider,
                 AppleMusicAccountLyricsProvider,
-                PaxsenixNeteaseLyricsProvider,
-                PaxsenixSpotifyLyricsProvider,
-                PaxsenixMusixmatchLyricsProvider,
-                PaxsenixYouTubeLyricsProvider,
                 TidalLyricsProvider,
                 DeezerLyricsProvider,
                 YouTubeSubtitleLyricsProvider,
@@ -75,6 +78,24 @@ class LyricsHelper
         internal var providerOverrideForTests: List<LyricsProvider>? = null
         internal var networkAvailableForTests: Boolean? = null
         private val baseProviders: List<LyricsProvider> get() = providerOverrideForTests ?: defaultProviders
+
+        suspend fun checkPaxsenixEndpoints(): List<PaxsenixDiagnostics.PathCheck> {
+            val preferences = context.dataStore.data.first()
+            val client = HttpClient(OkHttp) {
+                install(HttpTimeout) { requestTimeoutMillis = 15_000 }
+            }
+            return try {
+                PaxsenixDiagnostics(
+                    client,
+                    PaxsenixSettings(
+                        baseUrl = preferences[PaxsenixEndpointKey].orEmpty(),
+                        bearerValue = preferences[PaxsenixApiKeyKey],
+                    ),
+                ).checkProviderPaths()
+            } finally {
+                client.close()
+            }
+        }
 
         private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
         private val singleLyricsCache = LruCache<String, LyricsResult>(MAX_CACHE_SIZE)
@@ -521,10 +542,6 @@ class LyricsHelper
                     PreferredLyricsProvider.SIMPMUSIC to SimpMusicLyricsProvider,
                     PreferredLyricsProvider.PAXSENIX_APPLE_MUSIC to PaxsenixAppleMusicLyricsProvider,
                     PreferredLyricsProvider.APPLE_MUSIC to AppleMusicAccountLyricsProvider,
-                    PreferredLyricsProvider.PAXSENIX_NETEASE to PaxsenixNeteaseLyricsProvider,
-                    PreferredLyricsProvider.PAXSENIX_SPOTIFY to PaxsenixSpotifyLyricsProvider,
-                    PreferredLyricsProvider.PAXSENIX_MUSIXMATCH to PaxsenixMusixmatchLyricsProvider,
-                    PreferredLyricsProvider.PAXSENIX_YOUTUBE to PaxsenixYouTubeLyricsProvider,
                     PreferredLyricsProvider.TIDAL to TidalLyricsProvider,
                     PreferredLyricsProvider.DEEZER to DeezerLyricsProvider,
                     PreferredLyricsProvider.UNISON to UnisonLyricsProvider,
