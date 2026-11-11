@@ -1,4 +1,5 @@
 [versions]
+jna = "5.17.0"
 onnxruntime = "1.28.0"
 agp = "9.2.1"
 annotation = "1.10.0"
@@ -153,6 +154,7 @@ dbusJava = "5.1.1"
 
 
 [libraries]
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }

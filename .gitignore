@@ -108,6 +108,8 @@ output-metadata.json
 core
 core.*
 !/core/
+!/native/core/
+!/shared-core/src/**/core/
 *.so
 *.bin
 /.trae
