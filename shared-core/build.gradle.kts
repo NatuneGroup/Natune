@@ -33,6 +33,12 @@ val retainedAndroidParser = tasks.register<Copy>("prepareRetainedAndroidTtmlTest
     from(rootProject.file("lyrics/betterlyrics/src/main/kotlin/moe/koiverse/rukamori/betterlyrics/TTMLParser.kt"))
     into(layout.buildDirectory.dir("generated/retained-android-test"))
 }
+val fixtureTestData = tasks.register<Exec>("generateTtmlFixtureTestData") {
+    inputs.files(rootProject.fileTree("native/core/fixtures"), rootProject.file("scripts/generate_ttml_test_data.py"))
+    outputs.dir(layout.buildDirectory.dir("generated/ttml-test-data"))
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "scripts/generate_ttml_test_data.py", layout.buildDirectory.dir("generated/ttml-test-data").get().asFile.absolutePath)
+}
 
 kotlin {
     jvmToolchain(21)
@@ -56,10 +62,14 @@ kotlin {
             }
         }
         commonTest {
-            if (nativeEnabled) kotlin.srcDir("src/enabledTest/kotlin")
+            if (nativeEnabled) {
+                kotlin.srcDir("src/enabledTest/kotlin")
+                kotlin.srcDir(fixtureTestData)
+            }
             dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
+            if (nativeEnabled) implementation(libs.kotlinx.serialization.json)
             }
         }
         if (nativeEnabled) {
@@ -94,6 +104,7 @@ kotlin {
 
 if (nativeEnabled) {
     tasks.matching { it.name == "compileTestKotlinJvm" }.configureEach { dependsOn(retainedAndroidParser) }
+    tasks.matching { it.name.startsWith("compileTest") && it.name.contains("Kotlin") }.configureEach { dependsOn(fixtureTestData) }
     tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(generateBindings) }
     tasks.matching { it.name == "jvmProcessResources" }.configureEach { dependsOn(jvmLibrary) }
     tasks.withType<Test>().configureEach {

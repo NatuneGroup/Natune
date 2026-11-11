@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use crate::reader::{Element, kotlin_space, regex_space};
+use crate::reader::{Element, ends_ignore_case, kotlin_space, regex_space};
 
 pub struct Timing {
     pub frame: f64,
@@ -9,13 +9,63 @@ pub fn at_least(value: f64, min: f64) -> f64 {
     if value < min { min } else { value }
 }
 fn number(raw: &str) -> Option<f64> {
-    raw.trim_matches(kotlin_space).parse().ok()
+    let raw = raw.trim_matches(|c: char| c <= ' ');
+    match raw {
+        "NaN" | "+NaN" | "-NaN" => return Some(f64::NAN),
+        "Infinity" | "+Infinity" => return Some(f64::INFINITY),
+        "-Infinity" => return Some(f64::NEG_INFINITY),
+        _ => (),
+    }
+    // Kotlin/JVM toDoubleOrNull accepts Java float suffixes and hexadecimal floats, but only
+    // case-sensitive NaN/Infinity. Rust's shorter inf/nan spellings would change odd-time rows.
+    let raw = raw.strip_suffix(['f', 'F', 'd', 'D']).unwrap_or(raw);
+    let (negative, unsigned) = if let Some(v) = raw.strip_prefix('-') {
+        (true, v)
+    } else {
+        (false, raw.strip_prefix('+').unwrap_or(raw))
+    };
+    if unsigned.eq_ignore_ascii_case("nan")
+        || unsigned.eq_ignore_ascii_case("inf")
+        || unsigned.eq_ignore_ascii_case("infinity")
+    {
+        return None;
+    }
+    if let Some(hex) = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    {
+        let (digits, exponent) = hex.split_once(['p', 'P'])?;
+        let exponent: i32 = exponent.parse().ok()?;
+        let mut value = 0.0;
+        let mut fractional = None;
+        let mut count = 0;
+        for c in digits.chars() {
+            if c == '.' {
+                if fractional.is_some() {
+                    return None;
+                }
+                fractional = Some(0);
+            } else {
+                value = value * 16.0 + f64::from(c.to_digit(16)?);
+                count += 1;
+                if let Some(ref mut n) = fractional {
+                    *n += 1;
+                }
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        let value = value * 2.0_f64.powi(exponent.saturating_sub(4 * fractional.unwrap_or(0)));
+        return Some(if negative { -value } else { value });
+    }
+    raw.parse().ok()
 }
 pub fn timing(root: &Element) -> Timing {
     let suffix = |s: &str| {
         root.attributes.iter().find_map(|(n, v)| {
             let v = v.trim_matches(kotlin_space);
-            (n.to_ascii_lowercase().ends_with(s) && !v.is_empty()).then_some(v)
+            (ends_ignore_case(n, s) && !v.is_empty()).then_some(v)
         })
     };
     let base = suffix("framerate").and_then(number).unwrap_or(30.0);

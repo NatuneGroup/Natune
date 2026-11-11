@@ -69,13 +69,17 @@ element count 100,000. DTD/entity declarations and non-predefined entities are
 refused. There is no external entity resolver. Intended departure from the
 future unified-model plan: first-slice times retain Kotlin Double arithmetic and
 millisecond truncation instead of prematurely quantizing to integer microseconds.
-No intended behavioral change from the shared Kotlin reader is accepted.
+One intentional refusal difference exists at the encoding boundary: unpaired
+UTF-16 surrogates are refused everywhere before UTF-8 lowering, including ignored
+comment/PI bodies that the retained Kotlin scanner does not validate. This avoids
+silently replacing malformed input with `?`; a JVM test covers both cases.
 
 `scripts/extract_ttml_fixtures.py` extracts literal inputs from retained Kotlin
 tests and adds lexical, Unicode, metadata and timing cases. Runtime huge/deep
 inputs and bounded mutation tests are generated without committing huge files.
 The JVM suite compares every field against the retained two-parse Kotlin API and
-checks the optimized one-parse Kotlin baseline separately. CI exports Kotlin
+checks the optimized one-parse Kotlin baseline separately. The same complete
+fixture/golden data is embedded for iOS simulator tests without platform file I/O. CI exports Kotlin
 goldens and tests those with the pure Rust crate; both sides share inputs and
 goldens. Word tolerances are ≤1 microsecond with identical millisecond truncation.
 The existing Kotlin suites remain unchanged and run in ordinary PR CI. The JVM
@@ -96,6 +100,20 @@ universal Debug APK delta; it does not claim per-device installed size or Releas
 R8 behavior. Platform results and measured numbers belong in the PR report until
 the CI evidence is available. No speed, APK, mobile load or memory result should
 be inferred from source code alone.
+
+Measured Linux x64 JVM example, CI run
+[43053862974](https://github.com/NatuneGroup/Natune/actions/runs/43053862974),
+head `5eaac4db8abc0103103c3820a973ecf9820a814d` (microseconds):
+
+| Synthetic TTML bytes | Kotlin one parse p50 / p95 | Rust including bridge p50 / p95 |
+| ---: | ---: | ---: |
+| 5,044 | 1,036 / 1,230 | 1,268 / 2,225 |
+| 51,214 | 2,016 / 5,582 | 2,322 / 4,260 |
+| 512,059 | 15,068 / 21,257 | 18,214 / 26,411 |
+
+Rust is slower at the median for every tested size on this runner. The ≥30% gain
+gate is not met, and the native flag remains off. These are timing samples, not
+CPU/allocation/PSS or mobile performance measurements; later CI runs may vary.
 
 ## Add the next slice
 

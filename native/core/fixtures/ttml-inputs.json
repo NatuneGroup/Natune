@@ -240,6 +240,21 @@
     "xml": "﻿<tt>\r\n<p begin=\"1s\">A\rB</p></tt>"
   },
   {
+    "id": "added/numeric-literals",
+    "raw": "<tt><p begin=\"inf\">inf</p><p begin=\"nan\">nan</p><p begin=\"+1.2f\">float</p><p begin=\"1d\">double</p><p begin=\"0x1.0p1\">hex</p><p begin=\"1e-3\">tiny</p><p begin=\"Infinity\">infinity</p><p begin=\"NaN\">NaN</p></tt>",
+    "xml": "<tt><p begin=\"inf\">inf</p><p begin=\"nan\">nan</p><p begin=\"+1.2f\">float</p><p begin=\"1d\">double</p><p begin=\"0x1.0p1\">hex</p><p begin=\"1e-3\">tiny</p><p begin=\"Infinity\">infinity</p><p begin=\"NaN\">NaN</p></tt>"
+  },
+  {
+    "id": "added/unicode-case-fold",
+    "raw": "<tt><p begin=\"1s\"><ſpan begin=\"1s\" end=\"2s\">A</ſpan></p><translation automatİcallyCreated=\"yeſ\"><text for=\"none\">B</text></translation></tt>",
+    "xml": "<tt><p begin=\"1s\"><ſpan begin=\"1s\" end=\"2s\">A</ſpan></p><translation automatİcallyCreated=\"yeſ\"><text for=\"none\">B</text></translation></tt>"
+  },
+  {
+    "id": "added/unicode-next-line",
+    "raw": "<tt><p begin=\"1s\">A</p></tt>",
+    "xml": "<tt><p begin=\"1s\">A</p></tt>"
+  },
+  {
     "id": "added/odd-timing",
     "raw": "<tt frameRate=\"30\" frameRateMultiplier=\"1000 1001\" tickRate=\"1000\"><p begin=\"00;00;01;15\" dur=\"500ms\"><span begin=\"0s\" dur=\"1000t\">A</span></p><p begin=\"1.234999\">B</p><p begin=\"bad\">C</p></tt>",
     "xml": "<tt frameRate=\"30\" frameRateMultiplier=\"1000 1001\" tickRate=\"1000\"><p begin=\"00;00;01;15\" dur=\"500ms\"><span begin=\"0s\" dur=\"1000t\">A</span></p><p begin=\"1.234999\">B</p><p begin=\"bad\">C</p></tt>"
@@ -268,6 +283,16 @@
     "id": "added/second-root",
     "raw": "<tt/><tt/>",
     "xml": "<tt/><tt/>"
+  },
+  {
+    "id": "added/bad-pi-name",
+    "raw": "<tt><p begin=\"0\">A</p><?0 invalid?></tt>",
+    "xml": "<tt><p begin=\"0\">A</p><?0 invalid?></tt>"
+  },
+  {
+    "id": "added/supplementary-name",
+    "raw": "<tt><𠀀:p begin=\"0\">A</𠀀:p></tt>",
+    "xml": "<tt><𠀀:p begin=\"0\">A</𠀀:p></tt>"
   },
   {
     "id": "added/bad-comment",

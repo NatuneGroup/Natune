@@ -21,7 +21,7 @@ fn kotlin_goldens_match_every_field() {
             support::snapshot(parse_ttml(case["xml"].as_str().unwrap(), || false).unwrap());
         if let Some(expected) = goldens.get(id) {
             compare(&actual, expected, id);
-        } else if std::env::var_os("TTML_REQUIRE_ALL_GOLDENS").is_some() {
+        } else {
             panic!("Missing Kotlin golden: {id}");
         }
     }

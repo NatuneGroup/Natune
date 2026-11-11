@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.core.bindings.CoreException
@@ -96,6 +97,13 @@ class TtmlBridgeTest {
         bodies.forEachIndexed { index, raw ->
             assertDocument(TtmlDocument(LyricsParser.parseTtml(raw), LyricsParser.parseTtmlCredits(raw)), reader.readTtml(raw), "generated-bound-$index")
         }
+        // Documented refusal difference: the retained scanner skips character validation in these
+        // ignored nodes. Native UTF-8 encoding must not silently replace ill-formed UTF-16.
+        for (ignored in listOf("<!--${'\uD800'}-->", "<?pi ${'\uD800'}?>")) {
+            val raw = "<tt><p begin=\"0\">A</p>$ignored</tt>"
+            assertEquals(1, LyricsParser.parseTtml(raw).size)
+            assertTrue(reader.readTtml(raw).lines.isEmpty())
+        }
     }
 
     @Test fun fullJvmPathTiming() = runBlocking {
@@ -158,26 +166,5 @@ class TtmlBridgeTest {
         }
     }
 
-    private fun snapshot(d: TtmlDocument): JsonObject = buildJsonObject {
-        put("credits", buildJsonObject {
-            put("songwriters", JsonArray(d.credits.songwriters.map(::JsonPrimitive)))
-            put("translationAutoCreated", d.credits.translationAutoCreated)
-            put("transliterationAutoCreated", d.credits.transliterationAutoCreated)
-        })
-        put("lines", buildJsonArray {
-            d.lines.forEach { line -> add(buildJsonObject {
-                put("time", line.time); put("text", line.text); put("agent", line.agent?.let(::JsonPrimitive) ?: JsonNull)
-                put("isInstrumental", line.isInstrumental); put("durationMs", line.durationMs)
-                put("providerRomanizedText", line.providerRomanizedText?.let(::JsonPrimitive) ?: JsonNull)
-                put("providerRomanizedLanguage", line.providerRomanizedLanguage?.let(::JsonPrimitive) ?: JsonNull)
-                put("providerTranslationText", line.providerTranslationText?.let(::JsonPrimitive) ?: JsonNull)
-                put("providerRomanizedWords", line.providerRomanizedWords?.let { JsonArray(it.map(::JsonPrimitive)) } ?: JsonNull)
-                put("words", line.words?.let { words -> buildJsonArray {
-                    words.forEach { word -> add(buildJsonObject {
-                        put("text", word.text); put("startTime", word.startTime); put("endTime", word.endTime); put("isBackground", word.isBackground)
-                    }) }
-                } } ?: JsonNull)
-            }) }
-        })
-    }
+    private fun snapshot(d: TtmlDocument): JsonObject = ttmlSnapshot(d)
 }
