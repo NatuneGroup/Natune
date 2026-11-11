@@ -35,7 +35,7 @@ class SharedPlayerAssetsTest(unittest.TestCase):
                 if asset.name == "reference_queue_lock_open.xml":
                     # Compose needs an explicit transparent fill for Android's stroke-only lock paths.
                     for path in original.iter("path"):
-                        path.set("{http://schemas.android.com/apk/res/android}fillColor", "#00000000")
+                        path.attrib.setdefault("{http://schemas.android.com/apk/res/android}fillColor", "#00000000")
                 self.assertEqual(vector_geometry(original), vector_geometry(ET.parse(asset).getroot()))
 
     def test_navigation_assets_keep_android_geometry(self):
