@@ -27,7 +27,7 @@ pub type Arena = Vec<Element>;
 
 impl Element {
     pub fn tag(&self, suffix: &str) -> bool {
-        self.name.to_ascii_lowercase().ends_with(suffix)
+        ends_ignore_case(&self.name, suffix)
     }
     pub fn attr(&self, name: &str) -> &str {
         self.attributes
@@ -41,15 +41,50 @@ impl Element {
             return Some(direct.to_owned());
         }
         self.attributes.iter().find_map(|(n, v)| {
-            let n = n.to_ascii_lowercase();
             let v = v.trim_matches(kotlin_space);
-            ((n == name || n.ends_with(&format!(":{name}"))) && !v.is_empty()).then(|| v.to_owned())
+            ((eq_ignore_case(n, name) || ends_ignore_case(n, &format!(":{name}"))) && !v.is_empty())
+                .then(|| v.to_owned())
         })
     }
 }
 
+fn case_char(a: char, b: char) -> bool {
+    if a.eq_ignore_ascii_case(&b) {
+        return true;
+    }
+    if a.is_ascii() && b.is_ascii() {
+        return false;
+    }
+    let upper = |c: char| {
+        let mut i = c.to_uppercase();
+        match (i.next(), i.next()) {
+            (Some(u), None) => u,
+            _ => c,
+        }
+    };
+    let lower = |c: char| {
+        if c == '\u{130}' {
+            'i'
+        } else {
+            c.to_lowercase().next().unwrap_or(c)
+        }
+    };
+    let (a, b) = (upper(a), upper(b));
+    a == b || lower(a) == lower(b)
+}
+pub fn ends_ignore_case(value: &str, suffix: &str) -> bool {
+    let mut chars = value.chars().rev();
+    suffix
+        .chars()
+        .rev()
+        .all(|c| chars.next().is_some_and(|v| case_char(v, c)))
+}
+pub fn eq_ignore_case(value: &str, other: &str) -> bool {
+    value.chars().count() == other.chars().count() && ends_ignore_case(value, other)
+}
+
 pub fn kotlin_space(c: char) -> bool {
-    c.is_whitespace() || c == '\u{1c}' || c == '\u{1d}' || c == '\u{1e}' || c == '\u{1f}'
+    (c.is_whitespace() && c != '\u{85}') || matches!(c, '\u{1c}'..='\u{1f}')
 }
 pub fn regex_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{b}' | '\u{c}')
@@ -60,10 +95,16 @@ fn valid(c: char) -> bool {
 }
 fn name_valid(name: &str) -> bool {
     let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_alphabetic() || c == '_' || c == ':')
-        && chars.all(|c| c.is_alphanumeric() || matches!(c, '-' | '.' | '_' | ':' | '\u{b7}'))
+    chars.next().is_some_and(name_start)
+        && chars.all(|c| {
+            c as u32 <= 0xffff
+                && (c.is_alphanumeric() || matches!(c, '-' | '.' | '_' | ':' | '\u{b7}'))
+        })
+}
+fn name_start(c: char) -> bool {
+    // The retained scanner reads names as Kotlin Char units, so a supplementary scalar is refused
+    // in a name even though it is preserved in lyric text and attribute values.
+    c as u32 <= 0xffff && (c.is_alphabetic() || c == '_' || c == ':')
 }
 fn reference(body: &str) -> Result<String, ReadError> {
     if body.len() + 1 > 32 {
@@ -227,7 +268,15 @@ pub fn read(xml: &str, cancelled: &impl Fn() -> bool) -> Result<Arena, ReadError
                 }
                 arena[parent].children.push(Node::CData(value.to_owned()));
             }
-            Event::Comment(_) | Event::PI(_) | Event::Decl(_) => {
+            Event::PI(pi) => {
+                if !pi.target().chars().next().is_some_and(name_start) {
+                    return Err(ReadError::Malformed);
+                }
+                if let Some(&parent) = stack.last() {
+                    arena[parent].children.push(Node::Boundary);
+                }
+            }
+            Event::Comment(_) | Event::Decl(_) => {
                 if let Some(&parent) = stack.last() {
                     arena[parent].children.push(Node::Boundary);
                 }

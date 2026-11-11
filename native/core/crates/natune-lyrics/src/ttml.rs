@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use crate::{
     Cancelled, Credits, Document, Line, Word,
-    reader::{self, Arena, Node, kotlin_space, regex_space},
+    reader::{self, Arena, Node, ends_ignore_case, eq_ignore_case, kotlin_space, regex_space},
     time::{self, Timing},
 };
 use std::collections::HashMap;
@@ -36,15 +36,11 @@ fn provided(raw: &str) -> Option<String> {
 fn auto(arena: &Arena, id: usize) -> bool {
     let flag = |id: usize| {
         arena[id].attributes.iter().any(|(n, v)| {
-            n.rsplit(':')
-                .next()
-                .unwrap_or(n)
-                .replace('-', "")
-                .eq_ignore_ascii_case("automaticallyCreated")
-                && matches!(
-                    v.trim_matches(kotlin_space).to_ascii_lowercase().as_str(),
-                    "true" | "1" | "yes"
-                )
+            let local = n.rsplit(':').next().unwrap_or(n).replace('-', "");
+            eq_ignore_case(&local, "automaticallyCreated")
+                && ["true", "1", "yes"]
+                    .iter()
+                    .any(|truth| eq_ignore_case(v.trim_matches(kotlin_space), truth))
         })
     };
     flag(id) || (id + 1..arena[id].subtree_end).any(|c| arena[c].tag("text") && flag(c))
@@ -191,7 +187,7 @@ pub fn document(arena: &Arena, cancelled: &impl Fn() -> bool) -> Result<Document
         } else {
             e.attributes
                 .iter()
-                .find(|(n, _)| n.to_ascii_lowercase().ends_with("agent"))
+                .find(|(n, _)| ends_ignore_case(n, "agent"))
                 .map_or("", |(_, v)| v)
         };
         let mut ids = Vec::new();
