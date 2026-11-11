@@ -60,7 +60,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import android.content.Intent
@@ -167,7 +166,7 @@ import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.InlineLyricLinesPerPage
 import moe.rukamori.archivetune.ui.player.InlineLyricTimedWord
-import moe.rukamori.archivetune.ui.player.LosslessOrStats
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.ui.player.inlineLyricChunkIndexAt
 import moe.rukamori.archivetune.ui.player.inlineLyricChunkText
 import moe.rukamori.archivetune.ui.player.inlineLyricChunkWordText
@@ -980,7 +979,7 @@ private fun SimpMusicProgressRow(
             }
             // SimpMusic keeps this middle slot for its "Crossfading" shimmer. ArchiveTune knows
             // what it is actually streaming, so the slot carries that instead of sitting empty.
-            if (LocalPlayerPresentation.current.showCodec) LosslessOrStats(format = currentFormat)
+            StreamQualityBadge(format = currentFormat)
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.End,

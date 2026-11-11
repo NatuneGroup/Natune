@@ -71,9 +71,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.autoRateDisplay
 import moe.rukamori.archivetune.db.entities.containerLabel
-import moe.rukamori.archivetune.db.entities.formattedBitrate
 import moe.rukamori.archivetune.db.entities.formattedFileSize
-import moe.rukamori.archivetune.db.entities.formattedSampleRate
 import moe.rukamori.archivetune.models.ActiveOutputDevice
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.ActionPromptDialog
@@ -192,8 +190,6 @@ fun CodecInfoRow(
  */
 @Composable
 fun QueueCollapsedContentV2(
-    showCodecOnPlayer: Boolean,
-    currentFormat: FormatEntity?,
     textBackgroundColor: Color,
     textButtonColor: Color,
     iconButtonColor: Color,
@@ -216,37 +212,6 @@ fun QueueCollapsedContentV2(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        if (showCodecOnPlayer && currentFormat != null) {
-            val codec =
-                currentFormat.codecs
-                    .takeIf { it.isNotBlank() }
-                    ?: currentFormat.containerLabel()
-
-            val container = currentFormat.containerLabel()
-
-            val codecLabel =
-                if (container.isNotBlank() && !codec.equals(container, ignoreCase = true)) {
-                    "$codec ($container)"
-                } else {
-                    codec
-                }
-
-            val bitrate = currentFormat.formattedBitrate()
-
-            val extraText =
-                listOfNotNull(
-                    currentFormat.formattedSampleRate(),
-                    currentFormat.formattedFileSize().takeIf { it.isNotBlank() },
-                ).joinToString(separator = " • ")
-
-            CodecInfoRow(
-                codec = codecLabel,
-                bitrate = bitrate,
-                fileSize = extraText,
-                textColor = textBackgroundColor.copy(alpha = 0.7f),
-            )
-        }
-
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -426,8 +391,6 @@ fun QueueCollapsedContentV2(
  */
 @Composable
 fun QueueCollapsedContentV3(
-    showCodecOnPlayer: Boolean,
-    currentFormat: FormatEntity?,
     textBackgroundColor: Color,
     sleepTimerEnabled: Boolean,
     sleepTimerTimeLeft: Long,
@@ -441,18 +404,6 @@ fun QueueCollapsedContentV3(
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     Column(modifier = modifier.fillMaxWidth()) {
-        if (showCodecOnPlayer && currentFormat != null) {
-            val container = currentFormat.containerLabel()
-            val bitrate = currentFormat.autoRateDisplay()
-
-            CodecInfoRow(
-                codec = container,
-                bitrate = bitrate,
-                fileSize = "",
-                textColor = textBackgroundColor.copy(alpha = 0.5f),
-            )
-        }
-
         Row(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
@@ -574,8 +525,6 @@ fun QueueCollapsedContentV3(
  */
 @Composable
 fun QueueCollapsedContentV1(
-    showCodecOnPlayer: Boolean,
-    currentFormat: FormatEntity?,
     textBackgroundColor: Color,
     sleepTimerEnabled: Boolean,
     sleepTimerTimeLeft: Long,
@@ -585,19 +534,6 @@ fun QueueCollapsedContentV1(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        if (showCodecOnPlayer && currentFormat != null) {
-            val container = currentFormat.containerLabel()
-            val bitrate = currentFormat.autoRateDisplay()
-            val fileSize = currentFormat.formattedFileSize()
-
-            CodecInfoRow(
-                codec = container,
-                bitrate = bitrate,
-                fileSize = fileSize,
-                textColor = textBackgroundColor.copy(alpha = 0.7f),
-            )
-        }
-
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -718,8 +654,6 @@ fun QueueCollapsedContentV1(
  */
 @Composable
 fun QueueCollapsedContentV4(
-    showCodecOnPlayer: Boolean,
-    currentFormat: FormatEntity?,
     textBackgroundColor: Color,
     textButtonColor: Color,
     iconButtonColor: Color,
@@ -732,19 +666,6 @@ fun QueueCollapsedContentV4(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        if (showCodecOnPlayer && currentFormat != null) {
-            val container = currentFormat.containerLabel()
-            val bitrate = currentFormat.autoRateDisplay()
-            val fileSize = currentFormat.formattedFileSize()
-
-            CodecInfoRow(
-                codec = container,
-                bitrate = bitrate,
-                fileSize = fileSize,
-                textColor = textBackgroundColor.copy(alpha = 0.6f),
-            )
-        }
-
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -874,8 +795,6 @@ fun QueueCollapsedContentV4(
 
 @Composable
 fun QueueCollapsedContentV7(
-    showCodecOnPlayer: Boolean,
-    currentFormat: FormatEntity?,
     textBackgroundColor: Color,
     sleepTimerEnabled: Boolean,
     sleepTimerTimeLeft: Long,
@@ -887,19 +806,6 @@ fun QueueCollapsedContentV7(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        if (showCodecOnPlayer && currentFormat != null) {
-            val container = currentFormat.containerLabel()
-            val bitrate = currentFormat.autoRateDisplay()
-            val fileSize = currentFormat.formattedFileSize()
-
-            CodecInfoRow(
-                codec = container,
-                bitrate = bitrate,
-                fileSize = fileSize,
-                textColor = textBackgroundColor.copy(alpha = 0.6f),
-            )
-        }
-
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,

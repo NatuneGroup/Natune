@@ -38,7 +38,6 @@ data class ImmersivePlayerUiModel(
     val canSkipPrevious: Boolean,
     val canSkipNext: Boolean,
     val isLiked: Boolean,
-    val formatDetails: String,
     /** The shared stream classification behind the on-screen quality badge. */
     val streamQuality: StreamQuality? = null,
     val outputDevice: ActiveOutputDevice,

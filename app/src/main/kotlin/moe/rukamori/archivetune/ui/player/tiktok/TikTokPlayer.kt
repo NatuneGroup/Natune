@@ -170,6 +170,7 @@ fun TikTokPlayerContent(
     val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
     val queueTitle by playerConnection.queueTitle.collectAsStateWithLifecycle(initialValue = null)
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
 
     val pagerState =
         rememberPagerState(
@@ -599,6 +600,7 @@ fun TikTokPlayerContent(
             TikTokBottomChrome(
                 displayPositionMs = displayPositionMs,
                 durationMs = duration,
+                format = currentFormat,
                 onSeek = onSeek,
                 onSeekFinished = onSeekFinished,
             )

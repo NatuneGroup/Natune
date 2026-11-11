@@ -182,7 +182,6 @@ import moe.rukamori.archivetune.constants.presentsHiddenSleeve
 import moe.rukamori.archivetune.constants.presentsSleeveRadius
 import moe.rukamori.archivetune.constants.PoTokenGvsKey
 import moe.rukamori.archivetune.constants.PoTokenPlayerKey
-import moe.rukamori.archivetune.constants.QueuePeekHeight
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.constants.SliderStyleKey
@@ -867,19 +866,7 @@ fun BottomSheetPlayer(
     }
 
     val dynamicQueuePeekHeight =
-        // V5 is named on its own because it hides the peek without painting a backdrop of its own —
-        // it is the one style here that is not simply "has a custom backdrop".
-        if (playerDesignStyle == PlayerDesignStyle.V5 || playerDesignStyle.hasCustomBackdrop) {
-            0.dp
-        } else if (playerDesignStyle == PlayerDesignStyle.V9) {
-            88.dp +
-                (if (showCodecOnPlayer) 24.dp else 0.dp) +
-                (if (sleepTimerEnabled) 42.dp else 0.dp)
-        } else if (showCodecOnPlayer) {
-            88.dp
-        } else {
-            QueuePeekHeight
-        }
+        queuePeekHeight(playerDesignStyle, showCodecOnPlayer, sleepTimerEnabled)
 
     val systemBarsBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
 
@@ -1489,7 +1476,7 @@ fun BottomSheetPlayer(
                 context = context,
                 onSliderValueChange = onSliderValueChange,
                 onSliderValueChangeFinished = onSliderValueChangeFinished,
-                currentFormat = if (playerDesignStyle == PlayerDesignStyle.V7) currentFormat else null,
+                currentFormat = currentFormat,
             )
         }
 
