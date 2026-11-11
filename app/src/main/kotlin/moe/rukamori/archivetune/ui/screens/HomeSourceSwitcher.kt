@@ -15,6 +15,7 @@
 
 package moe.rukamori.archivetune.ui.screens
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,10 +28,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.spotify.rememberSpotifyMetadataExtensionEnabled
 import moe.rukamori.archivetune.spotify.spotifyMetadataExtensionEnabled
@@ -40,8 +45,9 @@ import moe.rukamori.archivetune.constants.HomeSourceKey
 import moe.rukamori.archivetune.constants.QqMusicMusickeyKey
 import moe.rukamori.archivetune.constants.QqMusicUinKey
 import moe.rukamori.archivetune.constants.SpotifySpDcKey
+import moe.rukamori.archivetune.ui.component.GlassPopupMenu
+import moe.rukamori.archivetune.ui.component.GlassPopupMenuItem
 import moe.rukamori.archivetune.ui.component.PreferenceMultiSelectBottomSheet
-import moe.rukamori.archivetune.ui.component.PreferenceSelectionBottomSheet
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
@@ -186,79 +192,79 @@ fun HomeSourceToggleButton(
     val dataStore = LocalContext.current.dataStore
 
     var source by rememberEnumPreference(HomeSourceKey, defaultValue = HomeSource.YOUTUBE)
-    var switcherOpen by remember { mutableStateOf(false) }
-
-    if (switcherOpen) {
-        HomeSourceSwitcherSheet(
-            active = actives,
-            current = if (source in actives) source else actives.first(),
-            onSelect = {
-                source = it
-                switcherOpen = false
-            },
-            onDismiss = { switcherOpen = false },
-        )
-    }
-
     val showsMenu = actives.size > 2
+    // Keyed on showsMenu, so a menu still open when the page count drops to two does not reopen later.
+    var switcherOpen by remember(showsMenu) { mutableStateOf(false) }
+    var anchorInRoot by remember { mutableStateOf(IntRect(0, 0, 0, 0)) }
     val target = if (showsMenu) source.takeIf { it in actives } ?: actives.first() else homeSwitchTarget(source, actives)
 
-    IconButton(
-        onClick = {
-            when {
-                showsMenu -> switcherOpen = true
-                !target.isAvailable(spotifyAvailable, qqAvailable) -> onOpenSpotifySettings()
-                else -> PreferenceStore.launchEdit(dataStore) {
-                    if (target !in actives) {
-                        this[ActiveHomeSourcesKey] = canonicalHomeSources(
-                            parseHomeSources(this[ActiveHomeSourcesKey].orEmpty()) + actives + target + HomeSource.YOUTUBE,
-                        ).joinToString(",") { it.name }
+    // The menu lives inside this box, so it hangs from the button's own bounds rather than the top bar's.
+    Box(
+        modifier =
+            modifier.onGloballyPositioned { coordinates ->
+                val topLeft = coordinates.positionInRoot()
+                anchorInRoot =
+                    IntRect(
+                        left = topLeft.x.roundToInt(),
+                        top = topLeft.y.roundToInt(),
+                        right = (topLeft.x + coordinates.size.width).roundToInt(),
+                        bottom = (topLeft.y + coordinates.size.height).roundToInt(),
+                    )
+            },
+    ) {
+        IconButton(
+            onClick = {
+                when {
+                    showsMenu -> switcherOpen = true
+                    !target.isAvailable(spotifyAvailable, qqAvailable) -> onOpenSpotifySettings()
+                    else -> PreferenceStore.launchEdit(dataStore) {
+                        if (target !in actives) {
+                            this[ActiveHomeSourcesKey] = canonicalHomeSources(
+                                parseHomeSources(this[ActiveHomeSourcesKey].orEmpty()) + actives + target + HomeSource.YOUTUBE,
+                            ).joinToString(",") { it.name }
+                        }
+                        this[HomeSourceKey] = target.name
                     }
-                    this[HomeSourceKey] = target.name
+                }
+            },
+        ) {
+            Icon(
+                painter = painterResource(target.iconResId()),
+                contentDescription =
+                    if (showsMenu) {
+                        stringResource(R.string.home_screens)
+                    } else if (!target.isAvailable(spotifyAvailable, qqAvailable)) {
+                        stringResource(R.string.home_connect_spotify)
+                    } else {
+                        stringResource(R.string.home_source_switch_to, stringResource(target.labelResId()))
+                    },
+                // Sized explicitly: spotify_icon is a 1438x1425 PNG, and an Icon with no size
+                // constraint draws its painter at intrinsic size — roughly 520dp.
+                modifier = Modifier.size(ToggleIconSize),
+            )
+        }
+        if (showsMenu) {
+            GlassPopupMenu(
+                expanded = switcherOpen,
+                onDismissRequest = { switcherOpen = false },
+                anchor = anchorInRoot,
+                title = stringResource(R.string.home_screens),
+            ) {
+                val current = if (source in actives) source else actives.first()
+                actives.forEach { option ->
+                    GlassPopupMenuItem(
+                        text = stringResource(option.labelResId()),
+                        icon = painterResource(option.iconResId()),
+                        selected = option == current,
+                        onClick = {
+                            source = option
+                            switcherOpen = false
+                        },
+                    )
                 }
             }
-        },
-        modifier = modifier,
-    ) {
-        Icon(
-            painter = painterResource(target.iconResId()),
-            contentDescription =
-                if (showsMenu) {
-                    stringResource(R.string.home_screens)
-                } else if (!target.isAvailable(spotifyAvailable, qqAvailable)) {
-                    stringResource(R.string.home_connect_spotify)
-                } else {
-                    stringResource(R.string.home_source_switch_to, stringResource(target.labelResId()))
-                },
-            // Sized explicitly: spotify_icon is a 1438x1425 PNG, and an Icon with no size
-            // constraint draws its painter at intrinsic size — roughly 520dp.
-            modifier = Modifier.size(ToggleIconSize),
-        )
+        }
     }
-}
-
-/**
- * The page switcher, drawn in the app's own selection sheet — the same one the settings rows use for
- * a single choice — so picking a Home page reads like every other picker in the app.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HomeSourceSwitcherSheet(
-    active: List<HomeSource>,
-    current: HomeSource,
-    onSelect: (HomeSource) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    PreferenceSelectionBottomSheet(
-        title = { Text(stringResource(R.string.home_screens)) },
-        values = active,
-        selectedValue = current,
-        valueText = { stringResource(it.labelResId()) },
-        sheetState = sheetState,
-        onDismiss = onDismiss,
-        onValueSelected = onSelect,
-    )
 }
 
 /**
