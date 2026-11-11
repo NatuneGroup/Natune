@@ -507,7 +507,7 @@
     <string name="restore_corrupted">O arquivo de backup parece estar corrompido e não pôde ser lido.</string>
     <string name="restore_file_not_found">Não foi possível abrir o arquivo selecionado.</string>
     <string name="restore_select_backup">Selecione um arquivo de backup para restaurar.</string>
-    <string name="backup_create_backup_desc">Exporte biblioteca, configurações e detalhes da conta.</string>
+    <string name="backup_create_backup_desc">Exporte biblioteca e configurações.</string>
     <string name="import_m3u_format">Playlist de áudio M3U</string>
     <string name="import_csv_format">Arquivo de playlist CSV</string>
     <string name="spotify_connect">Conectar Spotify</string>

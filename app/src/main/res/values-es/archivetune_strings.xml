@@ -502,7 +502,7 @@
     <string name="year_in_music_top_pick">Selección principal</string>
     <string name="year_in_music_current_card">Tarjeta compartida</string>
     <string name="internal_service">Servicios internos</string>
-    <string name="backup_create_backup_desc">Exportar la biblioteca, la configuración y los detalles de la cuenta.</string>
+    <string name="backup_create_backup_desc">Exportar la biblioteca y la configuración.</string>
     <string name="import_m3u_format">Lista de reproducción de audio M3U</string>
     <string name="import_csv_format">Lista de reproducción de audio cSV</string>
     <string name="spotify_connect">Conectar Spotify</string>
