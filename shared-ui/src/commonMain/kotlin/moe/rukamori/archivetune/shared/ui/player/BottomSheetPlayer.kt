@@ -192,7 +192,8 @@ internal fun PlayerSidePanel(c: PlayerRenderContext,modifier: Modifier) {
         CompositionLocalProvider(moe.rukamori.archivetune.shared.ui.queue.LocalPhoneQueuePlayerActions provides
             moe.rukamori.archivetune.shared.ui.queue.PhoneQueuePlayerActions(c.state.displayedOccurrenceId, c.state.liked,
                 if (PlayerAction.LIKE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.LIKE) } } else null,
-                if (PlayerAction.MORE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.MORE) } } else null)) {
+                if (PlayerAction.MORE in c.state.actionSupport) { { c.actions.onAction(PlayerAction.MORE) } } else null,
+                onClose = { c.interaction.panel = PlayerPanel.ARTWORK })) {
             c.slots.queue(modifier)
         }
         return
