@@ -1,36 +1,34 @@
 # Natune UI render audit
 
-Parity is not established. Desktop Skia was rendered at 1440×900 px (density 1) and 1179×2556 px (393×852 dp, density 3). The latter is an **iOS-viewport proxy, not an iOS render**. Its injected safe areas are 59 dp top / 34 dp bottom. All test data is fake. Native iOS CI and this PR's Android QA evidence are pending.
+Full pixel and behavior parity is not established. The render harness uses fake data. Native iOS captures are Skia frames with injected safe areas, not UIKit window or simulator screenshots. Linux Skia captures at 393 × 852 dp are viewport proxies and do not validate iOS fonts, gestures, or lifecycle.
 
-Android artifact `emulator-qa-42864459284` (head d1739b2439bfdbcd860f2422fbc36f235d6e92d7) is a real API 36 emulator. Home is obstructed by an update dialog and Search still shows Home; those files are rejected as screen evidence. The older `android/` directory holds 1920×1080 landscape captures with unmatched content/theme and is only a historical reference.
+## Published evidence
 
-| screen | platform | evidence path or CI artifact | dimension compared | discrepancy | severity | fixed (yes/no + commit) | not verified because |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| home | Android | android-ci-42864459284/03-home.png | layout / controls | Obstructed or wrong route; capture rejected | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| home | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/home.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| home | desktop | /data/workspace/outputs/ui-renders/after/desktop/home.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| player | Android | Historical landscape reference only | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| player | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/player.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| player | desktop | /data/workspace/outputs/ui-renders/after/desktop/player.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| mini-player | Android | Historical landscape reference only | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| mini-player | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/mini-player.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| mini-player | desktop | /data/workspace/outputs/ui-renders/after/desktop/mini-player.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| queue | Android | Historical landscape reference only | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| queue | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/queue.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| queue | desktop | /data/workspace/outputs/ui-renders/after/desktop/queue.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| settings | Android | android-ci-42864459284/06-settings.png | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| settings | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/settings.png | layout / spacing / controls / typography / insets | Initial Settings scroll jumped to Storage | medium | yes — a0391d54 | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| settings | desktop | /data/workspace/outputs/ui-renders/after/desktop/settings.png | layout / spacing / controls / typography / insets | Initial Settings scroll jumped to Storage | medium | yes — a0391d54 | Real desktop window launch pending |
-| lyrics | Android | Historical landscape reference only | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| lyrics | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/lyrics.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| lyrics | desktop | /data/workspace/outputs/ui-renders/after/desktop/lyrics.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| search | Android | android-ci-42864459284/04-search.png | layout / controls | Obstructed or wrong route; capture rejected | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| search | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/search.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| search | desktop | /data/workspace/outputs/ui-renders/after/desktop/search.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
-| library | Android | android-ci-42864459284/05-library.png | layout / controls | Pending fresh offline capture | evidence gap | no | Fresh CI run pending; loaded fake content is not matched |
-| library | iOS-viewport proxy, not an iOS render | /data/workspace/outputs/ui-renders/after/ios-viewport-proxy/library.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | UIKit safe areas, CoreText fonts and Cupertino gestures require native evidence |
-| library | desktop | /data/workspace/outputs/ui-renders/after/desktop/library.png | layout / spacing / controls / typography / insets | Detailed Android comparison pending fresh capture | evidence gap | no | Real desktop window launch pending |
+| Platform | CI evidence | Scope and limits |
+| --- | --- | --- |
+| Native iOS Skia | [Run 42949329927](https://github.com/NatuneGroup/Natune/actions/runs/42949329927), head `2008b225`, 30 PNGs | Covers player styles, queue, fullscreen lyrics, settings, and shell scenes. Predates the SimpMusic portrait-fit and Cinematic collapse fixes. `home.png` / `mini-player.png` and `player.png` / `player-style-V4.png` are duplicate scene pairs. |
+| Android emulator | [Run 42880704145](https://github.com/NatuneGroup/Natune/actions/runs/42880704145), head `3b6fefad` | Offline API 36 QA. Home, Search, and Library contain empty or error states. Style captures show Appearance settings rather than the player, so they cannot validate SimpMusic or Cinematic player layouts. The viewport predates the alignment change. |
 
-Confirmed fix: `SettingsPage` now ignores absent/blank `scrollTo` anchors. Before: `/data/workspace/outputs/ui-renders/before/settings/ios-viewport-proxy/settings.png`; after: `/data/workspace/outputs/ui-renders/after/ios-viewport-proxy/settings.png`. The regression and four existing Settings back tests pass.
+Download available artifacts from the linked runs. These captures document their recorded revisions; they are not visual verification of subsequent changes. Intermediate desktop proxy PNGs have been removed because their controls and layout differ from the current implementation.
 
-The inherited removal of 🔥 was reverted: Android defines it and this Linux host has no emoji fallback font. No iOS missing-glyph conclusion is inferred from Linux.
+## Implemented fixes and coverage
+
+| Area | Result | Verification |
+| --- | --- | --- |
+| Settings | Missing or blank search anchors start at the first group, with Account and Appearance visible. | `SettingsBackTest`; phone heading and description tests. |
+| Cinematic phone player | The portrait header has a visible, labelled collapse button that dispatches `COLLAPSE`. Other orientations retain the shared close control. | `CinematicPhoneControlsTest` checks dismissal and every saved style in both orientations. |
+| Phone sheet | A labelled accessibility collapse action dismisses the player. Derived visibility keeps root chrome and player-slot owners stable during intermediate animation frames. | `PhonePlayerSheetTest` checks accessibility dismissal, animation visibility observations, and vertical drag behavior. |
+| Fullscreen lyrics | The visible lyrics surface retains optical motion, including MOVING_BLUR drift, lossless shimmer, and transport tap feedback. | `FullscreenLyricsChromeTest` advances the Compose clock and checks artwork movement and the animations-disabled stop. |
+| SimpMusic | The square phone sleeve yields height to keep transport and footer controls visible, with one shared collapse control. | `SimpMusicPortraitFitTest` checks 393 × 852 and 360 × 640 viewports, including injected iOS safe areas. |
+| Queue, mini player, and stream quality | Phone queue chrome and dismissal, the raised mini card, and centred shared quality badges are implemented. | Queue, mini-player, and quality-badge Compose suites; historical captures in the linked runs. |
+
+The [UI gap inventory](ios-android-ui-gap.md) records remaining platform differences. CI on [PR #118](https://github.com/NatuneGroup/Natune/pull/118) compiles Android, desktop, and iOS and runs app and shared tests. The native render audit remains opt-in through the `render_audit` input of the iOS compile workflow.
+
+## Unverified
+
+- Fresh native renders of the SimpMusic and Cinematic fixes.
+- UIKit safe areas, accessibility interaction on a device, gestures, lifecycle, and Dynamic Type.
+- Loaded Android and iOS screens with matched data, artwork, palettes, and viewports.
+- Complete pixel comparisons of player styles, queue chrome, lyrics glyphs, mini cards, and settings font weights.
+
+The home fire emoji follows the Android source reference. Linux proxy font coverage does not establish native iOS glyph availability.

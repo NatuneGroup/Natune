@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -14,6 +17,47 @@ import kotlin.test.*
 
 @OptIn(ExperimentalTestApi::class)
 class FullscreenLyricsChromeTest {
+    @Test fun movingBlurDriftsInFullscreenLyricsAndStopsWhenAnimationsAreDisabled() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        val interaction = PlayerInteractionState()
+        val actions = PlayerTestActions()
+        var disabled by mutableStateOf(false)
+        lateinit var artworkCoordinates: LayoutCoordinates
+        val fixtureSlots = playerSlots(PlayerLyricsStatus("track@1", false))
+        val slots = PlayerSlots(
+            artwork = { id, modifier ->
+                fixtureSlots.artwork(id, modifier.onGloballyPositioned { artworkCoordinates = it })
+            },
+            canvas = fixtureSlots.canvas, customBackground = fixtureSlots.customBackground,
+            lyrics = fixtureSlots.lyrics, compactLyrics = fixtureSlots.compactLyrics, queue = fixtureSlots.queue,
+            lyricsStatus = fixtureSlots.lyricsStatus,
+        )
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(393.dp, 740.dp)) {
+                    BottomSheetPlayer(playerFixture().copy(reducedMotion = false), actions.callbacks,
+                        PreferenceSnapshot.of(LyricsBackgroundStyleKey to "MOVING_BLUR", DisableAnimationsKey to disabled),
+                        slots, true, interaction = interaction)
+                }
+            }
+        }
+        runOnIdle { interaction.panel = PlayerPanel.LYRICS; interaction.fullscreenLyrics = true }
+        mainClock.advanceTimeBy(32)
+        onNodeWithTag("lyrics-background-MOVING_BLUR").assertIsDisplayed()
+        val initial = runOnIdle { artworkCoordinates.localToRoot(Offset.Zero) }
+        mainClock.advanceTimeBy(1000)
+        waitForIdle()
+        val moved = runOnIdle { artworkCoordinates.localToRoot(Offset.Zero) }
+        assertNotEquals(initial, moved, "The fullscreen lyrics artwork must drift while motion is enabled")
+        runOnIdle { disabled = true }
+        mainClock.advanceTimeByFrame()
+        waitForIdle()
+        val stopped = runOnIdle { artworkCoordinates.localToRoot(Offset.Zero) }
+        mainClock.advanceTimeBy(1000)
+        waitForIdle()
+        assertEquals(stopped, runOnIdle { artworkCoordinates.localToRoot(Offset.Zero) })
+    }
+
     @Test fun controlsDispatchAndSavedLooksKeepTheirLyricsOwner() = runComposeUiTest {
         val callbacks = PlayerTestActions()
         val interaction = PlayerInteractionState().apply { fullscreenLyrics = true; panel = PlayerPanel.LYRICS }

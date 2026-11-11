@@ -94,9 +94,9 @@ fun BottomSheetPlayer(
             visible=surfaces.background || interaction.fullscreenLyrics && state.active)
         val handoff=rememberPlayerHandoff(state,optical.motion && motionLevel.moves)
         val content=slots(preferences,surfaces).withHandoff(handoff).withTrackMotion(motionLevel.takeIf { surfaces.artwork } ?: PlayerMotionLevel.None)
-        // The fullscreen lyrics backdrop keeps its optical motion, but the player's own controls are occluded there.
+        // The visible surface, including fullscreen lyrics chrome and backdrop, shares the optical motion policy.
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,styleLandscape,artworkPager,optical,
-            LocalSystemReducedMotion.current, motionLevel.takeIf { optical.motion && surfaces.background } ?: PlayerMotionLevel.None)
+            LocalSystemReducedMotion.current, motionLevel.takeIf { optical.motion } ?: PlayerMotionLevel.None)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)
         DisposableEffect(showingLyrics) {
@@ -177,14 +177,14 @@ fun BottomSheetPlayer(
                             }
                         }
                     }
-                    // Every phone/tablet style shares this hit target above artwork and panels.
+                    // Cinematic artwork and the phone queue own their header controls; other surfaces share this one.
                     // iOS has no hardware back button; its Compose root is not a UIKit navigation stack.
                     if (!desktop && !interaction.fullscreenLyrics &&
                         !(phonePresentation && !landscape && (interaction.panel == PlayerPanel.QUEUE ||
                             presentation.style == PlayerDesignStyle.V4 && interaction.panel == PlayerPanel.ARTWORK))) {
                         PlayerIcon(
                             if (moe.rukamori.archivetune.shared.ui.host.LocalAndroidPhonePresentation.current) PlayerSymbol.DOWN else PlayerSymbol.BACK,
-                            stringResource(Res.string.m5_back),
+                            stringResource(if (phonePresentation) Res.string.m5_collapse else Res.string.m5_back),
                             { actions.onAction(PlayerAction.COLLAPSE) },
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
                                 .testTag("player-close"),
