@@ -38,7 +38,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -68,7 +67,6 @@ import androidx.compose.material3.ripple
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -1078,9 +1076,6 @@ fun AppleMusicPlayerContent(
                             onSliderValueChange = onSliderValueChange,
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             currentFormat = currentFormat,
-                            onQualityChipClick = {
-                                bottomSheetPageState.show { ShowMediaInfo(mediaMetadata.id) }
-                            },
                             // The title lives in the left half's own block in landscape; this
                             // flag and that block land together or the title renders twice.
                             showTitleRow = false,
@@ -1349,9 +1344,6 @@ fun AppleMusicPlayerContent(
                         onSliderValueChange = onSliderValueChange,
                         onSliderValueChangeFinished = onSliderValueChangeFinished,
                         currentFormat = currentFormat,
-                        onQualityChipClick = {
-                            bottomSheetPageState.show { ShowMediaInfo(mediaMetadata.id) }
-                        },
                         showTitleRow = !morphOpen,
                         isQueueActive = queueOpen,
                         isLyricsActive = lyricsOpen,
@@ -1638,12 +1630,8 @@ private fun AppleMusicControlsColumn(
     onLyricsClick: () -> Unit,
     onSliderValueChange: (Long) -> Unit,
     onSliderValueChangeFinished: () -> Unit,
-    // Stream format for the quality chip. Null = no chip rendered.
+    // Stream format for the quality badge. Null = no badge rendered.
     currentFormat: FormatEntity?,
-    // Clicked when the user taps the quality chip — opens the song-detail
-    // bottom sheet (ShowMediaInfo), mirroring how tapping the title/artist
-    // in Apple Music's stock UI opens the song info page.
-    onQualityChipClick: () -> Unit,
     // When false, the title/artist row is hidden — used in QUEUE/LYRICS state
     // where the title lives in the mini header above.
     showTitleRow: Boolean = true,
@@ -1791,8 +1779,8 @@ private fun AppleMusicControlsColumn(
         )
         Spacer(Modifier.height(6.dp))
         // Mirror the Immersive V8 layout: elapsed time on the left, quality
-        // chip (Lossless / AAC / OPUS) centered, -remaining on the right.
-        // The chip is tappable and opens the song-detail bottom sheet.
+        // badge (Lossless / AAC / OPUS) centered, -remaining on the right.
+        // The badge is tappable and opens the song-detail bottom sheet.
         Box(Modifier.fillMaxWidth()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1804,13 +1792,7 @@ private fun AppleMusicControlsColumn(
                     color = Color.White.copy(alpha = 0.55f),
                 )
             }
-            if (currentFormat != null && LocalPlayerPresentation.current.showCodec) {
-                AppleMusicQualityChip(
-                    currentFormat = currentFormat,
-                    onClick = onQualityChipClick,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
+            StreamQualityBadge(format = currentFormat, modifier = Modifier.align(Alignment.Center))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterEnd),
@@ -2350,46 +2332,4 @@ private fun AppleMusicSeekBar(
                     )
                 },
     )
-}
-
-/**
- * Quality chip rendered between the elapsed and -remaining timestamps on the Apple Music player's
- * seek-bar row.
- */
-@Composable
-private fun AppleMusicQualityChip(
-    currentFormat: FormatEntity,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val quality = remember(currentFormat) { currentFormat.streamQuality() }
-    val label = quality.label()
-    val lossless = quality.isLossless
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color.White.copy(alpha = 0.1f),
-        border = BorderStroke(width = 1.dp, color = Color.White.copy(alpha = 0.13f)),
-        modifier = modifier.clickable(onClick = onClick),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Icon(
-                painter = painterResource(
-                    if (lossless) R.drawable.ic_mqa else R.drawable.player_graphic_eq,
-                ),
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.72f),
-                modifier = Modifier.size(if (lossless) 18.dp else 15.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-            )
-        }
-    }
 }

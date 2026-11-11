@@ -74,8 +74,7 @@ import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.ui.player.PlayerCoverImage
-import moe.rukamori.archivetune.ui.player.label
-import moe.rukamori.archivetune.ui.player.streamQuality
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
 
@@ -415,15 +414,16 @@ internal fun WavySliderWithLabels(
             waveLength = 48.dp,
         )
 
-        Row(
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.CenterStart),
+            ) {
                 Text(
                     text = formatDuration(displayPos),
                     style = MaterialTheme.typography.labelSmall,
@@ -431,33 +431,16 @@ internal fun WavySliderWithLabels(
                 )
             }
 
-            if (currentFormat != null) {
-                val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
-                Row(
-                    modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(contentColor.copy(alpha = if (isDark) 0.10f else 0.08f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.spatialflow_ic_music_note),
-                        contentDescription = null,
-                        tint = contentSecondary,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = contentSecondary,
-                    )
-                }
-            }
+            StreamQualityBadge(
+                format = currentFormat,
+                modifier = Modifier.align(Alignment.Center),
+                contentColor = contentSecondary,
+            )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
                 Text(
                     text = formatDuration(duration),
                     style = MaterialTheme.typography.labelSmall,

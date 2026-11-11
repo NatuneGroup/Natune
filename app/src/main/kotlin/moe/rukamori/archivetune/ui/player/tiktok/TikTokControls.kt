@@ -47,9 +47,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.C
+import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.LocalPlayerConnection
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.SeekSkipStepMs
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 
 /** Height of the progress row (time labels + bar). */
@@ -59,6 +62,7 @@ internal val TIKTOK_PROGRESS_ROW_HEIGHT = 44.dp
 internal fun TikTokBottomChrome(
     displayPositionMs: Long,
     durationMs: Long,
+    format: FormatEntity?,
     onSeek: (Long) -> Unit,
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
@@ -72,6 +76,7 @@ internal fun TikTokBottomChrome(
         TikTokProgressRow(
             positionMs = displayPositionMs,
             durationMs = durationMs,
+            format = format,
             onSeek = onSeek,
             onSeekFinished = onSeekFinished,
         )
@@ -79,7 +84,7 @@ internal fun TikTokBottomChrome(
 }
 
 /**
- * The feed's scrubber row: current time — bar — duration, TikTok's thin
+ * The feed's scrubber row: current time — bar — duration — stream badge, TikTok's thin
  * under-caption progress. The drag and tap write through the app's shared
  * seek callbacks, so scrubbing behaves exactly like every other player
  * style's slider (including crossfade-aware seeking).
@@ -88,6 +93,7 @@ internal fun TikTokBottomChrome(
 internal fun TikTokProgressRow(
     positionMs: Long,
     durationMs: Long,
+    format: FormatEntity?,
     onSeek: (Long) -> Unit,
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
@@ -142,6 +148,13 @@ internal fun TikTokProgressRow(
             fontSize = 12.sp,
             maxLines = 1,
         )
+        if (LocalPlayerPresentation.current.showCodec && format != null) {
+            Spacer(Modifier.width(8.dp))
+            StreamQualityBadge(
+                format = format,
+                contentColor = TIKTOK_INACTIVE_GRAY,
+            )
+        }
     }
 }
 

@@ -382,8 +382,6 @@ fun Queue(
             when (playerDesignStyle) {
                 PlayerDesignStyle.V2 -> {
                     QueueCollapsedContentV2(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         textButtonColor = textButtonColor,
                         iconButtonColor = iconButtonColor,
@@ -423,8 +421,6 @@ fun Queue(
 
                 PlayerDesignStyle.V3 -> {
                     QueueCollapsedContentV3(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         sleepTimerEnabled = sleepTimerEnabled,
                         sleepTimerTimeLeft = sleepTimerTimeLeft,
@@ -459,8 +455,6 @@ fun Queue(
 
                 PlayerDesignStyle.V5 -> {
                     QueueCollapsedContentV3(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         sleepTimerEnabled = sleepTimerEnabled,
                         sleepTimerTimeLeft = sleepTimerTimeLeft,
@@ -495,8 +489,6 @@ fun Queue(
 
                 PlayerDesignStyle.V4 -> {
                     QueueCollapsedContentV4(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         textButtonColor = textButtonColor,
                         iconButtonColor = iconButtonColor,
@@ -517,8 +509,6 @@ fun Queue(
 
                 PlayerDesignStyle.V1 -> {
                     QueueCollapsedContentV1(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         sleepTimerEnabled = sleepTimerEnabled,
                         sleepTimerTimeLeft = sleepTimerTimeLeft,
@@ -536,8 +526,6 @@ fun Queue(
 
                 PlayerDesignStyle.V6 -> {
                     QueueCollapsedContentV4(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         textButtonColor = textButtonColor,
                         iconButtonColor = iconButtonColor,
@@ -557,11 +545,12 @@ fun Queue(
                 }
 
                 // Metrolist joins Looper here: both draw their own transport but keep the
-                // shared queue sheet's collapsed peek via onQueueClick.
+                // shared queue sheet's collapsed peek via onQueueClick. Only Metrolist keeps the
+                // codec row in that peek; V9, V10 and Looper show codec in their own player.
                 PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER, PlayerDesignStyle.METROLIST_KMP -> {
                     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
                     QueueCollapsedContentV9(
-                        showCodecOnPlayer = showCodecOnPlayer,
+                        showCodecOnPlayer = showCodecOnPlayer && playerDesignStyle == PlayerDesignStyle.METROLIST_KMP,
                         currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         sleepTimerEnabled = sleepTimerEnabled,
@@ -613,8 +602,6 @@ fun Queue(
                     }
 
                     QueueCollapsedContentV7(
-                        showCodecOnPlayer = showCodecOnPlayer,
-                        currentFormat = currentFormat,
                         textBackgroundColor = TextBackgroundColor,
                         sleepTimerEnabled = sleepTimerEnabled,
                         sleepTimerTimeLeft = sleepTimerTimeLeft,

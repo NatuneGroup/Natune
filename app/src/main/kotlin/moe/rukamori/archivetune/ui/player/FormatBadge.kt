@@ -18,15 +18,25 @@
 
 package moe.rukamori.archivetune.ui.player
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -39,9 +49,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +62,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
+import moe.rukamori.archivetune.ui.player.flamingo.FlamingoSmoothCornerShape
+import moe.rukamori.archivetune.ui.player.flamingo.overlayEffect
+import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 
 // ── The codec / quality badge (adapted to ArchiveTune's FormatEntity) ─────────
@@ -151,4 +167,104 @@ private fun ShimmerText(text: String) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.onSizeChanged { widthPx = it.width },
     )
+}
+
+/**
+ * The codec / quality badge that every player surface shows between its timestamps.
+ *
+ * Tapping it opens the media-info sheet for the playing item. [format] is the row that
+ * PlayerConnection.currentFormat reads for that item, keyed by its media id, so the sheet describes
+ * the stream the label names. The text comes from [streamQuality], the same classification
+ * everywhere, so the surfaces never disagree.
+ *
+ * [contentColor] follows the text colour of the timestamps beside it, because a light backdrop would
+ * hide a white label. Nothing is drawn while the Show codec setting is off.
+ */
+@Composable
+fun StreamQualityBadge(
+    format: FormatEntity?,
+    modifier: Modifier = Modifier,
+    contentColor: Color = Color.White,
+) {
+    // Classify once per stream, not on every recomposition of the timestamp row.
+    val quality = remember(format) { format?.streamQuality() }
+    StreamQualityBadge(
+        quality = quality,
+        mediaId = format?.id.orEmpty(),
+        modifier = modifier,
+        contentColor = contentColor,
+    )
+}
+
+/**
+ * The same badge for a surface that already holds the stream classification, such as the immersive
+ * player's UI model. It behaves exactly like the [FormatEntity] overload.
+ */
+@Composable
+fun StreamQualityBadge(
+    quality: StreamQuality?,
+    mediaId: String,
+    modifier: Modifier = Modifier,
+    contentColor: Color = Color.White,
+) {
+    if (quality == null || !LocalPlayerPresentation.current.showCodec) return
+
+    val isLossless = quality.isLossless
+    val text = quality.label()
+    val bottomSheetPageState = LocalBottomSheetPageState.current
+
+    Box(
+        modifier = modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { bottomSheetPageState.show { ShowMediaInfo(mediaId) } },
+            )
+            // Light labels take the additive blend the Flamingo label has always had. A dark label
+            // would vanish under it on a light backdrop, so it keeps plain alpha blending.
+            .then(if (contentColor.luminance() > 0.5f) Modifier.overlayEffect() else Modifier)
+            .background(
+                color = contentColor.copy(alpha = 0.08f),
+                shape = FlamingoSmoothCornerShape(5.dp),
+            )
+            .height(20.dp)
+            .padding(horizontal = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(
+                    if (isLossless) {
+                        R.drawable.flamingo_quality_lossless
+                    } else {
+                        R.drawable.player_graphic_eq
+                    },
+                ),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier
+                    .height(if (isLossless) 9.dp else 10.dp)
+                    .alpha(0.45f),
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            AnimatedContent(
+                targetState = text,
+                transitionSpec = {
+                    fadeIn() togetherWith fadeOut()
+                },
+            ) { thisText ->
+                Text(
+                    text = thisText,
+                    modifier = Modifier.alpha(0.45f),
+                    color = contentColor,
+                    fontSize = 11.sp,
+                    lineHeight = 11.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
 }
