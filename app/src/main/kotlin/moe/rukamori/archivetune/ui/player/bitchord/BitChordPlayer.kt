@@ -187,7 +187,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.player.MeshBackdrop
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
 import moe.rukamori.archivetune.ui.player.SelectedLyrics
-import moe.rukamori.archivetune.ui.player.LosslessOrStats
+import moe.rukamori.archivetune.ui.player.StreamQualityBadge
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.MutableFloatState
@@ -1127,8 +1127,8 @@ fun BitChordPlayerContent(
 
                     // The measured codec/quality line does NOT belong here: pinned to the sleeve's
                     // bottom edge it read as a caption floating loose over the artwork, anchored to
-                    // nothing the eye could see, and it duplicated LosslessOrStats in the transport
-                    // row below, which is a slot that visibly holds that information.
+                    // nothing the eye could see, and it duplicated StreamQualityBadge in the
+                    // transport row below, which is a slot that visibly holds that information.
 
                     // Automix's analysis status is different: it is shown nowhere else and only
                     // while automix is on. Drawn the way BitChord draws it, bottom-centre and dim,
@@ -1932,10 +1932,7 @@ private fun BitChordScrubTimes(
         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             ScrubTime { formatTime((shownFraction() * duration).toLong()) }
         }
-        if (LocalPlayerPresentation.current.showCodec) LosslessOrStats(
-            format = format,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        StreamQualityBadge(format = format, modifier = Modifier.padding(horizontal = 8.dp))
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.End,

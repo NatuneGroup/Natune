@@ -1818,32 +1818,8 @@ fun PlayerControlsContent(
         textBackgroundColor = textBackgroundColor,
         showRemainingTime = playerDesignStyle == PlayerDesignStyle.V7,
         centerContent =
-            if (playerDesignStyle == PlayerDesignStyle.V7 && currentFormat != null) {
-                {
-                    val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = textBackgroundColor.copy(alpha = 0.12f),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.player_graphic_eq),
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = textBackgroundColor.copy(alpha = 0.8f),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textBackgroundColor.copy(alpha = 0.8f),
-                            )
-                        }
-                    }
-                }
+            if (LocalPlayerPresentation.current.showCodec && currentFormat != null) {
+                { StreamQualityBadge(format = currentFormat, contentColor = textBackgroundColor) }
             } else {
                 null
             },
@@ -2638,13 +2614,11 @@ private fun V8PlaybackProgress(
                 )
             }
 
-            if (currentFormat != null && LocalPlayerPresentation.current.showCodec) {
-                V8QualityChip(
-                    currentFormat = currentFormat,
-                    foreground = foreground,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
+            StreamQualityBadge(
+                format = currentFormat,
+                modifier = Modifier.align(Alignment.Center),
+                contentColor = foreground,
+            )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -2658,45 +2632,6 @@ private fun V8PlaybackProgress(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun V8QualityChip(
-    currentFormat: FormatEntity,
-    foreground: Color,
-    modifier: Modifier = Modifier,
-) {
-    val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
-
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = foreground.copy(alpha = 0.1f),
-        border =
-            androidx.compose.foundation.BorderStroke(
-                width = 1.dp,
-                color = foreground.copy(alpha = 0.13f),
-            ),
-        modifier = modifier,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.player_graphic_eq),
-                contentDescription = null,
-                tint = foreground.copy(alpha = 0.72f),
-                modifier = Modifier.size(15.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = foreground.copy(alpha = 0.72f),
-                maxLines = 1,
-            )
         }
     }
 }
@@ -3493,6 +3428,8 @@ private fun V9PlaybackProgress(
     val safeDuration = if (duration <= 0L || duration == C.TIME_UNSET) 0f else duration.toFloat()
     val safeRange = 0f..safeDuration.coerceAtLeast(1f)
     val safeValue = (sliderPosition ?: position).toFloat().coerceIn(safeRange)
+    val playerConnection = LocalPlayerConnection.current
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
     val sliderColors =
         SliderDefaults.colors(
             thumbColor = activeColor,
@@ -3523,15 +3460,16 @@ private fun V9PlaybackProgress(
                     .height(36.dp),
         )
 
-        Row(
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.CenterStart),
+            ) {
                 Text(
                     text = makeTimeString(sliderPosition ?: position),
                     style = MaterialTheme.typography.titleMedium,
@@ -3541,7 +3479,15 @@ private fun V9PlaybackProgress(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            StreamQualityBadge(
+                format = currentFormat,
+                modifier = Modifier.align(Alignment.Center),
+                contentColor = textColor,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
                 Text(
                     text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
                     style = MaterialTheme.typography.titleMedium,
