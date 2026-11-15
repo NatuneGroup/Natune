@@ -869,7 +869,7 @@ fun BottomSheetPlayer(
     val dynamicQueuePeekHeight =
         // V5 is named on its own because it hides the peek without painting a backdrop of its own —
         // it is the one style here that is not simply "has a custom backdrop".
-        if (playerDesignStyle == PlayerDesignStyle.V5 || playerDesignStyle.hasCustomBackdrop) {
+        if (playerDesignStyle == PlayerDesignStyle.V5 || playerDesignStyle.hasCustomBackdrop || playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
             0.dp
         } else if (playerDesignStyle == PlayerDesignStyle.V9) {
             88.dp +
@@ -2129,7 +2129,7 @@ fun BottomSheetPlayer(
                         landscape = true,
                         modifier = Modifier.fillMaxSize().nestedScroll(state.preUpPostDownNestedScrollConnection),
                     )
-            } else {
+                } else {
                     Row(
                         modifier =
                             Modifier
@@ -2764,7 +2764,7 @@ fun BottomSheetPlayer(
                         onSliderValueChangeFinished = onSliderValueChangeFinished, landscape = false,
                         modifier = Modifier.fillMaxSize().nestedScroll(state.preUpPostDownNestedScrollConnection),
                     )
-            } else {
+                } else {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier =
