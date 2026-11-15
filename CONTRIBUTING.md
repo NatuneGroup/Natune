@@ -29,7 +29,7 @@ The ArchiveTune codebase is built on a modern, reactive architecture. Contributo
 
 ## 📐 Architectural Manifesto
 
-ArchiveTune separates UI, data and playback responsibilities; preserve the concrete ownership and fork invariants in [AGENTS.md](AGENTS.md) and [architecture](docs/claude/ARCHITECTURE.md).
+ArchiveTune separates UI, data and playback responsibilities; preserve the concrete ownership and fork invariants described in the project architecture notes.
 
 1. **UI Layer (Compose):** Handles user interactions and renders state emitted by ViewModels.
 2. **Domain Layer:** Contains business logic, Use Cases, and high-level audio processing interfaces.
@@ -108,7 +108,7 @@ Its current implementation is locally integrated, uncompiled and unreleased; ear
 
 `dev` is Nightly integration, `main` is Stable. Final Canary `C202610141722` shipped at
 `a1a04ea02`; `canary` is frozen. Use a new dev PR after review, preserve history on merge
-and verify the resulting Nightly/manifest. See [release gates](docs/claude/RELEASES.md);
+and verify the resulting Nightly/manifest. See the release gates;
 compilation alone is not UI, language, physical USB/DAC or listening validation.
 
 ---

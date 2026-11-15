@@ -14,7 +14,7 @@ This is a request-scoped comparison, not a claim of feature or runtime parity.
 ### Spotify Home, source switching, and Liquid Glass
 
 - **4nx3b/dev:** Its Home implementation is `home/HomeRepository.kt`, `ui/screens/HomeScreen.kt`, `ui/screens/HomeSourceSwitcher.kt`, `ui/screens/MuzoHomeSections.kt`, and `spotify/SpotifyHomeSection.kt` / `SpotifyHomeViewModel.kt`. The current tree contains Muzo home components, not a YumaPlayer Home port. Its Home switcher covers YouTube and Spotify.
-- **Fork baseline:** `HomeSourceSwitcher.kt` supports YouTube, Spotify, and QQ with persisted active-home-source selection. `AGENTS.md` keeps playback-provider priority independent from Home selection and makes Spotify catalog-only. `docs/claude/SETTINGS.md` says the Apple Music experience preference is under Appearance → Theme → Interface style, but Apple-style YouTube/Spotify Home variants are not shipped in the baseline.
+- **Fork baseline:** `HomeSourceSwitcher.kt` supports YouTube, Spotify, and QQ with persisted active-home-source selection. the private agent guide keeps playback-provider priority independent from Home selection and makes Spotify catalog-only. `the settings notes` says the Apple Music experience preference is under Appearance → Theme → Interface style, but Apple-style YouTube/Spotify Home variants are not shipped in the baseline.
 - **Disposition:** Port the requested Yuma presentation only from a reviewed Yuma source; do not treat Muzo as its implementation or replace the fork's source picker. Keep YouTube/Spotify/QQ routing and catalog-only Spotify behavior. Wire Glass to its own existing preference rather than inferring it from the Apple Music experience toggle.
 - **Gap:** YumaPlayer is referenced locally, but its repository was not available for this review; exact visual and behavioral parity is unverified.
 
@@ -50,7 +50,7 @@ This is a request-scoped comparison, not a claim of feature or runtime parity.
 
 - **Current 4nx3b/dev:** `playback/MusicService.kt` prepares a secondary player, checks readiness and audio advancement, and generation-checks promotion. `CrossfadePolicy.kt` and `CrossfadePolicyTest.kt` cover policy math; failure tracking is bounded.
 - **Confirmed historical defects, fixed on current `4nx3b/dev`:** `26b407c39` corrected session-player pause handling that could pause the secondary player mid-blend. `93e448f45` corrected smart fades driven by the incoming clock with a 150 ms end guard, which could cut the outgoing tail; the fixed path follows the outgoing clock and waits for its natural end before promotion. `8b07ec284` changed fixed structural mix-out timing to use the track's detected fade onset, avoiding blends that start at the wrong point.
-- **Fork baseline:** `docs/claude/ARCHITECTURE.md` documents a separately prepared player, generation-guarded promotion, and bounded recovery. The fork adds `CrossfadeHandoffPolicy.kt` and `CrossfadeHandoffPolicyTest.kt`; retain these guards rather than transplanting `MusicService.kt` wholesale.
+- **Fork baseline:** `the architecture notes` documents a separately prepared player, generation-guarded promotion, and bounded recovery. The fork adds `CrossfadeHandoffPolicy.kt` and `CrossfadeHandoffPolicyTest.kt`; retain these guards rather than transplanting `MusicService.kt` wholesale.
 - **Disposition:** Port only the current fixed timing behavior after checking it against the fork lifecycle. Add regression coverage for user pause during blend, clock/rate drift, seek/cancel, failed incoming player, and natural-end promotion.
 - **Gap:** The current upstream code does not substantiate a remaining crossfade defect by static inspection alone. Its cited fixes are recent, and the matching commits do not establish device-level or service-lifecycle test coverage. Runtime behavior remains unverified.
 
@@ -58,7 +58,7 @@ This is a request-scoped comparison, not a claim of feature or runtime parity.
 
 - **4nx3b/dev:** The relevant pieces are `ui/component/FloatingNavigationToolbar.kt`, `FrostedHeaderPill.kt`, `ui/player/MiniPlayer.kt`, and `ui/screens/settings/NavigationBarSettings.kt` / `PlayerSettings.kt`. The mini-player redesign is in `f97f1c28d`.
 - **Fork baseline:** It already has those toolbar/mini-player surfaces and a fork-specific `ui/component/PillStyle.kt` that coordinates pill geometry/material by role. The upstream tree does not have that shared `PillStyle.kt` abstraction.
-- **Disposition:** Adapt the requested new toolbar/miniplayer behavior into the fork's existing style model and settings. Keep the Apple Music experience preference atomic as required by `AGENTS.md`; keep bottom-pill and mini-player controls separately selectable where requested. Do not import upstream's settings redesign or replace the fork's pill coordinator.
+- **Disposition:** Adapt the requested new toolbar/miniplayer behavior into the fork's existing style model and settings. Keep the Apple Music experience preference atomic as required by the private agent guide; keep bottom-pill and mini-player controls separately selectable where requested. Do not import upstream's settings redesign or replace the fork's pill coordinator.
 - **Gap:** Documentation establishes the existing preference boundaries, not a visual match; fresh UI evidence is still needed.
 
 ### AutoMix and storage
@@ -85,7 +85,7 @@ This is a request-scoped comparison, not a claim of feature or runtime parity.
 ### Icons, playback-source resolution, diagnostics, and other scope
 
 - **BitChord icons:** The request concerns visual geometry; repository docs define no canonical shape or “rounded” measurements. Review the actual vector/composable geometry and validate a fresh screenshot rather than inferring correctness from upstream feature names.
-- **Playback-source/Tidal behavior:** `AGENTS.md` requires `resolveMultiSourceDataSpec`, independent provider priority, Telegram/Tidal scheme routing, and YouTube as the final fallback. `docs/instance-racing.md` documents configured-instance priority, health-verified discovery, and cooldown behavior. No document establishes the cause of the reported Tidal delay or seek/background silence; upstream provider/engine code is not a drop-in replacement for these fork contracts.
+- **Playback-source/Tidal behavior:** the private agent guide requires `resolveMultiSourceDataSpec`, independent provider priority, Telegram/Tidal scheme routing, and YouTube as the final fallback. `docs/instance-racing.md` documents configured-instance priority, health-verified discovery, and cooldown behavior. No document establishes the cause of the reported Tidal delay or seek/background silence; upstream provider/engine code is not a drop-in replacement for these fork contracts.
 - **Diagnostics:** This thread's `HEAD` adds fork-aware redacted diagnostic export (`logcat/DiagnosticReport.kt`, `DiagnosticRedaction.kt`, and `DiagnosticRedactionTest.kt`). The commit is code evidence, not proof of a fresh export/device test.
 - **ArchivePool/Vercel:** These are not `4nx3b/dev` features; they belong to the separate ArchivePool repository. No Pool/Vercel behavior is reviewed here.
 
@@ -93,5 +93,5 @@ This is a request-scoped comparison, not a claim of feature or runtime parity.
 
 - `docs/fork-divergence.md` is explicitly a snapshot at `4nx3b/dev` `28e0eb37b`; its file counts and “missing upstream capability” lists are stale against `8346b1750e29`. In particular, use `docs/extraction.md` for the later Echo resolver status rather than the older extraction-gap note.
 - `docs/tv.md` predates this thread's committed 32-bit ABI/optional-hardware manifest update.
-- `docs/claude/SETTINGS.md` and `docs/lyrics.md` describe the committed baseline, not the shared uncommitted October 4 UI work.
+- `the settings notes` and `docs/lyrics.md` describe the committed baseline, not the shared uncommitted October 4 UI work.
 - None of these documents supplies device/provider/production verification for the reported TV install, downloaded-song truncation, crossfade, Tidal delay, or seek/background silence.

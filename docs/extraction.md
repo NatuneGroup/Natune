@@ -1,7 +1,7 @@
 # YouTube stream extraction
 
 YouTube is the last source tried; everything here is dead code for a Tidal, Deezer,
-Qobuz or Telegram track. See [AGENTS.md](../AGENTS.md) for the multi-source contract.
+Qobuz or Telegram track. See the private agent guide for the multi-source contract.
 
 ## The chain
 

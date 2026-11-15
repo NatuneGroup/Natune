@@ -310,11 +310,11 @@ def skill_problems(path: str, text: str) -> list[str]:
 
 def documented_tasks(snapshot: Snapshot, policy: dict) -> list[tuple[str, str]]:
     problems = []
-    docs = "\n".join(snapshot.text(path) for path in ("AGENTS.md", "CONTRIBUTING.md"))
+    docs = "\n".join(snapshot.text(path) for path in ("CONTRIBUTING.md", "docs/engineering/toolchain.md"))
     for task, workflow in policy["documentedTasks"].items():
         bare = task.removeprefix(":app:")
         if bare not in docs:
-            problems.append(("AGENTS.md", f"documented Gradle task missing: {task}"))
+            problems.append(("CONTRIBUTING.md", f"documented Gradle task missing: {task}"))
         if task not in snapshot.text(workflow) and bare not in snapshot.text(workflow):
             problems.append((workflow, f"documented task is not exercised by CI: {task}"))
     versions = tomllib.loads(snapshot.text("gradle/libs.versions.toml"))["versions"]

@@ -128,7 +128,7 @@ phantom dependency left after the playback stack moved to
 `MetrolistExtractor` (declared in `core/build.gradle.kts` via
 `libs.metrolist.extractor`). Removed: the `settings.gradle.kts` include,
 `app/build.gradle.kts` implementation, the proguard keep rule, the
-`.gitmodules` entry, and the `AGENTS.md` lists.
+`.gitmodules` entry, and the private agent lists.
 
 ## 6. Keystores and junk (deleted, do NOT restore)
 

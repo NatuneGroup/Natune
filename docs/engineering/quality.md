@@ -4,7 +4,7 @@
 > bounded repository checks or the structural quality job. Final exact-candidate build/lint,
 > unit tests and native validation remain separate and are not implied by fast checks.
 
-The reusable procedure is in [fast-check](../../.factory/skills/fast-check/SKILL.md). In short:
+The reusable procedure is the fast-check skill. In short:
 
 1. Cheap: repository check, scoped `git diff --check`, relevant stdlib Python tests, `bash -n`
    and `node --check`; `actionlint` only when an existing binary is available.
@@ -253,7 +253,7 @@ unchanged. A license header cannot fix missing permission or relicense upstream 
 
 ## Validation evidence
 
-Use the documented build/test tasks from [AGENTS.md](../../AGENTS.md) on a suitable
+Use the documented build/test tasks from the documented build/test tasks on a suitable
 host. Keep the constrained Termux host free of Gradle/JVM/emulator work; authorized
 remote checks must identify the actual source snapshot and retain their failures.
 Keep the repository's heap, KSP, cache, signing and submodule policies unchanged.

@@ -169,4 +169,4 @@ physical device.
 - [ ] Audible transitions and physical device/DAC output checks.
 
 Keep these checks separate from the physical-device release gate in
-[`docs/claude/RELEASES.md`](claude/RELEASES.md).
+the release checklist.

@@ -8,9 +8,9 @@
 - [Incident runbook](incident-runbook.md): triage, diagnostics, release impact and recovery.
 - [Issue triage](triage.md): labels, maintainer decisions and error-to-fix follow-up.
 - [Android QA](../android-qa.md): emulator setup and interaction evidence.
-- [Fork architecture](../claude/ARCHITECTURE.md): playback and provider boundaries.
-- [Release procedure](../claude/RELEASES.md): signing, channels and promotion gates.
+- Fork architecture: playback and provider boundaries.
+- Release procedure: signing, channels and promotion gates.
 
-Keep current procedures here, product/subsystem knowledge in `docs/claude/`, and
-reusable agent workflows in `.factory/skills/`. Keep dated reviews as evidence,
+Keep current procedures here and product/subsystem knowledge in the private agent repo.
+Keep dated reviews as evidence,
 not as competing descriptions of the current implementation.
