@@ -40,10 +40,6 @@
     <string name="m6_musixmatch_experimental">Musixmatch (experimental)</string>
     <string name="m6_paxsenix">Paxsenix lyrics</string>
     <string name="m6_pax_apple">Paxsenix: Apple Music</string>
-    <string name="m6_pax_netease">Paxsenix: NetEase</string>
-    <string name="m6_pax_spotify">Paxsenix: Spotify</string>
-    <string name="m6_pax_musixmatch">Paxsenix: Musixmatch</string>
-    <string name="m6_pax_youtube">Paxsenix: YouTube</string>
     <string name="m6_api_key">API key</string>
     <string name="m6_endpoint">Endpoint</string>
     <string name="m6_provider_stats">Provider statistics</string>

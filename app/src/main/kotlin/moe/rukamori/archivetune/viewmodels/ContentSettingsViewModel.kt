@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.lyrics.LyricsHelper
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
 import moe.rukamori.archivetune.paxsenix.models.PaxsenixStats
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
 import javax.inject.Inject
 
 sealed interface PaxsenixStatsState {
@@ -59,7 +60,7 @@ sealed interface PaxsenixEndpointCheckState {
     data object Running : PaxsenixEndpointCheckState
 
     data class Success(
-        val results: List<PaxsenixLyrics.PathCheck>,
+        val results: List<PaxsenixDiagnostics.PathCheck>,
     ) : PaxsenixEndpointCheckState
 }
 
@@ -173,7 +174,7 @@ class ContentSettingsViewModel
             _paxsenixEndpointCheckState.value = PaxsenixEndpointCheckState.Running
             paxsenixEndpointCheckJob =
                 viewModelScope.launch(Dispatchers.IO) {
-                    val results = PaxsenixLyrics.checkProviderPaths()
+                    val results = lyricsHelper.checkPaxsenixEndpoints()
                     _paxsenixEndpointCheckState.value = PaxsenixEndpointCheckState.Success(results)
                 }
         }

@@ -18,17 +18,7 @@ object LyricsProviderOrder {
             "SimpMusic",
             "Unison",
             "Paxsenix: Apple Music",
-            "Paxsenix: NetEase",
-            "Paxsenix: Spotify",
-            "Paxsenix: Musixmatch",
-            "Paxsenix: YouTube",
         )
-
-    /**
-     * The providers the Android priority sweep queries, in its fixed order. The sweep ignores the
-     * user's priority list, so the word-synced result does not depend on it.
-     */
-    internal val WORD_SYNC_NAMES: List<String> = listOf("BetterLyrics", "YouLyPlus", "Unison")
 
     /** Stable sort into [CANONICAL_NAMES]. Providers with unknown names keep their input order at the end. */
     fun sortCanonical(providers: List<LyricsProvider>): List<LyricsProvider> =
