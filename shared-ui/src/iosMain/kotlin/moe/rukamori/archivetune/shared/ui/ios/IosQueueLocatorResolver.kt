@@ -27,13 +27,11 @@ import moe.rukamori.archivetune.shared.data.provider.AudioResolution
 import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
 import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.NoPoolDiscoveryStore
-import moe.rukamori.archivetune.shared.data.provider.IosJioSaavnUrlDecoder
 import moe.rukamori.archivetune.shared.data.provider.IosQobuzRequestDigest
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonAuthorization
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorAppleMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorDeezerRepository
-import moe.rukamori.archivetune.shared.data.provider.KtorJioSaavnRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQobuzBackupRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQobuzRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
@@ -44,6 +42,7 @@ import moe.rukamori.archivetune.shared.data.provider.PoolRecoverySettledExceptio
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
+import moe.rukamori.archivetune.shared.data.provider.TidalRateLimitGate
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
@@ -71,6 +70,7 @@ import moe.rukamori.archivetune.shared.domain.settings.AppleMusicDevTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.AppleMusicMediaUserTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
+import moe.rukamori.archivetune.shared.domain.settings.TidalAccountQualityFallbackKey
 import moe.rukamori.archivetune.shared.domain.settings.TidalAccountFirstKey
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.deezerInstanceList
@@ -182,8 +182,7 @@ internal object IosYouTubeUnavailable : YouTubeResolutionPort {
  * The audio providers this host connects, over the one HTTP client of the graph. TIDAL, Deezer and QQ read the personal
  * account leases of [accounts] on every resolution, so a sign-out or a replaced account stops them at once; Qobuz,
  * Apple and Amazon read their preference credentials the same way. [pool] supplies the Playback Pool accounts and
- * discovered instances to TIDAL, Qobuz, Deezer, Apple and Amazon. JioSaavn needs the build's DES key to decode its
- * stream URLs, so it is composed only when the key exists. Spotify uses the portable Echo pipeline under its dedicated streaming account; other engines remain
+ * discovered instances to TIDAL, Qobuz, Deezer, Apple and Amazon. JioSaavn uses the build's DES key or its explicitly selected key-free web-player route. Spotify uses the portable Echo pipeline under its dedicated streaming account; other engines remain
  * unavailable until their platform transports can honour the selected method.
  */
 internal fun iosAudioProviders(
@@ -200,7 +199,7 @@ internal fun iosAudioProviders(
     IosQobuzSource(http, accounts, preferences, pool),
     IosAppleMusicSource(http, accounts, preferences, pool),
     IosAmazonSource(http, preferences, accounts, pool),
-    iosJioSaavnSource(http),
+    iosJioSaavnSource(http, preferences),
     IosQqMusicSource(http, accounts),
     IosSpotifySource(http, accounts, preferences),
     modules,
@@ -250,6 +249,7 @@ private class IosTidalSource(
     private val sessionRefresh: TidalSessionRefresh?,
     private val pool: IosPlaybackPool?,
 ) : AudioProviderRepository {
+    private val accountRateLimit = TidalRateLimitGate(::iosNowMillis)
     override val source = AudioSourceType.TIDAL
 
     private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false,
@@ -271,6 +271,8 @@ private class IosTidalSource(
                 http,
                 TidalAccess(scope = scope, bearer = account.token, credentialScope = CredentialScope.PLAYBACK_POOL, isActive = { pool?.enabled() == true }),
                 countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
+                accountQualityFallback = { preferences()?.get(TidalAccountQualityFallbackKey) == true },
+                accountRateLimit = accountRateLimit,
             ),
             poolId = feedId,
             pooled = true,
@@ -396,6 +398,8 @@ private class IosTidalSource(
                 isActive = lease::isStillAdmitted,
             ),
             countryCode = country,
+            accountQualityFallback = { preferences()?.get(TidalAccountQualityFallbackKey) == true },
+            accountRateLimit = accountRateLimit,
         )
     }
 }
@@ -957,14 +961,6 @@ private class IosAmazonSource(
         return null
     }
 }
-
-/**
- * JioSaavn over the shared repository and the iOS DES decoder. The decoder key is host-supplied material read from the
- * build settings ([IosProviderCredentials.jioSaavnDesKey]); the source is not composed without it, so it answers as
- * unavailable instead of shipping a copied key.
- */
-internal fun iosJioSaavnSource(http: HttpClient): AudioProviderRepository? =
-    IosProviderCredentials.jioSaavnDesKey?.let { KtorJioSaavnRepository(http, IosJioSaavnUrlDecoder(it)) }
 
 /** QQ Music with the personal ticket when one is accepted, otherwise the anonymous RPC the repository also supports. */
 private class IosQqMusicSource(

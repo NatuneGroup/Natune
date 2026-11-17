@@ -44,6 +44,7 @@ fun JioSaavnSettings(
     scrollTo: String?,
 ) = DesktopRowsPage(controller, { preferences ->
     buildList {
+        add(SettingsRow.Toggle("jiosaavn_web_player", Res.string.builtin_jio_web_player, JioSaavnWebPlayerKey, false))
         // The source switch lives on Sources; this page keeps the quality the account streams with.
         add(
             SettingsRow.Choice(

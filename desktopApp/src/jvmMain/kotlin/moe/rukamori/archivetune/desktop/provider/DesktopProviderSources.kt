@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
 import moe.rukamori.archivetune.shared.data.provider.PoolRecoverySettledException
 import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
+import moe.rukamori.archivetune.shared.data.provider.TidalRateLimitGate
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
@@ -32,6 +33,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.TidalAccountQualityFallbackKey
 import moe.rukamori.archivetune.shared.domain.settings.TidalAccountFirstKey
 import moe.rukamori.archivetune.shared.domain.settings.deezerInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.tidalCountryCode
@@ -59,6 +61,7 @@ internal class DesktopTidalSource(
     private val sessionRefresh: TidalSessionRefresh? = null,
     private val pool: DesktopPlaybackPool? = null,
 ) : AudioProviderRepository {
+    private val accountRateLimit = TidalRateLimitGate(System::currentTimeMillis)
     override val source = AudioSourceType.TIDAL
 
     private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false,
@@ -75,6 +78,8 @@ internal class DesktopTidalSource(
                 isActive = { pool?.enabled() == true },
             ),
             countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
+            accountQualityFallback = { preferences()?.get(TidalAccountQualityFallbackKey) == true },
+            accountRateLimit = accountRateLimit,
         )
 
     /**
@@ -242,6 +247,8 @@ internal class DesktopTidalSource(
                 isActive = lease::isStillAdmitted,
             ),
             countryCode = country,
+            accountQualityFallback = { preferences()?.get(TidalAccountQualityFallbackKey) == true },
+            accountRateLimit = accountRateLimit,
         )
     }
 }
@@ -419,9 +426,12 @@ internal class DesktopQqMusicSource(
  * through [DesktopCredentials]; otherwise the retained default key (exactly as the original app
  * bundles it) is used.
  */
-internal fun desktopJioSaavnSource(http: HttpClient): AudioProviderRepository {
+internal fun desktopJioSaavnSource(http: HttpClient,
+    preferences: () -> PreferenceSnapshot? = { null }): AudioProviderRepository {
     val key = (System.getProperty("archivetune.jiosaavn.key") ?: DesktopCredentials.value("ARCHIVETUNE_JIOSAAVN_DES_KEY"))
         .trim().toByteArray(Charsets.UTF_8).takeIf { it.size == 8 }
         ?: JvmJioSaavnUrlDecoder.DEFAULT_KEY
-    return KtorJioSaavnRepository(http, JvmJioSaavnUrlDecoder(key))
+    return KtorJioSaavnRepository(http, JvmJioSaavnUrlDecoder(key), useWebPlayer = {
+        preferences()?.get(moe.rukamori.archivetune.shared.domain.settings.JioSaavnWebPlayerKey) == true
+    })
 }
