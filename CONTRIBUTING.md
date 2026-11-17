@@ -29,7 +29,7 @@ The ArchiveTune codebase is built on a modern, reactive architecture. Contributo
 
 ## 📐 Architectural Manifesto
 
-ArchiveTune separates UI, data and playback responsibilities; preserve the concrete ownership and fork invariants in [AGENTS.md](AGENTS.md) and [architecture](docs/claude/ARCHITECTURE.md).
+ArchiveTune separates UI, data and playback responsibilities; preserve the concrete ownership and fork invariants in [AGENTS.md](https://github.com/NatuneGroup/natune-agent/blob/main/AGENTS.md) and [architecture](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/ARCHITECTURE.md).
 
 1. **UI Layer (Compose):** Handles user interactions and renders state emitted by ViewModels.
 2. **Domain Layer:** Contains business logic, Use Cases, and high-level audio processing interfaces.
@@ -102,7 +102,7 @@ synthetic playback check. A [remote devcontainer](.devcontainer/devcontainer.jso
 and optional [.env.example](.env.example) document reproducible development setup.
 
 `dev` is Nightly integration, `main` is Stable. Open PRs against `dev` and verify the
-resulting Nightly and update manifest after merge. See [release gates](docs/claude/RELEASES.md);
+resulting Nightly and update manifest after merge. See [release gates](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/RELEASES.md);
 compilation alone is not UI, language, physical USB/DAC or listening validation.
 
 ---
