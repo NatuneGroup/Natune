@@ -126,7 +126,15 @@ fun CanvasArtworkPlayer(
     // (longer Apple Music motion canvases observed stuck stretched to the container), so this
     // composable enforces the aspect itself for the ZOOM path instead of trusting it.
     var videoDisplayAspectRatio by remember(initial) { mutableStateOf<Float?>(null) }
-    val shouldPlay by rememberUpdatedState(isPlaying)
+    val musicPlaying by rememberUpdatedState(isPlaying)
+    // Written straight from the lifecycle observer rather than through recomposition: a stopped
+    // activity need not recompose, and the listeners below restart the loop whenever they see it
+    // paused, so a pause on ON_STOP only sticks if they read the new value at once. Without this
+    // the loop kept decoding into an invisible surface for as long as music played in the background.
+    var inForeground by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    fun shouldPlay() = musicPlaying && inForeground
 
     val okHttpClient =
         remember {
@@ -243,15 +251,15 @@ fun CanvasArtworkPlayer(
                 .apply {
                     volume = 0f
                     repeatMode = Player.REPEAT_MODE_ONE
-                    playWhenReady = isPlaying
+                    playWhenReady = shouldPlay()
                 }
         }
 
-    LaunchedEffect(isPlaying) {
+    LaunchedEffect(isPlaying, inForeground) {
         if (hasPlaybackFailed) {
             exoPlayer.pause()
         } else {
-            exoPlayer.setCanvasPlayback(isPlaying)
+            exoPlayer.setCanvasPlayback(shouldPlay())
         }
     }
 
@@ -308,12 +316,18 @@ fun CanvasArtworkPlayer(
     DisposableEffect(exoPlayer, lifecycleOwner) {
         val observer =
             LifecycleEventObserver { _, event ->
-                if (
-                    (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) &&
-                    !hasPlaybackFailed &&
-                    exoPlayer.playerError == null
-                ) {
-                    exoPlayer.setCanvasPlayback(shouldPlay)
+                when (event) {
+                    Lifecycle.Event.ON_STOP -> {
+                        inForeground = false
+                        exoPlayer.pause()
+                    }
+                    Lifecycle.Event.ON_START, Lifecycle.Event.ON_RESUME -> {
+                        inForeground = true
+                        if (!hasPlaybackFailed && exoPlayer.playerError == null) {
+                            exoPlayer.setCanvasPlayback(shouldPlay())
+                        }
+                    }
+                    else -> Unit
                 }
             }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -344,13 +358,13 @@ fun CanvasArtworkPlayer(
 
                 override fun onRenderedFirstFrame() {
                     isVideoReady = true
-                    if (shouldPlay && !hasPlaybackFailed && exoPlayer.playerError == null) {
+                    if (shouldPlay() && !hasPlaybackFailed && exoPlayer.playerError == null) {
                         exoPlayer.setCanvasPlayback(isPlaying = true)
                     }
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (!shouldPlay || hasPlaybackFailed || exoPlayer.playerError != null) return
+                    if (!shouldPlay() || hasPlaybackFailed || exoPlayer.playerError != null) return
                     exoPlayer.setCanvasPlayback(isPlaying = true)
                 }
 
@@ -370,13 +384,13 @@ fun CanvasArtworkPlayer(
                     playWhenReady: Boolean,
                     reason: Int,
                 ) {
-                    if (shouldPlay && !playWhenReady && !hasPlaybackFailed && exoPlayer.playerError == null) {
+                    if (shouldPlay() && !playWhenReady && !hasPlaybackFailed && exoPlayer.playerError == null) {
                         exoPlayer.setCanvasPlayback(isPlaying = true)
                     }
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (shouldPlay && !isPlaying && !hasPlaybackFailed && exoPlayer.playerError == null) {
+                    if (shouldPlay() && !isPlaying && !hasPlaybackFailed && exoPlayer.playerError == null) {
                         exoPlayer.setCanvasPlayback(isPlaying = true)
                     }
                 }
@@ -413,7 +427,7 @@ fun CanvasArtworkPlayer(
         exoPlayer.stop()
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
-        exoPlayer.setCanvasPlayback(isPlaying)
+        exoPlayer.setCanvasPlayback(shouldPlay())
     }
 
     DisposableEffect(exoPlayer) {
