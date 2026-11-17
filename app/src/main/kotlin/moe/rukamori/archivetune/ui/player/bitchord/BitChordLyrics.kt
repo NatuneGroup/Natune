@@ -275,7 +275,8 @@ internal fun List<LyricsEntry>.toBitChordLyrics(): List<LyricLine> =
                         // bracket-stripped text composed from its own words.
                         LyricLine(
                             timeMs = words.first().startMs,
-                            text = words.joinToString(" ") { w -> w.text },
+                            // TTML words carry their own boundary space; LRC words do not.
+                            text = words.joinToString(" ") { w -> w.text.trim() },
                             words = words,
                         )
                     },
