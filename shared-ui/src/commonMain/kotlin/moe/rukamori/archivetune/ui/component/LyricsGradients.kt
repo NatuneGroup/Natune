@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /** [Brush.horizontalGradient] whose stop positions are mirrored for right-to-left text. */
-internal fun rtlAwareHorizontalGradient(
+fun rtlAwareHorizontalGradient(
     isRtl: Boolean,
     vararg colorStops: Pair<Float, Color>,
 ): Brush {

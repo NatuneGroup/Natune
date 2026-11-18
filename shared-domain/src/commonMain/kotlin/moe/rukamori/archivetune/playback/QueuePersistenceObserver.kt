@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** A queue changed while persistence was off still needs a checkpoint when it is switched back on. */
-internal fun observeQueuePersistence(
+fun observeQueuePersistence(
     scope: CoroutineScope,
     enabled: Flow<Boolean>,
     restoreCompleted: () -> Boolean,

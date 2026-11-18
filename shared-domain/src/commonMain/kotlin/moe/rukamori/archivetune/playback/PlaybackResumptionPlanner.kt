@@ -1,7 +1,7 @@
 
 package moe.rukamori.archivetune.playback
 
-internal object PlaybackResumptionPlanner {
+object PlaybackResumptionPlanner {
     data class PersistedItems<T>(
         val items: List<T>,
         val mediaItemIndex: Int,

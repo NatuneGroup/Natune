@@ -51,7 +51,7 @@ fun classifyDownloadFailure(
         else -> DownloadFailureClass.HTTP_STATUS
     }
 
-internal fun isRetryableDownloadFailure(failureClass: DownloadFailureClass): Boolean =
+fun isRetryableDownloadFailure(failureClass: DownloadFailureClass): Boolean =
     when (failureClass) {
         DownloadFailureClass.NO_RESPONSE,
         DownloadFailureClass.SERVER,

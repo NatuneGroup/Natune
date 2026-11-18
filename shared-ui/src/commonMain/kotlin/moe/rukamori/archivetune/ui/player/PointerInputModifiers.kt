@@ -5,7 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 
-internal fun Modifier.consumeUnhandledPointerInput(): Modifier =
+fun Modifier.consumeUnhandledPointerInput(): Modifier =
     pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {

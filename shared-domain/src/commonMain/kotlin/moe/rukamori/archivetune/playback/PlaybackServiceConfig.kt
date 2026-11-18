@@ -5,7 +5,7 @@ package moe.rukamori.archivetune.playback
  * players. Pinned as constants so the unit tests can hold the values regardless of which builder
  * line a later refactor touches.
  */
-internal object PlaybackServiceConfig {
+object PlaybackServiceConfig {
     /**
      * Unplugging headphones, or the output route otherwise becoming noisy, pauses playback rather
      * than blasting the speaker — Media3's audio-becoming-noisy handling, always on.

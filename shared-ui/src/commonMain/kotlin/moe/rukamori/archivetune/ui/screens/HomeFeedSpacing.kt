@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.dp
 private val HomeSectionSpacing = 18.dp
 
 /** The fixed gap between home shelves, keyed and typed so list state survives feed swaps. */
-internal fun LazyListScope.rukamoriSectionSpacer(key: String) {
+fun LazyListScope.rukamoriSectionSpacer(key: String) {
     item(
         key = "home_section_spacer_$key",
         contentType = "section_spacer",

@@ -15,7 +15,7 @@ data class DecodedStream(
 fun bits(value: Int?, isFloat: Boolean = false): String? =
     value?.takeIf { it > 0 }?.let { if (isFloat) "$it-bit float" else "$it-bit" }
 
-internal fun kbps(bitsPerSecond: Int?): String? =
+fun kbps(bitsPerSecond: Int?): String? =
     bitsPerSecond?.takeIf { it > 0 }?.let { "${(it + 500) / 1000} kbps" }
 
 fun channels(count: Int?, layout: String?): String? {
@@ -24,7 +24,7 @@ fun channels(count: Int?, layout: String?): String? {
     return if (name == null) "$count" else "$count ($name)"
 }
 
-internal fun codecName(mimeType: String?, tagged: String?): String? {
+fun codecName(mimeType: String?, tagged: String?): String? {
     val mime = mimeType?.lowercase()
     val fromMime = when {
         mime == null -> null
@@ -46,7 +46,7 @@ internal fun codecName(mimeType: String?, tagged: String?): String? {
     return fromMime ?: tagged?.takeIf { it.isNotBlank() }
 }
 
-internal fun latencyMs(frames: Int?, sampleRate: Int?): Double? {
+fun latencyMs(frames: Int?, sampleRate: Int?): Double? {
     if (frames == null || frames <= 0) return null
     if (sampleRate == null || sampleRate <= 0) return null
     return frames * 1000.0 / sampleRate

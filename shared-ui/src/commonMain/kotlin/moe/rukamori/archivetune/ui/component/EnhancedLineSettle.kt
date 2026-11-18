@@ -18,7 +18,7 @@ import kotlin.math.exp
  * no recomposition, and the first frame after the move already shows the rows at their old places.
  */
 @Stable
-internal class EnhancedLineSettle(private val listState: LazyListState) {
+class EnhancedLineSettle(private val listState: LazyListState) {
     /** The line the list moved to, or -1 when no glide runs. */
     var primaryIndex: Int by mutableIntStateOf(-1)
         private set
@@ -80,12 +80,12 @@ internal class EnhancedLineSettle(private val listState: LazyListState) {
  * Runs a glide each time one starts. A newer start or clear cancels the frame loop in flight. The host runs this inside
  * repeatOnLifecycle(RESUMED), so the frame loop stops when the screen is not resumed and picks up where it stopped.
  */
-internal suspend fun EnhancedLineSettle.runEachSettle() {
+suspend fun EnhancedLineSettle.runEachSettle() {
     snapshotFlow { generation }.collectLatest { runSettle() }
 }
 
 /** Advances one glide once per frame until its longest delay and spring have run out, then ends it. */
-internal suspend fun EnhancedLineSettle.runSettle() {
+suspend fun EnhancedLineSettle.runSettle() {
     if (primaryIndex < 0) return
     val owned = generation
     // A loop that a stop of the screen cancelled resumes from the stored elapsed time, so the glide does not replay.

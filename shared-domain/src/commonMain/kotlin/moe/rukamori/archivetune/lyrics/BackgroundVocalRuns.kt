@@ -21,7 +21,7 @@ package moe.rukamori.archivetune.lyrics
  * plain LRC line's parentheses are lyric text, and an explicit provider role (TTML's `x-bg`) has already
  * said what it means before this point.
  */
-internal fun List<WordTimestamp>.withBackgroundRuns(): List<WordTimestamp> {
+fun List<WordTimestamp>.withBackgroundRuns(): List<WordTimestamp> {
     if (isEmpty()) return this
     val bracketed = bracketDepth()
     // Every word inside a bracket run: the whole line is one parenthesised phrase, so nothing here is

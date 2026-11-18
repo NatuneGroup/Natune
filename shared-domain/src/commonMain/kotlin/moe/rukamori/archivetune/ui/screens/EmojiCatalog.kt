@@ -1,7 +1,7 @@
 
 package moe.rukamori.archivetune.ui.screens
 
-internal val EmojiCatalog: List<Pair<String, List<String>>> = listOf(
+val EmojiCatalog: List<Pair<String, List<String>>> = listOf(
     "Smileys & Emotion" to listOf(
         "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "🫠", "😉",
         "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "☺\ufe0f", "😚", "😙", "🥲", "😋",

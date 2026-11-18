@@ -1,6 +1,6 @@
 package moe.rukamori.archivetune.playback
 
-internal object DownloadNetworkDefaults {
+object DownloadNetworkDefaults {
     // 12 concurrent songs. Increased from 8 — PRDownloader now
     // manages its own internal OkHttp dispatcher (configured in
     // App.kt) with generous per-host caps, and the cache-first
@@ -32,13 +32,13 @@ internal object DownloadNetworkDefaults {
     // Android — safe because the buffer is only allocated lazily
     // inside `CacheDataSink.open()`, and most downloads don't
     // allocate the full buffer at the same instant.
-    internal const val DOWNLOAD_WRITE_BUFFER_SIZE = 16 * 1024 * 1024
+    const val DOWNLOAD_WRITE_BUFFER_SIZE = 16 * 1024 * 1024
 
     // 128 MB fragment size — increased from 64 MB. A 40 MB FLAC is
     // stored as 1 fragment, a 150 MB hi-res FLAC as 2 (was 3).
     // Fewer fragments = fewer open file handles + fewer fsync
     // syscalls + smaller index file in the cache directory.
-    internal const val DOWNLOAD_FRAGMENT_SIZE = 128L * 1024 * 1024
+    const val DOWNLOAD_FRAGMENT_SIZE = 128L * 1024 * 1024
 
     // Hosts that downloads frequently hit. Pre-warming these at app
     // start means the first download of a session skips the

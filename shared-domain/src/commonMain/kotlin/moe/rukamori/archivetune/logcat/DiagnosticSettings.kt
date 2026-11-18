@@ -1,7 +1,7 @@
 
 package moe.rukamori.archivetune.logcat
 
-internal val diagnosticPreferenceNames = listOf(
+val diagnosticPreferenceNames = listOf(
     "audioSourceOrder", "audioQuality", "autoChoosePlaybackClient", "playbackClient",
     "tidalEnabled", "tidalAudioQuality", "deezerEnabled", "deezerAudioQuality", "qobuzEnabled", "qobuzAudioQuality",
     "appleMusicSourceEnabled", "appleMusicQuality", "amazonMusicEnabled", "qqMusicEnabled", "qqMusicAudioQuality",
