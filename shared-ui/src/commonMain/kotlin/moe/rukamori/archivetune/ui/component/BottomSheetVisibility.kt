@@ -3,7 +3,7 @@ package moe.rukamori.archivetune.ui.component
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 
-internal data class BottomSheetHitTargets(val root: Boolean, val expanded: Boolean, val collapsed: Boolean)
+data class BottomSheetHitTargets(val root: Boolean, val expanded: Boolean, val collapsed: Boolean)
 
 /** Alpha-zero retained player content must not cover the screen or the visible mini player. */
 fun bottomSheetHitTargets(progress: Float, dismissed: Boolean, collapsedContentVisible: Boolean): BottomSheetHitTargets {
