@@ -128,7 +128,8 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
         }
     }
     from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback/smart")) {
-        include("TransitionPolicy.kt", "TransitionPlanner.kt")
+        // TransitionPolicy now lives in :shared-domain; only the planner is still copied from :app.
+        include("TransitionPlanner.kt")
         filter { line: String -> if (line.startsWith("package ")) line + "\nimport moe.rukamori.archivetune.shared.domain.automix.*" else line }
     }
     into(desktopPlayPlaySources)
