@@ -1364,7 +1364,7 @@ internal fun PinnedMessagesStack(
                         val preview =
                             when {
                                 pinned.deleted -> stringResource(R.string.listen_together_chat_message_deleted)
-                                pinned.sharedTrack != null -> "♪ ${pinned.sharedTrack.title} • ${pinned.sharedTrack.artist}"
+                                pinned.sharedTrack != null -> pinned.sharedTrack.let { track -> "♪ ${track?.title} • ${track?.artist}" }
                                 else -> pinned.message
                             }
                         Text(

@@ -1141,13 +1141,15 @@ class ListenTogetherManager @Inject constructor(
                         lastSuggestedTrackId = null
 
                         // If we have a queue, use it! This is the "smart" sync path.
-                        if (action.queue != null && action.queue.isNotEmpty()) {
+                        // A local copy: the action now comes from :shared-domain, so its property cannot smart-cast.
+                        val actionQueue = action.queue
+                        if (actionQueue != null && actionQueue.isNotEmpty()) {
                             val queueTitle = action.queueTitle
                             applyPlaybackState(
                                 currentTrack = track,
                                 isPlaying = false, // Will be updated by subsequent PLAY or pending sync
                                 position = 0,
-                                queue = action.queue,
+                                queue = actionQueue,
                                 queueTitle = queueTitle
                             )
                         } else {
@@ -1887,7 +1889,7 @@ class ListenTogetherManager @Inject constructor(
             id = id,
             title = title,
             artists = listOf(Artist(id = "", name = artist)),
-            album = if (album != null) Album(id = "", title = album) else null,
+            album = album?.let { Album(id = "", title = it) },
             duration = (duration / 1000).toInt(),
             thumbnailUrl = thumbnail,
             suggestedBy = suggestedBy

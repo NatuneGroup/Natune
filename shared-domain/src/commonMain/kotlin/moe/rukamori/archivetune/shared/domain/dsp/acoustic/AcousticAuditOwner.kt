@@ -34,7 +34,7 @@ class AcousticRun internal constructor(
 ) {
     /** Throws when the run may not continue: cancellation first, then the run's deadline. */
     fun check() {
-        if (!isActive()) throw CancellationException()
+        if (!isActive()) throw CancellationException("acoustic run cancelled")
         if (deadlineExceeded()) throw AcousticUnavailable("deadline_exceeded")
     }
 
@@ -198,7 +198,7 @@ class AcousticAuditOwner(
         val started = TimeSource.Monotonic.markNow()
         val deadline = AcousticAuditLimits.DEADLINE_MS.milliseconds
         fun checkActive() {
-            if (!self.isActive) throw CancellationException()
+            if (!self.isActive) throw CancellationException("acoustic run cancelled")
         }
         // A probe that blocks without suspending cannot be interrupted by job cancellation alone; the run
         // carries the same two limits to every step of its read loop, and its progress goes out as DECODING.
