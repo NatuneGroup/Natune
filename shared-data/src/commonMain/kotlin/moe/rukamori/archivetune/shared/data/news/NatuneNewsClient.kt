@@ -24,7 +24,7 @@ import moe.rukamori.archivetune.shared.domain.repository.NewsRepository
 import kotlin.coroutines.cancellation.CancellationException
 
 /** The baked-in feed every host falls back to when its build does not name one. */
-const val DEFAULT_NATUNE_NEWS_URL = "https://natune.pages.dev/api/news"
+const val DEFAULT_NATUNE_NEWS_URL = "https://natune.app/api/news"
 
 /** A feed or article answer that is unusable: a transport failure, a non-2xx status, an empty body or HTML. */
 class NewsFeedException(message: String, cause: Throwable? = null) : Exception(message, cause)

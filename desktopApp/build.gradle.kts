@@ -293,7 +293,7 @@ val desktopForkDirty = runCatching {
 val desktopNatuneNewsUrl = run {
     val localProperties = Properties()
     rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { localProperties.load(it) }
-    (localProperties.getProperty("NATUNE_NEWS_URL") ?: System.getenv("NATUNE_NEWS_URL") ?: "https://natune.pages.dev/api/news")
+    (localProperties.getProperty("NATUNE_NEWS_URL") ?: System.getenv("NATUNE_NEWS_URL") ?: "https://natune.app/api/news")
         .trim().trimEnd('/')
 }
 require(desktopNatuneNewsUrl.none { it == '"' || it == '\\' || it == '$' || it.isWhitespace() }) {
