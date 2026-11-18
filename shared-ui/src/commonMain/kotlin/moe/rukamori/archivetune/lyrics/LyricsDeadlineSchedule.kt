@@ -39,11 +39,16 @@ class LyricsDeadlineSchedule(
         }
     }
 
+    // Upper bound over the ascending array: the first index whose value is greater than [v].
+    // Written out because LongArray.binarySearch is JVM-only.
     private fun firstGreaterThan(values: LongArray, v: Long): Int {
-        var index = values.binarySearch(v)
-        if (index < 0) index = index.inv()
-        while (index < values.size && values[index] <= v) index++
-        return index
+        var low = 0
+        var high = values.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (values[mid] <= v) low = mid + 1 else high = mid
+        }
+        return low
     }
 
     companion object {
