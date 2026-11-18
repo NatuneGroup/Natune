@@ -104,7 +104,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1826,14 +1825,6 @@ private fun PresetSwatches(
                 )
             }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PalettePickerScreenPreview() {
-    MaterialTheme {
-        PalettePickerScreen(navController = rememberNavController())
     }
 }
 

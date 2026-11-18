@@ -80,17 +80,6 @@ fun rememberPlayerMenuStyleSetter(): (PlayerMenuStyle) -> Unit {
     return { style -> PreferenceStore.launchEdit(dataStore) { applySharedPreferenceEdit { setPlayerMenuStyle(style) } } }
 }
 
-/** Only the explicit preset action coordinates the independently editable surfaces. */
-@Composable
-fun rememberAppleMusicExperienceToggle(): (Boolean) -> Unit {
-    val dataStore = LocalContext.current.dataStore
-    return { enabled ->
-        PreferenceStore.launchEdit(dataStore) {
-            applyInterfaceStyle(if (enabled) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE)
-        }
-    }
-}
-
 internal fun MutablePreferences.applyInterfaceStyle(style: InterfaceStyle) {
     applySharedPreferenceEdit { applySharedInterfaceStyle(SharedInterfaceStyle.valueOf(style.name)) }
 }

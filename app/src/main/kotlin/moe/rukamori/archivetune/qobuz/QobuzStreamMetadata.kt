@@ -3,14 +3,6 @@ package moe.rukamori.archivetune.qobuz
 import kotlin.math.roundToInt
 import org.json.JSONObject
 
-internal fun JSONObject.reportedSampleRate(): Int? {
-    val rate = listOfNotNull(optJSONObject("data"), this).firstNotNullOfOrNull { data ->
-        data.optDouble("sampling_rate").takeIf { it.isFinite() && it > 0 }
-            ?: data.optDouble("sampleRate").takeIf { it.isFinite() && it > 0 }
-    } ?: return null
-    return (if (rate < 1_000) rate * 1_000 else rate).toInt().takeIf { it > 0 }
-}
-
 internal fun JSONObject.reportedBitDepth(): Int? {
     return listOfNotNull(optJSONObject("data"), this).firstNotNullOfOrNull { data ->
         data.optInt("bit_depth").takeIf { it > 0 } ?: data.optInt("bitDepth").takeIf { it > 0 }

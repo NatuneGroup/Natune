@@ -106,7 +106,3 @@ class ModuleSettingsUseCases @Inject constructor(
         val MAX_QUALITY = Regex("""\bmax(?:imum)?(?:\s+quality)?\b""")
     }
 }
-
-class RestoreModuleBackupUseCase @Inject constructor(private val repository: ModuleRepository) {
-    suspend operator fun invoke(bytes: ByteArray) = repository.restorePortable(bytes)
-}

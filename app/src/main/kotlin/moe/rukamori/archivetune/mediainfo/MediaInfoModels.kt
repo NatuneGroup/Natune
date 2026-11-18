@@ -3,7 +3,6 @@ package moe.rukamori.archivetune.mediainfo
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
-import com.google.common.collect.ImmutableList
 import moe.rukamori.archivetune.R
 
 @Immutable
@@ -81,21 +80,6 @@ data class MediaInfoDetail(@param:StringRes val labelRes: Int, val value: String
 
 @Immutable
 data class MediaInfoMetric(@param:StringRes val labelRes: Int, val value: String?)
-
-@Immutable
-data class MediaInfoUiModel(
-    val videoId: String,
-    val title: String,
-    val subtitle: String?,
-    val artwork: String?,
-    val metadata: MediaInfoState<MediaInfoMetadata>,
-    val descriptionState: MediaInfoState<String>,
-    val technicalDetails: MediaInfoState<ImmutableList<MediaInfoDetail>>,
-    val statistics: MediaInfoState<MediaInfoStatistics>,
-    val overview: ImmutableList<MediaInfoDetail>,
-    val quickFacts: ImmutableList<MediaInfoQuickFact>,
-    val metrics: ImmutableList<MediaInfoMetric>,
-)
 
 sealed interface MediaInfoEvent {
     data class Copy(val value: String) : MediaInfoEvent
