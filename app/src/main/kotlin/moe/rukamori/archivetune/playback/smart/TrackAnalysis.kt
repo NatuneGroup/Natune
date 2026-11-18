@@ -1,3 +1,17 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
+ * Automix analysis pipeline ported from BitChord
+ * (https://github.com/kushagrasinghx/BitChord), which derives it from
+ * Orchard (https://github.com/SFG5453/Orchard). Orchard's original source
+ * is licensed AGPL-3.0-or-later; per AGPLv3 section 13 this file is
+ * combined into ArchiveTune -- a GPL-3.0-or-later work -- and remains
+ * itself governed by the AGPLv3 as part of that combination.
+ */
+
 package moe.rukamori.archivetune.playback.smart
 /**
  * Stored offline analysis for one track, in that track's own timeline seconds.

@@ -1,3 +1,17 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
+ * Automix analysis pipeline ported from BitChord
+ * (https://github.com/kushagrasinghx/BitChord), which derives it from
+ * Orchard (https://github.com/SFG5453/Orchard). Orchard's original source
+ * is licensed AGPL-3.0-or-later; per AGPLv3 section 13 this file is
+ * combined into ArchiveTune -- a GPL-3.0-or-later work -- and remains
+ * itself governed by the AGPLv3 as part of that combination.
+ */
+
 package moe.rukamori.archivetune.playback.smart
 import kotlin.math.abs
 import kotlin.math.floor
@@ -82,11 +96,11 @@ private val MIX_OUT_TYPE_SCORE = mapOf(
 )
 
 /** Non-finite guards, matching the desktop planner's coercion of `NaN`/`Infinity` to zero. */
-fun Double.orZero(): Double = if (isFinite()) this else 0.0
+internal fun Double.orZero(): Double = if (isFinite()) this else 0.0
 
-fun Double?.orZero(): Double = if (this != null && isFinite()) this else 0.0
+internal fun Double?.orZero(): Double = if (this != null && isFinite()) this else 0.0
 
-fun clamp(value: Double, min: Double, max: Double): Double =
+internal fun clamp(value: Double, min: Double, max: Double): Double =
     if (value.isFinite()) max(min, min(max, value)) else min
 
 /**
@@ -260,7 +274,7 @@ fun audibleSecondsBetween(analysis: TrackAnalysis, start: Double, end: Double): 
  * grid, which silently overrides a measured `audibleStartTime` and tells the
  * planner the whole head of the track is intro it can fade across.
  */
-fun audibleStartOf(analysis: TrackAnalysis): Double {
+internal fun audibleStartOf(analysis: TrackAnalysis): Double {
     val firstBeat = analysis.firstBeat.takeIf { it.isFinite() && it > 0 }
     val candidates = listOfNotNull(analysis.audibleStartTime, analysis.pickupTime, firstBeat)
         .filter { it.isFinite() && it >= 0 }
@@ -268,7 +282,7 @@ fun audibleStartOf(analysis: TrackAnalysis): Double {
 }
 
 /** The value in [values] closest to [target] within [tolerance], or null when none qualifies. */
-fun nearestValue(values: List<Double>, target: Double, tolerance: Double): Double? =
+internal fun nearestValue(values: List<Double>, target: Double, tolerance: Double): Double? =
     values.filter { it.isFinite() && abs(it - target) <= tolerance }
         .minByOrNull { abs(it - target) }
 
