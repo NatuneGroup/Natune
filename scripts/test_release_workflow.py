@@ -564,7 +564,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 self.assertEqual(expected, outputs["version_name"])
                 self.assertRegex(outputs["tag_name"], r"^N[0-9]{12}$")
                 self.assertEqual("true", outputs["should_build"])
-                self.assertEqual("15.1.0", outputs["package_version"])
+                self.assertEqual("15.3.0", outputs["package_version"])
                 self.assertEqual(str(1893542340 + 6833), outputs["version_code"])
 
     def test_unsigned_nightly_and_stable_publish_the_channel_inventory_and_private_manifest(self):
