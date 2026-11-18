@@ -232,7 +232,7 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         snapshots = (PLAYBACK / "AutoOfflineBrowseSnapshots.kt").read_text()
         self.assertIn("browseFolderUpdates.snapshot(parentId)", snapshots)
         self.assertIn("resolveAutoPlaybackItem(item)", snapshots)
-        queue_ids = (PLAYBACK / "AutoQueueMediaIds.kt").read_text()
+        queue_ids = (ROOT / "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/playback/AutoQueueMediaIds.kt").read_text()
         self.assertIn("it in queueMediaIds.indices && queueMediaIds[it] == entry.songMediaId", queue_ids)
         extensions = (PLAYBACK / "AutoBrowseExtensions.kt").read_text()
         tap = extensions.split("internal suspend fun MediaLibrarySessionCallback.queueEntryPlayback", 1)[1].split(
