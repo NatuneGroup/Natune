@@ -152,4 +152,4 @@ observations; a remote receiver's decoded PCM and output remain unobserved.
 - [ ] Audible transitions and physical device/DAC output checks.
 
 Keep these checks separate from the physical-device release gate in
-[`docs/claude/RELEASES.md`](claude/RELEASES.md).
+[`docs/claude/RELEASES.md`](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/RELEASES.md).

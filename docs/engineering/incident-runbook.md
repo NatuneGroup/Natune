@@ -102,7 +102,7 @@ provider/account, record the blocker. Do not label the fix verified or close the
 
 ## Release impact and recovery
 
-Follow the [release procedure](../claude/RELEASES.md). After publication, verify the
+Follow the [release procedure](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/RELEASES.md). After publication, verify the
 successful publish run, tag/commit, APK variants/signature and the matching
 `nightly.json` or `stable.json` update-feed asset. Then reproduce the original symptom
 on that installed build. Compare fresh sanitized reports and issue activity with

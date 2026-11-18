@@ -1,6 +1,6 @@
 # Quality gates
 
-The reusable procedure is in [fast-check](../../.factory/skills/fast-check/SKILL.md). In short:
+The reusable procedure is in [fast-check](https://github.com/NatuneGroup/natune-agent/blob/main/.factory/skills/fast-check/SKILL.md). In short:
 
 1. Cheap: repository check, scoped `git diff --check`, relevant stdlib Python tests, `bash -n`
    and `node --check`; `actionlint` only when an existing binary is available.
@@ -229,6 +229,6 @@ unchanged. A license header cannot fix missing permission or relicense upstream 
 
 ## Validation evidence
 
-Use the documented build/test tasks from [AGENTS.md](../../AGENTS.md) on a suitable
+Use the documented build/test tasks from [AGENTS.md](https://github.com/NatuneGroup/natune-agent/blob/main/AGENTS.md) on a suitable
 host. Remote checks must identify the actual source snapshot and retain their failures.
 Keep the repository's heap, KSP, cache, signing and submodule policies unchanged.
