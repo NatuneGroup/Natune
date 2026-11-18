@@ -70,8 +70,3 @@ data class PlaylistTagMap(
     @ColumnInfo(name = "createdAt", defaultValue = "CURRENT_TIMESTAMP")
     val createdAt: LocalDateTime = LocalDateTime.now(),
 )
-
-data class PlaylistWithTags(
-    val playlist: Playlist,
-    val tags: List<TagEntity>,
-)

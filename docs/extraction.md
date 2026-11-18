@@ -39,7 +39,7 @@ the anonymous `ANDROID_MUSIC`/`IOS`/`WEB_REMIX` players). The extractor tiers re
 anonymous visitor, and for downloads they prefer MP4/AAC (jaudiotagger cannot tag WebM). Low-data
 mode passes `LOW` quality to every tier.
 
-`ResolveAudioStreamUseCase.invoke` (used by `NextStreamPreloader`) wraps the same stack with its own
+`ResolveAudioStreamUseCase.invoke` (the playback prefetch path uses it to warm the next track) wraps the same stack with its own
 cache keyed by `(mediaId, quality, metered, purpose, authFingerprint, pinnedFormatId)` and adds
 **`YtdlnisStreamRepository`** (an external yt-dlp plugin APK through `ytdlp/CompactYtDlp.kt`, the way
 YTDLnis does) after NewPipe; the plugin is optional, so it is not part of the live chain above.

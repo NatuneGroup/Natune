@@ -66,10 +66,6 @@ internal fun CrashRecord.isFromEarlierVersion(install: InstallWindow): Boolean {
         installedSinceMs != install.installedSinceMs
 }
 
-/** Only failures of the installed build interrupt startup. Memory-pressure kills are listed for diagnosis. */
-internal fun CrashRecord.interruptsStartup(install: InstallWindow): Boolean =
-    kind != ProcessExitKind.LOW_MEMORY && !isFromEarlierVersion(install)
-
 /** A captured Java crash and the Android exit for that same death share a kind; a legacy record has no pid. */
 internal fun CrashRecord.isSameEventAs(pid: Int, kind: ProcessExitKind, timestampMs: Long): Boolean =
     this.kind == kind &&
