@@ -681,12 +681,4 @@ enum class VideoAspectRatio {
     CROP,
     STRETCH,
     FILL,
-    ;
-
-    fun toExoResizeMode(): Int = when (this) {
-        FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-        CROP -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-        STRETCH -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-        FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-    }
 }
