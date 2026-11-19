@@ -4,13 +4,13 @@ import moe.rukamori.archivetune.shared.domain.lyrics.ai.Sha256
 import kotlin.math.abs
 import kotlin.math.max
 
-internal data class AnalysisCacheFileMetadata(
+data class AnalysisCacheFileMetadata(
     val fileName: String,
     val lastModifiedEpochMs: Long,
     val sizeBytes: Long,
 )
 
-internal data class AnalysisCacheEntryIdentity(
+data class AnalysisCacheEntryIdentity(
     val schemaVersion: Int,
     val trackId: String,
     val sourceFingerprint: String,
@@ -18,7 +18,7 @@ internal data class AnalysisCacheEntryIdentity(
     val savedAtEpochMs: Long,
 )
 
-internal object AnalysisCachePolicy {
+object AnalysisCachePolicy {
     const val SCHEMA_VERSION = 2
     const val MAX_AGE_MILLIS = 90L * 24 * 60 * 60 * 1000
     const val MAX_ENTRIES = 256

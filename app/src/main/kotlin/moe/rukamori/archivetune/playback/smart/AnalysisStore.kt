@@ -18,13 +18,16 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import moe.rukamori.archivetune.playback.automix.AnalysisCacheEntryIdentity
-import moe.rukamori.archivetune.playback.automix.AnalysisCacheFileMetadata
-import moe.rukamori.archivetune.playback.automix.AnalysisCachePolicy
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import moe.rukamori.archivetune.shared.domain.automix.AnalysisCacheEntryIdentity
+import moe.rukamori.archivetune.shared.domain.automix.AnalysisCacheFileMetadata
+import moe.rukamori.archivetune.shared.domain.automix.AnalysisCachePolicy
+import moe.rukamori.archivetune.shared.domain.automix.EnergySample
+import moe.rukamori.archivetune.shared.domain.automix.MixCandidate
+import moe.rukamori.archivetune.shared.domain.automix.TrackAnalysis
 
 /**
  * Analysis results kept on disk, so a track is measured once and stays measured.

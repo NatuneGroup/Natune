@@ -1,20 +1,10 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
+package moe.rukamori.archivetune.playback.smart
 
-package moe.rukamori.archivetune.playback.automix
-
-import moe.rukamori.archivetune.playback.smart.TrackAnalysis
-import moe.rukamori.archivetune.playback.smart.TransitionTrackInfo
-import moe.rukamori.archivetune.playback.smart.TransitionTier
-import moe.rukamori.archivetune.playback.smart.assessTransitionTier
-import moe.rukamori.archivetune.playback.smart.planTransition
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import moe.rukamori.archivetune.shared.domain.automix.TrackAnalysis
+import moe.rukamori.archivetune.shared.domain.automix.TransitionTier
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class AutomixTransitionPolicyTest {
     @Test
