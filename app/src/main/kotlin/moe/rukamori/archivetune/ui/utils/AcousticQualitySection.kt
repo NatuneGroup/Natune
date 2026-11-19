@@ -45,7 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.acoustics.AcousticHeatAxis
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticHeatAxis
 import moe.rukamori.archivetune.acoustics.auditKey
 import moe.rukamori.archivetune.acoustics.rememberAcousticAuditOwner
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAssessment
