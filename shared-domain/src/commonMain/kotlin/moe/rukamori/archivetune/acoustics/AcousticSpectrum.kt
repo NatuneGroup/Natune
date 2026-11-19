@@ -5,6 +5,7 @@ import kotlin.math.pow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticHeatPalette
 
 /**
  * One loudness value per frequency band for the spectrum graph. The heat grid's time columns are

@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.acoustics
 
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticHeatPalette
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticHeatScale
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAssessment
 import kotlin.math.log10
 import kotlinx.coroutines.test.runTest
@@ -41,7 +43,7 @@ class AcousticSpectrumTest {
         // Every row identical [0 dB, -120 dB]: the linear-power mean is
         // 10*log10((1 + 1e-12)/2) ~= -3.0103 dB, not the -60 dB a dB-domain mean would give.
         // Uniform bands are unchanged by smoothing.
-        val heat = FloatArray(8) { column -> if (column % 2 == 0) 0f else AcousticHeatPalette.FLOOR_DB }
+        val heat = FloatArray(8) { column -> if (column % 2 == 0) 0f else AcousticHeatScale.FLOOR_DB }
         val bands = AcousticSpectrum.of(grid(2, 4, heat), bandCount = 4).bands
         val expectedDb = (10.0 * log10((1 + 1e-12) / 2)).toFloat()
         val expected = AcousticHeatPalette.intensity(expectedDb)
@@ -55,7 +57,7 @@ class AcousticSpectrumTest {
         val height = 100
         val heat = FloatArray(width * height) { index ->
             val row = index / width
-            if (row < height / 2) 0f else AcousticHeatPalette.FLOOR_DB
+            if (row < height / 2) 0f else AcousticHeatScale.FLOOR_DB
         }
         val bands = AcousticSpectrum.of(grid(width, height, heat), bandCount = 20).bands
         assertTrue(bands[0] > 0.9f && bands[8] > 0.9f)
