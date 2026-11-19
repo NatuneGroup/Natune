@@ -20,7 +20,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.RestartReason
 import moe.rukamori.archivetune.utils.SnapshotPreferenceState
@@ -39,15 +38,6 @@ fun <T> PreferenceSnapshot.restartState(
 ): MutableState<T> = SnapshotPreferenceState(
     read = { this[key, defaultValue] },
     write = { value -> controller.edit(this) { this[key] = value } },
-)
-
-inline fun <reified E : Enum<E>> PreferenceSnapshot.restartEnumState(
-    controller: RestartPromptViewModel,
-    key: Preferences.Key<String>,
-    defaultValue: E,
-): MutableState<E> = SnapshotPreferenceState(
-    read = { current[key].toEnum(defaultValue) },
-    write = { value -> controller.edit(this) { this[key] = value.name } },
 )
 
 /** The only restart dialog, above navigation. Back/outside dismissal is exactly Later. */

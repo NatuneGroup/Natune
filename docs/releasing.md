@@ -18,12 +18,12 @@ commit version changes to the branch.
 Stable versions come from the highest existing Git tag matching `vX.Y.Z`. The
 next stable version increments the minor component and sets patch to zero. When
 the next minor would be 8, the major increments and the minor resets to zero.
-With no matching tag, `baseVersionName` (`15.0.0`) is the starting point:
+With no matching tag, `baseVersionName` (`15.2.0`, the last ArchiveTune-era line) is the starting point:
 
 - `v15.0.0` → `15.1.0`
 - `v15.6.0` → `15.7.0`
 - `v15.7.0` → `16.0.0`
-- No matching tag → `15.1.0`
+- No matching tag → `15.3.0`
 
 The rule is implemented in `.github/scripts/next-version.py`. Stable releases
 are skipped if their calculated tag already exists.

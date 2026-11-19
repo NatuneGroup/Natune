@@ -38,6 +38,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +79,7 @@ import coil3.size.Size
 import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -394,6 +396,13 @@ fun rememberVideoArtworkState(
 ): VideoArtworkState {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    // The video only decodes while the app is STARTED. In the background it would keep decoding into a
+    // placeholder surface and the drift poller would keep waking up, so both stop and the main audio
+    // plays on alone; on return the video seeks to the audio position and resumes.
+    val started by rememberLifecycleStarted()
+    // Read straight from the lifecycle. `started` arrives through a flow and can lag a frame behind ON_STOP,
+    // so anything that can resume playback checks this instead.
+    fun appStartedNow(): Boolean = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
     val shouldPlay by rememberUpdatedState(isPlaying)
     val currentPosition by rememberUpdatedState(positionProvider)
     val updatedPreferredHeight by rememberUpdatedState(preferredHeight)
@@ -749,11 +758,11 @@ fun rememberVideoArtworkState(
             // covers BOTH the initial-load and quality-change paths.
             state.lastSeekAtMs = SystemClock.elapsedRealtime()
         }
-        exoPlayer.playWhenReady = shouldPlay && !awaitingVideoReady
+        exoPlayer.playWhenReady = shouldPlay && started && !awaitingVideoReady
     }
 
     // ── Play/pause follower ──
-    LaunchedEffect(isPlaying, awaitingVideoReady, state.isChangingQuality) {
+    LaunchedEffect(isPlaying, awaitingVideoReady, state.isChangingQuality, started) {
         if (state.hasPlaybackFailed) {
             exoPlayer.pause()
         } else if (awaitingVideoReady) {
@@ -774,7 +783,7 @@ fun rememberVideoArtworkState(
             if (isPlaying) updatedOnRequestPauseMain()
             exoPlayer.pause()
         } else {
-            exoPlayer.setVideoPlayback(isPlaying)
+            exoPlayer.setVideoPlayback(isPlaying && started)
         }
     }
 
@@ -897,7 +906,7 @@ fun rememberVideoArtworkState(
         if (resumeMainAudio) {
             updatedOnRequestResumeMain()
         }
-        if (resumeVideo) {
+        if (resumeVideo && started) {
             exoPlayer.playWhenReady = true
             exoPlayer.play()
         }
@@ -919,7 +928,15 @@ fun rememberVideoArtworkState(
         var prevAudioPos = -1L
         var frozenCycles = 0
         while (isActive) {
+            if (!started) {
+                snapshotFlow { started }.first { it }
+                prevVideoPos = -1L
+                prevAudioPos = -1L
+                frozenCycles = 0
+            }
             delay(VideoSyncPollIntervalMs)
+            // A cycle that was sleeping when the app stopped must not seek or resync in the background.
+            if (!appStartedNow()) continue
             if (state.hasPlaybackFailed) continue
 
             // Stuck-buffering recovery
@@ -1080,12 +1097,25 @@ fun rememberVideoArtworkState(
     DisposableEffect(exoPlayer, lifecycleOwner) {
         val observer =
             LifecycleEventObserver { _, event ->
-                if (
+                if (event == Lifecycle.Event.ON_STOP) {
+                    exoPlayer.pause()
+                } else if (
                     (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) &&
                     !state.hasPlaybackFailed &&
                     exoPlayer.playerError == null &&
-                    state.streamUrl != null
+                    state.streamUrl != null &&
+                    // A load or quality change resumes from its first frame (the pending-resume effect), so
+                    // starting the video here would run it ahead of its audio.
+                    !awaitingVideoReady &&
+                    !state.isChangingQuality
                 ) {
+                    if (event == Lifecycle.Event.ON_START) {
+                        val mainPos = currentPosition()
+                        if (mainPos > 0) {
+                            exoPlayer.seekTo(mainPos)
+                            state.lastSeekAtMs = SystemClock.elapsedRealtime()
+                        }
+                    }
                     exoPlayer.setVideoPlayback(shouldPlay)
                 }
             }
@@ -1269,7 +1299,8 @@ fun rememberVideoArtworkState(
                             // position and start a settling window so the
                             // drift poller doesn't immediately re-seek.
                             state.lastSeekAtMs = SystemClock.elapsedRealtime()
-                            exoPlayer.setVideoPlayback(shouldPlay)
+                            // Can fire just after ON_STOP paused the video; never resume it in the background.
+                            exoPlayer.setVideoPlayback(shouldPlay && appStartedNow())
                         }
                         Player.STATE_IDLE -> {
                             state.bufferingStartedAtMs = 0L

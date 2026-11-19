@@ -70,6 +70,7 @@ fun QobuzLoginScreen(
     navigateUp: () -> Unit,
     onFailure: () -> Unit,
     modifier: Modifier = Modifier,
+    exchange: (suspend (String, String, String, String) -> QobuzTokenEntry?)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }
@@ -160,6 +161,13 @@ fun QobuzLoginScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (exchange != null) {
+            QobuzPasswordLogin(exchange, save = { entry ->
+                if (verify(entry) == SourceHealthStatus.UNREACHABLE) error("Qobuz verification failed")
+                controller.edit { addQobuzTokens(listOf(entry)); this[QobuzEnabledKey] = true }
+                saved = true
+            }, onFailure = onFailure)
+        }
         if (openWebPlayer != null) {
             TextButton(onClick = openWebPlayer) { Text(stringResource(Res.string.m6_qobuz_login_open_player)) }
         }

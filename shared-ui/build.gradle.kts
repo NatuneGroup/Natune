@@ -37,6 +37,12 @@ kotlin {
         androidTarget.androidResources.enable = true
     }
 
+    // The same opt-ins the Android app compiles with, so components moved out of :app build unchanged.
+    sourceSets.all {
+        languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api")
+        languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
+    }
+
     sourceSets {
         commonMain {
             dependencies {

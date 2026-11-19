@@ -123,7 +123,7 @@ fun HistoryScreen(
                             else artwork(event.row.item, Modifier.size(48.dp))
                         },
                         trailingContent = {
-                            if (selected.isEmpty() && state.rowMenu) TextButton({ actions.more(event.row) }) { Text(stringResource(Res.string.m4_more)) }
+                            if (selected.isEmpty() && state.rowMenu) ItemMenuButton({ actions.more(event.row) })
                         },
                         modifier = Modifier.testTag("history-event-${event.row.occurrenceId}").combinedClickable(
                             onClick = { if (selected.isNotEmpty()) { if (!state.busy && id != null) actions.toggleSelection(id) }

@@ -8,8 +8,8 @@
 - [Incident runbook](incident-runbook.md): triage, diagnostics, release impact and recovery.
 - [Issue triage](triage.md): labels, maintainer decisions and error-to-fix follow-up.
 - [Android QA](../android-qa.md): emulator setup and interaction evidence.
-- [Fork architecture](../claude/ARCHITECTURE.md): playback and provider boundaries.
-- [Release procedure](../claude/RELEASES.md): signing, channels and promotion gates.
+- [Fork architecture](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/ARCHITECTURE.md): playback and provider boundaries.
+- [Release procedure](https://github.com/NatuneGroup/natune-agent/blob/main/docs/claude/RELEASES.md): signing, channels and promotion gates.
 
 Keep current procedures here, product/subsystem knowledge in `docs/claude/`, and
 reusable agent workflows in `.factory/skills/`. Describe current behavior; put

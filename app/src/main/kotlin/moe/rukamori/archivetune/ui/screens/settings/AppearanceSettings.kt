@@ -1394,9 +1394,3 @@ enum class NavigationTab {
     SEARCH,
     LIBRARY,
 }
-
-enum class LyricsPosition {
-    LEFT,
-    CENTER,
-    RIGHT,
-}

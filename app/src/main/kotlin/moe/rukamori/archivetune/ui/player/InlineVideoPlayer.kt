@@ -100,6 +100,7 @@ import moe.rukamori.archivetune.constants.VideoAmbientModeKey
 import moe.rukamori.archivetune.constants.VideoAspectRatio
 import moe.rukamori.archivetune.constants.VideoAspectRatioKey
 import moe.rukamori.archivetune.constants.VideoPlaybackSpeedKey
+import moe.rukamori.archivetune.constants.toExoResizeMode
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted

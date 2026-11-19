@@ -30,6 +30,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
+            // Preference keys live here as plain DataStore keys; the multiplatform core has no Android dependency.
+            api("androidx.datastore:datastore-preferences-core:1.2.1")
             implementation(libs.kotlinx.serialization.json)
         }
         jvmMain.dependencies {

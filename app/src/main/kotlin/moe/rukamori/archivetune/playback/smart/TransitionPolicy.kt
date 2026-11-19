@@ -149,31 +149,6 @@ fun isVocalClash(outgoingActivity: Double?, incomingActivity: Double?): Boolean 
         incomingActivity >= VOCAL_ACTIVE_THRESHOLD
 
 /**
- * How strongly two windows sing over each other: 0 for nothing worth acting on,
- * 1 for two fully vocal passages landing on one another.
- *
- * [isVocalClash]'s graded counterpart, and the reason for having both. A boolean
- * is the right shape for a routing decision — shorten the overlap or don't — but
- * it is the wrong shape for the renderer, which has to decide *how hard* to pull
- * the two voices apart. A pair scraping over the threshold and two choruses
- * colliding are the same `true` and want visibly different treatment.
- *
- * Governed by the quieter of the two, because a clash needs both sides: an
- * instrumental passage under a vocal is not a clash however loud the vocal is,
- * and taking a mean would let one strong side manufacture one.
- *
- * Null on either side is no evidence and answers zero, which leaves whatever the
- * caller would have done anyway. Absence of a mask is not absence of a vocal —
- * but acting on it would filter every track a fallback analyzer handled.
- */
-fun vocalOverlapAmount(outgoingActivity: Double?, incomingActivity: Double?): Double {
-    if (outgoingActivity == null || incomingActivity == null) return 0.0
-    val both = min(outgoingActivity, incomingActivity)
-    if (both <= VOCAL_ACTIVE_THRESHOLD) return 0.0
-    return ((both - VOCAL_ACTIVE_THRESHOLD) / (1.0 - VOCAL_ACTIVE_THRESHOLD)).coerceIn(0.0, 1.0)
-}
-
-/**
  * The fraction of a planned overlap where **both** tracks are singing at the
  * same instant, or null when either side has no mask.
  *

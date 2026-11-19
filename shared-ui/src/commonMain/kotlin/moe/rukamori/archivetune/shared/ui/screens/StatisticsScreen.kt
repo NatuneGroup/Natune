@@ -196,7 +196,7 @@ internal fun StatisticsRankRow(
             Text((index + 1).toString()); artwork(rank.item, Modifier.size(48.dp))
         } },
         trailingContent = more?.let { menu -> {
-            TextButton({ menu(rank.item.ref) }) { Text(stringResource(Res.string.m4_more)) }
+            ItemMenuButton({ menu(rank.item.ref) })
         } },
         modifier = if (open == null) Modifier else Modifier.clickable(onClick = open))
 }

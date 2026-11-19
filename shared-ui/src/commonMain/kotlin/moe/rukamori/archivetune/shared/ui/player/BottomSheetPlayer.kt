@@ -185,10 +185,10 @@ fun BottomSheetPlayer(
                         !(phonePresentation && !landscape && (interaction.panel == PlayerPanel.QUEUE ||
                             presentation.style == PlayerDesignStyle.V4 && interaction.panel == PlayerPanel.ARTWORK))) {
                         // With a panel open the control only returns to the artwork, so only the artwork state says "collapse".
-                        val collapses = phonePresentation && interaction.panel == PlayerPanel.ARTWORK
+                        val (closeSymbol, closeLabel) = collapseSymbolAndLabel(c)
                         PlayerIcon(
-                            if (collapses) PlayerSymbol.DOWN else PlayerSymbol.BACK,
-                            stringResource(if (collapses) Res.string.m5_collapse else Res.string.m5_back),
+                            closeSymbol,
+                            stringResource(closeLabel),
                             { actions.onAction(PlayerAction.COLLAPSE) },
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp)
                                 .testTag("player-close"),

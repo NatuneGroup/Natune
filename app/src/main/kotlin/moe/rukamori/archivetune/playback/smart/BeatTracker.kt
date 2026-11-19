@@ -83,6 +83,10 @@ class BeatTracker(private val context: Context) {
                 }
                 val options = OrtSession.SessionOptions().apply {
                     setIntraOpNumThreads(threads)
+                    // ORT's pool busy-waits for more work after every run by default. Analysis is
+                    // occasional background work, so park the threads instead of letting them spin
+                    // on cores the player and the UI need.
+                    addConfigEntry("session.intra_op.allow_spinning", "0")
                     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                     // ORT's arena allocator keeps every block it has ever needed, which for this
                     // graph is tens of megabytes of native heap retained for the life of the

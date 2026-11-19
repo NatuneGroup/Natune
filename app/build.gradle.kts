@@ -81,7 +81,7 @@ fun providerCredentialLiteral(name: String, vararg legacyNames: String): String 
 // trustedUpgradeVersionCodeFloor (see below), preserving the existing install/upgrade line.
 //
 // Nightly names use an unused UTC minute, "N<yyyyMMddHHmm>", for the release tag, title and app versionName.
-val baseVersionName = "15.0.0"
+val baseVersionName = "15.2.0"
 val baseVersionCode = 1500
 // Last trusted published build (Nightly N202610151104, build 6833). Signed builds must install over it in place.
 val trustedUpgradeVersionCodeFloor = 6833
@@ -333,7 +333,7 @@ android {
             (
                 localProperties.getProperty("NATUNE_NEWS_URL")
                     ?: System.getenv("NATUNE_NEWS_URL")
-                    ?: "https://natune.pages.dev/api/news"
+                    ?: "https://natune.app/api/news"
                 ).trim().trimEnd('/')
         buildConfigField("String", "NATUNE_NEWS_URL", "\"$natuneNewsUrl\"")
 

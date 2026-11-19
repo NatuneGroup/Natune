@@ -19,6 +19,7 @@ import android.content.Context
 import android.media.MediaDataSource
 import android.net.Uri
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import moe.rukamori.archivetune.constants.AutomixPerformanceMode
@@ -110,6 +111,14 @@ class SmartFadeAnalyzer(
 
         /** A heap deferral is a retryable miss, NOT a strike — see [request]. */
         private object Deferred
+
+        /**
+         * How long a deferred track waits before the next attempt. The driver re-requests on
+         * every poll tick (down to 50 ms near a transition), and each attempt re-reads the stored
+         * analysis from disk before reaching the heap check, so without a cooldown sustained
+         * memory pressure turned into a tight disk-and-parse loop.
+         */
+        private const val DEFERRED_RETRY_MS = 10_000L
     }
 
     private val appContext = context.applicationContext
@@ -120,6 +129,7 @@ class SmartFadeAnalyzer(
     private val results = ConcurrentHashMap<String, TrackAnalysis>()
     private val running = ConcurrentHashMap.newKeySet<String>()
     private val shortDecodes = ConcurrentHashMap<String, Int>()
+    private val deferredUntil = ConcurrentHashMap<String, Long>()
 
     /** Insertion order for the in-memory result LRU — see [MAX_IN_MEMORY_RESULTS]. */
     private val resultOrder = java.util.concurrent.ConcurrentLinkedDeque<String>()
@@ -200,6 +210,10 @@ class SmartFadeAnalyzer(
         if (trackId.isBlank()) return
         if (trackId in running) return
         if (results.containsKey(trackId)) return
+        deferredUntil[trackId]?.let { retryAt ->
+            if (SystemClock.elapsedRealtime() < retryAt) return
+            deferredUntil.remove(trackId)
+        }
         if (!running.add(trackId)) return
 
         // runCatching: after release() the executor is shut down, and a bare
@@ -236,6 +250,7 @@ class SmartFadeAnalyzer(
                         // used to permanently fail tracks after three ticks of
                         // memory pressure — a false FAILED the UI then showed
                         // for the rest of the session.
+                        deferredUntil[trackId] = SystemClock.elapsedRealtime() + DEFERRED_RETRY_MS
                         Log.d(TAG, "Deferring analysis of $trackId (retryable)")
                     } else if (analysis == null) {
                         val strikes = shortDecodes[trackId] ?: 0

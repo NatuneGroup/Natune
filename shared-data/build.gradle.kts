@@ -128,6 +128,7 @@ ksp {
 
 // Test-only: compile the REAL retained serialization classes, not manually duplicated layouts.
 // Their unrelated Android conversion functions resolve against small test-only support types.
+// SongMetadataOverrideSql now lives in :shared-domain, so the tests use it directly.
 val legacyFixtureSources = layout.buildDirectory.dir("generated/legacy-serialization-test")
 val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTestSources") {
     val models = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/models")
@@ -135,7 +136,6 @@ val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTest
     val metadataSources = listOf(
         "songmetadata/SongMetadataOverrides.kt",
         "db/entities/SongMetadataOverrideEntity.kt",
-        "db/SongMetadataOverrideSql.kt",
     ).map { rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/$it") }
     inputs.files(models.resolve("PersistQueue.kt"), models.resolve("MediaMetadata.kt"), finite, metadataSources)
     outputs.dir(legacyFixtureSources)

@@ -194,7 +194,7 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         self.assertLess(self.installer.index("gate.installExternalTimeline"), self.installer.index("evaluateLoading()"))
 
     def test_stale_loading_cleanup_belongs_to_the_last_publisher(self):
-        publisher = (PLAYBACK / "PlaylistLoadStatePublisher.kt").read_text()
+        publisher = (ROOT / "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/playback/PlaylistLoadStatePublisher.kt").read_text()
         self.assertIn("if (publisher !== owner) return false", publisher)
         finite = self.service.split("private fun startFinitePlaylistLoad", 1)[1].split("fun playQueue(", 1)[0]
         self.assertIn("PlaylistLoadState(loading = true, showDialog = needsInitial), ticket", finite)
@@ -232,7 +232,7 @@ class AndroidQueueCheckpointSourceContractsTest(unittest.TestCase):
         snapshots = (PLAYBACK / "AutoOfflineBrowseSnapshots.kt").read_text()
         self.assertIn("browseFolderUpdates.snapshot(parentId)", snapshots)
         self.assertIn("resolveAutoPlaybackItem(item)", snapshots)
-        queue_ids = (PLAYBACK / "AutoQueueMediaIds.kt").read_text()
+        queue_ids = (ROOT / "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/playback/AutoQueueMediaIds.kt").read_text()
         self.assertIn("it in queueMediaIds.indices && queueMediaIds[it] == entry.songMediaId", queue_ids)
         extensions = (PLAYBACK / "AutoBrowseExtensions.kt").read_text()
         tap = extensions.split("internal suspend fun MediaLibrarySessionCallback.queueEntryPlayback", 1)[1].split(

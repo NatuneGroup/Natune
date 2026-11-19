@@ -41,6 +41,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosTidalPkceSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
+import moe.rukamori.archivetune.shared.data.provider.QobuzAccountExchange
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
 import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
@@ -261,6 +262,7 @@ internal class IosSettingsOwners(
         }
     }
 
+    val qobuzExchange = QobuzAccountExchange(graph.http)
     private val qobuzVerifier = QobuzAccountVerifier(graph.http)
     private val qobuzScrape = QobuzBundleScrape(graph.http)
     private val qobuzProbe = QobuzInstanceProbe(graph.http)
@@ -558,6 +560,7 @@ private fun IosSettingsRouteBody(
                 controller = owners.controller,
                 scrapeCandidates = owners::qobuzSecretCandidates,
                 verify = owners::verifyQobuzToken,
+                exchange = owners.qobuzExchange::signIn,
                 openWebPlayer = { openIosUri("https://play.qobuz.com/", host::report) },
                 navigateUp = { navigation.back() },
                 onFailure = onFailure,

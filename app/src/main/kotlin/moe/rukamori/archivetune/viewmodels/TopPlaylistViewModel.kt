@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.constants.MyTopFilter
+import moe.rukamori.archivetune.constants.toTimeMillis
 import moe.rukamori.archivetune.db.MusicDatabase
 import javax.inject.Inject
 

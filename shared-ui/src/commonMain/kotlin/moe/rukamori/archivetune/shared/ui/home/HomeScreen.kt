@@ -227,7 +227,7 @@ fun HomeScreen(
                                                 artwork(row.item, Modifier.size(48.dp))
                                                 Text(effectiveSong(row.item).title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 actions.more?.let { more ->
-                                                    TextButton({ more(row) }) { Text(stringResource(Res.string.m4_more)) }
+                                                    ItemMenuButton({ more(row) })
                                                 }
                                             }
                                         }

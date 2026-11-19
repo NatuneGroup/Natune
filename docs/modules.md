@@ -77,9 +77,7 @@ metadata without inventing decoded audio evidence or adding a database migration
 `ResolveAudioStreamUseCase` continues to own the existing terminal YouTube
 extractor tiers; module failure does not alter their order. The shared domain
 reserves the same `MODULES` name, defaults it off and does not enable an Android
-runtime on desktop/iOS. `ModuleAudioProviderRepository` is an Android adapter for
-progressive consumers of `OrderedAudioResolver`; segmented modules use the
-Android Media3 owner. The shared resolver itself stays platform-independent.
+runtime on desktop/iOS. Segmented modules use the Android Media3 owner. The shared resolver itself stays platform-independent.
 Desktop and iOS receive no QuickJS/Android module dependency. Their source settings
 report the runtime unavailable. Module portable export/restore helpers are
 retained, but they are not added to Natune's transactional application-backup

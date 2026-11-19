@@ -40,7 +40,6 @@ import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
 import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.resources.Res
-import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
 import moe.rukamori.archivetune.shared.ui.resources.m5_lyrics
 import moe.rukamori.archivetune.shared.ui.resources.m5_now_playing
 import moe.rukamori.archivetune.shared.ui.resources.m5_queue

@@ -132,6 +132,8 @@ class VocalTracker(private val context: Context) {
                 }
                 val options = OrtSession.SessionOptions().apply {
                     setIntraOpNumThreads(threads)
+                    // Same reasoning as BeatTracker: park idle pool threads instead of spinning.
+                    addConfigEntry("session.intra_op.allow_spinning", "0")
                     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                     // Same reasoning as BeatTracker: the arena retains every block it allocates for
                     // the life of the session, which a backgrounded music player cannot justify.

@@ -15,6 +15,9 @@ import sys
 import tomllib
 from urllib.parse import unquote, urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import sync_shared_resources  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parent.parent
 POLICY = "quality/repository-policy.json"
@@ -495,6 +498,8 @@ def check(snapshot: Snapshot, headers_only: bool = False) -> list[tuple[str, str
     problems.extend(dependency_problems(snapshot))
     if snapshot.text("docs/engineering/toolchain.md") != toolchain_markdown(snapshot, policy):
         problems.append(("docs/engineering/toolchain.md", "generated toolchain/CI reference is stale; run python3 scripts/update_toolchain_docs.py"))
+    for problem in sync_shared_resources.problems(ROOT):
+        problems.append(("shared-ui/src/commonMain/composeResources", f"{problem}; run python3 scripts/sync_shared_resources.py"))
     return sorted(set(problems))
 
 
