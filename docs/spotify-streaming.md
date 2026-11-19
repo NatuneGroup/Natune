@@ -240,7 +240,8 @@ These apply to the Unofficial engine; the Librespot engine resolves through its 
   `SpotifyStreamDrm` (provisioning goes to Google's server via `HttpMediaDrmCallback`). Needs
   Widevine on the device.
 - **ECHO** — `spotify/echo/`: desktop device authorization from the streaming `sp_dc` →
-  extended-metadata audio file list → storage-resolve → PlayPlay key. `EchoDecryptingDataSource`
+  extended-metadata audio file list → storage-resolve → PlayPlay key (protocol and key transform in
+  `shared-data/.../provider/spotify`). `EchoDecryptingDataSource`
   AES-CTR decrypts the CDN bytes (Ogg Vorbis 320/160/96 or FLAC). Falls back to STOPIFY when it
   cannot resolve. `SpotifyDesktopAuth` fetches the current desktop client version string from
   `loadspot.pages.dev/versions.json` once per process (validated by regex; a fixed default is used

@@ -27,9 +27,9 @@ import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
-import moe.rukamori.archivetune.spotify.echo.SpotifyEchoProto
-import moe.rukamori.archivetune.spotify.echo.SpotifyPlayPlayLicenseRequest
-import moe.rukamori.archivetune.spotify.echo.SpotifyPlayPlayRecordDecoder
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyEchoProto
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyPlayPlayLicenseRequest
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyPlayPlayRecordDecoder
 
 internal interface DesktopSpotifyStreamingTransport {
     suspend fun userId(spDc: String, active: () -> Boolean): String?
