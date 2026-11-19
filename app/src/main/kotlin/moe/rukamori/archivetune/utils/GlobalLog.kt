@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import moe.rukamori.archivetune.BuildConfig
-import moe.rukamori.archivetune.logcat.DiagnosticRedaction
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 import java.text.SimpleDateFormat
 import java.util.*
 

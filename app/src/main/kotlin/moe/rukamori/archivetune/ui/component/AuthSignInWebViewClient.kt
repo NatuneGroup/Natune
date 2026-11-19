@@ -7,7 +7,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import timber.log.Timber
-import moe.rukamori.archivetune.logcat.DiagnosticRedaction
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 import moe.rukamori.archivetune.utils.AppProxy
 
 /** "Diagnostics" in the tag routes the line through the redacting diagnostic facility, not only logcat. */

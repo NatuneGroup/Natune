@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.feedback
 
+import moe.rukamori.archivetune.shared.domain.feedback.FeedbackReport
+
 import android.content.Context
 import android.os.Build
 import android.util.Log

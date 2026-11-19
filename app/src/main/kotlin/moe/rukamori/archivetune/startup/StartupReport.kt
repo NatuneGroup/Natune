@@ -6,7 +6,7 @@ import android.os.Build
 import android.os.Process
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.logcat.DiagnosticRedaction
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 
 internal data class StartupReport(val text: String, val safeMode: Boolean, val reviewedThroughMs: Long)
 
