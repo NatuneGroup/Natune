@@ -22,7 +22,6 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
-import moe.rukamori.archivetune.constants.AutomixPerformanceMode
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -33,9 +32,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
+import moe.rukamori.archivetune.constants.AutomixPerformanceMode
+import moe.rukamori.archivetune.shared.domain.automix.TrackAnalysis
+import moe.rukamori.archivetune.shared.domain.automix.TrackFeatures
+import moe.rukamori.archivetune.utils.withAppProxy
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import moe.rukamori.archivetune.utils.withAppProxy
 
 @UnstableApi
 class SmartFadeAnalyzer(

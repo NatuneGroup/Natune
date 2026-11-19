@@ -127,10 +127,6 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
             }
         }
     }
-    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback/smart")) {
-        include("TransitionPolicy.kt", "TransitionPlanner.kt")
-        filter { line: String -> if (line.startsWith("package ")) line + "\nimport moe.rukamori.archivetune.shared.domain.automix.*" else line }
-    }
     into(desktopPlayPlaySources)
     doLast {
         val source = themeSource.readText().replace("\r\n", "\n")

@@ -1,9 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- *
  * Automix analysis pipeline ported from BitChord
  * (https://github.com/kushagrasinghx/BitChord), which derives it from
  * Orchard (https://github.com/SFG5453/Orchard). Orchard's original source
@@ -17,6 +12,12 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import moe.rukamori.archivetune.shared.domain.automix.MixCandidate
+import moe.rukamori.archivetune.shared.domain.automix.MixOutAnchor
+import moe.rukamori.archivetune.shared.domain.automix.RankedMixCandidate
+import moe.rukamori.archivetune.shared.domain.automix.TrackAnalysis
+import moe.rukamori.archivetune.shared.domain.automix.TransitionPolicyVerdict
+import moe.rukamori.archivetune.shared.domain.automix.TransitionTier
 
 /**
  * The confidence-aware transition policy.
