@@ -2,7 +2,7 @@
     <string name="m6_backup_section_internal">Internal Service</string>
     <string name="m6_backup_action_create">Backup</string>
     <string name="m6_backup_action_restore">Restore</string>
-    <string name="m6_backup_create_description">Export library, settings, and account details.</string>
+    <string name="m6_backup_create_description">Export your library and settings. Sign-ins are excluded.</string>
     <string name="m6_backup_restore_description">Select a backup file to restore.</string>
     <string name="m6_backup_options_title">What to back up?</string>
     <string name="m6_backup_restore_options_title">What to restore?</string>

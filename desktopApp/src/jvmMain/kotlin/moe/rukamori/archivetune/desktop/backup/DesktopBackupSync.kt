@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
-import moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory
+import moe.rukamori.archivetune.shared.domain.backup.createSyncBackup
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDestination
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportException
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportFormat
@@ -333,7 +333,7 @@ internal class DesktopBackupSync(
             "$appName.${LocalDateTime.now().format(FILE_TIMESTAMP_FORMATTER)}.backup"
         }
         val target = folder.resolve(fileName)
-        val archive = archives.create(BackupDataCategory.entries.toSet())
+        val archive = createSyncBackup(archives)
         withContext(Dispatchers.IO + NonCancellable) {
             Files.createDirectories(folder)
             if (overwrite) Files.deleteIfExists(target)

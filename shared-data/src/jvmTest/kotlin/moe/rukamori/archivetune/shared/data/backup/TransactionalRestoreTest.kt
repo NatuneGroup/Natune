@@ -40,8 +40,33 @@ class TransactionalRestoreTest {
         inserted to "new value", boolean to true, integer to 42, long to Long.MIN_VALUE,
         float to 3.5f, double to 9.25, strings to setOf("عربي", "new"))
     private fun fixture(): ByteArray = javaClass.getResourceAsStream("/fixtures/schema36-synthetic-song.db")!!.use { it.readBytes() }
-    private fun archive(categories: Set<BackupCategory>): ByteArray =
-        JvmBackupArchiveCodec().create(after(), categories, mapOf("song.db" to fixture()))
+    /** Literal historical XML keeps credential restore/rollback coverage after exports stop carrying accounts. */
+    private fun archive(categories: Set<BackupCategory>): ByteArray = java.io.ByteArrayOutputStream().also { output ->
+        java.util.zip.ZipOutputStream(output).use { zip ->
+            if (BackupCategory.LIBRARY in categories) {
+                zip.putNextEntry(java.util.zip.ZipEntry("song.db")); zip.write(fixture()); zip.closeEntry()
+            }
+            if (BackupCategory.SETTINGS in categories || BackupCategory.ACCOUNT in categories) {
+                val xml = """<ArchiveTuneBackup><Settings>
+                    <string name="playerDesignStyle" value="FLAMINGO"/>
+                    <string name="spotify_sp_dc" value="new-catalog"/>
+                    <string name="spotifyStreamSpDc" value="new-stream"/>
+                    <string name="poolTidalAccounts" value="new-pool"/>
+                    <string name="spotifyStreamDeviceId" value="foreign-device"/>
+                    <string name="scheduledBackupDirectoryUri" value="foreign-directory"/>
+                    <string name="secure_store_fixture" value="foreign-ciphertext"/>
+                    <string name="newSetting" value="new value"/>
+                    <boolean name="syntheticBoolean" value="true"/>
+                    <int name="syntheticInt" value="42"/>
+                    <long name="syntheticLong" value="-9223372036854775808"/>
+                    <float name="syntheticFloat" value="3.5"/>
+                    <double name="syntheticDouble" value="9.25"/>
+                    <string-set name="syntheticSet"><item>عربي</item><item>new</item></string-set>
+                    </Settings></ArchiveTuneBackup>""".toByteArray()
+                zip.putNextEntry(java.util.zip.ZipEntry("settings.xml")); zip.write(xml); zip.closeEntry()
+            }
+        }
+    }.toByteArray()
 
     @Test fun candidateConflictsNormalizeInsideTheRestoreCommitAndRollbackIsExact() = runTest {
         setup { _, prefs, _, restore ->
