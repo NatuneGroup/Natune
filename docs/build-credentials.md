@@ -68,9 +68,9 @@ deployment override reads `ARCHIVEPOOL_BASE_URL` when `ARCHIVETUNE_ARCHIVEPOOL_B
 
 Desktop streaming still requires its existing opt-in switch and a separately verified streaming account.
 Selecting the web-player method is preserved, not silently changed to Echo: that method needs a licensed
-content-decryption module and is unavailable on this desktop engine. The PlayPlay protocol implementation is
-compiled verbatim from the five retained, platform-independent files in `app/.../spotify/echo`; no Android
-auth, WebView or Media3 classes are included.
+content-decryption module and is unavailable on this desktop engine. Android and desktop share the PlayPlay
+protocol implementation in `shared-data/.../provider/spotify`; no Android auth, WebView or Media3 classes are
+included.
 
 ## How each module receives the values
 

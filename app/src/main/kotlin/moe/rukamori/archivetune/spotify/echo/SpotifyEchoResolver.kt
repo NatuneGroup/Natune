@@ -16,6 +16,9 @@ package moe.rukamori.archivetune.spotify.echo
 
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyEchoProto
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyPlayPlayLicenseRequest
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyPlayPlayRecordDecoder
 
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers

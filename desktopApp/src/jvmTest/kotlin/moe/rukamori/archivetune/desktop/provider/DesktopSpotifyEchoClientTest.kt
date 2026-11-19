@@ -8,7 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.source.*
-import moe.rukamori.archivetune.spotify.echo.SpotifyPlayPlayRecordDecoder
+import moe.rukamori.archivetune.shared.data.provider.spotify.SpotifyPlayPlayRecordDecoder
 
 class DesktopSpotifyEchoClientTest {
     private val id = "s".repeat(22)

@@ -79,16 +79,12 @@ kotlin {
     }
 }
 
-// Reuse the retained, platform-independent PlayPlay implementation verbatim. Android auth, Media3 and the
-// WebView code are deliberately not in this source set; the desktop adapter owns its separate streaming session.
+// Reuse retained app and :modules sources that have no shared-module home yet (librespot JNI, tagger, YouTube
+// lyrics, the module host and theme seeds). PlayPlay and the Echo protocol come from :shared-data.
 val desktopPlayPlaySources = layout.buildDirectory.dir("generated/retained-playplay")
 val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlaySources") {
     val themeSource = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/ui/theme/Theme.kt")
     inputs.file(themeSource)
-    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo")) {
-        include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
-            "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
-    }
     from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot")) {
         include("SpotifyLibrespotNative.kt")
         filter { line: String -> line.replace("System.loadLibrary(\"natune_librespot\")",
