@@ -48,7 +48,7 @@ class LrcRedLyricsProvider(
     }
 
     private suspend fun document(url: String): String? =
-        LyricsHttp.getWithStatus(client, url).body?.let(LyricsPayload::toLyrics)
+        LyricsHttp.getAnswered(client, url).body?.let(LyricsPayload::toLyrics)
 
     private suspend fun search(
         title: String,
@@ -58,7 +58,7 @@ class LrcRedLyricsProvider(
         val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ").trim()
         if (query.isEmpty()) return null
         val url = "https://lrc.red/search.json?q=${query.encodeURLParameter()}"
-        val body = LyricsHttp.getWithStatus(client, url).body ?: return null
+        val body = LyricsHttp.getAnswered(client, url).body ?: return null
         val root = LyricsPayload.parseJson(body) as? JsonObject ?: return null
         val hits = root["hits"] as? JsonArray ?: return null
         val parsed = hits.mapNotNull { element ->

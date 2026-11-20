@@ -73,6 +73,20 @@ internal object LyricsHttp {
         )
     }
 
+    /**
+     * [getWithStatus] for providers whose Android helper raised on a retryable answer: a 429 or 5xx throws
+     * [LyricsHttpStatusException], so the lookup counts as failed instead of a cached miss. Other statuses are
+     * returned with their code.
+     */
+    suspend fun getAnswered(
+        client: HttpClient,
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): LyricsHttpResponse =
+        getWithStatus(client, url, headers).also { response ->
+            if (response.status == 429 || response.status in 500..599) throw LyricsHttpStatusException(response.status)
+        }
+
     /** GET then decode the body with [LyricsJson]; a non-2xx answer throws [LyricsHttpStatusException]. */
     internal suspend inline fun <reified T> getJson(
         client: HttpClient,
