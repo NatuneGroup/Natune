@@ -254,7 +254,7 @@ account, scored on title, artist and duration (minimum score 5).
 ## Wiring in MusicService
 
 - Chain: every playback path derives its source chain from one `PlaybackSourceSnapshot`
-  (`audiosource/PlaybackSourceChain.kt`) built from the stored order plus the per-source toggles.
+  (`shared-domain/.../shared/domain/source/PlaybackSourceChain.kt`) built from the stored order plus the per-source toggles.
   SPOTIFY is part of that snapshot and is enabled only when `SpotifyStreamEnabledKey` is on **and**
   a streaming account is signed in (`isSpotifyStreamingConfigured`). Its default position is just
   above YouTube; the user reorders it in "Preferred sources", and switching the toggle on or off

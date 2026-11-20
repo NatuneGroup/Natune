@@ -29,7 +29,7 @@
   ],
   "contractSources": [
     "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/AudioSourceConfig.kt",
-    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/PlaybackSourceChain.kt",
+    "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/PlaybackSourceChain.kt",
     "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/PlaybackSourceSelection.kt"
   ],
   "contractForbiddenImports": [
