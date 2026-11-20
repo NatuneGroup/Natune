@@ -2,6 +2,9 @@
 
 package app.natune.shared.data.listentogether
 
+import app.natune.listentogether.ChatControlEvent
+import app.natune.listentogether.RepliedMessage
+import app.natune.listentogether.TrackInfo
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.json.Json

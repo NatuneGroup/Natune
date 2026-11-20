@@ -1,5 +1,6 @@
 package app.natune.shared.data.listentogether
 
+import app.natune.listentogether.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,7 +58,6 @@ class ListenTogetherClient(
         data class NetworkChanged(val available: Boolean) : Command
         data class Socket(val attempt: Long, val event: SocketInbound) : Command
     }
-
     /** What a socket reported. The host's buffers are copied before they are queued, so they are never shared. */
     private sealed interface SocketInbound {
         data object Opened : SocketInbound

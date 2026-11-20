@@ -68,7 +68,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import app.natune.shared.data.listentogether.RepliedMessage
+import app.natune.listentogether.RepliedMessage
 import app.natune.shared.ui.glass.LocalOpticalPolicy
 import app.natune.shared.ui.glass.layerBackdrop
 import app.natune.shared.ui.glass.rememberBackdrop

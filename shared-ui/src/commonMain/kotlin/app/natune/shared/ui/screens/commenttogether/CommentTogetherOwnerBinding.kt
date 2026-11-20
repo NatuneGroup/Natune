@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
-import app.natune.shared.data.listentogether.ChatMessagePayload
+import app.natune.listentogether.ChatMessagePayload
 import app.natune.shared.data.listentogether.ChatSongPickerOwner
 import app.natune.shared.data.listentogether.ListenTogetherChatEntry
 import app.natune.shared.data.listentogether.ListenTogetherChatMessageHandle
@@ -31,9 +31,9 @@ import app.natune.shared.data.listentogether.ListenTogetherConnectionState
 import app.natune.shared.data.listentogether.ListenTogetherRole
 import app.natune.shared.data.listentogether.ListenTogetherTypingUser
 import app.natune.shared.data.listentogether.MessageFormat
-import app.natune.shared.data.listentogether.RepliedMessage
-import app.natune.shared.data.listentogether.RoomState
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.RepliedMessage
+import app.natune.listentogether.RoomState
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.data.listentogether.toChatTrack
 import app.natune.shared.ui.navigation.LocalShellContentPadding
 

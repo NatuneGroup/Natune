@@ -1,5 +1,6 @@
 package app.natune.shared.data.listentogether
 
+import app.natune.listentogether.TrackInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

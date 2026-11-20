@@ -76,8 +76,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import app.natune.shared.data.listentogether.RepliedMessage
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.RepliedMessage
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.ui.glass.motionAllowed
 import app.natune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource

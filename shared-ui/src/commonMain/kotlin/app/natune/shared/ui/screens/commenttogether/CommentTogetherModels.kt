@@ -2,8 +2,8 @@ package app.natune.shared.ui.screens.commenttogether
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import app.natune.shared.data.listentogether.RepliedMessage
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.RepliedMessage
+import app.natune.listentogether.TrackInfo
 
 /*
  * Public contract of the Listen Together "comment together" chat screen, ported from the Android

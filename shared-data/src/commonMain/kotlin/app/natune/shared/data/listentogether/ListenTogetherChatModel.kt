@@ -1,5 +1,7 @@
 package app.natune.shared.data.listentogether
 
+import app.natune.listentogether.ChatMessagePayload
+import app.natune.listentogether.UserInfo
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 

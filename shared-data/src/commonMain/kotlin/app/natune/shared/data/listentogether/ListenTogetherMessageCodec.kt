@@ -1,5 +1,6 @@
 package app.natune.shared.data.listentogether
 
+import app.natune.listentogether.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
@@ -11,7 +12,6 @@ import kotlinx.serialization.json.Json
 //    every peer accepts because the compressed flag is advisory.
 //  - Failures to inflate are returned as null instead of logged; the host's gzip adapter owns logging.
 //  - Payload encoding dispatches on static types, not on runtime reflection, so it is common code.
-
 /** Message format for encoding and decoding. */
 enum class MessageFormat {
     JSON, // DEPRECATED on the wire - kept for the vivi JSON servers; will be removed in future versions

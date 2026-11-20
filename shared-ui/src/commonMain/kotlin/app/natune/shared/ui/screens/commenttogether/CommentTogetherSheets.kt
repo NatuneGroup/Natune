@@ -51,7 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.ui.resources.*
 import app.natune.shared.ui.screens.ChatEmojiCategory
 import app.natune.shared.ui.screens.EmojiCatalog
