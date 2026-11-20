@@ -1,6 +1,8 @@
 
 package moe.rukamori.archivetune.logcat
 
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
+
 val diagnosticPreferenceNames = listOf(
     "audioSourceOrder", "audioQuality", "autoChoosePlaybackClient", "playbackClient",
     "tidalEnabled", "tidalAudioQuality", "deezerEnabled", "deezerAudioQuality", "qobuzEnabled", "qobuzAudioQuality",

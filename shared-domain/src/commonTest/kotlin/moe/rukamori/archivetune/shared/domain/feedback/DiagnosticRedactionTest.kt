@@ -1,17 +1,10 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
+package moe.rukamori.archivetune.shared.domain.feedback
 
-package moe.rukamori.archivetune.logcat
-
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import moe.rukamori.archivetune.logcat.diagnosticPreferences
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class DiagnosticRedactionTest {
     @Test
@@ -89,7 +82,7 @@ class DiagnosticRedactionTest {
             "po-secret",
             "sync-secret",
             "session-secret",
-        ).forEach { assertFalse(it, result.contains(it)) }
+        ).forEach { assertFalse(result.contains(it), it) }
         assertTrue(result.contains("status=READY"))
     }
 

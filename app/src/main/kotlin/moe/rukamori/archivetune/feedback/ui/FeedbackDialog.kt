@@ -55,7 +55,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.feedback.FeedbackApi
 import moe.rukamori.archivetune.feedback.FeedbackDraft
 import moe.rukamori.archivetune.feedback.FeedbackDrafts
-import moe.rukamori.archivetune.feedback.FeedbackReport
+import moe.rukamori.archivetune.shared.domain.feedback.FeedbackReport
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import java.time.Instant
 

@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.logcat
 
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
+
 import android.content.Context
 import android.os.Process
 import android.os.SystemClock

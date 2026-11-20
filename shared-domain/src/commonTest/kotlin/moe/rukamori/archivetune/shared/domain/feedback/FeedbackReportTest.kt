@@ -1,20 +1,12 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
-package moe.rukamori.archivetune.feedback
+package moe.rukamori.archivetune.shared.domain.feedback
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class FeedbackReportTest {
     /** The server's body cap (api/report.js INGEST_MAX_BODY). */
@@ -75,7 +67,7 @@ class FeedbackReportTest {
             """"note":"note one"""",
             """"report":"report body"""",
         ).forEach { fragment ->
-            assertTrue("missing: $fragment in: $json", json.contains(fragment))
+            assertTrue(json.contains(fragment), "missing: $fragment in: $json")
         }
     }
 
@@ -96,14 +88,14 @@ class FeedbackReportTest {
 
     @Test
     fun escapedUtf8BytesMatchTheEncodedEnvelope() {
-        val base = envelope("").toByteArray().size
+        val base = envelope("").encodeToByteArray().size
         listOf(
             "plain",
             "quote\" slash\\ \n\r\t\b\u000C\u0001 \u007F",
             "中文歌曲",
             "emoji 😀 pair",
         ).forEach { sample ->
-            assertEquals(sample, FeedbackReport.escapedUtf8Bytes(sample), envelope(sample).toByteArray().size - base)
+            assertEquals(FeedbackReport.escapedUtf8Bytes(sample), envelope(sample).encodeToByteArray().size - base, sample)
         }
     }
 
@@ -131,7 +123,7 @@ class FeedbackReportTest {
             "sig=abc",
             "sapsecret",
             "2001:db8",
-        ).forEach { leaked -> assertFalse(leaked, report.contains(leaked)) }
+        ).forEach { leaked -> assertFalse(report.contains(leaked), leaked) }
         assertTrue(report.contains("status=READY"))
     }
 
@@ -144,7 +136,7 @@ class FeedbackReportTest {
         assertTrue(report.contains("\n${FeedbackReport.TRUNCATED_MARKER}\n"))
         assertTrue(report.endsWith("diagnostic line 20000, padded so the log overruns the budget"))
         assertFalse(report.contains("diagnostic line 1,"))
-        assertTrue(report.toByteArray().size <= FeedbackReport.MAX_REPORT_BYTES)
+        assertTrue(report.encodeToByteArray().size <= FeedbackReport.MAX_REPORT_BYTES)
     }
 
     @Test
@@ -156,8 +148,8 @@ class FeedbackReportTest {
         listOf(cjkLog, controlLog).forEach { log ->
             val report = FeedbackReport.finish(draft("header", log))
             assertTrue(report.contains(FeedbackReport.TRUNCATED_MARKER))
-            val size = envelope(report, worstNote).toByteArray().size
-            assertTrue("envelope is $size bytes", size <= serverBodyLimit)
+            val size = envelope(report, worstNote).encodeToByteArray().size
+            assertTrue(size <= serverBodyLimit, "envelope is $size bytes")
         }
     }
 

@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.logcat
 
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
+
 import android.content.Context
 import android.net.Uri
 import android.os.Process

@@ -10,7 +10,7 @@ package moe.rukamori.archivetune.feedback
 
 import android.content.Context
 import android.util.Log
-import moe.rukamori.archivetune.logcat.DiagnosticRedaction
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 import java.io.File
 import java.io.IOException
 import java.time.Instant
