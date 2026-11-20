@@ -76,7 +76,7 @@ fun DiscordExperimental(
     val (button2CustomUrl, onButton2CustomUrlChange) =
         rememberPreference(
             key = DiscordActivityButton2CustomUrlKey,
-            defaultValue = "https://github.com/rukamori/ArchiveTune",
+            defaultValue = "https://github.com/NatuneGroup/Natune",
         )
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()

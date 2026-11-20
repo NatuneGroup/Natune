@@ -172,20 +172,6 @@ fun UpdateSettings(
         }
     }
     val rows = listOf<SettingsRow>(
-        SettingsRow.Custom("update_fork_warning", Res.string.m6_update_channel) {
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    stringResource(Res.string.m6_update_fork_warning),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(12.dp),
-                )
-            }
-        },
         SettingsRow.Status(
             "update_channel", Res.string.m6_update_channel,
             value = stringResource(channelLabel(selected)),

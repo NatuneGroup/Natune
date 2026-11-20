@@ -54,7 +54,7 @@ object DiscordSettingsDefaults {
     const val BUTTON2_ENABLED = true
     const val BUTTON2_LABEL = "Go to ArchiveTune"
     const val BUTTON2_URL_SOURCE = "custom"
-    const val BUTTON2_CUSTOM_URL = "https://github.com/rukamori/ArchiveTune"
+    const val BUTTON2_CUSTOM_URL = "https://github.com/NatuneGroup/Natune"
     const val TRANSLATOR_CONTEXTS = "{song}, {artist}, {album}"
     const val TRANSLATOR_TARGET = "ENGLISH"
 }
