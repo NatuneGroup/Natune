@@ -94,8 +94,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import moe.rukamori.archivetune.listentogether.ListenTogetherAvatar
 import moe.rukamori.archivetune.listentogether.ListenTogetherEvent
-import moe.rukamori.archivetune.listentogether.ListenTogetherServer
-import moe.rukamori.archivetune.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServer
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.listentogether.LogEntry
 import moe.rukamori.archivetune.listentogether.LogLevel
 import moe.rukamori.archivetune.listentogether.RoomRole

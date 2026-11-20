@@ -99,8 +99,8 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ListenTogetherServerUrlKey
 import moe.rukamori.archivetune.listentogether.ChatMessagePayload
-import moe.rukamori.archivetune.listentogether.ListenTogetherServers
-import moe.rukamori.archivetune.listentogether.ListenTogetherProtocol
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherProtocol
 import moe.rukamori.archivetune.listentogether.RepliedMessage
 import moe.rukamori.archivetune.listentogether.TrackInfo
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassBackdrop

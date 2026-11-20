@@ -383,7 +383,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.LocalListenTogetherManager
 import moe.rukamori.archivetune.listentogether.ListenTogetherManager
-import moe.rukamori.archivetune.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.rememberEnumPreference
