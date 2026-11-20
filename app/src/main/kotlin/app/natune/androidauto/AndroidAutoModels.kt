@@ -9,19 +9,7 @@ package app.natune.androidauto
 
 import androidx.compose.runtime.Immutable
 
-enum class AndroidAutoCustomAction {
-    LIKE,
-    START_RADIO,
-    SHUFFLE,
-    REPEAT,
-    NONE,
-    ;
-
-    companion object {
-        fun fromPreference(value: String?, defaultValue: AndroidAutoCustomAction): AndroidAutoCustomAction =
-            entries.firstOrNull { it.name == value } ?: defaultValue
-    }
-}
+typealias AndroidAutoCustomAction = app.natune.shared.domain.settings.AndroidAutoCustomAction
 
 enum class AndroidAutoActionSlot { PRIMARY, SECONDARY }
 
