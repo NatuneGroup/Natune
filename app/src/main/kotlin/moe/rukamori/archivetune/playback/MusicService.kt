@@ -5092,7 +5092,7 @@ class MusicService :
         if (hasAudioFocus) {
             restoreAudioFocusVolume()
         }
-        return hasAudioFocus
+        return hasAudioFocus || !appMayTakeAudioFocus(this)
     }
 
     @Suppress("DEPRECATION")
