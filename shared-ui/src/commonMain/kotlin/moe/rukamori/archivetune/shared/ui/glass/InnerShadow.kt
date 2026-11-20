@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
 @Immutable
-internal data class InnerShadow(
+data class InnerShadow(
     val radius: Dp = 24.dp,
     val offset: DpOffset = DpOffset(0.dp, radius),
     val color: Color = Color.Black.copy(alpha = 0.15f),
@@ -51,7 +51,7 @@ internal data class InnerShadow(
  * Darkens the inside edge of [shape] while [shadow] returns a shadow. A null result draws nothing, so the caller can
  * switch the effect off without removing the modifier from the chain.
  */
-internal fun Modifier.innerShadow(
+fun Modifier.innerShadow(
     shape: Shape,
     shadow: () -> InnerShadow?,
 ): Modifier = this then InnerShadowElement(shape, shadow)

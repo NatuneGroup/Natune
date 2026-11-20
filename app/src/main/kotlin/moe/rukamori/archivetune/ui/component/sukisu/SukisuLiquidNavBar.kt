@@ -93,9 +93,9 @@ import moe.rukamori.archivetune.scaleAwareSpring
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.FloatingNavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
-import moe.rukamori.archivetune.ui.component.InnerShadow
-import moe.rukamori.archivetune.ui.component.LiquidGlassDragAnimation
-import moe.rukamori.archivetune.ui.component.innerShadow
+import moe.rukamori.archivetune.shared.ui.glass.InnerShadow
+import moe.rukamori.archivetune.shared.ui.glass.LiquidGlassDragAnimation
+import moe.rukamori.archivetune.shared.ui.glass.innerShadow
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.abs
