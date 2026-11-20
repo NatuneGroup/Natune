@@ -45,7 +45,7 @@ private suspend fun awaitFrame() {
  * Observe-only drag detector. It reads the Initial pass so it sees the pointer before the children's Main-pass
  * handlers, which is what lets it coexist with each tab's own clickable.
  */
-internal suspend fun PointerInputScope.inspectDragGestures(
+suspend fun PointerInputScope.inspectDragGestures(
     onDragStart: (down: PointerInputChange) -> Unit = {},
     onDragEnd: (change: PointerInputChange) -> Unit = {},
     onDragCancel: () -> Unit = {},
@@ -121,7 +121,7 @@ private suspend inline fun AwaitPointerEventScope.awaitDragOrUp(
  * scale X and scale Y) and exposes one [modifier] that feeds drag gestures into them. The caller decides whether the
  * decorative channels are read: the pill still slides when motion is off, and the press and squash are skipped.
  */
-internal class LiquidGlassDragAnimation(
+class LiquidGlassDragAnimation(
     private val animationScope: CoroutineScope,
     val initialValue: Float,
     val valueRange: ClosedRange<Float>,
