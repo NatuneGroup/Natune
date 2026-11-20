@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.domain.feedback
 
+import moe.rukamori.archivetune.logcat.diagnosticPreferences
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -81,7 +82,7 @@ class DiagnosticRedactionTest {
             "po-secret",
             "sync-secret",
             "session-secret",
-        ).forEach { assertFalse(it, result.contains(it)) }
+        ).forEach { assertFalse(result.contains(it), it) }
         assertTrue(result.contains("status=READY"))
     }
 

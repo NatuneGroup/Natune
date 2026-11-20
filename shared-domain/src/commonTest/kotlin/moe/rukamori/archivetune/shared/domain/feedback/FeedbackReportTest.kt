@@ -95,7 +95,7 @@ class FeedbackReportTest {
             "中文歌曲",
             "emoji 😀 pair",
         ).forEach { sample ->
-            assertEquals(sample, FeedbackReport.escapedUtf8Bytes(sample), envelope(sample).encodeToByteArray().size - base)
+            assertEquals(FeedbackReport.escapedUtf8Bytes(sample), envelope(sample).encodeToByteArray().size - base, sample)
         }
     }
 
@@ -123,7 +123,7 @@ class FeedbackReportTest {
             "sig=abc",
             "sapsecret",
             "2001:db8",
-        ).forEach { leaked -> assertFalse(leaked, report.contains(leaked)) }
+        ).forEach { leaked -> assertFalse(report.contains(leaked), leaked) }
         assertTrue(report.contains("status=READY"))
     }
 
