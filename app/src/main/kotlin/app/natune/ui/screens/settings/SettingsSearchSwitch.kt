@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import app.natune.constants.AppFontPreference
 import app.natune.ui.component.LocalRestartPrompt
 import app.natune.utils.RestartScopedSettings
+import app.natune.utils.from
 import app.natune.utils.setFontPreference
 
 /**
