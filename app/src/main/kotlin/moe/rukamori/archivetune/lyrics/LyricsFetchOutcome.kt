@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import io.ktor.client.plugins.ResponseException
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.shared.data.lyrics.isTransientLyricsFailure
 import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -63,7 +64,7 @@ internal fun Throwable.toProviderLyricsAnswer(): ProviderLyricsAnswer =
                 it is IOException || it is CancellationException ||
                     (it is ResponseException &&
                         (it.response.status.value == 429 || it.response.status.value in 500..599))
-            }
+            } || isTransientLyricsFailure()
     ) {
         ProviderLyricsAnswer.FAILED
     } else {

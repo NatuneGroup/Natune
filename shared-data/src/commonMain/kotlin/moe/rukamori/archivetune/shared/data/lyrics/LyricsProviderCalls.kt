@@ -126,7 +126,7 @@ internal class LyricsProviderCalls(
     }
 }
 
-internal fun Throwable.isTransientLyricsFailure(): Boolean =
+fun Throwable.isTransientLyricsFailure(): Boolean =
     generateSequence(this) { it.cause }.take(8).any {
         it is io.ktor.utils.io.errors.IOException ||
             (it is LyricsHttpStatusException && (it.status == 429 || it.status in 500..599)) ||

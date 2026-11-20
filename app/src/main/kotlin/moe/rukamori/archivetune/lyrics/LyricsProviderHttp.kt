@@ -80,7 +80,8 @@ internal object LyricsProviderHttp {
         clientOverride = client
     }
 
-    private fun activeClient(): HttpClient = clientOverride ?: client
+    /** The proxied client, or the test override, that shared-data providers run on. */
+    fun activeClient(): HttpClient = clientOverride ?: client
 
     /** An answered request: [body] is only read for a 2xx [status]. */
     class Response(
