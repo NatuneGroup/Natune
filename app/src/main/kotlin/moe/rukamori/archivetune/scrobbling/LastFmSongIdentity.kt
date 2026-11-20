@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.scrobbling
 
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmTrackMetadata
+
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.models.toMediaMetadata
 
