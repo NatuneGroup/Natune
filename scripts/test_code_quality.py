@@ -308,9 +308,9 @@ class CodeQualityTest(unittest.TestCase):
             self.assertEqual([], formatting_regressions(root, candidates, original, formatted_base))
 
     def test_partial_rename_and_extraction_case_records_unproved_lineage_as_new(self):
-        old = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/RukamoriHomeScreen.kt"
-        renamed = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/NatuneClassicHomeScreen.kt"
-        extracted = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/NatuneClassicHomeComponents.kt"
+        old = "app/src/main/kotlin/app/natune/ui/screens/RukamoriHomeScreen.kt"
+        renamed = "app/src/main/kotlin/app/natune/ui/screens/NatuneClassicHomeScreen.kt"
+        extracted = "app/src/main/kotlin/app/natune/ui/screens/NatuneClassicHomeComponents.kt"
         status = (
             f"R055\0{old}\0{renamed}\0A\0{extracted}\0"
         ).encode()

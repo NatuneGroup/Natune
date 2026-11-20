@@ -21,7 +21,7 @@
 #include "archivetune_mixer.h"
 #include "archivetune_jni_utf8.h"
 
-#define MIXER_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_TwoDeckMixerNative_##name
+#define MIXER_BINDING(name) Java_app_natune_desktop_playback_TwoDeckMixerNative_##name
 
 #define MIXER_STATE_FIELDS 12
 #define MIXER_BIQUAD_VALUES 5 /* b0, b1, b2, a1, a2 per section, in that order */

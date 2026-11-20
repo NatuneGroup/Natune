@@ -1,0 +1,141 @@
+package app.natune.shared.ui.ios
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
+import app.natune.shared.domain.backup.BackupArchiveException
+import app.natune.shared.domain.backup.BackupArchiveProblem
+import app.natune.shared.domain.backup.DriveAppDataLimits
+import app.natune.shared.domain.backup.PreparedArchive
+import app.natune.shared.ui.IosHost
+import app.natune.shared.ui.resources.Res
+import app.natune.shared.ui.resources.ios_backup_restart_later
+import app.natune.shared.ui.resources.ios_backup_restart_message
+import app.natune.shared.ui.resources.ios_backup_restart_quit
+import app.natune.shared.ui.resources.ios_backup_restart_title
+import app.natune.shared.ui.resources.ios_backup_restore_failed_dismiss
+import app.natune.shared.ui.resources.ios_backup_restore_failed_message
+import app.natune.shared.ui.resources.ios_backup_restore_failed_title
+import app.natune.shared.ui.resources.ios_restore_blocked_empty
+import app.natune.shared.ui.resources.ios_restore_blocked_message
+import app.natune.shared.ui.resources.ios_restore_blocked_previous
+import app.natune.shared.ui.resources.ios_restore_blocked_title
+import app.natune.shared.ui.settings.BackupAndRestoreSettings
+import app.natune.shared.ui.settings.BackupExportResult
+import app.natune.shared.ui.settings.BackupRestoreCandidate
+import app.natune.shared.ui.settings.BackupRestorePreparation
+import app.natune.shared.ui.settings.BackupRestoreProblem
+import app.natune.shared.ui.settings.BackupSelectionCategory
+import app.natune.shared.ui.settings.SettingsController
+import app.natune.shared.ui.settings.SettingsNotice
+import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
+import platform.posix.exit
+
+/**
+ * Settings > Backup and restore on this host: manual archives through the document picker and the share sheet. The
+ * archive is the same portable format the desktop host writes, so a file crosses platforms unchanged. The Google
+ * Drive app-data section is always mounted; while the build carries no iOS OAuth client (the
+ * `ArchiveTuneGoogleDriveClientId` Info.plist key is blank) the section reports its not-configured state with the
+ * same localized string an action would surface. Its refresher and uploads use the same archive and the same
+ * staged restore as a file, so one binding consumes both prepared handles. The scheduled, Drive folder-sync and
+ * playlist rows do not appear: this host has no folder picker for them.
+ */
+@Composable
+internal fun IosBackupRestorePage(
+    host: IosHost,
+    graph: IosSessionGraph,
+    controller: SettingsController,
+    onNotice: (SettingsNotice) -> Unit,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+) {
+    val driveBinding = graph.driveBackup.binding
+    BackupAndRestoreSettings(
+        controller = controller,
+        createBackup = { selected -> saveIosBackup(host, graph, selected) },
+        prepareRestore = { openIosBackup(host, graph) },
+        discardPreparedBackup = driveBinding::discardPrepared,
+        restoreBackup = driveBinding::restorePrepared,
+        onNotice = onNotice,
+        onFailure = onFailure,
+        scrollTo = scrollTo,
+        driveAppDataHost = graph.driveBackup.drive,
+        backupSyncHost = graph.backupSync,
+        modifier = Modifier.fillMaxSize(),
+    )
+    graph.backupSync?.let { IosBackupSyncDateDialog(it) }
+    IosBackupRestartDialog(graph)
+    IosBackupRestoreFailedDialog(graph)
+    IosRestoreBlockedDialog(graph)
+}
+
+/**
+ * Writes the archive beside the share sheet's temporary file and shares it, the Save to Files and AirDrop
+ * counterpart of the desktop save dialog. A dismissed sheet is a cancel; a failed write throws, so the page reports
+ * the export as failed rather than saved.
+ */
+private suspend fun saveIosBackup(
+    host: IosHost,
+    graph: IosSessionGraph,
+    selected: Set<BackupSelectionCategory>,
+): BackupExportResult {
+    val archive = graph.backup.archives.create(selected.map { it.toDataCategory() }.toSet())
+    val stamp = NSDateFormatter().apply { dateFormat = "yyyyMMddHHmmss" }.stringFromDate(NSDate())
+    return when (iosExportDataFile(host, "Natune_$stamp.backup", archive)) {
+        true -> BackupExportResult.SAVED
+        null -> BackupExportResult.CANCELLED
+        else -> throw BackupArchiveException(BackupArchiveProblem.UNAVAILABLE)
+    }
+}
+
+/**
+ * Opens the document picker, reads the file within the shared archive bound and prepares it for the section dialog.
+ * An oversized document fails the bounded read, which the page reports as a failed restore rather than a bad backup.
+ */
+private suspend fun openIosBackup(host: IosHost, graph: IosSessionGraph): BackupRestorePreparation {
+    val handle = host.files.pickDocument(host.viewController) ?: return BackupRestorePreparation.Cancelled
+    val archive = host.files.read(handle, DriveAppDataLimits.MAX_ARCHIVE_BYTES.toLong())
+    return when (val prepared = graph.backup.restores.prepare(archive)) {
+        is PreparedArchive.Ready -> BackupRestorePreparation.Ready(
+            BackupRestoreCandidate(prepared.handle, prepared.categories.map { it.toSelection() }.toSet()),
+        )
+        is PreparedArchive.Rejected -> when (prepared.problem) {
+            BackupArchiveProblem.NOT_A_BACKUP -> BackupRestorePreparation.Rejected(BackupRestoreProblem.NOT_A_BACKUP)
+            BackupArchiveProblem.NO_RESTORABLE_DATA ->
+                BackupRestorePreparation.Rejected(BackupRestoreProblem.NO_RESTORABLE_DATA)
+            BackupArchiveProblem.CORRUPTED -> BackupRestorePreparation.Rejected(BackupRestoreProblem.CORRUPTED)
+            // Not a property of the file: the page reports these as a failed restore, not as a bad backup.
+            BackupArchiveProblem.INSUFFICIENT_STORAGE, BackupArchiveProblem.UNAVAILABLE ->
+                throw BackupArchiveException(prepared.problem)
+        }
+    }
+}
+
+@Composable
+internal fun IosBackupRestartDialog(graph: IosSessionGraph) {
+    val requested by graph.backup.restartRequested.collectAsState()
+    app.natune.shared.ui.settings.BackupRestartDialog(requested, graph.backup::dismissRestart, quit = { exit(0) })
+}
+
+@Composable
+internal fun IosBackupRestoreFailedDialog(graph: IosSessionGraph) {
+    val failed by graph.backup.restoreFailed.collectAsState()
+    app.natune.shared.ui.settings.BackupRestoreFailedDialog(failed, graph.backup::dismissRestoreFailed)
+}
+
+@Composable
+internal fun IosRestoreBlockedDialog(graph: IosSessionGraph) {
+    val blocked by graph.backup.recoveryMode.collectAsState()
+    app.natune.shared.ui.settings.RestoreBlockedDialog(blocked, graph.backup.previousLibraryAvailable) { previous ->
+        graph.backup.resolveRestoreRecovery(restorePrevious = previous)
+    }
+}

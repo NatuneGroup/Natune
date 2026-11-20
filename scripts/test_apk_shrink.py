@@ -208,7 +208,7 @@ class ShrinkSourceContractsTest(unittest.TestCase):
     def test_oboe_notice_stays_bundled_and_visible_after_dependency_removal(self):
         notice = ROOT / "shared-ui/src/commonMain/composeResources/files/notices/Google-Oboe-Apache-2.0.txt"
         self.assertIn("APPENDIX", notice.read_text())
-        about = (ROOT / "shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/settings/AboutBundledNotices.kt").read_text()
+        about = (ROOT / "shared-ui/src/commonMain/kotlin/app/natune/shared/ui/settings/AboutBundledNotices.kt").read_text()
         self.assertIn('noticeResource = "files/notices/Google-Oboe-Apache-2.0.txt"', about)
 
     def test_android_and_shared_ui_use_one_identical_regular_font(self):
@@ -217,11 +217,11 @@ class ShrinkSourceContractsTest(unittest.TestCase):
                          hashlib.sha256(resource.read_bytes()).hexdigest())
         self.assertFalse((ROOT / "app/src/main/res/font/poppins.ttf").exists())
         for name in ("ui/theme/Type.kt", "ui/component/MarkdownText.kt"):
-            source = (ROOT / "app/src/main/kotlin/moe/rukamori/archivetune" / name).read_text()
+            source = (ROOT / "app/src/main/kotlin/app/natune" / name).read_text()
             self.assertNotIn("R.font.poppins", source)
-        theme = (ROOT / "app/src/main/kotlin/moe/rukamori/archivetune/ui/theme/Type.kt").read_text()
+        theme = (ROOT / "app/src/main/kotlin/app/natune/ui/theme/Type.kt").read_text()
         self.assertIn("FontFamily(SharedPoppinsFont)", theme)
-        helper = (ROOT / "app/src/main/kotlin/moe/rukamori/archivetune/ui/theme/SharedPoppinsAsset.kt").read_text()
+        helper = (ROOT / "app/src/main/kotlin/app/natune/ui/theme/SharedPoppinsAsset.kt").read_text()
         self.assertIn('Res.getUri("font/m4_poppins.ttf")', helper)
         self.assertTrue((ROOT / "app/src/main/res/font/simpmusic_poppins.ttf").exists())
 

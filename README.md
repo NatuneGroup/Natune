@@ -35,8 +35,8 @@ The Android screens are moving into the shared Kotlin Multiplatform modules, so 
 Android builds are published from the [ArchiveTune repository](https://github.com/NatuneGroup/ArchiveTune/releases):
 **Stable** from `main` and **Nightly** pre-releases from `dev`. Both use the same signing key, and the in-app updater follows the channel you choose.
 Stable is also listed on [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NatuneGroup/ArchiveTune/),
-[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/moe.rukamori.archivetune),
-[OpenAPK](https://www.openapk.net/archivetune/moe.rukamori.archivetune/) and
+[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/app.natune),
+[OpenAPK](https://www.openapk.net/archivetune/app.natune/) and
 [Unclouded](https://unclouded.app/apps/archivetune/). Other download sources are not verified.
 
 > [!IMPORTANT]

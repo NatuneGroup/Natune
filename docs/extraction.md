@@ -216,7 +216,7 @@ Android-attested tokens from MorpheApp's PotHelper or microG RE are not supporte
 
 ## The `echo/` resolver — the fallback behind the shipped path
 
-18 files under `app/src/main/kotlin/moe/rukamori/archivetune/echo/` plus five assets, ported from
+18 files under `app/src/main/kotlin/app/natune/echo/` plus five assets, ported from
 4nx3b. `YouTubeFailsafeChain` runs it for playback and downloads as the **last resort**, never as
 the primary: the shipped resolver, InnerTubeX and NewPipe are tried first and echo is only reached
 once all of them have produced no stream, so the worst case echo can cause is the same failure a

@@ -316,7 +316,7 @@ void requestCookiesOnMain(jlong sessionId, jlong requestId, const std::string &o
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_open(
     JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     const std::string start = utf8FromJava(env, startUrl);
@@ -361,7 +361,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
  * domain-locked to the sign-in origin runs there. The policy, the capture prefix and the cookie reads are the same
  * ones `open` enforces.
  */
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_openHtml(
     JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     const std::string document = utf8FromJava(env, documentUrl);
@@ -402,7 +402,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
     return result.get();
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
     JNIEnv *env, jclass, jlong handle, jlong requestId, jstring origin) {
     const std::string target = utf8FromJava(env, origin);
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -410,7 +410,7 @@ JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_Na
     });
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_close(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_close(
     JNIEnv *, jclass, jlong handle) {
     dispatch_async(dispatch_get_main_queue(), ^{
         closeOnMain(handle);

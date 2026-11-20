@@ -1,0 +1,64 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+package app.natune.lyrics
+
+import android.content.Context
+import android.util.Log
+import app.natune.constants.EnableUnisonLyricsKey
+import moe.rukamori.archivetune.unison.Unison
+import app.natune.utils.GlobalLog
+import app.natune.utils.dataStore
+import app.natune.utils.get
+
+object UnisonLyricsProvider : LyricsProvider {
+    init {
+        Unison.logger = { message ->
+            GlobalLog.append(Log.INFO, "Unison", message)
+        }
+    }
+
+    override val name = "Unison"
+
+    override fun isEnabled(context: Context): Boolean = context.dataStore[EnableUnisonLyricsKey] ?: true
+
+    override suspend fun getLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        duration: Int,
+    ): Result<String> =
+        Unison.getLyrics(
+            videoId = id,
+            title = title,
+            artist = artist,
+            album = album,
+            durationSeconds = duration,
+        )
+
+    override suspend fun getAllLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        duration: Int,
+        onFailure: (Throwable) -> Unit,
+        callback: (String) -> Unit,
+    ) {
+        Unison.getAllLyrics(
+            videoId = id,
+            title = title,
+            artist = artist,
+            album = album,
+            durationSeconds = duration,
+            onFailure = onFailure,
+            callback = callback,
+        )
+    }
+}

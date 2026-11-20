@@ -9,8 +9,8 @@ import re
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-ANDROID = ROOT / 'app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/settings'
-COMMON = ROOT / 'shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/settings'
+ANDROID = ROOT / 'app/src/main/kotlin/app/natune/ui/screens/settings'
+COMMON = ROOT / 'shared-ui/src/commonMain/kotlin/app/natune/shared/ui/settings'
 RES = ROOT / 'shared-ui/src/commonMain/composeResources'
 PAGES = {
     'appearance': 'AppearanceSettings',
@@ -218,8 +218,8 @@ def main():
         title_label = label(title_key) if title_key else None
         title_label = title_label or label(route.rsplit('/', 1)[-1]) or (entries[0][1] if entries else 'm6_settings_home_group_settings')
         name = 'Phone' + filename + 'Reference'
-        lines = ['package moe.rukamori.archivetune.shared.ui.settings', '',
-                 'import moe.rukamori.archivetune.shared.ui.resources.*', '',
+        lines = ['package app.natune.shared.ui.settings', '',
+                 'import app.natune.shared.ui.resources.*', '',
                  '/** Android presentation order; regenerate with scripts/sync_phone_settings_reference.py. */',
                  f'internal val {name} = PhoneSettingsReference(Res.string.{title_label}, listOf(']
         if route == 'android_auto':
@@ -239,7 +239,7 @@ def main():
         (COMMON / (name + '.kt')).write_text('\n'.join(lines) + '\n')
         page_sources.append((route, name))
         count += len(entries)
-    routes = ['package moe.rukamori.archivetune.shared.ui.settings', '',
+    routes = ['package app.natune.shared.ui.settings', '',
               '/** Android screen references used only by the phone settings host. */',
               'fun phoneSettingsReference(route: String): PhoneSettingsReference? = when (route.substringBefore(\'?\')) {']
     routes.append('    "settings" -> PhoneSettingsHomeReference')

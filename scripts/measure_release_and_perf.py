@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
-PACKAGE_NAME = "moe.rukamori.archivetune"
+PACKAGE_NAME = "app.natune"
 MAIN_ACTIVITY = ".MainActivity"
 CATEGORIES = ("dex", "resources", "assets", "native", "jvm_classes", "manifest_and_signing", "other")
 NATIVE_SUFFIXES = (".so", ".dll", ".dylib", ".jnilib")

@@ -348,7 +348,7 @@ jobs:
           # nothing, and a Kotlin symbol in the binary can only come from that link.
           SYMBOLS="$RUNNER_TEMP/natune-app-symbols.txt"
           xcrun nm -g "$APP/ArchiveTune" > "$SYMBOLS"
-          grep -qE '_OBJC_CLASS_\$_(IosHost|IosSafeArea)|kfun:moe\.rukamori\.archivetune' "$SYMBOLS" \
+          grep -qE '_OBJC_CLASS_\$_(IosHost|IosSafeArea)|kfun:app\.natune' "$SYMBOLS" \
             || { echo "::error::no ArchiveTuneShared symbol reached the linked app"; exit 1; }
           # One defined text entry point per bridge proves each reached the link, not only the compiler.
           for symbol in at_audio_create at_graph_create at_telegram_client_create; do

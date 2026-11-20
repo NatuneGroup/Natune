@@ -20,24 +20,24 @@
     "spotifycore"
   ],
   "libraryForbiddenImports": [
-    "moe.rukamori.archivetune.ui",
-    "moe.rukamori.archivetune.playback",
-    "moe.rukamori.archivetune.viewmodels",
-    "moe.rukamori.archivetune.db",
-    "moe.rukamori.archivetune.auth",
-    "moe.rukamori.archivetune.audiosource"
+    "app.natune.ui",
+    "app.natune.playback",
+    "app.natune.viewmodels",
+    "app.natune.db",
+    "app.natune.auth",
+    "app.natune.audiosource"
   ],
   "contractSources": [
-    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/AudioSourceConfig.kt",
-    "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/PlaybackSourceChain.kt",
-    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/PlaybackSourceSelection.kt"
+    "app/src/main/kotlin/app/natune/audiosource/AudioSourceConfig.kt",
+    "shared-domain/src/commonMain/kotlin/app/natune/shared/domain/source/PlaybackSourceChain.kt",
+    "app/src/main/kotlin/app/natune/audiosource/PlaybackSourceSelection.kt"
   ],
   "contractForbiddenImports": [
     "androidx.compose",
-    "moe.rukamori.archivetune.ui",
-    "moe.rukamori.archivetune.playback",
-    "moe.rukamori.archivetune.viewmodels",
-    "moe.rukamori.archivetune.db"
+    "app.natune.ui",
+    "app.natune.playback",
+    "app.natune.viewmodels",
+    "app.natune.db"
   ],
   "documentedTasks": {
     "assembleGmsMobileUniversalDebug": ".github/workflows/build_pull_request.yml",

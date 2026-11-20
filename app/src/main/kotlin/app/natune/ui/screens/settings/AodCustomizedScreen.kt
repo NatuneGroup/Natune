@@ -1,0 +1,941 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
+package app.natune.ui.screens.settings
+
+import app.natune.ui.utils.rememberOpeningTransitionFinished
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import app.natune.LocalPlayerAwareWindowInsets
+import app.natune.R
+import app.natune.constants.AodAccentStyle
+import app.natune.constants.AodAccentStyleKey
+import app.natune.constants.AodAmbientIntensityKey
+import app.natune.constants.AodArtworkGlowKey
+import app.natune.constants.AodAutoOnScreenDimKey
+import app.natune.constants.AodAutoTimerSecondsKey
+import app.natune.constants.AodBackgroundStyle
+import app.natune.constants.AodBackgroundStyleKey
+import app.natune.constants.AodContentPosition
+import app.natune.constants.AodContentPositionKey
+import app.natune.constants.AodControlSizeKey
+import app.natune.constants.AodControlStyle
+import app.natune.constants.AodControlStyleKey
+import app.natune.constants.AodHorizontalPaddingKey
+import app.natune.constants.AodShowAlbumKey
+import app.natune.constants.AodShowArtistKey
+import app.natune.constants.AodShowControlsKey
+import app.natune.constants.AodShowExitButtonKey
+import app.natune.constants.AodShowLyricsKey
+import app.natune.constants.AodShowProgressKey
+import app.natune.constants.AodShowThumbnailKey
+import app.natune.constants.AodShowTimeLabelsKey
+import app.natune.constants.AodSliderStyleKey
+import app.natune.constants.AodTextAlignment
+import app.natune.constants.AodTextAlignmentKey
+import app.natune.constants.AodThumbnailShape
+import app.natune.constants.AodThumbnailShapeKey
+import app.natune.constants.AodThumbnailShapeRotationKey
+import app.natune.constants.AodThumbnailSizeKey
+import app.natune.constants.AodTitleMaxLinesKey
+import app.natune.constants.AodVerticalSpacingKey
+import app.natune.constants.SliderStyle
+import app.natune.constants.ThumbnailCornerRadiusKey
+import app.natune.ui.component.IconButton
+import app.natune.ui.component.PreferenceEntry
+import app.natune.ui.component.PreferenceGroup
+import app.natune.ui.component.SwitchPreference
+import app.natune.ui.player.StyledPlaybackSlider
+import app.natune.ui.utils.appBarScrollBehavior
+import app.natune.ui.utils.backToMain
+import app.natune.ui.utils.supportsArtworkGlowShadow
+import app.natune.ui.utils.toComposeShape
+import app.natune.utils.rememberEnumPreference
+import app.natune.utils.rememberPreference
+import kotlin.math.roundToInt
+
+@Immutable
+private data class AodPreviewSettings(
+    val thumbnailShape: AodThumbnailShape,
+    val thumbnailSize: Float,
+    val thumbnailShapeRotation: Int,
+    val thumbnailCornerRadius: Float,
+    val showThumbnail: Boolean,
+    val showArtist: Boolean,
+    val showAlbum: Boolean,
+    val showProgress: Boolean,
+    val showTimeLabels: Boolean,
+    val showControls: Boolean,
+    val showExitButton: Boolean,
+    val showLyrics: Boolean,
+    val artworkGlow: Boolean,
+    val backgroundStyle: AodBackgroundStyle,
+    val accentStyle: AodAccentStyle,
+    val contentPosition: AodContentPosition,
+    val textAlignment: AodTextAlignment,
+    val controlStyle: AodControlStyle,
+    val controlSize: Float,
+    val horizontalPadding: Float,
+    val verticalSpacing: Float,
+    val titleMaxLines: Int,
+    val ambientIntensity: Float,
+    val sliderStyle: SliderStyle = SliderStyle.Standard,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AodCustomizedScreen(
+    navController: NavController,
+    scrollTo: String? = null,
+) {
+    val scrollBehavior = appBarScrollBehavior()
+    // The layout, treatment and spacing values below are still rendered by the AOD screen but are no longer choices;
+    // the preview reads their stored values so it cannot disagree with what the display shows.
+    val (thumbnailShape) = rememberEnumPreference(AodThumbnailShapeKey, defaultValue = AodThumbnailShape.ROUNDED)
+    val (thumbnailSize, onThumbnailSizeChange) = rememberPreference(AodThumbnailSizeKey, defaultValue = 260f)
+    val (thumbnailShapeRotation) = rememberPreference(AodThumbnailShapeRotationKey, defaultValue = 0)
+    val (thumbnailCornerRadius) = rememberPreference(ThumbnailCornerRadiusKey, defaultValue = 16f)
+    val (showThumbnail, onShowThumbnailChange) = rememberPreference(AodShowThumbnailKey, defaultValue = true)
+    val (showArtist, onShowArtistChange) = rememberPreference(AodShowArtistKey, defaultValue = true)
+    val (showAlbum, onShowAlbumChange) = rememberPreference(AodShowAlbumKey, defaultValue = false)
+    val (showProgress, onShowProgressChange) = rememberPreference(AodShowProgressKey, defaultValue = true)
+    val (showTimeLabels, onShowTimeLabelsChange) = rememberPreference(AodShowTimeLabelsKey, defaultValue = true)
+    val (showControls, onShowControlsChange) = rememberPreference(AodShowControlsKey, defaultValue = true)
+    val (showExitButton, onShowExitButtonChange) = rememberPreference(AodShowExitButtonKey, defaultValue = true)
+    val (showLyrics, onShowLyricsChange) = rememberPreference(AodShowLyricsKey, defaultValue = true)
+    val (artworkGlow) = rememberPreference(AodArtworkGlowKey, defaultValue = true)
+    val (backgroundStyle) = rememberEnumPreference(AodBackgroundStyleKey, defaultValue = AodBackgroundStyle.PURE_BLACK)
+    val (accentStyle) = rememberEnumPreference(AodAccentStyleKey, defaultValue = AodAccentStyle.MONOCHROME)
+    val (contentPosition) = rememberEnumPreference(AodContentPositionKey, defaultValue = AodContentPosition.CENTER)
+    val (textAlignment) = rememberEnumPreference(AodTextAlignmentKey, defaultValue = AodTextAlignment.CENTER)
+    val (controlStyle) = rememberEnumPreference(AodControlStyleKey, defaultValue = AodControlStyle.FILLED)
+    val (sliderStyle) = rememberEnumPreference(AodSliderStyleKey, defaultValue = SliderStyle.Standard)
+    val (controlSize) = rememberPreference(AodControlSizeKey, defaultValue = 64f)
+    val (horizontalPadding) = rememberPreference(AodHorizontalPaddingKey, defaultValue = 40f)
+    val (verticalSpacing) = rememberPreference(AodVerticalSpacingKey, defaultValue = 20f)
+    val (titleMaxLines) = rememberPreference(AodTitleMaxLinesKey, defaultValue = 1)
+    val (ambientIntensity) = rememberPreference(AodAmbientIntensityKey, defaultValue = 0.18f)
+    val (aodAutoTimerSeconds, onAodAutoTimerSecondsChange) = rememberPreference(AodAutoTimerSecondsKey, defaultValue = 0)
+    val (aodAutoOnScreenDim, onAodAutoOnScreenDimChange) = rememberPreference(AodAutoOnScreenDimKey, defaultValue = false)
+
+    val previewSettings =
+        remember(
+            thumbnailShape,
+            thumbnailSize,
+            thumbnailShapeRotation,
+            thumbnailCornerRadius,
+            showThumbnail,
+            showArtist,
+            showAlbum,
+            showProgress,
+            showTimeLabels,
+            showControls,
+            showExitButton,
+            showLyrics,
+            artworkGlow,
+            backgroundStyle,
+            accentStyle,
+            contentPosition,
+            textAlignment,
+            controlStyle,
+            sliderStyle,
+            controlSize,
+            horizontalPadding,
+            verticalSpacing,
+            titleMaxLines,
+            ambientIntensity,
+        ) {
+            AodPreviewSettings(
+                thumbnailShape = thumbnailShape,
+                thumbnailSize = thumbnailSize,
+                thumbnailShapeRotation = thumbnailShapeRotation,
+                thumbnailCornerRadius = thumbnailCornerRadius,
+                showThumbnail = showThumbnail,
+                showArtist = showArtist,
+                showAlbum = showAlbum,
+                showProgress = showProgress,
+                showTimeLabels = showTimeLabels,
+                showControls = showControls,
+                showExitButton = showExitButton,
+                showLyrics = showLyrics,
+                artworkGlow = artworkGlow,
+                backgroundStyle = backgroundStyle,
+                accentStyle = accentStyle,
+                contentPosition = contentPosition,
+                textAlignment = textAlignment,
+                controlStyle = controlStyle,
+                sliderStyle = sliderStyle,
+                controlSize = controlSize,
+                horizontalPadding = horizontalPadding,
+                verticalSpacing = verticalSpacing,
+                titleMaxLines = titleMaxLines,
+                ambientIntensity = ambientIntensity,
+            )
+        }
+
+    Scaffold(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            LargeFlexibleTopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.aod_customize_title),
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                subtitle = {
+                    Text(
+                        text = stringResource(R.string.aod_customize_subtitle),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = navController::navigateUp,
+                        onLongClick = navController::backToMain,
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.arrow_back),
+                            contentDescription = null,
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                colors =
+                    TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        scrolledContainerColor = Color.Transparent,
+                    ),
+            )
+        },
+    ) { paddingValues ->
+        val playerAwareBottomPadding =
+            LocalPlayerAwareWindowInsets.current
+                .only(WindowInsetsSides.Bottom)
+                .asPaddingValues()
+                .calculateBottomPadding()
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val positions = rememberPreferencePositions()
+        androidx.compose.runtime.LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
+        LazyColumn(
+            state = listState,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .windowInsetsPadding(
+                        LocalPlayerAwareWindowInsets.current.only(
+                            WindowInsetsSides.Horizontal,
+                        ),
+                    )
+                    // A LazyColumn *is* its own viewport, so the position it reports is the one scrollToKey measures against.
+                    .then(positions.containerModifier()),
+            contentPadding = PaddingValues(bottom = playerAwareBottomPadding + 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item(
+                key = "aod_preview",
+                contentType = "preview",
+            ) {
+                AodPreviewCard(
+                    settings = previewSettings,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+
+            item(
+                key = "aod_visibility",
+                contentType = "preference_group",
+            ) {
+                PreferenceGroup(title = stringResource(R.string.aod_customize_visibility)) {
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_thumbnail"),
+                            title = { Text(stringResource(R.string.aod_customize_show_thumbnail)) },
+                            icon = { Icon(painterResource(R.drawable.image), null) },
+                            checked = showThumbnail,
+                            onCheckedChange = onShowThumbnailChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_artist"),
+                            title = { Text(stringResource(R.string.aod_customize_show_artist)) },
+                            icon = { Icon(painterResource(R.drawable.artist), null) },
+                            checked = showArtist,
+                            onCheckedChange = onShowArtistChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_album"),
+                            title = { Text(stringResource(R.string.aod_customize_show_album)) },
+                            icon = { Icon(painterResource(R.drawable.album), null) },
+                            checked = showAlbum,
+                            onCheckedChange = onShowAlbumChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_progress"),
+                            title = { Text(stringResource(R.string.aod_customize_show_progress)) },
+                            icon = { Icon(painterResource(R.drawable.sliders), null) },
+                            checked = showProgress,
+                            onCheckedChange = onShowProgressChange,
+                        )
+                    }
+                    item(visible = showProgress) {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_time_labels"),
+                            title = { Text(stringResource(R.string.aod_customize_show_time_labels)) },
+                            icon = { Icon(painterResource(R.drawable.timer), null) },
+                            checked = showTimeLabels,
+                            onCheckedChange = onShowTimeLabelsChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_controls"),
+                            title = { Text(stringResource(R.string.aod_customize_show_controls)) },
+                            icon = { Icon(painterResource(R.drawable.buttons), null) },
+                            checked = showControls,
+                            onCheckedChange = onShowControlsChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_exit_button"),
+                            title = { Text(stringResource(R.string.aod_customize_show_exit_button)) },
+                            icon = { Icon(painterResource(R.drawable.close), null) },
+                            checked = showExitButton,
+                            onCheckedChange = onShowExitButtonChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_show_lyrics"),
+                            title = { Text(stringResource(R.string.aod_customize_show_lyrics)) },
+                            description = stringResource(R.string.aod_customize_show_lyrics_desc),
+                            icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                            checked = showLyrics,
+                            onCheckedChange = onShowLyricsChange,
+                        )
+                    }
+                }
+            }
+
+            item(
+                key = "aod_scale",
+                contentType = "preference_group",
+            ) {
+                PreferenceGroup(title = stringResource(R.string.aod_customize_scale_and_spacing)) {
+                    item {
+                        Column(modifier = positions.modifierFor("aod_customize_thumbnail_size")) {
+                            AodSliderPreference(
+                                title = stringResource(R.string.aod_customize_thumbnail_size),
+                                icon = { Icon(painterResource(R.drawable.image), null) },
+                                value = thumbnailSize,
+                                valueRange = 160f..340f,
+                                steps = 35,
+                                valueLabel = { stringResource(R.string.aod_customize_dp_value, it.roundToInt()) },
+                                onValueChange = onThumbnailSizeChange,
+                            )
+                        }
+                    }
+                }
+            }
+
+            item(
+                key = "aod_behavior",
+                contentType = "preference_group",
+            ) {
+                PreferenceGroup(title = stringResource(R.string.aod_customize_lyrics)) {
+                    item {
+                        Column(modifier = positions.modifierFor("aod_customize_auto_timer")) {
+                            AodIntSliderPreference(
+                                title = stringResource(R.string.aod_customize_auto_timer),
+                                icon = { Icon(painterResource(R.drawable.timer), null) },
+                                value = aodAutoTimerSeconds,
+                                valueRange = 0..180,
+                                steps = 35,
+                                valueLabel = { v ->
+                                    if (v == 0) {
+                                        stringResource(R.string.aod_customize_auto_timer_off)
+                                    } else {
+                                        stringResource(R.string.aod_customize_auto_timer_seconds, v)
+                                    }
+                                },
+                                onValueChange = onAodAutoTimerSecondsChange,
+                            )
+                        }
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("aod_customize_auto_on_screen_dim"),
+                            title = { Text(stringResource(R.string.aod_customize_auto_on_screen_dim)) },
+                            description = stringResource(R.string.aod_customize_auto_on_screen_dim_desc),
+                            icon = { Icon(painterResource(R.drawable.bedtime), null) },
+                            checked = aodAutoOnScreenDim,
+                            onCheckedChange = onAodAutoOnScreenDimChange,
+                        )
+                    }
+                }
+            }
+
+            item(
+                key = "aod_bottom_space",
+                contentType = "spacer",
+            ) {
+                Spacer(modifier = Modifier.height(SettingsDimensions.ScreenBottomPadding))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AodPreviewCard(
+    settings: AodPreviewSettings,
+    modifier: Modifier = Modifier,
+) {
+    val accentColor =
+        when (settings.accentStyle) {
+            AodAccentStyle.MONOCHROME -> Color.White
+            AodAccentStyle.THEME -> MaterialTheme.colorScheme.primary
+        }
+    val supportsArtworkGlowShadow = settings.thumbnailShape.supportsArtworkGlowShadow()
+    val thumbnailShape =
+        settings.thumbnailShape.toComposeShape(
+            cornerRadius = settings.thumbnailCornerRadius,
+            startAngle = settings.thumbnailShapeRotation,
+        )
+    val textAlign = settings.textAlignment.toTextAlign()
+    val horizontalAlignment = settings.textAlignment.toHorizontalAlignment()
+    val contentAlignment = settings.contentPosition.toBoxAlignment()
+    val previewArtworkSize = (settings.thumbnailSize * 0.46f).coerceIn(82f, 156f).dp
+    val previewControlSize = (settings.controlSize * 0.58f).coerceIn(30f, 50f).dp
+    val previewHorizontalPadding = (settings.horizontalPadding * 0.55f).coerceIn(12f, 36f).dp
+    val previewSpacing = (settings.verticalSpacing * 0.48f).coerceIn(6f, 18f).dp
+    val openingTransitionFinished = rememberOpeningTransitionFinished()
+
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors =
+            CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.aod_customize_preview),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 560.dp)
+                        .aspectRatio(0.64f)
+                        .clip(MaterialTheme.shapes.extraLarge)
+                        .aodPreviewBackground(
+                            style = settings.backgroundStyle,
+                            accentColor = accentColor,
+                            ambientIntensity = settings.ambientIntensity,
+                        ).border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.12f),
+                            shape = MaterialTheme.shapes.extraLarge,
+                        ),
+            ) {
+                // The frame and background show at once; the preview contents wait for the
+                // page's opening transition so they are not composed inside its frames.
+                if (!openingTransitionFinished) return@Box
+                if (settings.showExitButton) {
+                    Icon(
+                        painter = painterResource(R.drawable.close),
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.72f),
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                                .size(20.dp),
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = horizontalAlignment,
+                    verticalArrangement = Arrangement.spacedBy(previewSpacing),
+                    modifier =
+                        Modifier
+                            .align(contentAlignment)
+                            .fillMaxWidth()
+                            .padding(horizontal = previewHorizontalPadding)
+                            .padding(vertical = 28.dp),
+                ) {
+                    if (settings.showThumbnail) {
+                        PreviewArtwork(
+                            shape = thumbnailShape,
+                            accentColor = accentColor,
+                            showGlow = settings.artworkGlow && supportsArtworkGlowShadow,
+                            modifier =
+                                Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .size(previewArtworkSize),
+                        )
+                    }
+
+                    Column(
+                        horizontalAlignment = horizontalAlignment,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.aod_customize_sample_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = settings.titleMaxLines,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = textAlign,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (settings.showArtist) {
+                            Text(
+                                text = stringResource(R.string.aod_customize_sample_artist),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.68f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = textAlign,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (settings.showAlbum) {
+                            Text(
+                                text = stringResource(R.string.aod_customize_sample_album),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.52f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = textAlign,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (settings.showLyrics) {
+                            Text(
+                                text = "♪ " + stringResource(R.string.aod_customize_sample_title),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.72f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = textAlign,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                            )
+                        }
+                    }
+
+                    if (settings.showProgress) {
+                        PreviewProgress(
+                            accentColor = accentColor,
+                            showTimeLabels = settings.showTimeLabels,
+                            sliderStyle = settings.sliderStyle,
+                        )
+                    }
+
+                    if (settings.showControls) {
+                        PreviewControls(
+                            accentColor = accentColor,
+                            controlStyle = settings.controlStyle,
+                            controlSize = previewControlSize,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewArtwork(
+    shape: Shape,
+    accentColor: Color,
+    showGlow: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .then(
+                    if (showGlow) {
+                        Modifier.shadow(24.dp, shape = shape, clip = false, ambientColor = accentColor, spotColor = accentColor)
+                    } else {
+                        Modifier
+                    },
+                ).clip(shape)
+                .background(
+                    Brush.linearGradient(
+                        colors =
+                            listOf(
+                                accentColor.copy(alpha = 0.92f),
+                                Color(0xFF141414),
+                            ),
+                    ),
+                ),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.music_note),
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.78f),
+            modifier =
+                Modifier
+                    .align(Alignment.Center)
+                    .size(42.dp),
+        )
+    }
+}
+
+@Composable
+private fun PreviewProgress(
+    accentColor: Color,
+    showTimeLabels: Boolean,
+    sliderStyle: SliderStyle = SliderStyle.Standard,
+) {
+    // Static 46% preview value — gives the user a feel for what each slider
+    // style looks like at a glance, without animating in the customize screen.
+    var previewValue by remember { mutableFloatStateOf(0.46f) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        StyledPlaybackSlider(
+            sliderStyle = sliderStyle,
+            value = previewValue,
+            valueRange = 0f..1f,
+            onValueChange = { previewValue = it },
+            onValueChangeFinished = {},
+            activeColor = accentColor,
+            isPlaying = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (showTimeLabels) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.aod_customize_sample_elapsed),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.62f),
+                )
+                Text(
+                    text = stringResource(R.string.aod_customize_sample_duration),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.62f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewControls(
+    accentColor: Color,
+    controlStyle: AodControlStyle,
+    controlSize: androidx.compose.ui.unit.Dp,
+) {
+    val centerContainer =
+        when (controlStyle) {
+            AodControlStyle.FILLED -> Color.White
+            AodControlStyle.TONAL -> accentColor.copy(alpha = 0.22f)
+            AodControlStyle.MINIMAL -> Color.Transparent
+        }
+    val centerContent =
+        when (controlStyle) {
+            AodControlStyle.FILLED -> Color.Black
+
+            AodControlStyle.TONAL,
+            AodControlStyle.MINIMAL,
+            -> Color.White
+        }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PreviewControlIcon(
+            iconRes = R.drawable.skip_previous,
+            size = controlSize * 0.78f,
+            containerColor = Color.Transparent,
+            contentColor = Color.White.copy(alpha = 0.82f),
+        )
+        PreviewControlIcon(
+            iconRes = R.drawable.pause,
+            size = controlSize,
+            containerColor = centerContainer,
+            contentColor = centerContent,
+            borderColor = if (controlStyle == AodControlStyle.MINIMAL) Color.White.copy(alpha = 0.32f) else Color.Transparent,
+        )
+        PreviewControlIcon(
+            iconRes = R.drawable.skip_next,
+            size = controlSize * 0.78f,
+            containerColor = Color.Transparent,
+            contentColor = Color.White.copy(alpha = 0.82f),
+        )
+    }
+}
+
+@Composable
+private fun PreviewControlIcon(
+    iconRes: Int,
+    size: androidx.compose.ui.unit.Dp,
+    containerColor: Color,
+    contentColor: Color,
+    borderColor: Color = Color.Transparent,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(size)
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(containerColor)
+                .border(1.dp, borderColor, MaterialTheme.shapes.extraLarge),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(size * 0.46f),
+        )
+    }
+}
+
+@Composable
+private fun AodSliderPreference(
+    title: String,
+    icon: @Composable () -> Unit,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    valueLabel: @Composable (Float) -> String,
+    onValueChange: (Float) -> Unit,
+    isEnabled: Boolean = true,
+) {
+    var sliderValue by remember { mutableFloatStateOf(value) }
+    LaunchedEffect(value) {
+        sliderValue = value
+    }
+
+    PreferenceEntry(
+        title = { Text(title) },
+        description = valueLabel(sliderValue),
+        icon = icon,
+        isEnabled = isEnabled,
+        content = {
+            Spacer(modifier = Modifier.height(10.dp))
+            Slider(
+                value = sliderValue.coerceIn(valueRange.start, valueRange.endInclusive),
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = { onValueChange(sliderValue.coerceIn(valueRange.start, valueRange.endInclusive)) },
+                valueRange = valueRange,
+                steps = steps,
+                enabled = isEnabled,
+                colors =
+                    SliderDefaults.colors(
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+    )
+}
+
+@Composable
+private fun AodIntSliderPreference(
+    title: String,
+    icon: @Composable () -> Unit,
+    value: Int,
+    valueRange: IntRange,
+    onValueChange: (Int) -> Unit,
+    steps: Int = (valueRange.last - valueRange.first - 1).coerceAtLeast(0),
+    valueLabel: @Composable (Int) -> String = { it.toString() },
+    isEnabled: Boolean = true,
+) {
+    var sliderValue by remember { mutableFloatStateOf(value.toFloat()) }
+    LaunchedEffect(value) {
+        sliderValue = value.toFloat()
+    }
+    val roundedValue = sliderValue.roundToInt().coerceIn(valueRange.first, valueRange.last)
+
+    PreferenceEntry(
+        title = { Text(title) },
+        description = valueLabel(roundedValue),
+        icon = icon,
+        isEnabled = isEnabled,
+        content = {
+            Spacer(modifier = Modifier.height(10.dp))
+            Slider(
+                value = sliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = { onValueChange(roundedValue) },
+                valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
+                steps = steps,
+                enabled = isEnabled,
+                colors =
+                    SliderDefaults.colors(
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+    )
+}
+
+@Composable
+private fun Modifier.aodPreviewBackground(
+    style: AodBackgroundStyle,
+    accentColor: Color,
+    ambientIntensity: Float,
+): Modifier {
+    val alpha = ambientIntensity.coerceIn(0f, 1f)
+    val brush =
+        remember(style, accentColor, alpha) {
+            when (style) {
+                AodBackgroundStyle.PURE_BLACK -> {
+                    Brush.verticalGradient(listOf(Color.Black, Color.Black))
+                }
+
+                AodBackgroundStyle.SOFT_RADIAL -> {
+                    Brush.radialGradient(
+                        colors =
+                            listOf(
+                                accentColor.copy(alpha = 0.22f * alpha),
+                                Color.Black,
+                            ),
+                    )
+                }
+
+                AodBackgroundStyle.TONAL_EDGE -> {
+                    Brush.verticalGradient(
+                        colors =
+                            listOf(
+                                accentColor.copy(alpha = 0.18f * alpha),
+                                Color.Black,
+                                accentColor.copy(alpha = 0.12f * alpha),
+                            ),
+                    )
+                }
+
+                AodBackgroundStyle.AMBIENT_GLOW -> {
+                    Brush.linearGradient(
+                        colors =
+                            listOf(
+                                accentColor.copy(alpha = 0.28f * alpha),
+                                Color.Black,
+                                Color(0xFF101010),
+                            ),
+                    )
+                }
+            }
+        }
+
+    return background(brush)
+}
+
+private fun AodContentPosition.toBoxAlignment(): Alignment =
+    when (this) {
+        AodContentPosition.TOP -> Alignment.TopCenter
+        AodContentPosition.CENTER -> Alignment.Center
+        AodContentPosition.BOTTOM -> Alignment.BottomCenter
+    }
+
+private fun AodTextAlignment.toTextAlign(): TextAlign =
+    when (this) {
+        AodTextAlignment.START -> TextAlign.Start
+        AodTextAlignment.CENTER -> TextAlign.Center
+        AodTextAlignment.END -> TextAlign.End
+    }
+
+private fun AodTextAlignment.toHorizontalAlignment(): Alignment.Horizontal =
+    when (this) {
+        AodTextAlignment.START -> Alignment.Start
+        AodTextAlignment.CENTER -> Alignment.CenterHorizontally
+        AodTextAlignment.END -> Alignment.End
+    }

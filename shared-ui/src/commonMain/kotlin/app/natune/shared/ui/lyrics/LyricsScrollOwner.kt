@@ -1,0 +1,172 @@
+package app.natune.shared.ui.lyrics
+
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlin.math.roundToInt
+
+/**
+ * State behind the single auto-scroll owner. A listener scroll pauses following and the hold timer resumes it.
+ * A seek or a new session jumps to the playhead and resumes following at once.
+ */
+@Stable
+internal class LyricsScrollOwner {
+    /**
+     * True while the list follows the playhead. A listener scroll clears it. It is snapshot state, so the look can
+     * unblur its rows while the list is held.
+     */
+    var following: Boolean by mutableStateOf(true)
+
+    /** Counts listener scrolls. Each change restarts the hold, so the hold runs from the last scroll. */
+    var holdGeneration by mutableIntStateOf(0)
+        private set
+
+    /** Counts resumes. A change re-runs the follow effect, which returns the list to the playhead. */
+    var resumeGeneration by mutableIntStateOf(0)
+        private set
+
+    /** The last discontinuity count handled. A different count means a seek or a new session. */
+    var handledDiscontinuity: Int = 0
+
+    /** The last feed re-anchor handled. A different count means the feed jumped on the same timeline. */
+    var handledReanchor: Int = 0
+
+    /** The line the list last followed. A different line is a line change, which may settle rather than animate. */
+    var handledPrimary: Int = -1
+
+    fun onListenerScroll() {
+        following = false
+        holdGeneration += 1
+    }
+
+    fun resume() {
+        following = true
+        resumeGeneration += 1
+    }
+}
+
+@Composable
+internal fun rememberLyricsScrollOwner(): LyricsScrollOwner = remember { LyricsScrollOwner() }
+
+/**
+ * The only code that scrolls the lyric list. A listener scroll starts the hold, and when the hold expires the
+ * list follows the playhead again. A seek or a session change jumps back to the playhead at once. A feed jump
+ * on the same timeline only snaps the scroll instead of animating it — it never ends the hold. Ordinary playhead
+ * movement animates, unless reduced motion is on, in which case it also jumps. For a look that holds while
+ * dragged, the hold does not start until the drag ends, so a finger resting on the list is not followed out
+ * from under it.
+ *
+ * A line change on a look with [settle] moves the list at once and lets the rows glide from where they were, so the
+ * change ripples outward from the sung line. Every other move keeps the single animated scroll.
+ */
+@Composable
+internal fun LyricsAutoFollow(
+    owner: LyricsScrollOwner,
+    listState: LazyListState,
+    primary: Int,
+    discontinuity: Int,
+    reanchor: Int,
+    visible: Boolean,
+    reduceMotion: Boolean,
+    profile: LyricsModeProfile,
+    settle: LyricsLineSettle? = null,
+) {
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    val holdOpen = dragged && profile.holdsWhileDragged
+    LaunchedEffect(owner.holdGeneration, holdOpen) {
+        if (owner.holdGeneration == 0 || holdOpen) return@LaunchedEffect
+        delay(profile.manualScrollHoldMs)
+        owner.resume()
+    }
+    // A hand on the list or a hidden surface ends a settle at once, so nothing glides under a finger.
+    LaunchedEffect(dragged, visible) {
+        if (dragged || !visible) settle?.clear()
+    }
+    val settleGeneration = settle?.generation ?: 0
+    LaunchedEffect(settleGeneration) {
+        if (settle != null && settleGeneration > 0) settle.runSettle()
+    }
+    LaunchedEffect(primary, discontinuity, reanchor, owner.resumeGeneration, visible) {
+        val jump = discontinuity != owner.handledDiscontinuity
+        // A feed jump on the same timeline re-anchors like a seek — the list snaps rather than animating
+        // the distance — but it is not a discontinuity, so it never ends a listener's hold.
+        val reanchored = reanchor != owner.handledReanchor
+        // The first line a fresh owner follows is not a change, so it animates and never glides in.
+        val moved = owner.handledPrimary >= 0 && primary != owner.handledPrimary
+        owner.handledDiscontinuity = discontinuity
+        owner.handledReanchor = reanchor
+        owner.handledPrimary = primary
+        if (jump) owner.following = true
+        if (!visible || !owner.following || primary < 0) return@LaunchedEffect
+        val viewportHeight = listState.awaitViewportHeight()
+        val anchor = -(viewportHeight * profile.anchorFraction).roundToInt()
+        // Only a line that is laid out now can settle; a line off screen animates as it always did.
+        val fromTop = if (settle != null && moved && !jump && !reanchored && !dragged) {
+            listState.itemTopOrNull(primary)
+        } else {
+            null
+        }
+        when {
+            jump || reanchored || reduceMotion -> {
+                settle?.clear()
+                listState.scrollToItem(primary, anchor)
+            }
+            settle != null && fromTop != null -> {
+                settle.start(primary, fromTop)
+                listState.scrollToItem(primary, anchor)
+            }
+            else -> {
+                // A line at hand eases to the anchor on the fixed scroll; a far one keeps the
+                // distance-covering animation.
+                val top = listState.itemTopOrNull(primary)
+                if (top != null) {
+                    val anchorTop = listState.layoutInfo.beforeContentPadding - anchor
+                    if (top != anchorTop) {
+                        listState.animateScrollBy(
+                            value = (top - anchorTop).toFloat(),
+                            animationSpec = tween(AUTO_SCROLL_MS, easing = AUTO_SCROLL_EASE),
+                        )
+                        // Land on the exact anchored scroll offset in case the glide rounded.
+                        listState.scrollToItem(primary, anchor)
+                    }
+                } else {
+                    listState.animateScrollToItem(primary, anchor)
+                }
+            }
+        }
+    }
+}
+
+/** Where the row starts in the viewport now, or null while it is not laid out. */
+private fun LazyListState.itemTopOrNull(index: Int): Int? =
+    layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
+
+/**
+ * The one animated scroll of a line change. ArchiveTune's active-line scroll starts at once and
+ * settles at the anchor (FastOutSlowIn on its line effects, a fast-response spring on the list), while a
+ * symmetric ease-in-out held the first ~40% of a line change almost still and read as sluggish / ~30 Hz.
+ * Keep the short duration but front-load it so the follow responds on the very frame the line changes.
+ */
+internal const val AUTO_SCROLL_MS = 280
+// FastOutSlowIn still holds the first tenth nearly still (~3%); a pure decelerate curve moves at once.
+internal val AUTO_SCROLL_EASE = LinearOutSlowInEasing
+
+/** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
+private suspend fun LazyListState.awaitViewportHeight(): Int {
+    val height = layoutInfo.viewportSize.height
+    if (height > 0) return height
+    return snapshotFlow { layoutInfo.viewportSize.height }.first { it > 0 }
+}

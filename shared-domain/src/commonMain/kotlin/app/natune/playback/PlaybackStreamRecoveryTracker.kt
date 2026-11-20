@@ -1,0 +1,42 @@
+
+package app.natune.playback
+
+/**
+ * Keeps YouTube stream recovery bounded while allowing a fresh client/URL to
+ * recover from more than one transient failure. A single retry is frequently
+ * insufficient: a 403 can invalidate one client and the replacement URL can
+ * still be stale or rejected before the next client is selected.
+ */
+class PlaybackStreamRecoveryTracker(
+    private val maxAttemptsPerMediaItem: Int = 3,
+) {
+    private var attemptedMediaId: String? = null
+    private var attemptCount = 0
+
+    fun registerRetryAttempt(mediaId: String): Boolean {
+        if (attemptedMediaId != mediaId) {
+            attemptedMediaId = mediaId
+            attemptCount = 0
+        }
+        if (attemptCount >= maxAttemptsPerMediaItem) return false
+        attemptCount++
+        return true
+    }
+
+    /** Attempts already spent on [mediaId]; the backoff curve reads it after [registerRetryAttempt]. */
+    fun attemptCount(mediaId: String): Int = if (attemptedMediaId == mediaId) attemptCount else 0
+
+    fun onPlaybackRecovered(mediaId: String?) {
+        if (mediaId != null && attemptedMediaId == mediaId) {
+            attemptedMediaId = null
+            attemptCount = 0
+        }
+    }
+
+    fun onMediaItemChanged(currentMediaId: String?) {
+        if (attemptedMediaId != currentMediaId) {
+            attemptedMediaId = null
+            attemptCount = 0
+        }
+    }
+}

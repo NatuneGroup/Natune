@@ -22,6 +22,8 @@ import sync_shared_resources  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 POLICY = "quality/repository-policy.json"
 VENDORED = ("third_party/", "native/", "audio/", "app/src/main/java/org/drinkless/")
+LEGACY_PACKAGE_DIR = "/moe/rukamori/archivetune/"
+NATUNE_PACKAGE_DIR = "/app/natune/"
 HEADER_MARKER = "GPL-3.0 License | Contributors: see git history"
 # The KMP modules carry no per-file license banner; their lineage and credits live in docs/CREDITS.md.
 KMP_MODULES = ("shared/", "shared-domain/", "shared-data/", "shared-ui/", "desktopApp/", "iosApp/")
@@ -472,14 +474,22 @@ def check(snapshot: Snapshot, headers_only: bool = False) -> list[tuple[str, str
         text = snapshot.text(path)
         previous = snapshot.text(path, old=True)
         header_previous, header_new = header_origin(snapshot, path, previous, previous_size)
+        # Other renames keep the new-path budget, but the one-off `moe.rukamori.archivetune` ->
+        # `app.natune` package move is measured against its old path: it may not grow, and it is
+        # not treated as new code.
+        budget_size, budget_previous = previous_size, previous
+        origin = snapshot.rename_origin(path) if previous_size is None else None
+        if origin is not None and origin.replace(LEGACY_PACKAGE_DIR, NATUNE_PACKAGE_DIR, 1) == path:
+            budget_size = snapshot.size(origin, old=True)
+            budget_previous = snapshot.text(origin, old=True)
         for problem in header_problems(path, text, header_previous, header_new):
             problems.append((path, problem))
         if headers_only:
             continue
-        if budget_problem(size, previous_size, policy["maxFileBytes"]):
+        if budget_problem(size, budget_size, policy["maxFileBytes"]):
             problems.append((path, "new/expanded large file exceeds the 1 MiB budget; split it or use reviewed external assets"))
         if path.endswith(".kt") and not path.startswith(VENDORED):
-            if budget_problem(len(text.splitlines()), len(previous.splitlines()) if previous_size is not None else None, policy["maxKotlinLines"]):
+            if budget_problem(len(text.splitlines()), len(budget_previous.splitlines()) if budget_size is not None else None, policy["maxKotlinLines"]):
                 problems.append((path, "new/expanded Kotlin file exceeds the 1,000-line budget; extract a cohesive component"))
     if headers_only:
         return problems

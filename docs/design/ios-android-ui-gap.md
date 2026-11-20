@@ -8,9 +8,9 @@ row order, grouping, icons, dialogs or behavior.
 
 Paths in the table are relative to these roots:
 
-- **A**: `app/src/main/kotlin/moe/rukamori/archivetune/ui/`
-- **I**: `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios/`
-- **U**: `shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui/`
+- **A**: `app/src/main/kotlin/app/natune/ui/`
+- **I**: `shared-ui/src/iosMain/kotlin/app/natune/shared/ui/ios/`
+- **U**: `shared-ui/src/commonMain/kotlin/app/natune/shared/ui/`
 
 The route dispatch in `I/IosSettings.kt`, `I/IosLaneSettings.kt`,
 `I/IosGeneralSettings.kt`, `I/IosLaneServicePages.kt`, `I/IosHostBindings.kt`

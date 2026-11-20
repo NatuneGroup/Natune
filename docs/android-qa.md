@@ -46,9 +46,9 @@ the session expires; its installed app and data remain in the QA AVD.
 "$ANDROID_HOME/platform-tools/adb" install -r \
   app/build/outputs/apk/gmsMobileX86_64/debug/app-gms-mobile-x86_64-debug.apk
 "$ANDROID_HOME/platform-tools/adb" shell cmd package compile \
-  -m speed -f moe.rukamori.archivetune.debug
+  -m speed -f app.natune.debug
 "$ANDROID_HOME/platform-tools/adb" shell am start \
-  -n moe.rukamori.archivetune.debug/moe.rukamori.archivetune.MainActivity
+  -n app.natune.debug/app.natune.MainActivity
 ```
 
 Precompilation succeeded in the sandbox and allowed the app to progress beyond

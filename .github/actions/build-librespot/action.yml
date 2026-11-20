@@ -29,7 +29,7 @@ runs:
       uses: actions/cache/restore@v5
       with:
         path: app/build/generated/librespot
-        key: librespot-jni-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+        key: librespot-jni-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/app/natune/spotify/librespot/SpotifyLibrespotNative.kt') }}
 
     - name: Validate prepared JNI
       id: restored
@@ -56,7 +56,7 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           native/librespot/target
-        key: librespot-cargo-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+        key: librespot-cargo-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-${{ hashFiles('native/librespot/Cargo.lock', 'native/librespot/Cargo.toml', 'native/librespot/src/**', 'native/librespot/*.sh', 'native/librespot/*.py', 'native/librespot/embedding.patch', 'native/librespot/upstream-revision', 'app/src/main/kotlin/app/natune/spotify/librespot/SpotifyLibrespotNative.kt') }}
         restore-keys: |
           librespot-cargo-v2-${{ runner.os }}-ndk30-rust1.97.1-${{ steps.selection.outputs.abis }}-
 

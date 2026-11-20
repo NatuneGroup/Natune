@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "moe.rukamori.archivetune.modules"
+    namespace = "app.natune.modules"
     compileSdk = 37
     defaultConfig { minSdk = 24 }
     compileOptions {

@@ -6,7 +6,7 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 
-package moe.rukamori.archivetune.shazamkit.models
+package app.natune.shazamkit.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

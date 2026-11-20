@@ -26,7 +26,7 @@ val generateProviderCredentials = tasks.register("generateProviderCredentials") 
     doLast {
         ProviderCredentials.writeKotlinObject(
             providerCredentialsDirectory.get().asFile,
-            "moe.rukamori.archivetune.canvas",
+            "app.natune.canvas",
             "ProviderBuildCredentials",
             providerCredentials,
         )

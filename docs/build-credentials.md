@@ -60,7 +60,7 @@ deployment override reads `ARCHIVEPOOL_BASE_URL` when `ARCHIVETUNE_ARCHIVEPOOL_B
 | `ARCHIVETUNE_FEEDBACK_INGEST_KEY` (legacy `FEEDBACK_INGEST_KEY`) | Desktop: the write-only ingest key for the same service. It ships with the app, so the server must treat it as write-only access. | Reports are sent without the key; a service that requires it refuses them. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID` | Desktop only: the Google OAuth client of type "Desktop app" for Google Drive app data backup (`DesktopGoogleDriveAuthorization`, loopback sign-in with PKCE). It must belong to a Google Cloud project with the Drive API enabled and the `drive.appdata` scope on its consent screen. | The Google Drive backup rows show "Google Drive is not configured" and no sign-in starts. Manual backup files keep working. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET` | Desktop only: the client secret Google issues with the same desktop client. Google does not treat it as confidential for installed apps; it is sent when set. | Sign-in is tried without a secret; a client that requires one is reported as not configured. |
-| `ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID` | iOS only: the Google OAuth client of type "iOS" for Google Drive app data backup (`IosGoogleDriveAuthorization`, `ASWebAuthenticationSession` sign-in with PKCE, no client secret). Create it in a Google Cloud project that has the Drive API enabled and the `drive.appdata` scope on its consent screen, with the app's bundle id (`moe.rukamori.archivetune`) as its iOS bundle ID. Written into `Info.plist` `ArchiveTuneGoogleDriveClientId`. | The Google Drive backup section reports "Google Drive is not configured for this app installation." and no sign-in starts. Manual backup files keep working. |
+| `ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID` | iOS only: the Google OAuth client of type "iOS" for Google Drive app data backup (`IosGoogleDriveAuthorization`, `ASWebAuthenticationSession` sign-in with PKCE, no client secret). Create it in a Google Cloud project that has the Drive API enabled and the `drive.appdata` scope on its consent screen, with the app's bundle id (`app.natune`) as its iOS bundle ID. Written into `Info.plist` `ArchiveTuneGoogleDriveClientId`. | The Google Drive backup section reports "Google Drive is not configured for this app installation." and no sign-in starts. Manual backup files keep working. |
 | `ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME` | iOS only: an explicit URL scheme for the consent redirect of the same sign-in, written into `Info.plist` `ArchiveTuneGoogleDriveUrlScheme`. It is only an override — `CFBundleURLTypes` always registers the bundle id (a scheme Google accepts for iOS clients) so the entry can never be empty, and the auth sheet delivers custom-scheme callbacks without registration regardless. | The sign-in uses the reversed client id (`com.googleusercontent.apps.<id>`) derived from the client id. |
 | `ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID` | Desktop only: the retained Echo/PlayPlay device-pair flow, using the separate Spotify streaming account. This is a protocol client identifier, not a subscriber credential or the catalog token. | Echo reports client configuration unavailable and the normal source chain continues. |
 | `ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID` | Optional client-token fallback for the same desktop streaming flow. Never used to mint or change a catalog session. | Only the supplied desktop client is tried. |
@@ -79,7 +79,7 @@ included.
   their historical names, and `BuildConfig.BUNDLED_BASE_URL` / `BuildConfig.BUNDLED_HMAC_KEY` carry the
   built-in Bundled pair.
 - **`:lastfm`** and **`:canvas`** are plain JVM modules without `BuildConfig`. Each has a
-  `generateProviderCredentials` task that writes `moe.rukamori.archivetune.<module>.ProviderBuildCredentials`
+  `generateProviderCredentials` task that writes `app.natune.<module>.ProviderBuildCredentials`
   into `build/generated/providerCredentials`, and that source directory is compiled with the module.
   The generated file is never committed, and its task is excluded from the build cache because it embeds
   the values.
@@ -87,7 +87,7 @@ included.
   SHA-256 fingerprints of the values, so a changed value regenerates the source without the value
   entering Gradle's task history.
 - **`:desktopApp`** has its own `generateProviderCredentials` task that writes
-  `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
+  `app.natune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
   Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service,
   the Google Drive desktop client, Spotify Echo protocol configuration, the YouTube device-code
   client pair, the Amazon Turnstile sitekey and origin and the built-in Bundled server pair).

@@ -35,8 +35,8 @@ Android の画面を共通の Kotlin Multiplatform モジュールへ移行中�
 Android 版は [ArchiveTune リポジトリ](https://github.com/NatuneGroup/ArchiveTune/releases)で配布しています。
 **Stable** は `main` から、**Nightly** プレリリースは `dev` からビルドされます。どちらも同じ署名鍵を使い、アプリ内アップデーターは選択したチャンネルに従います。
 Stable は [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NatuneGroup/ArchiveTune/)、
-[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/moe.rukamori.archivetune)、
-[OpenAPK](https://www.openapk.net/archivetune/moe.rukamori.archivetune/)、
+[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/app.natune)、
+[OpenAPK](https://www.openapk.net/archivetune/app.natune/)、
 [Unclouded](https://unclouded.app/apps/archivetune/) にも掲載されています。それ以外の配布元は検証されていません。
 
 > [!IMPORTANT]

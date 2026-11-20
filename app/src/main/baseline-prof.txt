@@ -26,62 +26,62 @@
 #   **                              -> wildcard
 
 # ---- Application startup ---------------------------------------------------
-HSPLmoe/rukamori/archivetune/App;->onCreate()V
-HSPLmoe/rukamori/archivetune/App;->**(**)**
-Lmoe/rukamori/archivetune/App**;
-HSPLmoe/rukamori/archivetune/MainActivity;->onCreate(Landroid/os/Bundle;)V
-HSPLmoe/rukamori/archivetune/MainActivity;->onStart()V
-HSPLmoe/rukamori/archivetune/MainActivity;->onResume()V
-HSPLmoe/rukamori/archivetune/MainActivity;->**(**)**
-Lmoe/rukamori/archivetune/MainActivity**;
+HSPLapp/natune/App;->onCreate()V
+HSPLapp/natune/App;->**(**)**
+Lapp/natune/App**;
+HSPLapp/natune/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLapp/natune/MainActivity;->onStart()V
+HSPLapp/natune/MainActivity;->onResume()V
+HSPLapp/natune/MainActivity;->**(**)**
+Lapp/natune/MainActivity**;
 
 # ---- Navigation + top-level UI scaffolding --------------------------------
-HSPLmoe/rukamori/archivetune/ui/screens/NavigationBuilderKt;->**(**)**
-Lmoe/rukamori/archivetune/ui/screens/**;
+HSPLapp/natune/ui/screens/NavigationBuilderKt;->**(**)**
+Lapp/natune/ui/screens/**;
 
 # ---- Home screen ------------------------------------------------------------
-HSPLmoe/rukamori/archivetune/viewmodels/HomeViewModel;->**(**)**
-Lmoe/rukamori/archivetune/ui/screens/home/**;
+HSPLapp/natune/viewmodels/HomeViewModel;->**(**)**
+Lapp/natune/ui/screens/home/**;
 
 # ---- Library / playlists / search ------------------------------------------
-HSPLmoe/rukamori/archivetune/viewmodels/**;->**(**)**
-Lmoe/rukamori/archivetune/viewmodels/**;
-HSPLmoe/rukamori/archivetune/ui/screens/library/**;->**(**)**
-Lmoe/rukamori/archivetune/ui/screens/library/**;
-HSPLmoe/rukamori/archivetune/ui/screens/playlist/**;->**(**)**
-Lmoe/rukamori/archivetune/ui/screens/playlist/**;
-HSPLmoe/rukamori/archivetune/ui/screens/search/**;->**(**)**
-Lmoe/rukamori/archivetune/ui/screens/search/**;
+HSPLapp/natune/viewmodels/**;->**(**)**
+Lapp/natune/viewmodels/**;
+HSPLapp/natune/ui/screens/library/**;->**(**)**
+Lapp/natune/ui/screens/library/**;
+HSPLapp/natune/ui/screens/playlist/**;->**(**)**
+Lapp/natune/ui/screens/playlist/**;
+HSPLapp/natune/ui/screens/search/**;->**(**)**
+Lapp/natune/ui/screens/search/**;
 
 # ---- Player / lyrics / queue ------------------------------------------------
-HSPLmoe/rukamori/archivetune/ui/player/**;->**(**)**
-Lmoe/rukamori/archivetune/ui/player/**;
-HSPLmoe/rukamori/archivetune/ui/component/LyricsEnhancedKt;->**(**)**
-HSPLmoe/rukamori/archivetune/ui/component/Lyrics**;->**(**)**
-Lmoe/rukamori/archivetune/ui/component/**;
+HSPLapp/natune/ui/player/**;->**(**)**
+Lapp/natune/ui/player/**;
+HSPLapp/natune/ui/component/LyricsEnhancedKt;->**(**)**
+HSPLapp/natune/ui/component/Lyrics**;->**(**)**
+Lapp/natune/ui/component/**;
 
 # ---- Liquid glass / blur / haze (the lag-critical rendering stack) --------
-HSPLmoe/rukamori/archivetune/ui/component/LiquidGlassKt;->**(**)**
-HSPLmoe/rukamori/archivetune/ui/component/FrostedHeaderPillKt;->**(**)**
-HSPLmoe/rukamori/archivetune/ui/component/FrostedTopAppBarKt;->**(**)**
-HSPLmoe/rukamori/archivetune/ui/component/FloatingNavigationToolbarKt;->**(**)**
+HSPLapp/natune/ui/component/LiquidGlassKt;->**(**)**
+HSPLapp/natune/ui/component/FrostedHeaderPillKt;->**(**)**
+HSPLapp/natune/ui/component/FrostedTopAppBarKt;->**(**)**
+HSPLapp/natune/ui/component/FloatingNavigationToolbarKt;->**(**)**
 Ldev/chrisbanes/haze/**;
 HSPLdev/chrisbanes/haze/**;->**(**)**
 Lcom/miu/kyant/**;
 
 # ---- Playback service -------------------------------------------------------
-HSPLmoe/rukamori/archivetune/playback/MusicService;->**(**)**
-Lmoe/rukamori/archivetune/playback/**;
-HSPLmoe/rukamori/archivetune/playback/PlayerConnection;->**(**)**
+HSPLapp/natune/playback/MusicService;->**(**)**
+Lapp/natune/playback/**;
+HSPLapp/natune/playback/PlayerConnection;->**(**)**
 
 # ---- InnerTube networking + models (core module) ---------------------------
 Lmoe/rukamori/archivetune/innertube/**;
 HSPLmoe/rukamori/archivetune/innertube/**;->**(**)**
-Lmoe/rukamori/archivetune/models/**;
+Lapp/natune/models/**;
 
 # ---- Room database ----------------------------------------------------------
-Lmoe/rukamori/archivetune/db/**;
-HSPLmoe/rukamori/archivetune/db/**;->**(**)**
+Lapp/natune/db/**;
+HSPLapp/natune/db/**;->**(**)**
 
 # ---- Serialization (InnerTube JSON parse) ----------------------------------
 Lkotlinx/serialization/**;

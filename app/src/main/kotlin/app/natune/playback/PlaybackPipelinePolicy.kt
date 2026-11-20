@@ -1,0 +1,77 @@
+/*
+ * ArchiveTune (2026)
+ * © vossgraves — github.com/vossgraves
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ */
+
+package app.natune.playback
+
+import app.natune.audiosource.AudioSourceAttemptTimeouts
+import app.natune.constants.AudioSourceType
+import androidx.datastore.preferences.core.Preferences
+import app.natune.constants.*
+import app.natune.shared.domain.settings.resolveAudioOffloadRequest
+
+internal enum class AudioAuthenticityProbeAvailability {
+    DISABLED,
+    AVAILABLE,
+    UNKNOWN,
+}
+
+internal fun resolveAudioAuthenticityProbeAvailability(
+    rejectionEnabled: Boolean,
+    pcmTapAvailable: Boolean,
+): AudioAuthenticityProbeAvailability =
+    when {
+        !rejectionEnabled -> AudioAuthenticityProbeAvailability.DISABLED
+        !pcmTapAvailable -> AudioAuthenticityProbeAvailability.UNKNOWN
+        else -> AudioAuthenticityProbeAvailability.AVAILABLE
+    }
+
+internal fun isClaimedLosslessFormat(
+    mimeType: String,
+    codecs: String,
+): Boolean {
+    val encodedFormat = "$mimeType $codecs".lowercase()
+    return listOf("flac", "alac", "wavpack", "pcm", "audio/raw", "audio/wav", "audio/wave", "audio/aiff")
+        .any { marker -> encodedFormat.contains(marker) }
+}
+
+internal fun resolveAudioAuthenticitySampleRateHz(
+    sampleRateHz: Int?,
+): Int? = sampleRateHz?.takeIf { it > 0 }
+
+internal fun resolveAudioOffloadEnabled(
+    requested: Boolean,
+    crossfadeEnabled: Boolean,
+    automixEnabled: Boolean,
+    authenticityRejectionEnabled: Boolean,
+    processingEnabled: Boolean = false,
+    usbOutputEnabled: Boolean = false,
+): Boolean = resolveAudioOffloadRequest(requested, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled,
+    processingEnabled, usbOutputEnabled)
+
+/** One snapshot, not combine() of independent collectors that can momentarily straddle an atomic edit. */
+internal fun Preferences.effectiveAudioOffloadEnabled(bitPerfectSinkActive: Boolean): Boolean = resolveAudioOffloadEnabled(
+    requested = this[AudioOffload] == true,
+    crossfadeEnabled = this[CrossfadeEnabledKey] == true,
+    automixEnabled = this[AutomixEnabledKey] == true,
+    authenticityRejectionEnabled = this[RejectSuspectedUpscaledAudioKey] == true,
+    // The unified chain processes unless its one switch is off, so offload is requested only when it is.
+    processingEnabled = this[AudioProcessingEnabledKey] != false,
+    usbOutputEnabled = bitPerfectSinkActive || this[BitPerfectUsbOutputKey] == true || this[UsbExclusiveAudioKey] == true,
+)
+
+internal fun resolveAudioSourceAttemptTimeoutMs(source: AudioSourceType): Long =
+    when (source) {
+        // Covers only their search: the whole-file download after a match runs on its own
+        // deadline (AudioSourceAttemptScope.withinTransfer), so a slow link is not cut off.
+        AudioSourceType.AMAZON, AudioSourceType.QQ -> AudioSourceAttemptTimeouts.WHOLE_FILE_SOURCE_SEARCH_MS
+        // A cold resolve chains a token, device registration, file lookup and key request.
+        AudioSourceType.SPOTIFY -> AudioSourceAttemptTimeouts.SPOTIFY_RESOLVE_MS
+        else -> AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS
+    }
+
+internal fun resolveAudioAuthenticityRetryPositionMs(currentPositionMs: Long): Long =
+    currentPositionMs.coerceAtLeast(0L)

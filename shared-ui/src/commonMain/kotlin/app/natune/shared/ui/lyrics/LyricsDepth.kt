@@ -1,0 +1,53 @@
+package app.natune.shared.ui.lyrics
+
+import kotlin.math.abs
+
+/**
+ * How a row reads by its distance from the sung line: rows further away are a little smaller, fainter and softer,
+ * so the eye stays on the active line. A sung row and every row of unsynced text are [Flat].
+ */
+internal data class LyricsDepth(
+    val scale: Float,
+    val blurDp: Float,
+    val alpha: Float,
+) {
+    companion object {
+        val Flat = LyricsDepth(scale = 1f, blurDp = 0f, alpha = 1f)
+
+        /** Rows further than this read like the furthest step, so a long list keeps a steady look. */
+        const val MAX_STEPS = 4
+        private const val SCALE_STEP = 0.025f
+        private const val BLUR_STEP_DP = 0.75f
+        private const val ALPHA_STEP = 0.12f
+        private const val STAGGER_STEP_MS = 45L
+
+        /** Steps from the primary row, or null while nothing is sung yet or the row itself is sung. */
+        fun distance(index: Int, primary: Int, active: Boolean): Int? =
+            if (primary < 0 || active) null else abs(index - primary)
+
+        /**
+         * How long a row waits before it follows a line change, so the change ripples outward from the sung line.
+         * The sung line and unsynced rows wait not at all.
+         */
+        fun staggerMs(distance: Int?): Long =
+            if (distance == null || distance <= 0) 0L else STAGGER_STEP_MS * distance.coerceAtMost(MAX_STEPS)
+
+        /**
+         * Every inactive row gets the same softening while the list follows the playhead, like the
+         * Enhanced look does: distance still drives scale and alpha, but the blur is one uniform veil
+         * rather than a per-step ramp. Pass 0 to keep the per-step blur.
+         */
+        const val UNIFORM_BLUR_DP = 2f
+
+        /** Reduced motion keeps every row at full size, so a line change never animates a scale. */
+        fun of(distance: Int?, reduceMotion: Boolean, uniformBlurDp: Float = 0f): LyricsDepth {
+            if (distance == null || distance <= 0) return Flat
+            val steps = distance.coerceAtMost(MAX_STEPS)
+            return LyricsDepth(
+                scale = if (reduceMotion) 1f else 1f - SCALE_STEP * steps,
+                blurDp = if (uniformBlurDp > 0f) uniformBlurDp else BLUR_STEP_DP * steps,
+                alpha = 1f - ALPHA_STEP * steps,
+            )
+        }
+    }
+}

@@ -142,7 +142,7 @@ flock -w 5400 /data/workspace/tmp/gradle.lock ./gradlew \
   :app:compileFossMobileArm64DebugKotlin \
   :app:externalNativeBuildFossMobileArm64Debug \
   :app:testFossMobileArm64DebugUnitTest \
-  --tests 'moe.rukamori.archivetune.playback.usbdirect.*' \
+  --tests 'app.natune.playback.usbdirect.*' \
   --console=plain --max-workers=2 \
   -Dorg.gradle.jvmargs=-Xmx2g -Pkotlin.daemon.jvmargs=-Xmx1536m
 ```

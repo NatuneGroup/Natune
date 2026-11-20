@@ -448,7 +448,7 @@ void throwIllegalState(JNIEnv *env, const char *message) {
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_open(
     JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
@@ -490,7 +490,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
  * domain-locked to the sign-in origin runs there. The policy, the capture prefix and the cookie reads are the same
  * ones `open` enforces, so the page can report only through the capture prefix the caller supplied.
  */
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_openHtml(
     JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
@@ -528,7 +528,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
     return result.get();
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
     JNIEnv *env, jclass, jlong handle, jlong requestId, jstring origin) {
     const std::string target = utf8FromJava(env, origin);
     post([=]() {
@@ -546,7 +546,7 @@ JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_Na
     });
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_close(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_close(
     JNIEnv *, jclass, jlong handle) {
     post([=]() {
         Session *session = findSession(handle);
@@ -556,7 +556,7 @@ JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_Na
 }
 
 /* Starts a chooser on the owner loop and returns its ticket, or 0 when GTK has no display. Never blocks on the dialog. */
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_NativeGtkFilePicker_start(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_NativeGtkFilePicker_start(
     JNIEnv *env, jclass, jboolean folder, jboolean multiple, jstring title, jstring acceptLabel, jstring cancelLabel) {
     if (!ensureOwner()) return 0;
 
@@ -582,7 +582,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_Native
  * Null while the chooser is still open after timeoutMillis, so the caller can check for its own cancellation. An empty
  * array is a cancelled or empty selection. A failed chooser throws, so a caller never mistakes it for a cancel.
  */
-JNIEXPORT jobjectArray JNICALL Java_moe_rukamori_archivetune_desktop_integration_NativeGtkFilePicker_await(
+JNIEXPORT jobjectArray JNICALL Java_app_natune_desktop_integration_NativeGtkFilePicker_await(
     JNIEnv *env, jclass, jlong id, jlong timeoutMillis) {
     std::shared_ptr<PickTicket> ticket = findPicker(id);
     if (!ticket) {
@@ -614,7 +614,7 @@ JNIEXPORT jobjectArray JNICALL Java_moe_rukamori_archivetune_desktop_integration
 }
 
 /* Non-blocking. The caller stops waiting at once; the owner closes the dialog without answering anyone else. */
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_NativeGtkFilePicker_cancel(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_NativeGtkFilePicker_cancel(
     JNIEnv *, jclass, jlong id) {
     std::shared_ptr<PickTicket> ticket = findPicker(id);
     if (!ticket) return;

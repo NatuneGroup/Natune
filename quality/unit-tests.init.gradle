@@ -51,7 +51,7 @@ gradle.projectsEvaluated {
         dependsOn(coverage)
         executionData.from(execution)
         classDirectories.from(production.asFileTree.matching {
-            contracts.each { include("moe/rukamori/archivetune/audiosource/${it}*.class") }
+            contracts.each { include("app/natune/audiosource/${it}*.class") }
         })
         sourceDirectories.from(app.file('src/main/kotlin'))
         violationRules {

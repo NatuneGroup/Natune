@@ -1,0 +1,54 @@
+package app.natune.shared.ui.settings
+
+import app.natune.shared.ui.resources.Res
+import org.jetbrains.compose.resources.InternalResourceApi
+
+/**
+ * Third-party data bundled inside the app binary, so it never appears in the generated dependency
+ * catalog Android builds for its license list. Their notices ship as compose resources (mirrored
+ * from `shared-domain`'s romanization sources); the licenses dialog lists them on hosts without a
+ * catalog and opens the full text through [readNotice] on demand.
+ */
+object AboutBundledNotices {
+    /** The bundled-data licenses, presented like catalog entries with an attached notice text. */
+    val entries: List<AboutLicenseEntry> =
+        listOf(
+            AboutLicenseEntry(
+                name = "ArchiveTune / BitChord / Mornye direct USB output (Android)",
+                version = "38670c8",
+                license = "GPL-3.0 / LGPL-3.0",
+                noticeResource = "files/notices/Direct-USB-GPL-LGPL-3.0.txt",
+            ),
+            AboutLicenseEntry(
+                name = "Google Oboe (historical dependency)",
+                version = "1.11.0",
+                license = "Apache License 2.0",
+                noticeResource = "files/notices/Google-Oboe-Apache-2.0.txt",
+            ),
+            AboutLicenseEntry(
+                name = "Natune IconPack — Natune and the credited community artists",
+                version = "554c3dd24f4240d6b836e9f36572acd78afc8888",
+                license = "CC BY-SA 4.0",
+                noticeResource = "files/notices/IconPack-CC-BY-SA-4.0.txt",
+            ),
+            AboutLicenseEntry(
+                name = "pinyin-data",
+                version = null,
+                license = "MIT License",
+                noticeResource = "files/notices/pinyin-data-LICENSE.txt",
+            ),
+            AboutLicenseEntry(
+                name = "phrase-pinyin-data",
+                version = null,
+                license = "MIT License",
+                noticeResource = "files/notices/phrase-pinyin-data-LICENSE.txt",
+            ),
+        )
+
+    /** The bundled notice text for [entry], or null when it carries none or the read fails. */
+    @OptIn(InternalResourceApi::class)
+    suspend fun readNotice(entry: AboutLicenseEntry): String? =
+        entry.noticeResource?.let { path ->
+            runCatching { Res.readBytes(path).decodeToString() }.getOrNull()
+        }
+}

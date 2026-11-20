@@ -1,0 +1,993 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
+package app.natune.shared.ui.ios
+
+import platform.Foundation.NSUUID
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.darwin.Darwin
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import app.natune.shared.data.ai.KtorAiTextService
+import app.natune.shared.data.modules.IosModulesRepository
+import app.natune.shared.ui.session.LyricsSurfaceRuntime
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import app.natune.shared.data.backup.IosRestoreFileOps
+import app.natune.shared.data.customartwork.FileCustomArtworkRepository
+import app.natune.shared.data.localmedia.IosLocalMediaSource
+import app.natune.shared.data.news.NatuneNewsClient
+import app.natune.shared.data.platform.ios.IosCustomArtworkFiles
+import app.natune.shared.data.persistence.PortableStateDatabase
+import app.natune.shared.data.persistence.RoomArtistBlockRepository
+import app.natune.shared.data.persistence.RoomLibraryRepository
+import app.natune.shared.data.persistence.RoomListeningHistory
+import app.natune.shared.data.persistence.RoomLocalMediaLibrary
+import app.natune.shared.data.playlistexport.RoomPlaylistExportSource
+import app.natune.shared.data.persistence.RoomPlaylistTagsRepository
+import app.natune.shared.data.persistence.RoomPodcastProgressStore
+import app.natune.shared.data.persistence.RoomSongLyricsOffsetRepository
+import app.natune.shared.data.persistence.RoomQueueCheckpointStore
+import app.natune.shared.data.persistence.iosPortableStateDatabasePath
+import app.natune.shared.data.persistence.openPortableStateDatabase
+import app.natune.shared.data.persistence.snapshotTo
+import app.natune.shared.data.platform.ios.IosCanvasCacheStore
+import app.natune.shared.data.platform.ios.IosCrossfadeHandoff
+import app.natune.shared.data.platform.ios.IosListenTogether
+import app.natune.shared.data.platform.ios.IosListenTogetherAvatar
+import app.natune.shared.data.platform.ios.IosMediaDirectories
+import app.natune.shared.data.platform.ios.IosMediaImporter
+import app.natune.shared.data.platform.ios.IosNetworkOwner
+import app.natune.shared.data.platform.ios.IosPlaybackPool
+import app.natune.shared.data.platform.ios.IosPlaybackPort
+import app.natune.shared.data.platform.ios.IosProviderCredentials
+import app.natune.shared.data.platform.ios.IosTelegramClient
+import app.natune.shared.data.platform.ios.IosTransportAvailability
+import app.natune.shared.data.platform.ios.iosNatuneNewsUrl
+import app.natune.shared.data.platform.ios.iosNetworkAvailable
+import app.natune.shared.data.platform.ios.iosNowMillis
+import app.natune.shared.data.platform.ios.iosTidalDeviceClient
+import app.natune.shared.data.potoken.IosPoTokenSupport
+import app.natune.shared.data.platform.ios.iosTidalPkceClient
+import app.natune.shared.data.provider.IosYouTubeBrowseTransport
+import app.natune.shared.data.provider.IosYouTubeResolver
+import app.natune.shared.data.provider.KtorSponsorBlockRepository
+import app.natune.shared.data.provider.OrderedAudioResolver
+import app.natune.shared.data.provider.TidalAccountAuth
+import app.natune.shared.data.provider.YouTubeAccountBinding
+import app.natune.shared.data.provider.YouTubeCatalogueTransport
+import app.natune.shared.data.provider.YouTubeContentRepository
+import app.natune.shared.data.provider.catalogueTransport
+import app.natune.shared.data.recommend.PortableRecommendationSignals
+import app.natune.shared.data.recommend.QueueTailRecommendation
+import app.natune.shared.data.repository.ContentRepositoryRouter
+import app.natune.shared.data.repository.PortableQueueOwner
+import app.natune.shared.data.repository.QueueHandoffState
+import app.natune.shared.data.repository.TypedDelegatingQueueController
+import app.natune.shared.data.repository.TypedRoomLibraryRepository
+import app.natune.shared.domain.platform.CredentialScope
+import app.natune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import app.natune.shared.domain.playback.MusicPlayerController
+import app.natune.shared.domain.playback.PlaybackRequest
+import app.natune.shared.domain.playlisttags.PlaylistTagsRepository
+import app.natune.shared.domain.repository.ContentProvider
+import app.natune.shared.domain.queue.QueueAdvancePolicy
+import app.natune.shared.domain.repository.ContentItem
+import app.natune.shared.domain.settings.AutoSkipNextOnErrorKey
+import app.natune.shared.domain.settings.AutoLoadMoreKey
+import app.natune.shared.domain.settings.BlockedSongIdsKey
+import app.natune.shared.domain.settings.parseBlockedSongRefs
+import app.natune.shared.domain.settings.HideExplicitKey
+import app.natune.shared.domain.settings.HideVideoKey
+import app.natune.shared.domain.settings.ListenTogetherSettingsDefaults
+import app.natune.shared.domain.settings.PlayerVolumeKey
+import app.natune.shared.domain.settings.PreventDuplicateTracksInQueueKey
+import app.natune.shared.domain.settings.QueueAddAfterManualKey
+import app.natune.shared.domain.settings.QueueLockedKey
+import app.natune.shared.domain.settings.WebClientPoTokenEnabledKey
+import app.natune.shared.domain.settings.YtmSyncKey
+import app.natune.shared.domain.settings.listenTogetherAvatarIndex
+import app.natune.shared.ui.IosHost
+import app.natune.shared.ui.host.HostLyrics
+import app.natune.shared.ui.host.LibraryContentOwner
+import app.natune.shared.ui.host.LibraryPageOwners
+import app.natune.shared.data.playlistexport.PlaylistExportOwner
+import app.natune.shared.ui.host.ListenHistoryDriver
+import app.natune.shared.ui.host.PodcastProgressDriver
+import app.natune.shared.ui.host.SponsorBlockDriver
+import app.natune.shared.ui.host.TidalSessionRefresh
+import app.natune.shared.ui.menu.playerqueue.SharedSleepTimer
+import app.natune.shared.ui.news.NewsFeedOwner
+import app.natune.shared.ui.settings.ProviderAccountLifecycle
+import app.natune.shared.ui.settings.VaultProviderAccountStore
+import app.natune.shared.ui.settings.providerAccountScope
+import app.natune.shared.ui.settings.VaultSettingsStore
+import platform.Foundation.*
+
+/**
+ * The one session graph of the iOS process, built once the Keychain-backed settings are ready. It owns the portable
+ * database, the HTTP client, the single queue owner, the listening history, the library owner and the lyrics owner,
+ * and borrows the host's one player, playback port and account store, so no second player, vault or queue exists.
+ *
+ * Opening is all-or-nothing. A failed database is never replaced by memory or an empty stand-in, so the host shows its
+ * unavailable boundary instead of a usable-looking empty session.
+ */
+internal class IosSessionGraph private constructor(
+    val scope: CoroutineScope,
+    val settings: VaultSettingsStore,
+    val accounts: VaultProviderAccountStore,
+    val accountLifecycle: ProviderAccountLifecycle,
+    val tidalAuth: TidalAccountAuth,
+    val http: HttpClient,
+    val network: IosNetworkOwner,
+    val player: MusicPlayerController,
+    val queue: TypedDelegatingQueueController,
+    val youtubeTransport: IosYouTubeBrowseTransport,
+    /** The one BotGuard poToken owner; the settings page and the YouTube resolver share it. */
+    internal val poTokens: IosPoTokenSupport,
+    /** The typed YouTube catalogue over [youtubeTransport] and the account binding: search, albums, playlists, sections. */
+    val youtubeContent: YouTubeContentRepository,
+    /** The shelf feeds over the same InnerTubeX session: the home feed, charts, explore and new releases. */
+    val youtubeCatalogue: YouTubeCatalogueTransport,
+    internal val library: RoomLibraryRepository,
+    val artistBlocks: RoomArtistBlockRepository,
+    val libraryContent: LibraryContentOwner,
+    val pageOwners: LibraryPageOwners,
+    /** The one listening history the library, the listen driver and the statistics pages read and write. */
+    val history: RoomListeningHistory,
+    val lyrics: HostLyrics,
+    val lyricsSurface: LyricsSurfaceRuntime,
+    val lyricsStorage: IosLyricsStore,
+    val modules: IosModulesRepository,
+    val customArtwork: FileCustomArtworkRepository,
+    val playbackPool: IosPlaybackPool,
+    val artworkLoader: IosArtworkLoader,
+    /** The on-disk canvas frame store the canvas owner and the canvas cache settings share. */
+    val canvasStore: IosCanvasCacheStore,
+    /** The room, chat and settings owner over the one Listen Together engine, started and closed with the graph. */
+    val listenTogether: IosListenTogetherOwner,
+    /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
+    val uploads: IosYouTubeUploads,
+    /** Downloads: the shared portable queue over this host's source chain, stored in the app container. */
+    val downloads: IosDownloadsOwner,
+    val songCache: IosSongCache,
+    /** Backup and restore: the portable-format gateway, the prepared-restore registry and the restart request. */
+    val backup: IosBackupOwner,
+    /** The Google Drive app-data backup owners. Its rows report the not-configured state when the build carries no iOS OAuth client id. */
+    val driveBackup: IosDriveBackup,
+
+    /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
+    val localMedia: IosLocalMediaOwner,
+    /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
+    val lastFm: IosLastFm,
+    /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
+    val discord: IosDiscordPresence,
+    private val owner: PortableQueueOwner,
+    internal val playbackPort: IosPlaybackPort,
+    private val database: PortableStateDatabase,
+    private val listenDriver: ListenHistoryDriver,
+    private val progressDriver: PodcastProgressDriver,
+    private val drivers: List<Job>,
+    private val reportLine: (String) -> Unit,
+) {
+    internal var backupSync: IosBackupSync? = null
+    val topMixes by lazy { IosTopMixes(this) }
+    val lyricsTools by lazy { IosLyricsTools(this) }
+
+    val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+
+    /** The persisted per-song lyrics offsets this host applies on every lyrics surface. */
+    val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
+    val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
+    val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
+    /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
+    val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+    val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
+
+    /** The `news` feed and its unread mark, over the shared client and the build's NATUNE_NEWS_URL; blank disables it. */
+    val newsFeed = NewsFeedOwner(NatuneNewsClient(http, iosNatuneNewsUrl()), settings, scope, ::report)
+
+    /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
+    val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
+
+    /** The one equalizer owner of this process: the same shared keys and band layout the desktop owner drives. */
+    internal val equalizer = IosEqualizer(scope, settings, playbackPort)
+
+    /**
+     * The one acoustic audit owner of this process: it decodes a bounded PCM window of the current
+     * occurrence's own source through the portable probe, exactly like the desktop host. A target that
+     * is not the loaded request is refused instead of auditing the wrong song. The request binding,
+     * key watcher and menu entry point are the extensions in IosSessionGraphAcoustic.kt.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        acousticWindow(target, checkActive)
+    }
+
+    init {
+        watchAcousticBinding()
+    }
+
+    /**
+     * The "pause on device mute" policy: it watches the system output volume and the app-level output
+     * level and pauses/resumes through the port the way the Android stream-mute policy does.
+     */
+    val outputMutePolicy = IosOutputMutePolicy(
+        scope = scope,
+        settings = settings,
+        port = playbackPort,
+        player = player,
+        restoreVolume = ::setVolume,
+        report = ::report,
+    )
+
+    internal val youtubeLibrarySync = IosYouTubeLibrarySync(this)
+
+    val transportAvailability: Flow<IosTransportAvailability> = iosTransportAvailability()
+
+    /**
+     * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player
+     * does, so the same slider the Android app offers drives the output on this host too.
+     */
+    fun setVolume(volume: Float) {
+        if (!volume.isFinite()) return
+        val level = volume.coerceIn(0f, 1f)
+        playbackPort.setVolume(level)
+        scope.launch {
+            try {
+                settings.edit { set(PlayerVolumeKey, level) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("volume was not saved: ${failure::class.simpleName}")
+            }
+        }
+    }
+
+    fun report(message: String) = reportLine(message)
+
+    /**
+     * Hands the host's admitted Telegram session to the artwork path so a `tgart:` cover downloads its thumbnail
+     * through it. The playback port's own attach stays the host's call; this only lets the loader reach the same
+     * client, and an unadmitted or closed session answers nothing.
+     */
+    fun attachTelegram(session: IosTelegramClient) = artworkLoader.attachTelegram(session)
+
+    /**
+     * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it. An
+     * occurrence that has left the queue is logged and not retried.
+     */
+    fun retryAfterFailure(occurrenceId: String) {
+        scope.launch {
+            try {
+                val position = player.positionMs()
+                    ?.takeIf { player.snapshot.value?.occurrenceId == occurrenceId }
+                    ?.coerceAtLeast(0L) ?: 0L
+                queue.select(occurrenceId, position)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("playback retry failed: ${failure::class.simpleName}")
+            }
+        }
+    }
+
+    /** Advances to the successor under the same repeat policy as an automatic end. False when the queue has none. */
+    suspend fun skipNext(): Boolean = owner.withQueueAccess {
+        val state = owner.state.value
+        val current = state.currentOccurrenceId ?: return@withQueueAccess false
+        val target = QueueAdvancePolicy.successor(iosRepeatMode(settings.snapshots.value), state.playOrder, current)
+            ?: return@withQueueAccess false
+        owner.skipTo(target, 0L)
+        true
+    }
+
+    /** Restarts the current occurrence after a few seconds of play, otherwise moves to its predecessor in play order. */
+    suspend fun skipPrevious(): Boolean {
+        if ((player.positionMs() ?: 0L) > RESTART_THRESHOLD_MS) {
+            player.seekTo(0L)
+            return true
+        }
+        return owner.withQueueAccess {
+            val state = owner.state.value
+            val current = state.currentOccurrenceId ?: return@withQueueAccess false
+            val index = state.playOrder.indexOf(current)
+            if (index <= 0) return@withQueueAccess false
+            owner.skipTo(state.playOrder[index - 1], 0L)
+            true
+        }
+    }
+
+    /** The item of [occurrenceId] in the queue, for the lock screen and Control Center. */
+    fun metadata(occurrenceId: String): ContentItem? =
+        queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item
+
+    /**
+     * Writes the queue's current revision without stopping the graph. The host calls it when the app enters the
+     * background and once more before [close], because a swipe-kill never reaches willTerminate. It runs on the
+     * caller's worker and needs no main-queue work, so a missing or throwing `Dispatchers.Main.immediate` cannot
+     * defer the checkpoint.
+     */
+    suspend fun checkpointQueue() = withContext(NonCancellable) {
+        checkpointNow(queue, reportLine)
+    }
+
+    /**
+     * Final shutdown. The open listen and podcast position are finished first so their play time and progress are kept,
+     * then the queue is checkpointed while the owner can still write, and only then are the database and the client
+     * released. The host's player, port and settings belong to the host, which closes them afterwards.
+     */
+    private var deviceConnectOwner: IosDeviceConnect? = null
+
+    /** Created on first use, closed with the graph. The settings row and sheet read this one owner. */
+    internal val deviceConnect: IosDeviceConnect
+        get() = deviceConnectOwner ?: IosDeviceConnect(this).also { deviceConnectOwner = it }
+
+    private var startupJob: Job? = null
+
+    /** Called after Ready is published. Saved-song source resolution does not gate first paint. */
+    fun startAfterMount() {
+        if (startupJob != null || backup.recoveryMode.value) return
+        startupJob = scope.launch {
+            try {
+                queue.resumeIfPristine()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reportLine("saved queue was not restored: ${failure::class.simpleName}")
+            }
+        }
+    }
+
+    suspend fun close() = withContext(NonCancellable) {
+        startupJob?.cancelAndJoin()
+        startupJob = null
+        deviceConnectOwner?.close()
+        deviceConnectOwner = null
+        outputMutePolicy.close()
+        playbackPort.cancelNext()
+        discord.close()
+        lastFm.close()
+        listenTogether.close()
+        uploads.close()
+        listenDriver.close()
+        progressDriver.close()
+        songCache.close()
+        modules.close()
+        backupSync?.close()
+        topMixes.close()
+        lyricsSurface.close()
+        lyrics.close()
+        newsFeed.close()
+        drivers.forEach { it.cancel() }
+        // The download and import owners write rows and files, so both stop before the checkpoint and the database.
+        downloads.close()
+        localMedia.close()
+        checkpointNow(queue, reportLine)
+        owner.close()
+        poTokens.close()
+        http.close()
+        database.close()
+        scope.cancel()
+    }
+
+    companion object {
+        /** The position past which a previous skip restarts the current occurrence instead of stepping back. */
+        const val RESTART_THRESHOLD_MS = 3_000L
+        private const val POSITION_CHECKPOINT_INTERVAL_MS = 10_000L
+
+        /** The portable state file the staged restore swaps under its sidecar files. */
+        private const val DATABASE_FILE = "portable-state.db"
+
+        /**
+         * Opens the database, then builds the owners over it and the host's settings, accounts and player. A failure
+         * releases what was opened and is rethrown. A saved queue that cannot be restored stays on disk.
+         */
+        suspend fun open(
+            host: IosHost,
+            settings: VaultSettingsStore,
+            accounts: VaultProviderAccountStore,
+            report: (String) -> Unit,
+        ): IosSessionGraph {
+            val scope = CoroutineScope(
+                SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, failure ->
+                    report("background command failed: ${failure::class.simpleName}")
+                },
+            )
+            val databasePath = iosPortableStateDatabasePath()
+            val databaseDirectory = databasePath.substringBeforeLast('/')
+            // A restore staged by an earlier launch applies before the owners open the files: the staged library is
+            // swapped in and validated before the staged settings merge, and the transaction keeps the originals
+            // aside until the merge lands, so files and settings land or roll back together. A section that fails
+            // rolls both back, keeps the pending set under restore-failed for diagnosis and surfaces on the page.
+            val restoreStart = withContext(Dispatchers.Default) {
+                IosRestoreStartup.begin(databaseDirectory, DATABASE_FILE, report)
+            }
+            val pending = restoreStart.pending
+            // Recovery mode means a throwaway database only: the host shows the resolution surface and the
+            // library files stay exactly as the failed restore left them until the user decides.
+            var recoveryMode = restoreStart.blocked
+            if (restoreStart.needsSettingsRollback && pending != null) {
+                // The file rollback already ran; the vault still holds the merged settings and owes its
+                // pre-apply snapshot. A failed restore of it keeps every marker — the resolution actions or
+                // a later start finish the job rather than opening a mismatched pair.
+                val vaultRestored = try {
+                    IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                    true
+                } catch (cancelled: CancellationException) {
+                    scope.cancel()
+                    throw cancelled
+                } catch (failure: Exception) {
+                    report("restored settings rollback failed: ${failure::class.simpleName}")
+                    false
+                }
+                if (vaultRestored) {
+                    runCatching {
+                        IosRestoreFileOps().delete(IosRestoreRecovery.abortMarkerPath(pending.directory))
+                    }
+                    runCatching { pending.markFailed() }
+                } else {
+                    runCatching { IosRestoreRecovery.block(IosRestoreFileOps(), databaseDirectory) }
+                    recoveryMode = true
+                }
+            }
+            var restoreSettled = restoreStart.transaction == null
+            var database = try {
+                withContext(Dispatchers.Default) {
+                    if (recoveryMode) {
+                        openPortableStateDatabase(":memory:")
+                    } else {
+                        openIosGraphDatabase(
+                            databasePath, databaseDirectory, DATABASE_FILE, restoreStart, settings, report,
+                        )
+                            ?: openPortableStateDatabase(":memory:").also { recoveryMode = true }
+                    }
+                }
+            } catch (failure: Throwable) {
+                scope.cancel()
+                throw failure
+            }
+            if (pending != null && !pending.failed && !recoveryMode) {
+                if (pending.legacyFormat) {
+                    try {
+                        pending.applySettings(settings)
+                    } catch (cancelled: CancellationException) {
+                        database.close()
+                        scope.cancel()
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        report("restored settings not applied: ${failure::class.simpleName}")
+                        withContext(NonCancellable) {
+                            // Room releases the files before the rollback replaces them.
+                            runCatching { database.close() }
+                            pending.rollbackSettings(settings)
+                            pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
+                            runCatching { pending.markFailed() }
+                        }
+                        database = try {
+                            withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
+                        } catch (reopen: Throwable) {
+                            scope.cancel()
+                            throw reopen
+                        }
+                    }
+                } else if (restoreStart.transaction != null) {
+                    var applied = true
+                    if (restoreStart.needsSettingsApply) {
+                        try {
+                            IosRestoreStartup.applyPendingSettings(pending, IosRestoreFileOps(), settings)
+                        } catch (cancelled: CancellationException) {
+                            database.close()
+                            scope.cancel()
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            applied = false
+                            report("restored settings not applied: ${failure::class.simpleName}")
+                            val ops = IosRestoreFileOps()
+                            var vaultOk = true
+                            withContext(NonCancellable) {
+                                // Room releases the files before the rollback replaces them, and the abort
+                                // decision is durable first: a kill re-enters the joint undo next start.
+                                runCatching { database.close() }
+                                val abortPersisted = runCatching {
+                                    ops.writeAtomically(
+                                        IosRestoreRecovery.abortMarkerPath(pending.directory),
+                                        byteArrayOf(1),
+                                    )
+                                }.isSuccess
+                                if (abortPersisted) {
+                                    if (pending.hasSettingsBefore) {
+                                        vaultOk = runCatching {
+                                            IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
+                                        }.isSuccess
+                                        if (!vaultOk) report("restored settings rollback failed")
+                                    }
+                                    runCatching { restoreStart.transaction.rollbackCommitted() }
+                                } else {
+                                    // No durable abort decision: a kill now would re-read a half-undone set
+                                    // as a fresh restore, so block and hold the set for recovery mode.
+                                    report("restore abort marker not written")
+                                    vaultOk = false
+                                }
+                                if (vaultOk) {
+                                    runCatching { pending.markFailed() }
+                                } else {
+                                    // Keep the markers; recovery mode owns the session and the resolution
+                                    // actions or a later start finish the undo.
+                                    runCatching { IosRestoreRecovery.block(ops, databaseDirectory) }
+                                }
+                            }
+                            database = try {
+                                withContext(Dispatchers.Default) {
+                                    if (vaultOk) {
+                                        openPortableStateDatabase(databasePath)
+                                    } else {
+                                        recoveryMode = true
+                                        openPortableStateDatabase(":memory:")
+                                    }
+                                }
+                            } catch (reopen: Throwable) {
+                                scope.cancel()
+                                throw reopen
+                            }
+                        }
+                    }
+                    if (applied) {
+                        try {
+                            restoreStart.transaction.finalize()
+                            restoreSettled = true
+                        } catch (failure: Exception) {
+                            // The journal stays for the next start to finish or re-apply from.
+                            report("restore cleanup not finished: ${failure::class.simpleName}")
+                        }
+                    }
+                }
+            }
+            // The Darwin engine reads its proxy when it creates the session, so the saved route is decided before
+            // the client exists and stays pinned for this process.
+            val network = IosNetworkOwner({ settings.snapshots.value }, report)
+            val http = HttpClient(Darwin) { engine { network.configure(this) } }
+            report(network.describe())
+            // Rotation a user left on comes back off the launch path, like the desktop owner's restore.
+            network.start(scope)
+            return try {
+                assemble(
+                    host, scope, settings, accounts, database, databaseDirectory, http, network, report,
+                    restoreFailed = pending?.failed == true && !recoveryMode,
+                    recoveryMode = recoveryMode,
+                ).also {
+                    // A fully applied restore's staging goes away; a failed one rests under restore-failed,
+                    // and an unfinished journal stays so the next start settles it instead of being deleted.
+                    if (pending != null && !pending.failed && restoreSettled && !recoveryMode) {
+                        try {
+                            pending.finish()
+                        } catch (failure: Exception) {
+                            report("restore staging not removed: ${failure::class.simpleName}")
+                        }
+                    }
+                }
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    http.close()
+                    database.close()
+                }
+                scope.cancel()
+                throw failure
+            }
+        }
+
+        private suspend fun assemble(
+            host: IosHost,
+            scope: CoroutineScope,
+            vault: VaultSettingsStore,
+            accounts: VaultProviderAccountStore,
+            database: PortableStateDatabase,
+            databaseDirectory: String,
+            http: HttpClient,
+            network: IosNetworkOwner,
+            report: (String) -> Unit,
+            restoreFailed: Boolean,
+            recoveryMode: Boolean,
+        ): IosSessionGraph {
+            val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
+            // The device and PKCE clients come from the build's Info.plist keys; a build without them keeps
+            // those sign-ins unavailable. A pasted refresh token is still verified with TIDAL.
+            val tidalAuth = TidalAccountAuth(
+                http,
+                device = iosTidalDeviceClient(),
+                pkce = iosTidalPkceClient(),
+                nowMs = ::iosNowMillis,
+            )
+            val tidalSessionRefresh = TidalSessionRefresh(
+                tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
+            )
+            val songMetadata = app.natune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
+            val library = RoomLibraryRepository(
+                database.library(), listens = database.listens(), storedSongs = database.storedSongs(),
+                songMetadata = songMetadata,
+            )
+            val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
+            val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
+                refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
+            }
+            val queueArtistBlocks = blockedQueueArtists.stateIn(scope, SharingStarted.Eagerly, blockedQueueArtists.first())
+            val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
+            val player = host.player
+            val playbackPool = IosPlaybackPool(
+                http = http,
+                vault = host.credentials,
+                preferences = { vault.snapshots.value },
+                scope = scope,
+                log = report,
+                nowMs = ::iosNowMillis,
+            )
+            // One InnerTubeX transport serves the catalogue and account paths; the resolver walks the shipped
+            // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
+            val youtubeTransport = IosYouTubeBrowseTransport(http)
+            youtubeTransport.refreshSession(vault.snapshots.value)
+            // One BotGuard owner feeds the resolver's minting and the settings generation, like the
+            // shared BotGuardTokenGenerator object on Android.
+            val poTokens = IosPoTokenSupport(
+                http = http,
+                transport = youtubeTransport,
+                enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+                report = report,
+            )
+            // The shipped app warms BotGuard once the auth state names a session, so a cold mint
+            // never lands inside a resolve; the owner derives the session id from the transport
+            // itself and stays a no-op while the poToken preference is off.
+            scope.launch { poTokens.preWarm() }
+            val youtubeCatalogue = youtubeTransport.catalogueTransport()
+            val youtubeAccount = YouTubeAccountBinding(
+                transport = youtubeTransport,
+                accounts = accounts,
+                personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
+                syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
+            )
+            val modules = IosModulesRepository("$databaseDirectory/modules", host.credentials) { vault.snapshots.value }
+            val audioResolver = OrderedAudioResolver(
+                providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool, modules),
+                youtube = IosYouTubeResolver(
+                    http = http,
+                    transport = youtubeTransport,
+                    preferences = { vault.snapshots.value },
+                    personalScope = {
+                        providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
+                    },
+                    poTokens = poTokens,
+                    report = report,
+                ),
+            )
+            val mediaDirectories = IosMediaDirectories().also { it.ensure() }
+            val localMedia = IosLocalMediaOwner(
+                host = host,
+                importer = IosMediaImporter(mediaDirectories.imports),
+                library = RoomLocalMediaLibrary(database.localTracks(), vault, songMetadata),
+                source = IosLocalMediaSource(mediaDirectories.imports, mediaDirectories.importArtwork),
+                scope = scope,
+                report = report,
+            )
+            val downloads = IosDownloadsOwner(
+                tasks = database.downloadTasks(),
+                storedSongs = database.storedSongs(),
+                library = library,
+                settings = vault,
+                resolver = audioResolver,
+                root = mediaDirectories.downloads,
+                accounts = accounts,
+                client = http,
+                scope = scope,
+                nowMs = ::iosNowMillis,
+                report = report,
+            )
+            val songCache = IosSongCache(database.storedSongs(), "$databaseDirectory/song-cache", http, vault,
+                audioResolver, accounts, scope, ::iosNowMillis, report)
+            val canvasStore = IosCanvasCacheStore().also { it.ensure() }
+            iosApplyCacheLimits(vault.snapshots.value, canvasStore)
+            // Backup archives hold a VACUUM INTO snapshot of this same database, staged beside it on restore.
+            val backup = IosBackupOwner(
+                settings = vault,
+                snapshotDatabase = { target -> database.snapshotTo(target) },
+                instanceDirectory = databaseDirectory,
+                initialRestoreFailed = restoreFailed,
+                initialRecoveryMode = recoveryMode,
+            )
+            // The Drive app-data backup mounts on every build; its chooser reports CONFIGURATION while the build
+            // carries no Google iOS OAuth client, so the page shows the localized not-configured state rather than
+            // hiding the rows. The same gateway and restore registry serve it, so a Drive archive is byte-identical
+            // to a file export and a cloud restore stages like a file restore.
+            val driveBackup = IosDriveBackup(
+                scope = scope,
+                http = http,
+                credentials = host.credentials,
+                browser = host.browser,
+                instanceDirectory = databaseDirectory,
+                archives = backup.archives,
+                restores = backup.restores,
+                onRestartRequired = backup::requestRestart,
+                report = report,
+            )
+            val locators = IosQueueLocatorResolver(
+                audio = audioResolver,
+                port = host.playbackPort,
+                preferences = { vault.snapshots.value },
+                localFile = { ref -> localMedia.pathOf(ref.id) },
+                downloadedFile = { ref -> downloads.committedFile(ref) },
+                cachedFile = songCache::file,
+            )
+            // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
+            val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
+            val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
+            val handoff = IosCrossfadeHandoff(host.playbackPort, vault.snapshots)
+            val blockedSongs = {
+                parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+            }
+            // The tail ranks the page it already fetched against the same store, block list and local clock the UI shows.
+            val queueRecommendation = QueueTailRecommendation(
+                signals = PortableRecommendationSignals(
+                    listens = database.listens(),
+                    artistBlocks = database.artistBlocks(),
+                    blockedSongRefs = blockedSongs,
+                ),
+                nowMs = ::iosNowMillis,
+                offsetMsAt = ::iosOffsetMsAt,
+            )
+            val owner = PortableQueueOwner(
+                player = player,
+                scope = scope,
+                content = contentRouter,
+                locators = locators,
+                keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
+                repeatMode = { iosRepeatMode(vault.snapshots.value) },
+                autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                preventDuplicateTracksInQueue = { vault.snapshots.value?.get(PreventDuplicateTracksInQueueKey) ?: false },
+                queueLocked = { vault.snapshots.value?.get(QueueLockedKey) ?: false },
+                songMetadata = songMetadata,
+                autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
+                autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
+                hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
+                hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
+                blockedArtistIds = { queueArtistBlocks.value },
+                blockedSongRefs = blockedSongs,
+                handoffEngine = handoff,
+                recommendation = queueRecommendation,
+            )
+            val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
+            // The Discord owner borrows the host's ephemeral OAuth sheet and the shared websocket wrapper; it only
+            // acts on playback and settings reads, so it costs nothing until the settings page starts its driver.
+            val discord = IosDiscordPresence(
+                scope = scope,
+                http = http,
+                settings = vault,
+                browser = host.browser,
+                player = player,
+                queue = queue.state,
+                report = report,
+            )
+            // The scrobbler sits on the one player and queue, so a like written below is mirrored to Last.fm by the
+            // same owner that queues the scrobbles.
+            val lastFm = IosLastFm(
+                scope = scope,
+                http = http,
+                settings = vault,
+                player = player,
+                queue = queue.state,
+                report = report,
+            )
+            val listenDriver = ListenHistoryDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                history = history,
+                preferences = vault.snapshots,
+                report = report,
+                nowMs = ::iosNowMillis,
+            )
+            // Written from the same snapshots; close() flushes the open episode before the database is released.
+            val progressDriver = PodcastProgressDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                store = RoomPodcastProgressStore(database.podcastProgress()),
+                report = report,
+                nowMs = ::iosNowMillis,
+            )
+            // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
+            SponsorBlockDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                resolved = owner.loadedRequest,
+                preferences = vault.snapshots,
+                repository = KtorSponsorBlockRepository(http),
+                report = report,
+            )
+            // The build-time Bundled pair is the only endpoint the provider can have; there is no user setting.
+            val lyricsStorage = IosLyricsStore("$databaseDirectory/lyrics")
+            val lyrics = HostLyrics(
+                scope = scope,
+                http = http,
+                settings = vault,
+                player = player,
+                queue = queue.state,
+                networkAvailable = { iosNetworkAvailable() },
+                report = report,
+                bundledBuildBaseUrl = IosProviderCredentials.bundledBaseUrl,
+                bundledBuildHmacKey = IosProviderCredentials.bundledHmacKey,
+                storage = lyricsStorage,
+                additionalProviderNames = listOf("Spotify"),
+                additionalProviders = { listOf(app.natune.shared.data.lyrics.SpotifyAccountLyricsProvider(http) {
+                    iosCatalogLyricsToken(vault, http)
+                }) },
+            )
+            val lyricsSurface = LyricsSurfaceRuntime(scope, vault, KtorAiTextService(http), lyrics.current,
+                host.japaneseLanguagePack.flatMapLatest { it?.tokenizer ?: flowOf(null) }, null,
+                NSUUID().UUIDString, report)
+            val libraryContent = LibraryContentOwner(
+                settings = vault,
+                library = library,
+                writes = library,
+                statistics = history,
+                blocked = artistBlocks.observeBlockedArtists(),
+                textOrder = iosTextOrder,
+                nowMs = ::iosNowMillis,
+                offsetMsAt = ::iosOffsetMsAt,
+                report = report,
+                onLikeWritten = { ref, liked ->
+                    try {
+                        lastFm.mirrorLove(library.item(ref), liked)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        report("Last.fm love skipped: ${failure::class.simpleName}")
+                    }
+                },
+            )
+            val pageOwners = LibraryPageOwners(
+                content = libraryContent,
+                settings = vault,
+                queue = queue,
+                history = history,
+                blocked = artistBlocks.observeBlockedArtists(),
+                scope = scope,
+                report = report,
+            )
+            val drivers = listOf(
+                scope.launch {
+                    owner.automaticAdvanceFailures.collect { report("automatic advance failed: ${it::class.simpleName}") }
+                },
+                scope.launch {
+                    // The owner's failures include songs no source resolved, which never reach the engine.
+                    owner.failures.collect { failure ->
+                        report("playback failed for ${failure.occurrenceId}: ${failure.reason}")
+                        // With auto-skip on the queue moves on, so no stopped song needs the error dialog.
+                        if (vault.snapshots.value?.get(AutoSkipNextOnErrorKey) != true) host.showPlaybackFailure(failure)
+                    }
+                },
+                scope.launch {
+                    queue.state.map { it.revision }.distinctUntilChanged().collect { revision ->
+                        if (revision > 0L) checkpointNow(queue, report)
+                    }
+                },
+                scope.launch {
+                    // Checkpoints tick only while playWhenReady is set; a paused session sleeps until play.
+                    player.snapshot.map { it?.playWhenReady == true }.distinctUntilChanged().collectLatest { playing ->
+                        while (playing) {
+                            delay(POSITION_CHECKPOINT_INTERVAL_MS)
+                            checkpointNow(queue, report)
+                        }
+                    }
+                },
+            )
+            val listenTogether = IosListenTogetherOwner(
+                scope = scope,
+                settings = vault,
+                queue = queue,
+                content = contentRouter,
+                report = report,
+                engine = IosListenTogether(
+                    parentScope = scope,
+                    settings = vault,
+                    player = player,
+                    queue = queue,
+                    // The same finite clamp as the desktop host, before the one playback port.
+                    setVolume = { level -> if (level.isFinite()) host.playbackPort.setVolume(level.coerceIn(0f, 1f)) },
+                    localAvatarBytes = {
+                        if (vault.snapshots.value?.listenTogetherAvatarIndex() == ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX) {
+                            IosListenTogetherAvatar.load()
+                        } else {
+                            null
+                        }
+                    },
+                    report = report,
+                ),
+            )
+            val uploads = IosYouTubeUploads(scope, vault, queue, report) { network.configure(this) }
+            // The custom cover store and its folder are shared with the artwork loader, which resolves a stored
+            // cover to its file URI and reads it locally.
+            val customArtworkFiles = IosCustomArtworkFiles()
+            val customArtwork = FileCustomArtworkRepository(customArtworkFiles, nowMillis = ::iosNowMillis)
+            val handoffHold = scope.launch {
+                listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
+            }
+            val graph = IosSessionGraph(
+                scope = scope,
+                settings = vault,
+                accounts = accounts,
+                accountLifecycle = accountLifecycle,
+                tidalAuth = tidalAuth,
+                http = http,
+                network = network,
+                player = player,
+                queue = queue,
+                library = library,
+                artistBlocks = artistBlocks,
+                youtubeTransport = youtubeTransport,
+                poTokens = poTokens,
+                youtubeContent = youtubeContent,
+                youtubeCatalogue = youtubeCatalogue,
+                libraryContent = libraryContent,
+                pageOwners = pageOwners,
+                history = history,
+                lyrics = lyrics,
+                lyricsSurface = lyricsSurface,
+                lyricsStorage = lyricsStorage,
+                modules = modules,
+                customArtwork = customArtwork,
+                playbackPool = playbackPool,
+                artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
+                canvasStore = canvasStore,
+                listenTogether = listenTogether,
+                uploads = uploads,
+                downloads = downloads,
+                songCache = songCache,
+                backup = backup,
+                driveBackup = driveBackup,
+                localMedia = localMedia,
+                lastFm = lastFm,
+                discord = discord,
+                owner = owner,
+                playbackPort = host.playbackPort,
+                database = database,
+                listenDriver = listenDriver,
+                progressDriver = progressDriver,
+                drivers = drivers + handoffHold + iosStartSystemSnapshots(scope, queue.state, player),
+                reportLine = report,
+            )
+            host.telegram.value?.let { graph.attachTelegram(it) }
+            // Initialize mutable file owners before UI commands can use them. Their local metadata
+            // is needed by restored local songs; network playback preparation runs after Ready.
+            localMedia.start()
+            downloads.start()
+            songCache.start(queue.state, player)
+            lyrics.start()
+            lyricsSurface.start()
+            graph.lyricsTools
+            playbackPool.start()
+            lastFm.start()
+            listenTogether.start()
+            // Re-arms the Drive schedule; its uploads only live as long as this process, like the desktop host's.
+            driveBackup.start()
+            graph.backupSync = IosBackupSync(graph, host).also { it.start() }
+            return graph
+        }
+    }
+}
+

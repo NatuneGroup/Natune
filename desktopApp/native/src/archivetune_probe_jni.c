@@ -21,7 +21,7 @@
 #include "archivetune_probe.h"
 #include "archivetune_jni_utf8.h"
 
-#define PROBE_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_SpectralProbeNative_##name
+#define PROBE_BINDING(name) Java_app_natune_desktop_playback_SpectralProbeNative_##name
 
 /* Six values in this order: status, frames, channels, PCM sample rate, advertised sample rate, end of source. */
 #define PROBE_INFO_FIELDS 6

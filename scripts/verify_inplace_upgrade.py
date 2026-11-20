@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
-PACKAGE_NAME = "moe.rukamori.archivetune"
+PACKAGE_NAME = "app.natune"
 LAUNCH_ACTIVITY = ".MainActivity"
 TRUSTED_VERSION_CODE_FLOOR = 6833  # app/build.gradle.kts trustedUpgradeVersionCodeFloor
 VERSION_CODE_CEILING = 2100000000

@@ -29,7 +29,7 @@ kotlin {
 
     if (hasAndroidSdk) {
         val androidTarget = (this as ExtensionAware).extensions.getByName("androidLibrary") as KotlinMultiplatformAndroidLibraryExtension
-        androidTarget.namespace = "moe.rukamori.archivetune.shared.ui"
+        androidTarget.namespace = "app.natune.shared.ui"
         androidTarget.compileSdk = 37
         androidTarget.minSdk = 24
         // Required on the KMP-AL plugin or composeResources never reach the AAR assets and
@@ -89,7 +89,7 @@ kotlin {
 }
 
 compose.resources {
-    packageOfResClass = "moe.rukamori.archivetune.shared.ui.resources"
+    packageOfResClass = "app.natune.shared.ui.resources"
     // The library default (auto) does not generate the Res accessors, so ArchiveTuneRoot would not compile.
     generateResClass = always
     // desktopApp renders shared strings through the same accessors, so they must be visible outside this module.

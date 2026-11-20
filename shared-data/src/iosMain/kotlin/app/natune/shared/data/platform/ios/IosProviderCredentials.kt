@@ -1,0 +1,109 @@
+package app.natune.shared.data.platform.ios
+
+import app.natune.shared.data.lyrics.BundledEndpoint
+import app.natune.shared.data.provider.ArchivePoolEndpoints
+import app.natune.shared.data.provider.TidalClientCredentials
+import platform.Foundation.NSBundle
+
+/**
+ * Provider credentials of the iOS host, read from the Info.plist keys Xcode writes from the
+ * ARCHIVETUNE_* build settings (same names the desktop host reads from its environment). A blank or
+ * unset answer means the feature is not configured; no value is ever logged or written to settings.
+ * An unset build setting can reach the plist as its literal `$(...)` reference, which is not usable.
+ */
+fun iosBuildSetting(name: String): String {
+    val value = (NSBundle.mainBundle.objectForInfoDictionaryKey(name) as? String)?.trim().orEmpty()
+    return if (value.isEmpty() || value.startsWith("$(")) "" else value
+}
+
+fun iosTidalClient(idName: String, secretName: String): TidalClientCredentials? {
+    val id = iosBuildSetting(idName)
+    val secret = iosBuildSetting(secretName)
+    if (id.isBlank() || secret.isBlank()) return null
+    return TidalClientCredentials(id, secret)
+}
+
+object IosProviderCredentials {
+    /**
+     * The TIDAL device-flow client. A dedicated device client wins; otherwise the OAuth client that
+     * issued the "oauth" sessions is used, so a session copied from Android can still be refreshed
+     * with the same client.
+     */
+    val tidalDeviceClient: TidalClientCredentials?
+        get() = iosTidalClient("ArchiveTuneTidalDeviceClientId", "ArchiveTuneTidalDeviceClientSecret")
+            ?: iosTidalClient("ArchiveTuneTidalClientId", "ArchiveTuneTidalClientSecret")
+
+    /** The TIDAL PKCE browser sign-in client. Without it the flow reports itself unavailable. */
+    val tidalPkceClient: TidalClientCredentials?
+        get() = iosTidalClient("ArchiveTuneTidalPkceClientId", "ArchiveTuneTidalPkceClientSecret")
+
+    /**
+     * The registered public OAuth client id of the Librespot Spotify streaming sign-in — a PKCE
+     * public client, never a secret. Blank means the flow reports itself not configured.
+     */
+    val spotifyOauthClientId: String get() = iosBuildSetting("ArchiveTuneSpotifyOauthClientId")
+
+    /**
+     * The ArchivePool deployment of the Playback Pool, without a trailing slash, or null when the
+     * feed is turned off. A blank value takes the same public default the other hosts use;
+     * "off" turns the feed off for this launch.
+     */
+    val poolBaseUrl: String?
+        get() {
+            val configured =
+                iosBuildSetting("ArchiveTuneArchivePoolBaseUrl")
+                    .ifBlank { iosBuildSetting("ArchiveTuneSourceProviderUrl") }
+            if (configured.equals("off", ignoreCase = true)) return null
+            return configured.ifBlank { DEFAULT_POOL_BASE_URL }.trimEnd('/').takeIf { it.startsWith("https://") }
+        }
+
+    /** The per-app pool read key, sent as a bearer token to every pool request. Blank means none. */
+    val poolReadKey: String get() = iosBuildSetting("ArchiveTuneSourceProviderKey")
+
+    /** The legacy base64 AES-256 key for pool deployments older than the v2 feed. Blank means none. */
+    val poolLegacyClientKey: String get() = iosBuildSetting("ArchiveTunePoolClientKey")
+
+    /** The JioSaavn media URL decoder key, exactly 8 bytes, or null when the source is not configured. */
+    val jioSaavnDesKey: ByteArray?
+        get() = iosBuildSetting("ArchiveTuneJioSaavnDesKey").encodeToByteArray().takeIf { it.size == 8 }
+
+    /**
+     * The YouTube device-code sign-in client pair; both values must be present for the code sign-in page to run.
+     * Blank means the page reports itself not configured. The values are never logged or written to settings.
+     */
+    val youTubeOauthClientId: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientId")
+
+    val youTubeOauthClientSecret: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientSecret")
+
+    /**
+     * The Google OAuth client of type "iOS" for the Drive app-data backup — a public installed-app
+     * client, never a secret. Blank keeps the Drive rows hidden: sign-in reports not configured.
+     */
+    val googleDriveClientId: String get() = iosBuildSetting("ArchiveTuneGoogleDriveClientId")
+
+    /**
+     * The URL scheme the Drive sign-in redirects with, registered in CFBundleURLTypes: the reversed
+     * client id (`com.googleusercontent.apps.<id>`) of the same OAuth client. iOS clients also accept
+     * the app's bundle id as the scheme. Blank derives the reversed id from the client id.
+     */
+    val googleDriveUrlScheme: String get() = iosBuildSetting("ArchiveTuneGoogleDriveUrlScheme")
+
+    /** The Cloudflare Turnstile sitekey of the Amazon authorization challenge. Blank means not configured. */
+    val amazonTurnstileSitekey: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileSitekey")
+
+    /** The HTTPS origin the Turnstile sitekey is locked to, without a trailing slash. Blank means not configured. */
+    val amazonTurnstileOrigin: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileOrigin").trimEnd('/')
+
+    /**
+     * The built-in Bundled lyrics server pair; both values must be present for [bundledEndpoint] to
+     * exist, and a user's own server entry in settings always wins over it. The key is never logged
+     * or written to settings.
+     */
+    val bundledBaseUrl: String get() = iosBuildSetting("ArchiveTuneBundledBaseUrl")
+
+    val bundledHmacKey: String get() = iosBuildSetting("ArchiveTuneBundledHmacKey")
+
+    val bundledEndpoint: BundledEndpoint? get() = BundledEndpoint.parse(bundledBaseUrl, bundledHmacKey)
+
+    private const val DEFAULT_POOL_BASE_URL = ArchivePoolEndpoints.FALLBACK_BASE_URL
+}

@@ -7,10 +7,10 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 IOS = ROOT / "iosApp"
-KOTLIN = ROOT / "shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios"
-UI_ROOT = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui"
-UI_IOS = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios"
-UI_COMMON = ROOT / "shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui"
+KOTLIN = ROOT / "shared-data/src/iosMain/kotlin/app/natune/shared/data/platform/ios"
+UI_ROOT = ROOT / "shared-ui/src/iosMain/kotlin/app/natune/shared/ui"
+UI_IOS = ROOT / "shared-ui/src/iosMain/kotlin/app/natune/shared/ui/ios"
+UI_COMMON = ROOT / "shared-ui/src/commonMain/kotlin/app/natune/shared/ui"
 
 
 class IosSourceContractsTest(unittest.TestCase):
@@ -65,7 +65,7 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("fun IosIconEditor(onFailure: () -> Unit)", (UI_IOS / "IosAppearanceEditors.kt").read_text())
         generator = (ROOT / "scripts/sync_launcher_icon_resources.py").read_text()
         self.assertIn("shared-ui/src/iosMain/composeResources", generator)
-        self.assertIn("shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings", generator)
+        self.assertIn("shared-ui/src/iosMain/kotlin/app/natune/shared/ui/settings", generator)
         self.assertIn("COMMON_RES / 'files/notices/IconPack-CC-BY-SA-4.0.txt'", generator)
 
     def test_release_selects_the_native_producers_exact_xcode(self):
@@ -97,7 +97,7 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("onNotificationChanged = null", settings)
         self.assertIn("installOffer = { offer -> openIosUri(offer.downloadUrl, host::report) }", settings)
         self.assertIn("checker.eligibleOffer(release, channel)?.let { return UpdateFeedResult.Offer(it) }", owner)
-        checker = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/update/SharedUpdateChecker.kt").read_text()
+        checker = (ROOT / "shared-data/src/commonMain/kotlin/app/natune/shared/data/update/SharedUpdateChecker.kt").read_text()
         offer_policy = checker.split("fun eligibleOffer(", 1)[1].split("private fun rememberOffer(", 1)[0]
         destination = re.search(r"UpdateInstallMode\.OPEN_URL\s*->\s*release\.(\w+)", offer_policy)
         self.assertIsNotNone(destination)
@@ -295,7 +295,7 @@ class IosSourceContractsTest(unittest.TestCase):
 
     def test_remote_seeks_use_one_bounded_shared_policy(self):
         controls = (KOTLIN / "IosNowPlaying.kt").read_text()
-        policy = (ROOT / "shared-data/src/commonMain/kotlin/moe/rukamori/archivetune/shared/data/playback/NowPlayingSeekPolicy.kt").read_text()
+        policy = (ROOT / "shared-data/src/commonMain/kotlin/app/natune/shared/data/playback/NowPlayingSeekPolicy.kt").read_text()
         # The scrubber sends an absolute position in seconds; the interval skip sends a relative one.
         # Both must go through the shared millisecond policy, not a raw * 1000 cast that can wrap, and
         # must share the on-screen controls' duration/overflow bounds.
@@ -659,7 +659,7 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("iosShareText(host, link)", controls)
         self.assertIn("NOTICE_SHARE_UNAVAILABLE", controls)
         menu = (UI_IOS / "IosSongMenu.kt").read_text()
-        self.assertIn("import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable", menu)
+        self.assertIn("import app.natune.shared.ui.resources.ios_share_link_unavailable", menu)
         self.assertIn("Res.string.ios_share_link_unavailable", menu)
 
     def test_apple_music_search_shares_the_playback_account_admission(self):

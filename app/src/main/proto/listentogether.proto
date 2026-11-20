@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package moe.rukamori.archivetune.listentogether.proto;
+package app.natune.listentogether.proto;
 
-option java_package = "moe.rukamori.archivetune.listentogether.proto";
+option java_package = "app.natune.listentogether.proto";
 option java_multiple_files = false;
 option java_outer_classname = "Listentogether";
 

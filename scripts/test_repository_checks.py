@@ -327,13 +327,23 @@ class RepositoryChecksTest(unittest.TestCase):
         self.assertTrue(any(path == new and "1,000-line budget" in message for path, message in problems), problems)
         self.assertFalse(any("new Kotlin sources" in message for _, message in problems), problems)
 
+    def test_package_move_to_app_natune_keeps_the_old_path_budget(self):
+        old = "app/src/main/kotlin/moe/rukamori/archivetune/Home.kt"
+        new = "app/src/main/kotlin/app/natune/Home.kt"
+        previous = "package moe.rukamori.archivetune\n" + "// line\n" * 1500
+        same = _DiffSnapshot({new: "package app.natune\n" + "// line\n" * 1500}, {old: previous}, {new: old}, {new})
+        self.assertEqual([], self.changed_path_problems(same))
+        grown = _DiffSnapshot({new: "package app.natune\n" + "// line\n" * 1501}, {old: previous}, {new: old}, {new})
+        problems = self.changed_path_problems(grown)
+        self.assertTrue(any(path == new and "1,000-line budget" in message for path, message in problems), problems)
+
     def test_extracted_new_file_stays_new_and_package_first_is_allowed(self):
         new = "app/src/main/kotlin/NatuneClassicHomeComponents.kt"
         snapshot = _DiffSnapshot({new: "package example\n" + "// line\n" * 600}, {}, {}, {new})
         self.assertEqual([], self.changed_path_problems(snapshot))
 
 
-ROOM_SCHEMA_ID = "moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase"
+ROOM_SCHEMA_ID = "app.natune.shared.data.persistence.PortableStateDatabase"
 ROOM_SCHEMA_VERSIONS = (1, 7, 8, 9, 10, 11, 12)
 # Pinned one by one on purpose: a namespace glob would also drop a future production schema that
 # lands under room-schemas/, which is exactly what this guard must prevent.
@@ -374,7 +384,7 @@ class AndroidApkResourcePackagingTest(unittest.TestCase):
         )
         migration_test = (
             self.ROOT
-            / "shared-data/src/jvmTest/kotlin/moe/rukamori/archivetune/shared/data/persistence"
+            / "shared-data/src/jvmTest/kotlin/app/natune/shared/data/persistence"
             / "PortableStateMigrationTest.kt"
         ).read_text(encoding="utf-8")
         self.assertIn('"/room-schemas/', migration_test)

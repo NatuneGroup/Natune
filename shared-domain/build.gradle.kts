@@ -22,7 +22,7 @@ kotlin {
 
     if (hasAndroidSdk) {
         val androidTarget = (this as ExtensionAware).extensions.getByName("androidLibrary") as KotlinMultiplatformAndroidLibraryExtension
-        androidTarget.namespace = "moe.rukamori.archivetune.shared.domain"
+        androidTarget.namespace = "app.natune.shared.domain"
         androidTarget.compileSdk = 37
         androidTarget.minSdk = 24
     }
