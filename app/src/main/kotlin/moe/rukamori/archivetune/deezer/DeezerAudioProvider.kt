@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
-import moe.rukamori.archivetune.audiosource.TrackMatching
+import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
 import moe.rukamori.archivetune.utils.PoolAccountRecovery
