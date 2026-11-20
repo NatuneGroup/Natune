@@ -25,7 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.supervisorScope
 import moe.rukamori.archivetune.audiosource.DirectStream
-import moe.rukamori.archivetune.audiosource.TrackMatching
+import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 import moe.rukamori.archivetune.constants.AudioSourceType
 import android.util.Base64
 import moe.rukamori.archivetune.constants.TidalAudioQuality
