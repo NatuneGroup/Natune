@@ -55,7 +55,8 @@ import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.scrobbling.LastFmScrobbleQueue
 import moe.rukamori.archivetune.scrobbling.LastFmSendLovesKey
-import moe.rukamori.archivetune.scrobbling.LastFmTrackMetadata
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmTrackMetadata
+import moe.rukamori.archivetune.scrobbling.from
 import timber.log.Timber
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap

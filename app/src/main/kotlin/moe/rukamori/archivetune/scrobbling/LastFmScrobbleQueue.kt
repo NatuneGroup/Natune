@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.scrobbling
 
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmTrackMetadata
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network

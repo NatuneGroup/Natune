@@ -19,7 +19,8 @@ import moe.rukamori.archivetune.App
 import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.scrobbling.LastFmScrobbleQueue
-import moe.rukamori.archivetune.scrobbling.LastFmTrackMetadata
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmTrackMetadata
+import moe.rukamori.archivetune.scrobbling.from
 import timber.log.Timber
 import kotlin.math.min
 
