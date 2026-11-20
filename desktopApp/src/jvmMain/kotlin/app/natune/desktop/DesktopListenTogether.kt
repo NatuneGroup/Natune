@@ -29,7 +29,7 @@ import app.natune.desktop.integration.DesktopListenTogetherChatHistoryStore
 import app.natune.desktop.integration.DesktopListenTogetherStore
 import app.natune.desktop.integration.DesktopStrings
 import app.natune.shared.data.listentogether.ChatSongPickerOwner
-import app.natune.shared.data.listentogether.JoinRequestPayload
+import app.natune.listentogether.JoinRequestPayload
 import app.natune.shared.data.listentogether.ListenTogetherChatOwner
 import app.natune.shared.data.listentogether.ListenTogetherClient
 import app.natune.shared.data.listentogether.ListenTogetherConnectionState
@@ -42,12 +42,12 @@ import app.natune.shared.data.listentogether.ListenTogetherNotice
 import app.natune.shared.data.listentogether.ListenTogetherProtocol
 import app.natune.shared.data.listentogether.ListenTogetherRole
 import app.natune.shared.data.listentogether.ListenTogetherServers
-import app.natune.shared.data.listentogether.PlaybackActionPayload
-import app.natune.shared.data.listentogether.PlaybackActions
-import app.natune.shared.data.listentogether.RoomState
-import app.natune.shared.data.listentogether.SuggestionReceivedPayload
-import app.natune.shared.data.listentogether.SyncStatePayload
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.PlaybackActionPayload
+import app.natune.listentogether.PlaybackActions
+import app.natune.listentogether.RoomState
+import app.natune.listentogether.SuggestionReceivedPayload
+import app.natune.listentogether.SyncStatePayload
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.domain.playback.MusicPlayerController
 import app.natune.shared.domain.playback.PlaybackSnapshot
 import app.natune.shared.domain.queue.UserQueuedKind

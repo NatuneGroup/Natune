@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.domain.playback.PlaybackSnapshot
 import app.natune.shared.domain.queue.UserQueuedKind
 import app.natune.shared.domain.repository.ContentAccountRequired

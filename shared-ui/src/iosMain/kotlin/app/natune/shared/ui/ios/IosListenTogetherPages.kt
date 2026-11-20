@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import app.natune.shared.data.listentogether.ChatSongPickerOwner
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.data.platform.ios.IosListenTogetherAvatar
 import app.natune.shared.domain.repository.ContentItem
 import app.natune.shared.domain.settings.ListenTogetherSettingsDefaults

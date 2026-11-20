@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import app.natune.shared.data.listentogether.ChatSongPickerOwner
-import app.natune.shared.data.listentogether.JoinRequestPayload
+import app.natune.listentogether.JoinRequestPayload
 import app.natune.shared.data.listentogether.ListenTogetherConnectionState
 import app.natune.shared.data.listentogether.ListenTogetherEvent
 import app.natune.shared.data.listentogether.ListenTogetherFailure
@@ -21,9 +21,9 @@ import app.natune.shared.data.listentogether.ListenTogetherNotice
 import app.natune.shared.data.listentogether.ListenTogetherProtocol
 import app.natune.shared.data.listentogether.ListenTogetherRole
 import app.natune.shared.data.listentogether.ListenTogetherServers
-import app.natune.shared.data.listentogether.RoomState
-import app.natune.shared.data.listentogether.SuggestionReceivedPayload
-import app.natune.shared.data.listentogether.TrackInfo
+import app.natune.listentogether.RoomState
+import app.natune.listentogether.SuggestionReceivedPayload
+import app.natune.listentogether.TrackInfo
 import app.natune.shared.data.platform.ios.IosListenTogether
 import app.natune.shared.data.platform.ios.iosNowMillis
 import app.natune.shared.data.repository.ContentRepositoryRouter
