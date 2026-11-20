@@ -71,12 +71,12 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ChipSortTypeKey
-import moe.rukamori.archivetune.constants.DefaultLibraryFilterOrderPreference
+import moe.rukamori.archivetune.shared.domain.library.DefaultLibraryFilterOrderPreference
 import moe.rukamori.archivetune.constants.LibraryChipOrderKey
 import moe.rukamori.archivetune.constants.LibraryFilter
 import moe.rukamori.archivetune.constants.PlaylistTagOrderKey
 import moe.rukamori.archivetune.constants.ShowTagsInLibraryKey
-import moe.rukamori.archivetune.constants.toLibraryFilterOrder
+import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
 import moe.rukamori.archivetune.constants.toPlaylistTagOrder
 import moe.rukamori.archivetune.db.entities.TagEntity
 import moe.rukamori.archivetune.ui.component.TagsManagementDialog
