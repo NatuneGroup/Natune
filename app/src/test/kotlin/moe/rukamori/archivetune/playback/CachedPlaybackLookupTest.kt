@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.playback
 
-import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
-import moe.rukamori.archivetune.audiosource.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceChain
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.constants.AudioSourceType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

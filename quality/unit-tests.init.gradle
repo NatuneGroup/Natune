@@ -45,7 +45,7 @@ gradle.projectsEvaluated {
     def contracts = [
         'DirectStream', 'TitleMatch', 'AudioSourceConfig',
         'SongSourceOverride', 'SongSourceQobuzTrackId', 'SongSourceQobuzBackupVideoId', 'CurrentStreamInfo',
-        'PlaybackSourceSnapshot', 'PlaybackSourceChain', 'PlaybackSourceSelection',
+        'PlaybackSourceSelection',
     ]
     app.tasks.register('criticalPolicyCoverage', JacocoCoverageVerification) {
         dependsOn(coverage)

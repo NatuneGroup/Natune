@@ -264,8 +264,8 @@ import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
-import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
-import moe.rukamori.archivetune.audiosource.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceChain
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.audiosource.AmazonTrackPick
 import moe.rukamori.archivetune.audiosource.SongSourceAmazonPick
 import moe.rukamori.archivetune.audiosource.SongSourceAmazonPickKey

@@ -3,8 +3,8 @@ package moe.rukamori.archivetune.playback
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.ContentMetadata
-import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
-import moe.rukamori.archivetune.audiosource.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceChain
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.constants.AudioSourceType
 
 internal data class CachedPlaybackSelection(

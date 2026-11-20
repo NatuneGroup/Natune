@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.audiosource
 
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
+
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceChain
+
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DefaultSourceAttemptPlan
 import moe.rukamori.archivetune.shared.domain.source.SourceAttemptPlanRequest

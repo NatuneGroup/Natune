@@ -48,13 +48,32 @@ object PlaybackSourceChain {
     fun cacheShortCircuitAllowed(snapshot: PlaybackSourceSnapshot): Boolean = baseChain(snapshot).isEmpty()
 
     /**
-     * The cache keys to probe for [mediaId], in priority order. Base-chain sources come first. The bare
-     * YouTube key comes last, and only while YouTube is enabled. Sources without a cache key contribute
+     * The cache keys to probe for [mediaId], in priority order. Base-chain sources come first. YouTube's
+     * keys come last, and only while YouTube is enabled: the [youtubeItag] rendition slot first, then the
+     * legacy bare key, which only ever serves complete copies. Sources without a cache key contribute
      * nothing, and a disabled source's keys are left out entirely.
      */
-    fun cacheKeyOrder(snapshot: PlaybackSourceSnapshot, mediaId: String): List<String> =
+    fun cacheKeyOrder(snapshot: PlaybackSourceSnapshot, mediaId: String, youtubeItag: Int? = null): List<String> =
         baseChain(snapshot).mapNotNull { source -> cacheProbeKey(source, mediaId) } +
-            listOfNotNull(mediaId.takeIf { AudioSourceType.YOUTUBE in snapshot.enabled })
+            if (AudioSourceType.YOUTUBE in snapshot.enabled) {
+                listOfNotNull(itagCacheKey(mediaId, youtubeItag), mediaId)
+            } else {
+                emptyList()
+            }
+
+    /**
+     * The itag-scoped player-cache key a resolved YouTube rendition writes under ("<mediaId>#i<itag>").
+     * An unset or external-source itag (0) names nothing.
+     */
+    fun itagCacheKey(mediaId: String, itag: Int?): String? = itag?.takeIf { it > 0 }?.let { "$mediaId#i$it" }
+
+    /**
+     * The length an itag-scoped slot must cover to count as fully cached: the key's own recorded content
+     * length first, the persisted format row's otherwise. The bare-key slot's length says nothing about
+     * this rendition's bytes.
+     */
+    fun itagCoverageLength(recordedContentLength: Long?, formatContentLength: Long?): Long? =
+        (recordedContentLength ?: formatContentLength)?.takeIf { it > 0L }
 
     /**
      * The cache key a source's bytes are probed under, or null when the source has none. These prefixes
