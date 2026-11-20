@@ -1,0 +1,108 @@
+package app.natune.shared.ui.player
+
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
+@Stable
+internal class PlayerArtworkPagerState(val pager: PagerState) {
+    var programmatic by mutableStateOf(false)
+    var dragged by mutableStateOf(false)
+    var cancelledDragGeneration by mutableIntStateOf(0)
+    var followedCancellation = 0
+}
+
+internal fun artworkPageIndex(state: PlayerState): Int = state.occurrenceIds.indexOf(state.displayedOccurrenceId)
+
+/** One synchronizer above look/orientation branches; only genuine user settles select an occurrence. */
+@Composable
+internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerActions,motion: Boolean = !state.reducedMotion && state.active): PlayerArtworkPagerState {
+    val ids=state.occurrenceIds
+    val current=state.displayedOccurrenceId
+    val pager=rememberPagerState(initialPage=artworkPageIndex(state).coerceAtLeast(0),pageCount={ ids.size })
+    val sync=remember(pager) { PlayerArtworkPagerState(pager) }
+    val latestState by rememberUpdatedState(state)
+    val latestActions by rememberUpdatedState(actions)
+    LaunchedEffect(pager) {
+        pager.interactionSource.interactions.collect { event ->
+            if(event is DragInteraction.Start && !sync.programmatic) sync.dragged=true
+            if(event is DragInteraction.Cancel) {
+                sync.dragged=false
+                sync.cancelledDragGeneration++
+            }
+        }
+    }
+    // Cancellation can unblock a follow whose occurrence keys already changed while dragging.
+    LaunchedEffect(current,ids,sync.cancelledDragGeneration,motion) {
+        val target=artworkPageIndex(state)
+        val cancelled = sync.followedCancellation != sync.cancelledDragGeneration
+        sync.followedCancellation = sync.cancelledDragGeneration
+        if(target>=0 && target!=pager.currentPage && !sync.dragged) {
+            sync.programmatic=true
+            try {
+                if (motion && !cancelled && pager.layoutInfo.visiblePagesInfo.isNotEmpty() && kotlin.math.abs(target - pager.currentPage) == 1)
+                    pager.animateScrollToPage(target, animationSpec = PlayerMotionSpecs.travel())
+                else pager.scrollToPage(target)
+            } finally { sync.programmatic=false }
+        }
+    }
+    LaunchedEffect(pager) {
+        snapshotFlow { Triple(pager.isScrollInProgress,pager.settledPage,sync.programmatic) }
+            .collectLatest { (scrolling,page,programmatic) ->
+                if(!scrolling && !programmatic && sync.dragged) {
+                    val target=settledArtworkOccurrence(latestState.occurrenceIds,latestState.displayedOccurrenceId,
+                        page,programmatic,sync.dragged)
+                    sync.dragged=false
+                    if(target!=null) latestActions.selectOccurrence(target)
+                }
+            }
+    }
+    return sync
+}
+
+/**
+ * Metrolist commits an artwork swipe once the drag passes `width * (0.42 - sensitivity * 0.0024)` on a
+ * 0 to 100 scale. Natune's sensitivity runs 0 to 1, so the same curve is `0.42 - 0.24 * s`, handed to
+ * the pager as its snap positional threshold. A higher sensitivity commits after less drag.
+ */
+internal fun artworkSnapThreshold(swipeSensitivity: Float): Float =
+    0.42f-0.24f*swipeSensitivity.coerceIn(0f,1f)
+
+@Composable
+internal fun PlayerArtworkPager(c: PlayerRenderContext,modifier: Modifier=Modifier,vertical: Boolean=false) {
+    val ids=c.state.occurrenceIds
+    if(ids.isEmpty()) {
+        c.slots.artwork(c.state.displayedOccurrenceId,modifier.aspectRatio(1f))
+        return
+    }
+    val enabled=c.preferences.swipeArtwork && c.state.repeat!=PlayerRepeat.ONE && ids.size>1
+    val hidden=!vertical && c.preferences.sleeveHidden
+    val frame=if(vertical) modifier.fillMaxSize() else modifier.aspectRatio(1f)
+        .clip(RoundedCornerShape(c.preferences.sleeveRadius.dp))
+        .graphicsLayer { alpha=if(hidden) 0f else 1f }
+    val page: @Composable PagerScope.(Int) -> Unit = { index ->
+        val id=ids.getOrNull(index)
+        Box(Modifier.fillMaxSize()) {
+            if(c.state.canvasAvailable && c.preferences.style.capabilities.artworkCanvas && id==c.state.playback?.occurrenceId) {
+                c.slots.canvas(id,c.surfaces.artwork && !hidden,Modifier.fillMaxSize())
+            } else c.slots.artwork(id,Modifier.fillMaxSize())
+        }
+    }
+    // The swipe-sensitivity setting decides how far an artwork drag must travel before the pager commits.
+    val flingBehavior=PagerDefaults.flingBehavior(state=c.artworkPager.pager,
+        snapPositionalThreshold=artworkSnapThreshold(c.preferences.swipeSensitivity))
+    if(vertical) VerticalPager(c.artworkPager.pager,modifier=frame.testTag("vertical-artwork-pager"),
+        userScrollEnabled=enabled,flingBehavior=flingBehavior,key={ ids[it] },pageContent=page)
+    else HorizontalPager(c.artworkPager.pager,modifier=frame.testTag("horizontal-artwork-pager"),
+        userScrollEnabled=enabled,flingBehavior=flingBehavior,key={ ids[it] },pageContent=page)
+}

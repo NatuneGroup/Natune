@@ -141,7 +141,7 @@ The binary is **not bundled or shipped**: `desktopApp` downloads the asset match
 OS/architecture on first use from that official GitHub release, verifies it against a compiled-in
 SHA-256, and runs it only on `127.0.0.1`. The pinned digests are the release's own asset digests
 (also recomputed from the downloaded Linux x64 asset) and are recorded in
-`desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/potoken/BgutilSidecarRelease.kt`.
+`desktopApp/src/jvmMain/kotlin/app/natune/desktop/potoken/BgutilSidecarRelease.kt`.
 Nothing in the helper path sends telemetry.
 
 ## Japanese romanization data

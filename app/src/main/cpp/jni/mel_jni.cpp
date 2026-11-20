@@ -88,7 +88,7 @@ extern "C" {
 // because the caller decodes at whatever rate the container carries and only
 // then knows what conversion is needed.
 JNIEXPORT jfloatArray JNICALL
-Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeResample(
+Java_app_natune_playback_smart_MelSpectrogram_nativeResample(
     JNIEnv* env,
     jclass /* clazz */,
     jfloatArray samples,
@@ -115,7 +115,7 @@ Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeResample(
 // than one padded frame). The caller derives the frame count by dividing, so
 // no second return value is needed.
 JNIEXPORT jfloatArray JNICALL
-Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeCompute(
+Java_app_natune_playback_smart_MelSpectrogram_nativeCompute(
     JNIEnv* env,
     jclass /* clazz */,
     jfloatArray samples,
@@ -139,21 +139,21 @@ Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeCompute(
 // The mel band count is part of the model contract rather than a choice, so
 // it is read from the header instead of being duplicated in Kotlin.
 JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeMelCount(
+Java_app_natune_playback_smart_MelSpectrogram_nativeMelCount(
     JNIEnv* /* env */,
     jclass /* clazz */) {
   return static_cast<jint>(bitchord::smart::kBeatSpectrogramMels);
 }
 
 JNIEXPORT jdouble JNICALL
-Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeSampleRate(
+Java_app_natune_playback_smart_MelSpectrogram_nativeSampleRate(
     JNIEnv* /* env */,
     jclass /* clazz */) {
   return bitchord::smart::kBeatSpectrogramSampleRate;
 }
 
 JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_playback_smart_MelSpectrogram_nativeHop(
+Java_app_natune_playback_smart_MelSpectrogram_nativeHop(
     JNIEnv* /* env */,
     jclass /* clazz */) {
   return static_cast<jint>(bitchord::smart::kBeatSpectrogramHop);

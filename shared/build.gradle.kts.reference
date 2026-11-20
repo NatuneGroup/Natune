@@ -9,7 +9,7 @@ plugins {
 }
 kotlin {
     android {
-        namespace = "moe.rukamori.archivetune.shared"
+        namespace = "app.natune.shared"
         compileSdk = 37
         minSdk = 24
         androidResources.enable = true
@@ -33,5 +33,5 @@ kotlin {
 }
 compose.resources {
     publicResClass = true
-    packageOfResClass = "moe.rukamori.archivetune.shared.resources"
+    packageOfResClass = "app.natune.shared.resources"
 }

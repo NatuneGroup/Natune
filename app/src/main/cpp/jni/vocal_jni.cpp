@@ -85,7 +85,7 @@ extern "C" {
 // mirroring the planar layout the front end wants and avoiding a deinterleave
 // on either side of the boundary.
 JNIEXPORT jfloatArray JNICALL
-Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeCompute(
+Java_app_natune_playback_smart_VocalSpectrogram_nativeCompute(
     JNIEnv* env,
     jclass /* clazz */,
     jfloatArray left,
@@ -108,25 +108,25 @@ Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeCompute(
 }
 
 JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeBins(
+Java_app_natune_playback_smart_VocalSpectrogram_nativeBins(
     JNIEnv* /* env */, jclass /* clazz */) {
   return static_cast<jint>(bitchord::smart::kVocalSpectrogramBins);
 }
 
 JNIEXPORT jdouble JNICALL
-Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeSampleRate(
+Java_app_natune_playback_smart_VocalSpectrogram_nativeSampleRate(
     JNIEnv* /* env */, jclass /* clazz */) {
   return bitchord::smart::kVocalSpectrogramSampleRate;
 }
 
 JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeHop(
+Java_app_natune_playback_smart_VocalSpectrogram_nativeHop(
     JNIEnv* /* env */, jclass /* clazz */) {
   return static_cast<jint>(bitchord::smart::kVocalSpectrogramHop);
 }
 
 JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_playback_smart_VocalSpectrogram_nativeFftSize(
+Java_app_natune_playback_smart_VocalSpectrogram_nativeFftSize(
     JNIEnv* /* env */, jclass /* clazz */) {
   return static_cast<jint>(bitchord::smart::kVocalSpectrogramFft);
 }

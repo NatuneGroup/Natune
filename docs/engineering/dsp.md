@@ -6,7 +6,7 @@ implemented and unit-tested. Android feeds it through one Media3 processor on th
 (`UnifiedDspAudioProcessor`), and the desktop and iOS hosts read their equalizer, normalization and preamp
 from that one value; the desktop engine and the iOS shell render no `DspGraph` block yet.
 
-Source: `shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/dsp/`.
+Source: `shared-domain/src/commonMain/kotlin/app/natune/shared/domain/dsp/`.
 
 ## Chain order
 

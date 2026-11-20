@@ -6,7 +6,7 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 
-package moe.rukamori.archivetune.shazamkit
+package app.natune.shazamkit
 
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer

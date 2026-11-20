@@ -19,8 +19,8 @@ import time
 import wave
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGE = "moe.rukamori.archivetune.debug"
-COMPONENT = f"{PACKAGE}/moe.rukamori.archivetune.MainActivity"
+PACKAGE = "app.natune.debug"
+COMPONENT = f"{PACKAGE}/app.natune.MainActivity"
 FIXTURE_NAME = "archivetune-qa.wav"
 DEVICE_FIXTURE = f"/sdcard/Music/ArchiveTune-QA/{FIXTURE_NAME}"
 

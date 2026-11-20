@@ -35,7 +35,7 @@ BASELINE_SIGNER_SHA256 = "6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95da
 SOURCE_SHA = "a" * 40
 VERSION_NAME = "candidate-" + SOURCE_SHA[:12]
 RESERVED_VERSION_CODE = "1793753800"
-PACKAGE = "moe.rukamori.archivetune"
+PACKAGE = "app.natune"
 CLIENT_ENV_PREFIXES = (
     "ARCHIVETUNE_",
     "TELEGRAM_",
@@ -720,7 +720,7 @@ class BaselineSignerGateTest(unittest.TestCase):
         tool(tools, "aapt2", """
             #!/usr/bin/env python3
             import os
-            print(f"package: name='moe.rukamori.archivetune' "
+            print(f"package: name='app.natune' "
                   f"versionCode='{os.environ['FAKE_BASELINE_VERSION']}'")
         """)
         tool(tools, "apksigner", """

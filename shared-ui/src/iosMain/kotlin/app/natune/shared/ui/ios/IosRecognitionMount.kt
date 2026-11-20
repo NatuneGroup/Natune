@@ -1,0 +1,164 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
+package app.natune.shared.ui.ios
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.CoroutineScope
+import app.natune.shared.data.platform.ios.IosRecognitionCapture
+import app.natune.shared.data.platform.ios.IosRecognitionSignature
+import app.natune.shared.data.platform.ios.iosNowMillis
+import app.natune.shared.data.recognition.MusicRecognitionOwner
+import app.natune.shared.data.recognition.ShazamRecognitionMatcher
+import app.natune.shared.domain.recognition.RecognitionClock
+import app.natune.shared.domain.recognition.RecognitionDiagnostics
+import app.natune.shared.domain.recognition.RecognitionSignaturePort
+import app.natune.shared.domain.repository.ContentProvider
+import app.natune.shared.ui.navigation.ArchiveGraphPage
+import app.natune.shared.ui.navigation.ArchiveRoute
+import app.natune.shared.ui.navigation.ArchiveRoutes
+import app.natune.shared.ui.screens.MusicRecognitionDetailsActions
+import app.natune.shared.ui.screens.RecognitionArtwork
+import app.natune.shared.ui.screens.recognition.RecognitionTimeFormatter
+import app.natune.shared.ui.screens.recognition.toMusicRecognitionActions
+import app.natune.shared.ui.screens.recognition.toMusicRecognitionUi
+import app.natune.shared.ui.screens.recognition.toRecognizedTrackUi
+import app.natune.shared.ui.settings.recognition.RecognitionBackgroundPreferenceAdapter
+import app.natune.shared.ui.settings.recognition.RecognitionHistoryPreferenceAdapter
+import platform.Foundation.*
+
+/**
+ * Music recognition for the iOS root: the AVAudioEngine capture, the common fingerprint, the Shazam matcher over the
+ * graph's one client, and the saved history and background setting over the one settings store.
+ *
+ * One owner serves both the recognition route and its details route. The details page reads the last match from the
+ * owner, and that page replaces the recognition page on screen, so an owner closed with the recognition page would
+ * lose the match it is asked to show. The owner is created on first use on [uiScope], the composition's UI scope, and
+ * [close] releases it and the microphone when the composition leaves.
+ *
+ * Background recognition needs a service that keeps listening while the app is suspended. This host has none, so the
+ * setting is reported unavailable and the owner ignores it.
+ */
+internal class IosRecognitionMount(
+    private val graph: IosSessionGraph,
+    private val uiScope: CoroutineScope,
+) {
+    private val diagnostics = RecognitionDiagnostics { message, cause ->
+        graph.report(if (cause == null) message else "$message: ${cause::class.simpleName}")
+    }
+    private val clock = RecognitionClock { iosNowMillis() }
+    private val capture = IosRecognitionCapture()
+    private val signatureGenerator = IosRecognitionSignature()
+    private val signatures = object : RecognitionSignaturePort {
+        override suspend fun generateSignature(samples: ShortArray): String? =
+            signatureGenerator.generateSignature(samples)
+    }
+    private val matcher = ShazamRecognitionMatcher(signatures = signatures, client = graph.http, clock = clock)
+    private val history = RecognitionHistoryPreferenceAdapter(graph.settings)
+    private val backgroundSetting = RecognitionBackgroundPreferenceAdapter(graph.settings)
+
+    private val dateFormat = NSDateFormatter().apply {
+        dateStyle = NSDateFormatterMediumStyle
+        timeStyle = NSDateFormatterShortStyle
+    }
+    val formatter = RecognitionTimeFormatter { epochMillis ->
+        dateFormat.stringFromDate(NSDate.dateWithTimeIntervalSince1970(epochMillis / 1000.0))
+    }
+
+    /** Cover art from the recognition reply, loaded like every other remote image on this host. */
+    val artwork: RecognitionArtwork = { url, modifier -> IosRemoteArtwork(url, graph.artworkLoader, modifier) }
+
+    private var owner: MusicRecognitionOwner? = null
+    private var closed = false
+
+    /** The root's owner, created on first use. Called on the UI thread only. */
+    fun owner(): MusicRecognitionOwner {
+        check(!closed) { "The recognition mount is closed" }
+        return owner ?: MusicRecognitionOwner(
+            scope = uiScope,
+            capture = capture,
+            matcher = matcher,
+            permission = capture,
+            historyStore = history,
+            backgroundSettings = backgroundSetting,
+            clock = clock,
+            diagnostics = diagnostics,
+            backgroundRecognitionAvailable = false,
+        ).also { owner = it }
+    }
+
+    /** Ends the owner's request and listeners, then releases the microphone. Repeated calls do nothing. */
+    fun close() {
+        if (closed) return
+        closed = true
+        owner?.close()
+        owner = null
+        capture.close()
+    }
+}
+
+/**
+ * The recognition page. Leaving it cancels a listen that is still running, so the microphone is released when the page
+ * is no longer shown. Back, search and links do the same work the navigation host binds over them. The owner's details
+ * action settles the shown result; the navigation host opens the details route right after it, so the callback here
+ * must not navigate a second time.
+ */
+@Composable
+internal fun iosRecognitionPage(
+    mount: IosRecognitionMount,
+    route: ArchiveRoute,
+    back: () -> Unit,
+    openRoute: (String) -> Unit,
+    report: (String) -> Unit,
+): ArchiveGraphPage {
+    val owner = mount.owner()
+    DisposableEffect(owner) { onDispose { owner.cancel() } }
+    val state by owner.state.collectAsState()
+    val reducedMotion = rememberIosReduceMotion()
+    val ui = remember(state, reducedMotion) { state.toMusicRecognitionUi(mount.formatter, reducedMotion = reducedMotion) }
+    val actions = remember(owner) {
+        owner.toMusicRecognitionActions(
+            back = back,
+            search = { query -> openRoute(ArchiveRoutes.search(query, ContentProvider.YOUTUBE)) },
+            openUri = { uri -> openIosUri(uri, report) },
+            openDetails = { },
+        )
+    }
+    return ArchiveGraphPage.MusicRecognition(
+        state = ui,
+        actions = actions,
+        artwork = mount.artwork,
+        autoStartRequest = route.arguments["autoStart"]?.toLongOrNull(),
+    )
+}
+
+/**
+ * One saved recognition by its stable key, from the last match or the saved history. A key the owner does not hold
+ * shows the shared missing state. The navigation host rebinds listen-again to reopen the recognition entry already on
+ * the stack with a fresh request token; the fallback here opens the recognition page without starting a listen.
+ */
+@Composable
+internal fun iosRecognitionDetailsPage(
+    mount: IosRecognitionMount,
+    route: ArchiveRoute,
+    back: () -> Unit,
+    openRoute: (String) -> Unit,
+    report: (String) -> Unit,
+): ArchiveGraphPage {
+    val owner = mount.owner()
+    val state by owner.state.collectAsState()
+    val key = route.arguments["recognitionKey"].orEmpty()
+    val track = remember(state, key) { state.detailsFor(key)?.toRecognizedTrackUi() }
+    val actions = remember {
+        MusicRecognitionDetailsActions(
+            back = back,
+            listenAgain = { openRoute(ArchiveRoutes.musicRecognition()) },
+            search = { query -> openRoute(ArchiveRoutes.search(query, ContentProvider.YOUTUBE)) },
+            openUri = { uri -> openIosUri(uri, report) },
+        )
+    }
+    return ArchiveGraphPage.MusicRecognitionDetails(track = track, actions = actions, artwork = mount.artwork)
+}

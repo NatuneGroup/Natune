@@ -15,7 +15,7 @@ RECIPE = Path(__file__).resolve().parent
 REPO = RECIPE.parent.parent
 OUTPUT = REPO / "app/build/generated/librespot/jniLibs"
 LIBRARY = "libnatune_librespot.so"
-JNI_SOURCE = REPO / "app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt"
+JNI_SOURCE = REPO / "app/src/main/kotlin/app/natune/spotify/librespot/SpotifyLibrespotNative.kt"
 MACHINES = {"arm64-v8a": (2, 183), "armeabi-v7a": (1, 40), "x86": (1, 3), "x86_64": (2, 62)}
 
 
@@ -72,7 +72,7 @@ def check_elf(source, abi):
 def record(selected, toolchain):
     kotlin = JNI_SOURCE.read_text()
     methods = re.findall(r"external fun (native\w+)\(", kotlin)
-    required = {"Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_" + name for name in methods}
+    required = {"Java_app_natune_spotify_librespot_SpotifyLibrespotNative_" + name for name in methods}
     if len(required) != 5:
         raise ValueError("Review the changed Kotlin JNI contract before recording libraries")
     libraries = {}

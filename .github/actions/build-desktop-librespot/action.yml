@@ -16,7 +16,7 @@ runs:
       uses: actions/cache/restore@v5
       with:
         path: desktopApp/build/generated/librespot
-        key: desktop-librespot-v1-${{ inputs.host }}-rust1.97.1-${{ hashFiles('native/librespot/**', '!native/librespot/target/**', '!native/librespot/upstream/**', 'app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot/SpotifyLibrespotNative.kt') }}
+        key: desktop-librespot-v1-${{ inputs.host }}-rust1.97.1-${{ hashFiles('native/librespot/**', '!native/librespot/target/**', '!native/librespot/upstream/**', 'app/src/main/kotlin/app/natune/spotify/librespot/SpotifyLibrespotNative.kt') }}
     - name: Verify restored JNI
       id: verified
       if: steps.binary.outputs.cache-hit == 'true'

@@ -6,7 +6,7 @@
  * JNI bridge for the direct USB audio output (native/usbdirect).
  *
  * Kotlin host:
- *  - moe.rukamori.archivetune.playback.usbdirect.UsbDirectNative (object)
+ *  - app.natune.playback.usbdirect.UsbDirectNative (object)
  *
  * Every entry point reports failure as a negative int (negative errno or the
  * kError* values in usb_direct_output.h) instead of throwing, so the audio
@@ -28,7 +28,7 @@
 #include "usbdirect/usb_direct_output.h"
 
 #define JNI_FUNC_USB(name) \
-    Java_moe_rukamori_archivetune_playback_usbdirect_UsbDirectNative_##name
+    Java_app_natune_playback_usbdirect_UsbDirectNative_##name
 
 using natune::usbdirect::Candidate;
 using natune::usbdirect::Output;

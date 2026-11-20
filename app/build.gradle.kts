@@ -209,7 +209,7 @@ tasks.configureEach {
 val automix = (project.findProperty("automix") as String?)?.toBoolean() ?: false
 
 android {
-    namespace = "moe.rukamori.archivetune"
+    namespace = "app.natune"
     compileSdk = 37
 
     // Pinned so the NDK used by every builder is identical (AGP otherwise picks whatever
@@ -218,7 +218,7 @@ android {
 
     defaultConfig {
         buildConfigField("boolean", "DISCORD_SOCIAL_SDK_AVAILABLE", discordSocialSdkEnabled.toString())
-        applicationId = "moe.rukamori.archivetune"
+        applicationId = "app.natune"
         // API 24 floor. Platform calls newer than 24 are guarded at their call sites, and the
         // AAudio entry points are loaded at runtime (native/dsp) so the library loads on 24-25.
         minSdk = 24
@@ -743,13 +743,13 @@ android {
             // listed one by one, never by namespace, so a future production schema under room-schemas/
             // still reaches the APK and cannot disappear silently.
             excludes += listOf(
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/1.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/7.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/8.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/9.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/10.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/11.json",
-                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/12.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/1.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/7.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/8.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/9.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/10.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/11.json",
+                "room-schemas/app.natune.shared.data.persistence.PortableStateDatabase/12.json",
             )
         }
     }
@@ -981,7 +981,7 @@ androidComponents {
                 metadataFile.set(rootProject.layout.projectDirectory.file("IconPack/metadata.json"))
                 svgDirectory.set(rootProject.layout.projectDirectory.dir("IconPack/svg"))
                 applicationId.set(variant.applicationId)
-                targetActivityClassName.set("moe.rukamori.archivetune.MainActivity")
+                targetActivityClassName.set("app.natune.MainActivity")
                 resourceOutputDirectory.set(
                     layout.buildDirectory.dir("generated/iconPack/${variant.name}/res"),
                 )

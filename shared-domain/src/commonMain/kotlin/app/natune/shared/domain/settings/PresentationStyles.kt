@@ -1,0 +1,109 @@
+package app.natune.shared.domain.settings
+
+/**
+ * Decodes a stored enum name exactly as the app does: the name must match, case included, and anything else (or no
+ * value at all) takes the default. A removed style therefore falls back instead of failing.
+ */
+inline fun <reified E : Enum<E>> String?.toEnum(defaultValue: E): E =
+    enumValues<E>().firstOrNull { it.name == this } ?: defaultValue
+
+/**
+ * The player layouts. The declaration order and the names are the persisted contract: stored values are these names,
+ * so renaming or reordering one changes what users already have saved.
+ */
+enum class PlayerDesignStyle {
+    V1,
+    V2,
+    V3,
+    V4,
+    V5,
+    V6,
+    V7,
+    V8,
+    V9,
+    APPLE_MUSIC,
+    V10,
+    BITCHORD,
+    TIKTOK,
+    SIMPMUSIC,
+    SPATIALFLOW,
+    LOOPER,
+    FLAMINGO,
+    METROLIST_KMP,
+    ;
+
+    companion object {
+        /** The player a fresh install opens with. */
+        val Default: PlayerDesignStyle = V4
+    }
+}
+
+/**
+ * The look of the player's three-dot menu and the lyrics menu. APPLE_MUSIC is the Apple Music action layout and the
+ * default; MD3 is a standard Material 3 list of the same actions. The names are persisted.
+ */
+enum class PlayerMenuStyle {
+    APPLE_MUSIC,
+    MD3,
+    ;
+
+    companion object {
+        /** The menu a fresh install opens with. */
+        val Default: PlayerMenuStyle = APPLE_MUSIC
+    }
+}
+
+/** Preset status, derived from the independently selected surfaces. CUSTOM is not an apply action. */
+enum class InterfaceStyle {
+    MATERIAL_EXPRESSIVE,
+    APPLE_MUSIC,
+    CUSTOM,
+}
+
+/**
+ * The bottom bar looks, in the baseline's declaration order. DEFAULT keeps the docked full-width bar, FLOATING
+ * detaches it into a pill, YUMA_PLAYER and APPLE_MUSIC are the floating neutral capsules, and SUKISU renders the
+ * SukiSU liquid-glass bar which fixes its own dimensions and ignores the bar tuning sliders.
+ */
+enum class NavigationBarStyle {
+    DEFAULT,
+    FLOATING,
+    YUMA_PLAYER,
+    APPLE_MUSIC,
+    SUKISU,
+}
+
+/** When the bottom chrome folds into the one-row compact layout. */
+enum class NavigationBarCompactBehavior {
+    ADAPTIVE,
+    ALWAYS_EXPANDED,
+    ALWAYS_COMPACT,
+}
+
+/** Where the Search page's field sits. */
+enum class SearchBarPosition {
+    TOP,
+    BOTTOM,
+}
+
+/** The mini player's backdrop material. */
+enum class MiniPlayerBackgroundStyle {
+    THEME,
+    GRADIENT,
+    GLOW,
+    FROSTED,
+    LIQUID_GLASS,
+}
+
+/** The Library tab's layout. It sets only the tab's layout and never the Apple Music experience switch. */
+enum class LibraryStyle {
+    DEFAULT,
+    APPLE_MUSIC,
+}
+
+/** Which font the UI uses. [CUSTOM] takes its file from the custom font URI. */
+enum class AppFontPreference {
+    DEFAULT,
+    SYSTEM,
+    CUSTOM,
+}

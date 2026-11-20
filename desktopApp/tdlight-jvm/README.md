@@ -21,7 +21,7 @@ because a mismatch fails at run time with no compile-time signal.
 
 ## How the desktop uses it
 
-- `desktopApp/src/jvmMain/kotlin/moe/rukamori/archivetune/desktop/playback/TdlightFileOperations.kt` implements
+- `desktopApp/src/jvmMain/kotlin/app/natune/desktop/playback/TdlightFileOperations.kt` implements
   `TdlibFileOperations` over an injected `Client`.
 - `TdlightNativeLibrary.ensureLoaded()` loads `libtdjni` by absolute path from the packaged `native/` resources, and
   falls back to the name. Call it before the first `Client` is created.

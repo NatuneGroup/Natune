@@ -37,7 +37,7 @@ Safe-area handling has one owner:
   so the strips it leaves keep the app's own palette instead of the window's system colour;
   the UIKit root view is `.clear` for the same reason.
 
-The deployment target is iOS 16.0 and the app identifier is `moe.rukamori.archivetune`.
+The deployment target is iOS 16.0 and the app identifier is `app.natune`.
 
 Metrolist's iOS build, used as a behavior reference, follows the same shape: a Compose app
 inside a small SwiftUI App/WindowGroup shell with a `UIViewControllerRepresentable`.

@@ -20,7 +20,7 @@ kotlin {
     jvm()
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.compilations.getByName("main").cinterops.create("archivetuneAudio") {
-            // The definition owns the headers and the moe.rukamori.archivetune.nativeaudio package.
+            // The definition owns the headers and the app.natune.nativeaudio package.
             definitionFile.set(project.file("src/nativeInterop/cinterop/archivetuneAudio.def"))
             includeDirs(rootProject.file("iosApp/Native"), rootProject.file("desktopApp/native/include"))
         }
@@ -38,7 +38,7 @@ kotlin {
 
     if (hasAndroidSdk) {
         val androidTarget = (this as ExtensionAware).extensions.getByName("androidLibrary") as KotlinMultiplatformAndroidLibraryExtension
-        androidTarget.namespace = "moe.rukamori.archivetune.shared.data"
+        androidTarget.namespace = "app.natune.shared.data"
         androidTarget.compileSdk = 37
         androidTarget.minSdk = 24
     }
@@ -131,12 +131,12 @@ ksp {
 // SongMetadataOverrideSql now lives in :shared-domain, so the tests use it directly.
 val legacyFixtureSources = layout.buildDirectory.dir("generated/legacy-serialization-test")
 val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTestSources") {
-    val models = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/models")
-    val finite = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback/queues/YouTubePlaylistQueue.kt")
+    val models = rootProject.file("app/src/main/kotlin/app/natune/models")
+    val finite = rootProject.file("app/src/main/kotlin/app/natune/playback/queues/YouTubePlaylistQueue.kt")
     val metadataSources = listOf(
         "songmetadata/SongMetadataOverrides.kt",
         "db/entities/SongMetadataOverrideEntity.kt",
-    ).map { rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/$it") }
+    ).map { rootProject.file("app/src/main/kotlin/app/natune/$it") }
     inputs.files(models.resolve("PersistQueue.kt"), models.resolve("MediaMetadata.kt"), finite, metadataSources)
     outputs.dir(legacyFixtureSources)
     doLast {
@@ -146,8 +146,8 @@ val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTest
         val source = finite.readText()
         val declarations = source.substringAfter("enum class FinitePlaylistPhase").substringBefore("/**")
         destination.resolve("FinitePlaylistSerialization.kt").writeText(
-            source.substringBefore("package ") + "package moe.rukamori.archivetune.playback.queues\n\n" +
-                "import java.io.Serializable\nimport moe.rukamori.archivetune.models.MediaMetadata\n\n" +
+            source.substringBefore("package ") + "package app.natune.playback.queues\n\n" +
+                "import java.io.Serializable\nimport app.natune.models.MediaMetadata\n\n" +
                 "enum class FinitePlaylistPhase" + declarations,
         )
     }

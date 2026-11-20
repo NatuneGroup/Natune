@@ -7,7 +7,7 @@ data_sources {
   config {
     name: "linux.ftrace"
     ftrace_config {
-      atrace_apps: "moe.rukamori.archivetune.debug"
+      atrace_apps: "app.natune.debug"
       atrace_categories: "am"
       atrace_categories: "view"
       atrace_categories: "gfx"

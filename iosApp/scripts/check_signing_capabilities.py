@@ -3,7 +3,7 @@ import argparse
 import plistlib
 from pathlib import Path
 
-APP_BUNDLE = "moe.rukamori.archivetune"
+APP_BUNDLE = "app.natune"
 WIDGET_BUNDLE = APP_BUNDLE + ".controls"
 
 
@@ -35,7 +35,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-profile", type=Path, required=True, help="Decoded app .mobileprovision plist")
     parser.add_argument("--widget-profile", type=Path, required=True, help="Decoded widget .mobileprovision plist")
-    parser.add_argument("--app-group", default="group.moe.rukamori.archivetune")
+    parser.add_argument("--app-group", default="group.app.natune")
     parser.add_argument("--team")
     args = parser.parse_args()
     try:

@@ -6,7 +6,7 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 
-import moe.rukamori.archivetune.build.optimizeOpaqueIconPng
+import app.natune.build.optimizeOpaqueIconPng
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.apache.batik.transcoder.SVGAbstractTranscoder

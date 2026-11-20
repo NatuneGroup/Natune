@@ -43,4 +43,4 @@ class SigningCapabilitiesTest(unittest.TestCase):
         self.assertIn('#include "SharedSigning.xcconfig"', native)
         project = (ROOT / "iosApp/ArchiveTune.xcodeproj/project.pbxproj").read_text()
         self.assertEqual(2, project.count('baseConfigurationReference = B00000000000000000000018'))
-        self.assertNotIn('ARCHIVETUNE_APP_GROUP = group.moe.rukamori.archivetune;', project)
+        self.assertNotIn('ARCHIVETUNE_APP_GROUP = group.app.natune;', project)

@@ -14,11 +14,11 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 
 UPDATE_MODELS = (
-    ROOT / "shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/update/UpdateModels.kt"
+    ROOT / "shared-domain/src/commonMain/kotlin/app/natune/shared/domain/update/UpdateModels.kt"
 )
-STAR_DIALOG = ROOT / "app/src/main/kotlin/moe/rukamori/archivetune/ui/component/StarDialog.kt"
-ONBOARDING = ROOT / "app/src/main/kotlin/moe/rukamori/archivetune/onboarding/OnboardingUseCases.kt"
-ABOUT_VIEW_MODEL = ROOT / "app/src/main/kotlin/moe/rukamori/archivetune/viewmodels/AboutViewModel.kt"
+STAR_DIALOG = ROOT / "app/src/main/kotlin/app/natune/ui/component/StarDialog.kt"
+ONBOARDING = ROOT / "app/src/main/kotlin/app/natune/onboarding/OnboardingUseCases.kt"
+ABOUT_VIEW_MODEL = ROOT / "app/src/main/kotlin/app/natune/viewmodels/AboutViewModel.kt"
 
 PLACEHOLDER_URLS = ("vossgraves/ArchiveTune", "rukamori/ArchiveTune")
 
@@ -31,7 +31,7 @@ class ProjectLinksTest(unittest.TestCase):
 
     def test_star_dialog_keeps_the_star_action_on_the_project_repository(self):
         text = STAR_DIALOG.read_text(encoding="utf-8")
-        self.assertIn("import moe.rukamori.archivetune.shared.domain.update.UpdateRepository", text)
+        self.assertIn("import app.natune.shared.domain.update.UpdateRepository", text)
         self.assertIn("uriHandler.openUri(UpdateRepository.REPOSITORY_URL)", text)
         self.assertIn("R.string.support_development_star", text)
 
@@ -43,7 +43,7 @@ class ProjectLinksTest(unittest.TestCase):
 
     def test_onboarding_community_list_links_the_project(self):
         text = ONBOARDING.read_text(encoding="utf-8")
-        self.assertIn("import moe.rukamori.archivetune.shared.domain.update.UpdateRepository", text)
+        self.assertIn("import app.natune.shared.domain.update.UpdateRepository", text)
         self.assertIn("url = UpdateRepository.REPOSITORY_URL", text)
         self.assertIn("R.string.support_development_star", text)
 
@@ -57,7 +57,7 @@ class ProjectLinksTest(unittest.TestCase):
 
     def test_about_page_uses_the_same_project_location(self):
         text = ABOUT_VIEW_MODEL.read_text(encoding="utf-8")
-        self.assertIn("import moe.rukamori.archivetune.shared.domain.update.UpdateRepository", text)
+        self.assertIn("import app.natune.shared.domain.update.UpdateRepository", text)
         self.assertIn("url = UpdateRepository.REPOSITORY_URL", text)
 
 

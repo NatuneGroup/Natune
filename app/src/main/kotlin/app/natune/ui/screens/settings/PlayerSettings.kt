@@ -1,0 +1,1243 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+package app.natune.ui.screens.settings
+
+import app.natune.ui.component.LocalRestartPrompt
+import app.natune.ui.component.setPlaybackOutputPreference
+
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
+import app.natune.utils.rememberPreferenceSnapshot
+import app.natune.utils.conflictAwareState
+import app.natune.ui.component.preferenceGroup
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import app.natune.ui.component.SettingsTopAppBar
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import app.natune.LocalPlayerAwareWindowInsets
+import app.natune.R
+import app.natune.constants.ArtistSeparatorsKey
+import app.natune.constants.ArtworkProviderOrderKey
+import app.natune.constants.AudioNormalizationKey
+import app.natune.constants.AudioQuality
+import app.natune.constants.AudioQualityKey
+import app.natune.constants.RejectSuspectedUpscaledAudioKey
+import app.natune.constants.AudioOffload
+import app.natune.constants.AutoSkipNextOnErrorKey
+import app.natune.constants.AutoLoadMoreKey
+import app.natune.constants.AutoStartOnBluetoothKey
+import app.natune.constants.CanvasResolverEndpointsKey
+import app.natune.constants.CrossfadeDurationKey
+import app.natune.constants.CrossfadeEnabledKey
+import app.natune.constants.AutomixEnabledKey
+import app.natune.constants.AutomixPerformanceMode
+import app.natune.constants.AutomixPerformanceModeKey
+import app.natune.constants.CrossfadeGaplessKey
+import app.natune.constants.DeviceMutePlaybackRecoveryVolumeKey
+import app.natune.constants.EnableVideoPlaybackKey
+import app.natune.constants.EnablePipModeKey
+import app.natune.constants.HISTORY_DURATION_DEFAULT
+import app.natune.constants.HistoryDuration
+import app.natune.constants.PauseOnDeviceMuteKey
+import app.natune.constants.PermanentShuffleKey
+import app.natune.constants.PersistentQueueKey
+import app.natune.constants.SeekExtraSeconds
+import app.natune.constants.ShowCodecOnPlayerKey
+import app.natune.constants.SkipSilenceKey
+import app.natune.constants.SponsorBlockCategoriesKey
+import app.natune.constants.SponsorBlockEnabledKey
+import app.natune.constants.SponsorBlockPodcastsEnabledKey
+import app.natune.sponsorblock.SponsorBlockCategory
+import app.natune.constants.PreferredArtworkProvider
+import app.natune.constants.SpotifyCanvasKey
+import app.natune.constants.StopMusicOnTaskClearKey
+import app.natune.constants.SwipeToSongKey
+import app.natune.constants.SwipeSensitivityKey
+import app.natune.constants.SwipeThumbnailKey
+import app.natune.constants.deserializeArtworkProviderOrder
+import app.natune.constants.WakelockKey
+import app.natune.ui.component.ArtistSeparatorsDialog
+import app.natune.ui.component.CrossfadeSliderPreference
+import app.natune.ui.component.DefaultDialog
+import app.natune.constants.BitPerfectUsbOutputKey
+import app.natune.constants.AUDIO_PROCESSING_ENABLED_DEFAULT
+import app.natune.constants.AudioProcessingEnabledKey
+import app.natune.constants.UsbExclusiveAudioKey
+import app.natune.constants.SwipeUpToOpenQueueKey
+import app.natune.playback.BitPerfectUsbOutput
+import app.natune.kmp.settings.sharedSnapshot
+import app.natune.shared.domain.settings.bitPerfectOutputSelected
+import app.natune.playback.dsp.EngineRuntime
+import app.natune.playback.dsp.FloatDsp
+import app.natune.playback.dsp.UsbExclusiveAudioOutputProvider
+import app.natune.ui.component.EnumListPreference
+import app.natune.ui.component.IconButton
+import app.natune.ui.component.NumberPickerPreference
+import app.natune.ui.component.PreferenceEntry
+import app.natune.ui.component.SliderPreference
+import app.natune.ui.component.SwitchPreference
+import app.natune.ui.component.TagsManagementDialog
+import app.natune.ui.component.TextFieldDialog
+import app.natune.ui.utils.backToMain
+import app.natune.utils.CanvasResolverEndpoints
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.asPaddingValues
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
+    // snapshot paints the stored value on the first frame instead of a default flash.
+    val (persistentQueue, onPersistentQueueChange) =
+        prefs.state(
+            PersistentQueueKey,
+            defaultValue = true,
+        )
+    val (permanentShuffle, onPermanentShuffleChange) =
+        prefs.state(
+            PermanentShuffleKey,
+            defaultValue = false,
+        )
+    val (infiniteQueue, onInfiniteQueueChange) = prefs.state(AutoLoadMoreKey, defaultValue = true)
+    val (sponsorBlockEnabled, onSponsorBlockEnabledChange) =
+        prefs.state(SponsorBlockEnabledKey, defaultValue = false)
+    val (sponsorBlockPodcasts, onSponsorBlockPodcastsChange) =
+        prefs.state(SponsorBlockPodcastsEnabledKey, defaultValue = false)
+    val (sponsorBlockCategories, onSponsorBlockCategoriesRawChange) =
+        prefs.state(
+            SponsorBlockCategoriesKey,
+            defaultValue = SponsorBlockCategory.Defaults.map { it.apiName }.toSet(),
+        )
+    // Same scope-death fix as above, with the apiName round-trip kept: parse
+    // synchronously, write the re-encoded set through the preference helper.
+    val onSponsorBlockCategoriesChange: (Set<String>) -> Unit =
+        remember(onSponsorBlockCategoriesRawChange) { { categories ->
+            val parsed = categories.mapNotNull(SponsorBlockCategory::fromApiName).toSet()
+            onSponsorBlockCategoriesRawChange(parsed.map { it.apiName }.toSet())
+        } }
+    val (skipSilence, onSkipSilenceChange) =
+        prefs.conflictAwareState(
+            SkipSilenceKey,
+            defaultValue = false,
+        )
+    val (audioNormalization, onAudioNormalizationChange) =
+        prefs.conflictAwareState(
+            AudioNormalizationKey,
+            defaultValue = true,
+        )
+    val (audioQuality, onAudioQualityChange) =
+        prefs.enumState(AudioQualityKey, AudioQuality.AUTO)
+    val (rejectSuspectedUpscaledAudio, onRejectSuspectedUpscaledAudioChange) =
+        prefs.conflictAwareState(RejectSuspectedUpscaledAudioKey, defaultValue = false)
+    val (audioOffload) =
+        prefs.state(
+            AudioOffload,
+            defaultValue = false,
+        )
+    val (swipeUpToOpenQueue, onSwipeUpToOpenQueueChange) =
+        prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
+    val bitPerfectContext = LocalContext.current
+    val (audioProcessing, onAudioProcessingChange) =
+        prefs.conflictAwareState(AudioProcessingEnabledKey, defaultValue = AUDIO_PROCESSING_ENABLED_DEFAULT)
+    // The chain rides the standard sink only; the bit-perfect sink skips every processor.
+    val audioProcessingBlocked = prefs.current.sharedSnapshot().bitPerfectOutputSelected() || BitPerfectUsbOutput.sinkActive
+    val (usbExclusive) =
+        prefs.state(UsbExclusiveAudioKey, defaultValue = false)
+    // FloatDsp.available loads libarchivetune_dsp on first touch; never on the main thread.
+    // Unknown (null) counts as supported until the background check says otherwise.
+    val usbExclusiveAvailability by produceState<Boolean?>(initialValue = null) {
+        value = withContext(Dispatchers.Default) { FloatDsp.available }
+    }
+    val usbExclusiveSupported = usbExclusiveAvailability != false
+
+    val (showCodecOnPlayer, onShowCodecOnPlayerChange) =
+        prefs.state(
+            ShowCodecOnPlayerKey,
+            defaultValue = true,
+        )
+    val (seekExtraSeconds, onSeekExtraSeconds) =
+        prefs.state(
+            SeekExtraSeconds,
+            defaultValue = false,
+        )
+
+    val (enableVideoPlayback, onEnableVideoPlaybackChange) =
+        prefs.state(
+            EnableVideoPlaybackKey,
+            defaultValue = false,
+        )
+    val (enablePipMode, onEnablePipModeChange) =
+        prefs.state(
+            EnablePipModeKey,
+            defaultValue = false,
+        )
+    val (autoSkipNextOnError, onAutoSkipNextOnErrorChange) =
+        prefs.state(
+            AutoSkipNextOnErrorKey,
+            defaultValue = false,
+        )
+    val (pauseOnDeviceMute, onPauseOnDeviceMuteChange) =
+        prefs.state(
+            PauseOnDeviceMuteKey,
+            defaultValue = false,
+        )
+    val (
+        deviceMutePlaybackRecoveryVolume,
+        onDeviceMutePlaybackRecoveryVolumeChange,
+    ) =
+        prefs.state(
+            DeviceMutePlaybackRecoveryVolumeKey,
+            defaultValue = 0,
+        )
+    val (autoStartOnBluetooth, onAutoStartOnBluetoothChange) =
+        prefs.state(
+            AutoStartOnBluetoothKey,
+            defaultValue = false,
+        )
+    val (stopMusicOnTaskClear, onStopMusicOnTaskClearChange) =
+        prefs.state(
+            StopMusicOnTaskClearKey,
+            defaultValue = false,
+        )
+    val (historyDuration, onHistoryDurationChange) =
+        prefs.state(
+            HistoryDuration,
+            defaultValue = HISTORY_DURATION_DEFAULT,
+        )
+
+    val (crossfadeEnabled) =
+        prefs.state(
+            CrossfadeEnabledKey,
+            defaultValue = false,
+        )
+    val (automixEnabled) =
+        prefs.state(
+            AutomixEnabledKey,
+            defaultValue = false,
+        )
+    val (automixPerformanceMode, onAutomixPerformanceModeChange) =
+        prefs.enumState(
+            AutomixPerformanceModeKey,
+            defaultValue = AutomixPerformanceMode.BALANCED,
+        )
+    val (crossfadeDurationSeconds, onCrossfadeDurationSecondsChange) =
+        prefs.state(
+            CrossfadeDurationKey,
+            defaultValue = 5f,
+        )
+    val (crossfadeGapless, onCrossfadeGaplessChange) =
+        prefs.state(
+            CrossfadeGaplessKey,
+            defaultValue = true,
+        )
+
+    // Spotify Canvas: fetch the official Spotify Canvas looping video for the current song
+    // using its YouTube Music video ID via https://mlc.kouzu.in/api/canvas?id=<videoId>.
+    // Defaults to false so existing users don't see surprise network traffic / video playback
+    // until they explicitly opt in.
+    val (spotifyCanvasEnabled, onSpotifyCanvasEnabledChange) =
+        prefs.state(
+            SpotifyCanvasKey,
+            defaultValue = false,
+        )
+    // Extra Spotify Canvas resolver endpoints, one per line. Every community canvas API on
+    // GitHub is a self-hosted wrapper around Spotify's own canvaz-cache endpoint and needs the
+    // operator's own sp_dc cookie, so there is no stable public instance worth hardcoding —
+    // the user supplies whichever instances they have access to and they are tried in order.
+    val (canvasResolverEndpointsRaw, onCanvasResolverEndpointsChange) =
+        prefs.state(
+            CanvasResolverEndpointsKey,
+            defaultValue = "",
+        )
+    // Artwork provider priority order. The user can rearrange the order in which artwork
+    // providers are tried — whichever is on top gets the most priority. If the top provider
+    // has no artwork for the current song, the resolver falls back to the next one, and so on.
+    val (artworkProviderOrderStr, onArtworkProviderOrderStrChange) =
+        prefs.state(
+            ArtworkProviderOrderKey,
+            defaultValue = "",
+        )
+    val artworkProviderOrder =
+        remember(artworkProviderOrderStr) {
+            deserializeArtworkProviderOrder(artworkProviderOrderStr)
+        }
+    var showArtworkProviderOrderDialog by remember { mutableStateOf(false) }
+
+    val (artistSeparators, onArtistSeparatorsChange) =
+        prefs.state(
+            ArtistSeparatorsKey,
+            defaultValue = ",;/&",
+        )
+    val (wakelockEnabled, onWakelockChange) =
+        prefs.state(
+            WakelockKey,
+            defaultValue = false,
+        )
+    val (swipeToSong, onSwipeToSongChange) =
+        prefs.state(
+            SwipeToSongKey,
+            defaultValue = true,
+        )
+    // Swipe-to-change-song: lets the user swipe the player thumbnail left/right to skip tracks.
+    val (swipeThumbnail, onSwipeThumbnailChange) =
+        prefs.state(
+            SwipeThumbnailKey,
+            defaultValue = true,
+        )
+    val (swipeSensitivity, onSwipeSensitivityChange) =
+        prefs.state(
+            SwipeSensitivityKey,
+            defaultValue = 0.73f,
+        )
+    var showArtistSeparatorsDialog by remember { mutableStateOf(false) }
+    var showTagsManagementDialog by remember { mutableStateOf(false) }
+
+    if (showArtistSeparatorsDialog) {
+        ArtistSeparatorsDialog(
+            currentSeparators = artistSeparators,
+            onDismiss = { showArtistSeparatorsDialog = false },
+            onSave = { newSeparators ->
+                onArtistSeparatorsChange(newSeparators)
+                showArtistSeparatorsDialog = false
+            },
+        )
+    }
+
+    if (showArtworkProviderOrderDialog) {
+        ArtworkProviderOrderDialog(
+            initialOrder = artworkProviderOrder,
+            onDismiss = { showArtworkProviderOrderDialog = false },
+            onConfirm = { newOrder ->
+                onArtworkProviderOrderStrChange(newOrder.joinToString(",") { it.name })
+                showArtworkProviderOrderDialog = false
+            },
+        )
+    }
+
+    if (showTagsManagementDialog) {
+        TagsManagementDialog(
+            onDismiss = { showTagsManagementDialog = false },
+        )
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            SettingsTopAppBar(
+                title = { Text(stringResource(R.string.player_and_audio)) },
+                navigationIcon = {
+                    IconButton(
+                        onClick = navController::navigateUp,
+                        onLongClick = navController::backToMain,
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.arrow_back),
+                            contentDescription = null,
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        val playerAwareBottomPadding =
+            LocalPlayerAwareWindowInsets.current
+                .only(WindowInsetsSides.Bottom)
+                .asPaddingValues()
+                .calculateBottomPadding()
+        val topPadding = innerPadding.calculateTopPadding()
+        val listState = rememberLazyListState()
+        val positions = rememberPreferencePositions()
+
+        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
+
+        // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+        // opening transition.
+        val settingsSectionPlayerContentTitle = stringResource(R.string.settings_section_player_content)
+        val videoPlaybackTitle = stringResource(R.string.video_playback)
+        val playerTitle = stringResource(R.string.player)
+        val tidalArtworkTitle = stringResource(R.string.tidal_artwork)
+        val queueTitle = stringResource(R.string.queue)
+        val miscTitle = stringResource(R.string.misc)
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+            modifier =
+                Modifier
+                    .padding(top = topPadding)
+                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    .then(positions.containerModifier()),
+        ) {
+            // "Sources" group: music source + lyrics settings now live on the Playback page
+            // (moved from the main settings list per Tasks 4 & 5). Each row navigates to its
+            // own dedicated sub-page so the existing screens stay reachable.
+            preferenceGroup(
+                title = settingsSectionPlayerContentTitle,
+            ) {
+                item {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.source_settings)) },
+                        description = stringResource(R.string.source_settings_subtitle),
+                        icon = { Icon(painterResource(R.drawable.provider_tidal), null) },
+                        onClick = { navController.navigate("settings/sources") },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.lyrics)) },
+                        description = stringResource(R.string.settings_lyrics_subtitle),
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        onClick = { navController.navigate("settings/lyrics") },
+                    )
+                }
+            }
+
+            preferenceGroup(
+                modifier = positions.modifierFor("enable_video_playback"),
+                title = videoPlaybackTitle,
+            ) {
+                item {
+                    Column(modifier = positions.modifierFor("enable_video_playback")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.enable_video_playback)) },
+                            description = stringResource(R.string.enable_video_playback_desc),
+                            icon = { Icon(painterResource(R.drawable.slow_motion_video), null) },
+                            checked = enableVideoPlayback,
+                            onCheckedChange = onEnableVideoPlaybackChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("enable_pip_mode")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.enable_pip_mode)) },
+                            description = stringResource(if (enableVideoPlayback)
+                                R.string.enable_pip_mode_desc else R.string.settings_video_required),
+                            icon = { Icon(painterResource(R.drawable.player_pip), null) },
+                            checked = enablePipMode,
+                            onCheckedChange = onEnablePipModeChange,
+                            isEnabled = enableVideoPlayback,
+                        )
+                    }
+                }
+            }
+
+            preferenceGroup(
+                modifier = positions.modifierFor("low_data_mode"),
+                title = playerTitle,
+            ) {
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("show_codec_on_player"),
+                        title = { Text(stringResource(R.string.display_codec_on_player)) },
+                        description = stringResource(R.string.description_display_codec_on_player),
+                        icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                        checked = showCodecOnPlayer,
+                        onCheckedChange = onShowCodecOnPlayerChange,
+                    )
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("history_duration")) {
+                        SliderPreference(
+                            title = { Text(stringResource(R.string.history_duration)) },
+                            icon = { Icon(painterResource(R.drawable.history), null) },
+                            value = historyDuration,
+                            onValueChange = onHistoryDurationChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("crossfade")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.audio_crossfade_title)) },
+                            description = stringResource(R.string.audio_crossfade_description) + "\n" +
+                                stringResource(R.string.settings_transition_exclusions),
+                            icon = { Icon(painterResource(R.drawable.animation), null) },
+                            checked = crossfadeEnabled,
+                            onCheckedChange = { enabled ->
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, CrossfadeEnabledKey, enabled,
+                                )
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("automix")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.automix_title)) },
+                            description =
+                                stringResource(
+                                    if (automixEnabled) R.string.automix_enabled_subtitle else R.string.settings_transition_exclusions,
+                                ),
+                            icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
+                            checked = automixEnabled,
+                            onCheckedChange = { enabled ->
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, AutomixEnabledKey, enabled,
+                                )
+                            },
+                        )
+                    }
+                }
+
+                if (automixEnabled) {
+                    item {
+                        Column(modifier = positions.modifierFor("automix_performance")) {
+                            EnumListPreference(
+                                title = { Text(stringResource(R.string.automix_performance_title)) },
+                                description = stringResource(R.string.automix_performance_subtitle),
+                                icon = { Icon(painterResource(R.drawable.tune), null) },
+                                selectedValue = automixPerformanceMode,
+                                onValueSelected = onAutomixPerformanceModeChange,
+                                valueText = {
+                                    when (it) {
+                                        AutomixPerformanceMode.EFFICIENT -> stringResource(R.string.automix_performance_efficient)
+                                        AutomixPerformanceMode.BALANCED -> stringResource(R.string.automix_performance_balanced)
+                                        AutomixPerformanceMode.PERFORMANCE -> stringResource(R.string.automix_performance_max)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    CrossfadeSliderPreference(
+                        valueSeconds = crossfadeDurationSeconds,
+                        onValueChange = onCrossfadeDurationSecondsChange,
+                        isEnabled = crossfadeEnabled,
+                    )
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("crossfade_gapless")) {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("crossfade_gapless_title"),
+                            title = { Text(stringResource(R.string.crossfade_gapless_title)) },
+                            description = stringResource(if (crossfadeEnabled)
+                                R.string.crossfade_gapless_description else R.string.settings_crossfade_required),
+                            icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                            checked = crossfadeGapless,
+                            onCheckedChange = onCrossfadeGaplessChange,
+                            isEnabled = crossfadeEnabled,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("skip_silence")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.skip_silence)) },
+                            description = when {
+                                audioProcessingBlocked -> stringResource(R.string.settings_processing_bypassed_bit_perfect)
+                                audioOffload -> stringResource(R.string.settings_processing_unavailable_offload)
+                                else -> null
+                            },
+                            icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                            checked = skipSilence,
+                            onCheckedChange = onSkipSilenceChange,
+                            isEnabled = !audioOffload && !audioProcessingBlocked,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("audio_normalization")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.audio_normalization)) },
+                            description = if (audioProcessingBlocked)
+                                stringResource(R.string.settings_processing_bypassed_bit_perfect) else null,
+                            icon = { Icon(painterResource(R.drawable.volume_up), null) },
+                            checked = audioNormalization,
+                            onCheckedChange = onAudioNormalizationChange,
+                            isEnabled = !audioProcessingBlocked,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("sponsor_block")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.sponsor_block)) },
+                            description = stringResource(R.string.sponsor_block_description),
+                            icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                            checked = sponsorBlockEnabled,
+                            onCheckedChange = onSponsorBlockEnabledChange,
+                        )
+                    }
+                }
+
+                if (sponsorBlockEnabled) {
+                    item {
+                        Column(modifier = positions.modifierFor("sponsor_block_podcasts")) {
+                            SwitchPreference(
+                                title = { Text(stringResource(R.string.sponsor_block_podcasts)) },
+                                description = stringResource(R.string.sponsor_block_podcasts_description),
+                                icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                                checked = sponsorBlockPodcasts,
+                                onCheckedChange = onSponsorBlockPodcastsChange,
+                            )
+                        }
+                    }
+                }
+
+                if (sponsorBlockEnabled) {
+                    item {
+                        Column(modifier = positions.modifierFor("sponsor_block_categories")) {
+                            SponsorBlockCategory.entries.forEach { category ->
+                                SwitchPreference(
+                                    title = { Text(stringResource(category.titleRes())) },
+                                    icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                                    checked = category.apiName in sponsorBlockCategories,
+                                    onCheckedChange = { checked ->
+                                        onSponsorBlockCategoriesChange(
+                                            if (checked) {
+                                                sponsorBlockCategories + category.apiName
+                                            } else {
+                                                sponsorBlockCategories - category.apiName
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                item {
+                    Column(modifier = positions.modifierFor("audio_quality")) {
+                        EnumListPreference(
+                            title = { Text(stringResource(R.string.audio_quality)) },
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            description = stringResource(R.string.audio_quality_description),
+                            selectedValue = audioQuality,
+                            onValueSelected = onAudioQualityChange,
+                            valueText = {
+                                when (it) {
+                                    AudioQuality.HIGHEST -> stringResource(R.string.audio_quality_max)
+                                    AudioQuality.HIGH -> stringResource(R.string.audio_quality_high)
+                                    AudioQuality.AUTO -> stringResource(R.string.audio_quality_auto)
+                                    AudioQuality.LOW -> stringResource(R.string.audio_quality_low)
+                                }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.audio_authenticity_skip_upscaled_title)) },
+                        description = stringResource(if (audioProcessingBlocked) R.string.settings_processing_bypassed_bit_perfect
+                            else R.string.audio_authenticity_skip_upscaled_description),
+                        icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                        checked = rejectSuspectedUpscaledAudio,
+                        onCheckedChange = onRejectSuspectedUpscaledAudioChange,
+                        isEnabled = !audioProcessingBlocked,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.audio_offload)) },
+                        description = stringResource(if (rejectSuspectedUpscaledAudio)
+                            R.string.settings_offload_unavailable_authenticity else R.string.settings_offload_exclusions),
+                        icon = { Icon(painterResource(R.drawable.speed), null) },
+                        checked = audioOffload,
+                        isEnabled = !rejectSuspectedUpscaledAudio,
+                        onCheckedChange = { enabled ->
+                            setPlaybackOutputPreference(
+                                restartPrompt, prefs, bitPerfectContext, AudioOffload, enabled,
+                            )
+                        },
+                    )
+                }
+
+                item { BitPerfectUsbPreference(positions.modifierFor("bit_perfect_usb")) }
+
+                item { DirectUsbDriverPreference(positions.modifierFor("direct_usb_driver")) }
+
+                item {
+                    Column(modifier = positions.modifierFor("usb_exclusive_audio")) {
+                        // Every EngineRuntime publisher bumps the revision, so it is the only key needed.
+                        val exclusiveRateHz =
+                            remember(EngineRuntime.revision) {
+                                if (EngineRuntime.usbExclusiveActive) EngineRuntime.usbExclusiveRateHz else 0
+                            }
+                        val usbExclusiveDescription =
+                            when {
+                                !usbExclusiveSupported -> stringResource(R.string.usb_exclusive_audio_unsupported)
+                                !usbExclusive -> stringResource(R.string.usb_exclusive_audio_desc)
+                                !UsbExclusiveAudioOutputProvider.installed ->
+                                    stringResource(R.string.bit_perfect_usb_restart)
+                                exclusiveRateHz > 0 -> stringResource(R.string.usb_exclusive_audio_active, exclusiveRateHz)
+                                else -> stringResource(R.string.usb_exclusive_audio_waiting)
+                            }
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.usb_exclusive_audio_title)) },
+                            description = usbExclusiveDescription,
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = usbExclusive && usbExclusiveSupported,
+                            isEnabled = usbExclusiveSupported,
+                            onCheckedChange = { enabled ->
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, UsbExclusiveAudioKey, enabled,
+                                )
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("audio_processing")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.audio_processing_title)) },
+                            description =
+                                if (audioProcessingBlocked) {
+                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
+                                } else {
+                                    stringResource(R.string.audio_processing_desc)
+                                },
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = audioProcessing,
+                            isEnabled = !audioProcessingBlocked,
+                            onCheckedChange = onAudioProcessingChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("seek_seconds")) {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("seek_seconds_addup"),
+                            title = { Text(stringResource(R.string.seek_seconds_addup)) },
+                            description = stringResource(R.string.seek_seconds_addup_description),
+                            icon = { Icon(painterResource(R.drawable.arrow_forward), null) },
+                            checked = seekExtraSeconds,
+                            onCheckedChange = onSeekExtraSeconds,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("pause_mute")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.pause_on_device_mute)) },
+                            description = stringResource(R.string.pause_on_device_mute_desc),
+                            icon = { Icon(painterResource(R.drawable.volume_off), null) },
+                            checked = pauseOnDeviceMute,
+                            onCheckedChange = onPauseOnDeviceMuteChange,
+                        )
+                    }
+                }
+
+                item(visible = pauseOnDeviceMute) {
+                    val context = LocalContext.current
+                    val disabledLabel = stringResource(R.string.device_mute_recovery_volume_disabled)
+                    val recoveryVolumeText =
+                        remember(context, disabledLabel) {
+                            { value: Int ->
+                                if (value == 0) {
+                                    disabledLabel
+                                } else {
+                                    context.getString(R.string.percentage_format, value)
+                                }
+                            }
+                        }
+                    Column(modifier = positions.modifierFor("device_mute_recovery_volume")) {
+                        NumberPickerPreference(
+                            title = { Text(stringResource(R.string.device_mute_recovery_volume)) },
+                            icon = { Icon(painterResource(R.drawable.volume_up), null) },
+                            value = deviceMutePlaybackRecoveryVolume,
+                            onValueChange = onDeviceMutePlaybackRecoveryVolumeChange,
+                            minValue = 0,
+                            maxValue = 100,
+                            valueText = recoveryVolumeText,
+                            isEnabled = pauseOnDeviceMute,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("bluetooth_auto_start")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.auto_start_on_bluetooth)) },
+                            description = stringResource(R.string.auto_start_on_bluetooth_desc),
+                            icon = { Icon(painterResource(R.drawable.bluetooth), null) },
+                            checked = autoStartOnBluetooth,
+                            onCheckedChange = onAutoStartOnBluetoothChange,
+                        )
+                    }
+                }
+            }
+
+            preferenceGroup(
+                modifier = positions.modifierFor("archive_tune_canvas"),
+                title = tidalArtworkTitle,
+            ) {
+                item {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.archivetune_canvas)) },
+                        description = stringResource(R.string.canvas_settings_subtitle),
+                        icon = { Icon(painterResource(R.drawable.motion_photos_on), null) },
+                        showChevron = true,
+                        onClick = { navController.navigate("settings/canvas") },
+                    )
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("spotify_canvas")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.spotify_canvas)) },
+                            description = stringResource(R.string.spotify_canvas_desc),
+                            icon = { Icon(painterResource(R.drawable.slow_motion_video), null) },
+                            checked = spotifyCanvasEnabled,
+                            onCheckedChange = onSpotifyCanvasEnabledChange,
+                        )
+                    }
+                }
+
+                item(visible = spotifyCanvasEnabled) {
+                    var showCanvasResolversDialog by remember { mutableStateOf(false) }
+                    val configuredResolvers =
+                        remember(canvasResolverEndpointsRaw) {
+                            CanvasResolverEndpoints.parse(canvasResolverEndpointsRaw)
+                        }
+                    Column(modifier = positions.modifierFor("canvas_resolvers")) {
+                        PreferenceEntry(
+                            title = { Text(stringResource(R.string.canvas_resolvers)) },
+                            description =
+                                if (configuredResolvers.isEmpty()) {
+                                    stringResource(R.string.canvas_resolvers_none)
+                                } else {
+                                    stringResource(
+                                        R.string.canvas_resolvers_count,
+                                        configuredResolvers.size,
+                                    )
+                                },
+                            icon = { Icon(painterResource(R.drawable.solar_server_linear), null) },
+                            onClick = { showCanvasResolversDialog = true },
+                        )
+                    }
+                    if (showCanvasResolversDialog) {
+                        TextFieldDialog(
+                            onDismiss = { showCanvasResolversDialog = false },
+                            title = { Text(stringResource(R.string.canvas_resolvers)) },
+                            placeholder = {
+                                Text(stringResource(R.string.canvas_resolvers_description))
+                            },
+                            textFieldValue = canvasResolverEndpointsRaw,
+                            onTextFieldValueChange = onCanvasResolverEndpointsChange,
+                            singleLine = false,
+                            maxLines = 8,
+                            // Blank is valid: it means "built-in resolver only".
+                            isInputValid = { true },
+                            onDone = { raw ->
+                                onCanvasResolverEndpointsChange(
+                                    CanvasResolverEndpoints.serialize(
+                                        CanvasResolverEndpoints.parse(raw),
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("artwork_priority")) {
+                        PreferenceEntry(
+                            title = { Text(stringResource(R.string.artwork_priority)) },
+                            description = artworkProviderOrder.firstOrNull()?.displayName(),
+                            icon = { Icon(painterResource(R.drawable.filter_alt), null) },
+                            onClick = { showArtworkProviderOrderDialog = true },
+                        )
+                    }
+                }
+            }
+
+            preferenceGroup(
+                modifier = positions.modifierFor("persistent_queue"),
+                title = queueTitle,
+            ) {
+                item {
+                    QueuePersistencePreference(persistentQueue, onPersistentQueueChange)
+                }
+
+                item {
+                    InfiniteQueuePreference(infiniteQueue, onInfiniteQueueChange, positions.modifierFor("infinite_queue"))
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("permanent_shuffle")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.permanent_shuffle)) },
+                            description = stringResource(R.string.permanent_shuffle_desc),
+                            icon = { Icon(painterResource(R.drawable.shuffle), null) },
+                            checked = permanentShuffle,
+                            onCheckedChange = onPermanentShuffleChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("swipe_up_queue")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.swipe_up_to_open_queue)) },
+                            description = stringResource(R.string.swipe_up_to_open_queue_desc),
+                            icon = { Icon(painterResource(R.drawable.queue_music), null) },
+                            checked = swipeUpToOpenQueue,
+                            onCheckedChange = onSwipeUpToOpenQueueChange,
+                        )
+                    }
+                }
+
+                queuePolicyRows(prefs, positions)
+
+                item {
+                    Column(modifier = positions.modifierFor("swipe_to_song")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.swipe_song_to_add)) },
+                            icon = { Icon(painterResource(R.drawable.swipe), null) },
+                            checked = swipeToSong,
+                            onCheckedChange = onSwipeToSongChange,
+                        )
+                    }
+                }
+
+                // The mini player reads swipe-to-change-song under every style, so the row is annotated, never disabled.
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_swipe_thumbnail"),
+                        title = { Text(stringResource(R.string.enable_swipe_thumbnail)) },
+                        description = selectedPlayerSettingNote(app.natune.constants.PlayerStyleSetting.SWIPE_THUMBNAIL),
+                        icon = { Icon(painterResource(R.drawable.swipe), null) },
+                        checked = swipeThumbnail,
+                        onCheckedChange = onSwipeThumbnailChange,
+                    )
+                }
+
+                item(visible = swipeThumbnail) {
+                    var showSensitivityDialog by rememberSaveable { mutableStateOf(false) }
+
+                    if (showSensitivityDialog) {
+                        var tempSensitivity by remember { mutableFloatStateOf(swipeSensitivity) }
+
+                        DefaultDialog(
+                            onDismiss = {
+                                tempSensitivity = swipeSensitivity
+                                showSensitivityDialog = false
+                            },
+                            buttons = {
+                                TextButton(
+                                    onClick = { tempSensitivity = 0.73f },
+                                    shapes = ButtonDefaults.shapes(),
+                                ) {
+                                    Text(stringResource(R.string.reset))
+                                }
+
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                TextButton(
+                                    onClick = {
+                                        tempSensitivity = swipeSensitivity
+                                        showSensitivityDialog = false
+                                    },
+                                    shapes = ButtonDefaults.shapes(),
+                                ) {
+                                    Text(stringResource(android.R.string.cancel))
+                                }
+                                TextButton(
+                                    onClick = {
+                                        onSwipeSensitivityChange(tempSensitivity)
+                                        showSensitivityDialog = false
+                                    },
+                                    shapes = ButtonDefaults.shapes(),
+                                ) {
+                                    Text(stringResource(android.R.string.ok))
+                                }
+                            },
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(16.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.swipe_sensitivity),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    modifier = Modifier.padding(bottom = playerAwareBottomPadding + 16.dp),
+                                )
+
+                                Text(
+                                    text = stringResource(
+                                        R.string.sensitivity_percentage,
+                                        (tempSensitivity * 100).roundToInt(),
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(bottom = playerAwareBottomPadding + 16.dp),
+                                )
+
+                                Slider(
+                                    value = tempSensitivity,
+                                    onValueChange = { tempSensitivity = it },
+                                    valueRange = 0f..1f,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+
+                    Column(modifier = positions.modifierFor("swipe_sensitivity")) {
+                        PreferenceEntry(
+                            title = { Text(stringResource(R.string.swipe_sensitivity)) },
+                            description = stringResource(
+                                R.string.sensitivity_percentage,
+                                (swipeSensitivity * 100).roundToInt(),
+                            ),
+                            icon = { Icon(painterResource(R.drawable.tune), null) },
+                            onClick = { showSensitivityDialog = true },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("auto_skip_error")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.auto_skip_next_on_error)) },
+                            description = stringResource(R.string.auto_skip_next_on_error_desc),
+                            icon = { Icon(painterResource(R.drawable.skip_next), null) },
+                            checked = autoSkipNextOnError,
+                            onCheckedChange = onAutoSkipNextOnErrorChange,
+                        )
+                    }
+                }
+            }
+
+            preferenceGroup(
+                modifier = positions.modifierFor("audio_offload"),
+                title = miscTitle,
+            ) {
+                item {
+                    Column(modifier = positions.modifierFor("stop_task_clear")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.stop_music_on_task_clear)) },
+                            icon = { Icon(painterResource(R.drawable.clear_all), null) },
+                            checked = stopMusicOnTaskClear,
+                            onCheckedChange = onStopMusicOnTaskClearChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("wakelock")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.wakelock)) },
+                            description = stringResource(R.string.wakelock_desc),
+                            icon = { Icon(painterResource(R.drawable.bolt), null) },
+                            checked = wakelockEnabled,
+                            onCheckedChange = onWakelockChange,
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("artist_separators")) {
+                        PreferenceEntry(
+                            title = { Text(stringResource(R.string.artist_separators)) },
+                            description = artistSeparators.map { "\"$it\"" }.joinToString("  "),
+                            icon = { Icon(painterResource(R.drawable.artist), null) },
+                            onClick = { showArtistSeparatorsDialog = true },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("manage_playlist_tags")) {
+                        PreferenceEntry(
+                            title = { Text(stringResource(R.string.manage_playlist_tags)) },
+                            description = stringResource(R.string.manage_playlist_tags_desc),
+                            icon = { Icon(painterResource(R.drawable.style), null) },
+                            onClick = { showTagsManagementDialog = true },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun PreferredArtworkProvider.displayName(): String =
+    when (this) {
+        PreferredArtworkProvider.LOCAL_EMBEDDED -> "Local embedded"
+        PreferredArtworkProvider.ORIGINAL_METADATA -> "Original metadata"
+        PreferredArtworkProvider.TIDAL -> "Tidal"
+        PreferredArtworkProvider.SPOTIFY_CANVAS -> "Spotify Canvas"
+        PreferredArtworkProvider.ARCHIVETUNE_CANVAS -> "ArchiveTune Canvas"
+    }
+
+@Composable
+internal fun ArtworkProviderOrderDialog(
+    initialOrder: List<PreferredArtworkProvider>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<PreferredArtworkProvider>) -> Unit,
+) {
+    val providers = remember { mutableStateListOf(*initialOrder.toTypedArray()) }
+    val lazyListState = rememberLazyListState()
+    val reorderableState =
+        rememberReorderableLazyListState(lazyListState) { from, to ->
+            val item = providers.removeAt(from.index)
+            providers.add(to.index, item)
+        }
+
+    DefaultDialog(
+        onDismiss = onDismiss,
+        buttons = {
+            TextButton(
+                onClick = onDismiss,
+                shapes = ButtonDefaults.shapes(),
+            ) {
+                Text(stringResource(android.R.string.cancel))
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = { onConfirm(providers.toList()) },
+                shapes = ButtonDefaults.shapes(),
+            ) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+    ) {
+        Column(modifier = Modifier.padding(top = 4.dp)) {
+            Text(
+                text = stringResource(R.string.artwork_priority),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            LazyColumn(
+                state = lazyListState,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp),
+            ) {
+                itemsIndexed(providers, key = { _, item -> item.name }) { index, provider ->
+                    ReorderableItem(reorderableState, key = provider.name) {
+                        val isFirst = index == 0
+                        val containerColor =
+                            if (isFirst) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            }
+                        val contentColor =
+                            if (isFirst) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = if (index < providers.size - 1) 4.dp else 0.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(containerColor)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = contentColor.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = provider.displayName(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(
+                                painter = painterResource(R.drawable.drag_handle),
+                                contentDescription = null,
+                                tint = contentColor.copy(alpha = 0.6f),
+                                modifier =
+                                    Modifier
+                                        .size(20.dp)
+                                        .draggableHandle(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@androidx.annotation.StringRes
+private fun SponsorBlockCategory.titleRes(): Int =
+    when (this) {
+        SponsorBlockCategory.SPONSOR -> R.string.sponsor_block_category_sponsor
+        SponsorBlockCategory.SELFPROMO -> R.string.sponsor_block_category_selfpromo
+        SponsorBlockCategory.INTERACTION -> R.string.sponsor_block_category_interaction
+        SponsorBlockCategory.INTRO -> R.string.sponsor_block_category_intro
+        SponsorBlockCategory.OUTRO -> R.string.sponsor_block_category_outro
+        SponsorBlockCategory.PREVIEW -> R.string.sponsor_block_category_preview
+        SponsorBlockCategory.MUSIC_OFFTOPIC -> R.string.sponsor_block_category_music_offtopic
+        SponsorBlockCategory.FILLER -> R.string.sponsor_block_category_filler
+    }

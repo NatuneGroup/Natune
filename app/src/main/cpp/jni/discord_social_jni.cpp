@@ -68,7 +68,7 @@ void status(bool ready) {
 } // namespace
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeInit(JNIEnv* env, jclass type, jlong appId) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeInit(JNIEnv* env, jclass type, jlong appId) {
     try {
         if (client && applicationId == static_cast<std::uint64_t>(appId)) return JNI_TRUE;
         if (client) client->Disconnect();
@@ -87,7 +87,7 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeInit(JNIEnv* 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeAuthorize(JNIEnv*, jclass, jlong id) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeAuthorize(JNIEnv*, jclass, jlong id) {
     if (!client) { tokenResult(id, false, {}, {}, 0, "SDK_NOT_INITIALIZED"); return; }
     try {
         auto expected = client;
@@ -111,7 +111,7 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeAuthorize(JNI
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeRefresh(JNIEnv* env, jclass, jstring refresh, jlong id) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeRefresh(JNIEnv* env, jclass, jstring refresh, jlong id) {
     if (!client) { tokenResult(id, false, {}, {}, 0, "SDK_NOT_INITIALIZED"); return; }
     try {
         auto expected = client;
@@ -125,7 +125,7 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeRefresh(JNIEn
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeSetToken(JNIEnv* env, jclass, jstring token, jlong id) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeSetToken(JNIEnv* env, jclass, jstring token, jlong id) {
     if (!client) { operation(id, false, "SDK_NOT_INITIALIZED"); return; }
     try {
         auto expected = client;
@@ -138,7 +138,7 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeSetToken(JNIE
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeUpdatePresence(JNIEnv* env, jclass, jint type,
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeUpdatePresence(JNIEnv* env, jclass, jint type,
     jstring details, jstring stateValue, jstring largeImage, jstring largeText, jstring smallImage, jstring smallText,
     jlong start, jlong end, jobjectArray labels, jobjectArray urls, jlong id) {
     if (!client) { operation(id, false, "SDK_NOT_INITIALIZED"); return; }
@@ -178,7 +178,7 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeUpdatePresenc
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeClear(JNIEnv*, jclass, jlong id) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeClear(JNIEnv*, jclass, jlong id) {
     if (!client) { operation(id, true, ""); return; }
     try {
         client->ClearRichPresence();
@@ -188,12 +188,12 @@ Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeClear(JNIEnv*
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeTick(JNIEnv*, jclass) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeTick(JNIEnv*, jclass) {
     try { discordpp::RunCallbacks(); } catch (...) { status(false); }
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_discord_DiscordNativeSdkBridge_nativeClose(JNIEnv* env, jclass) {
+Java_app_natune_discord_DiscordNativeSdkBridge_nativeClose(JNIEnv* env, jclass) {
     auto closing = std::move(client);
     if (closing) closing->Disconnect();
     status(false);

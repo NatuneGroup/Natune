@@ -105,7 +105,7 @@ static bool obscured(HWND window) {
     return hidden;
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_registerUriScheme(
+Java_app_natune_desktop_integration_NativeDesktopBridge_registerUriScheme(
     JNIEnv* env, jobject, jstring executable) {
     auto path = wide(utf8(env, executable));
     if (path.empty() || path.find(L'"') != std::wstring::npos || GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return JNI_FALSE;
@@ -133,11 +133,11 @@ static jint systemThemeDarkValue() {
     return value == 0 ? 1 : 0;
 }
 extern "C" JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_systemThemeDark(JNIEnv*, jobject) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_systemThemeDark(JNIEnv*, jobject) {
     return systemThemeDarkValue();
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setAppIdentity(
+Java_app_natune_desktop_integration_NativeDesktopBridge_setAppIdentity(
     JNIEnv* env, jobject, jstring appUserModelId, jstring displayName) {
     auto id = wide(utf8(env, appUserModelId));
     auto name = wide(utf8(env, displayName));
@@ -382,7 +382,7 @@ static LRESULT CALLBACK messages(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 extern "C" JNIEXPORT jlong JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
+Java_app_natune_desktop_integration_NativeDesktopBridge_create(
     JNIEnv* env, jobject, jlong owner, jobject callbacks, jobjectArray labels) {
     auto s = new Session(env, callbacks);
     s->owner = reinterpret_cast<HWND>(owner);
@@ -493,7 +493,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
     return reinterpret_cast<jlong>(s);
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_update(
+Java_app_natune_desktop_integration_NativeDesktopBridge_update(
     JNIEnv* env, jobject, jlong handle, jstring track, jstring title, jstring artist, jstring album, jstring status,
     jlong position, jlong duration, jdouble speed, jboolean seek, jboolean next, jboolean previous, jboolean advancing) {
     auto s = reinterpret_cast<Session*>(handle); if (!s) return;
@@ -503,7 +503,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_update(
     PostMessageW(s->messages, WM_UPDATE_MEDIA, 0, 0);
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_updateTransport(
+Java_app_natune_desktop_integration_NativeDesktopBridge_updateTransport(
     JNIEnv*, jobject, jlong handle, jboolean shuffle, jint repeat) {
     auto s = reinterpret_cast<Session*>(handle); if (!s) return;
     { std::lock_guard<std::mutex> guard(s->state->mutex);
@@ -512,7 +512,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_updateTran
     PostMessageW(s->messages, WM_UPDATE_MEDIA, 0, 0);
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setArtwork(
+Java_app_natune_desktop_integration_NativeDesktopBridge_setArtwork(
     JNIEnv* env, jobject, jlong handle, jstring track, jbyteArray image) {
     auto s = reinterpret_cast<Session*>(handle); if (!s) return;
     const jsize size = image ? env->GetArrayLength(image) : 0;
@@ -528,16 +528,16 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setArtwork
     PostMessageW(s->messages, WM_UPDATE_ARTWORK, 0, 0);
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_trayAvailable(JNIEnv*, jobject, jlong handle) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_trayAvailable(JNIEnv*, jobject, jlong handle) {
     return reinterpret_cast<Session*>(handle)->tray ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_release(JNIEnv*, jobject, jlong handle) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_release(JNIEnv*, jobject, jlong handle) {
     auto s = reinterpret_cast<Session*>(handle); if (!s) return;
     PostMessageW(s->messages, WM_CLOSE, 0, 0); s->worker.join(); delete s;
 }
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_pickFiles(
+Java_app_natune_desktop_integration_NativeDesktopBridge_pickFiles(
     JNIEnv* env, jobject, jlong owner, jboolean folder, jboolean multiple, jstring title) {
     jobjectArray result = nullptr;
     HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);

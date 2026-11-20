@@ -21,9 +21,9 @@ from pathlib import Path
 
 SDK = os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"]
 ADB = f"{SDK}/platform-tools/adb"
-PKG = "moe.rukamori.archivetune.debug"
+PKG = "app.natune.debug"
 # The debug applicationId suffix is not part of the activity's class name.
-MAIN_ACTIVITY = "moe.rukamori.archivetune.MainActivity"
+MAIN_ACTIVITY = "app.natune.MainActivity"
 OUT = Path("qa-artifacts")
 OUT.mkdir(exist_ok=True)
 

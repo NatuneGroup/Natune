@@ -13,7 +13,7 @@
 namespace {
 constexpr jsize maximum = 1024 * 1024;
 void unavailable(JNIEnv* env) {
-    jclass type = env->FindClass("moe/rukamori/archivetune/desktop/integration/auth/DesktopCredentialStoreUnavailable");
+    jclass type = env->FindClass("app/natune/desktop/integration/auth/DesktopCredentialStoreUnavailable");
     if (!type) return;
     jmethodID constructor = env->GetMethodID(type, "<init>", "()V");
     if (!constructor) return;
@@ -55,8 +55,8 @@ jbyteArray transform(JNIEnv* env, jbyteArray input, jbyteArray entropy, bool dec
 }
 }
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_protect(
+Java_app_natune_desktop_integration_auth_DesktopCredentialNative_protect(
     JNIEnv* env, jobject, jbyteArray value, jbyteArray entropy) { return transform(env, value, entropy, false); }
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_unprotect(
+Java_app_natune_desktop_integration_auth_DesktopCredentialNative_unprotect(
     JNIEnv* env, jobject, jbyteArray value, jbyteArray entropy) { return transform(env, value, entropy, true); }

@@ -1,0 +1,34 @@
+package app.natune.shared.ui.session
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import app.natune.shared.ui.menu.LyricsEditSnapshot
+import app.natune.shared.ui.menu.LyricsMenuEdits
+
+/** Automatic and manual AI success use the same guarded durable edit/undo path as ordinary menus. */
+class LyricsTranslationPersistence(
+    scope: CoroutineScope,
+    sessions: LyricsSessions,
+    edits: LyricsMenuEdits,
+    read: suspend (String) -> LyricsEditSnapshot?,
+    onFailure: () -> Unit,
+) {
+    init {
+        scope.launch {
+            sessions.translation.state.collect { state ->
+                val result = state.result ?: return@collect
+                val translated = result.translatedLyrics ?: return@collect
+                try {
+                    val before = read(result.request.mediaId) ?: return@collect
+                    if (before.lyrics == result.request.lyrics && sessions.isCurrent(result)) {
+                        edits.apply(before, translated) { sessions.isCurrent(result) }
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) {
+                    if (sessions.isCurrent(result) && sessions.translation.cancelResult(result)) onFailure()
+                }
+            }
+        }
+    }
+}

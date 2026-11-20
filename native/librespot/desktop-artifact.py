@@ -31,7 +31,7 @@ def check(library, host):
             raise ValueError("Desktop JNI PE architecture mismatch")
     # Export names are retained even with stripped Rust symbols. They must match the reused JVM entry points.
     for method in METHODS:
-        symbol = "Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_" + method
+        symbol = "Java_app_natune_spotify_librespot_SpotifyLibrespotNative_" + method
         if symbol.encode() + b"\0" not in data:
             raise ValueError("Desktop JNI contract mismatch: " + method)
 

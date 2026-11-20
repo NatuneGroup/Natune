@@ -12,7 +12,7 @@
 namespace {
 constexpr jsize maximum = 1024 * 1024;
 void unavailable(JNIEnv* env) {
-    jclass type = env->FindClass("moe/rukamori/archivetune/desktop/integration/auth/DesktopCredentialStoreUnavailable");
+    jclass type = env->FindClass("app/natune/desktop/integration/auth/DesktopCredentialStoreUnavailable");
     if (!type) return;
     jmethodID constructor = env->GetMethodID(type, "<init>", "()V");
     if (!constructor) return;
@@ -26,14 +26,14 @@ NSMutableDictionary* query(JNIEnv* env, jstring account) {
     NSString* identity = [[NSString alloc] initWithCharacters:reinterpret_cast<const unichar*>(chars) length:64];
     env->ReleaseStringChars(account, chars);
     return [@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrService: @"moe.rukamori.archivetune.credentials.v1",
+        (__bridge id)kSecAttrService: @"app.natune.credentials.v1",
         (__bridge id)kSecAttrAccount: identity,
         // Locked/unavailable/denied is an error, never a background keychain prompt or an empty password.
         (__bridge id)kSecUseAuthenticationUI: (__bridge id)kSecUseAuthenticationUIFail} mutableCopy];
 }
 }
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_keychainRead(
+Java_app_natune_desktop_integration_auth_DesktopCredentialNative_keychainRead(
     JNIEnv* env, jobject, jstring account) {
     @autoreleasepool {
         NSMutableDictionary* search = query(env, account);
@@ -53,7 +53,7 @@ Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_k
     }
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_keychainWrite(
+Java_app_natune_desktop_integration_auth_DesktopCredentialNative_keychainWrite(
     JNIEnv* env, jobject, jstring account, jbyteArray input) {
     @autoreleasepool {
         NSMutableDictionary* search = query(env, account);
@@ -82,7 +82,7 @@ Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_k
     }
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_auth_DesktopCredentialNative_keychainRemove(
+Java_app_natune_desktop_integration_auth_DesktopCredentialNative_keychainRemove(
     JNIEnv* env, jobject, jstring account) {
     @autoreleasepool {
         NSMutableDictionary* search = query(env, account);

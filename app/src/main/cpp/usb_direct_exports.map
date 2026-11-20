@@ -1,5 +1,5 @@
 {
     global:
-        Java_moe_rukamori_archivetune_playback_usbdirect_UsbDirectNative_native*;
+        Java_app_natune_playback_usbdirect_UsbDirectNative_native*;
     local: *;
 };

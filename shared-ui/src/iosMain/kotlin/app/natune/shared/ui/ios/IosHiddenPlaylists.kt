@@ -1,0 +1,49 @@
+package app.natune.shared.ui.ios
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import app.natune.shared.ui.resources.Res
+import app.natune.shared.ui.resources.m6_account_hidden_playlist_unhidden
+import app.natune.shared.ui.resources.m6_account_hidden_playlists
+import app.natune.shared.ui.resources.m6_account_hidden_playlists_unhide
+import app.natune.shared.ui.resources.m6_account_no_hidden_playlists
+import app.natune.shared.ui.settings.SettingsNotice
+import org.jetbrains.compose.resources.stringResource
+
+/** Local playlists the account hid from its Library, with Unhide, as the desktop page lists them. */
+@Composable
+internal fun IosHiddenPlaylistsPage(
+    graph: IosSessionGraph,
+    onNotice: (SettingsNotice) -> Unit,
+    onFailure: () -> Unit,
+) {
+    val hidden by remember { graph.library.observeHiddenPlaylists() }.collectAsState(null)
+    val scope = rememberCoroutineScope()
+    app.natune.shared.ui.settings.HiddenPlaylistsSettings(
+        hidden?.map { app.natune.shared.ui.settings.HiddenSettingsPlaylist(it.id, it.title) },
+        onUnhide = { id -> scope.launch {
+            try {
+                graph.library.setPlaylistHidden(id, false)
+                onNotice(SettingsNotice.Message(Res.string.m6_account_hidden_playlist_unhidden))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { onFailure() }
+        } },
+    )
+}

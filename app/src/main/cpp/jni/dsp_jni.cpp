@@ -6,7 +6,7 @@
  * JNI bridges for the AAudio exclusive output.
  *
  * Kotlin host:
- *  - moe.rukamori.archivetune.playback.dsp.AaudioNativeStream (instance, long handle)
+ *  - app.natune.playback.dsp.AaudioNativeStream (instance, long handle)
  *
  * Buffer convention: media3 audio processors hand out DIRECT ByteBuffers
  * (little-endian PCM); every buffer argument here must be direct so the
@@ -22,7 +22,7 @@
 #include "dsp/aaudio_output.h"
 
 #define JNI_FUNC_AASTREAM(name) \
-    Java_moe_rukamori_archivetune_playback_dsp_AaudioNativeStream_##name
+    Java_app_natune_playback_dsp_AaudioNativeStream_##name
 
 using archivetune::dsp::AaudioExclusiveStream;
 

@@ -73,7 +73,7 @@ static NSString* string(JNIEnv* env, jstring value) {
 @end
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
+Java_app_natune_desktop_integration_NativeDesktopBridge_create(
     JNIEnv* env, jobject, jlong, jobject target, jobjectArray labels) {
     auto callback = std::make_shared<JavaCallbacks>(env, target);
     NSMutableArray<NSString*>* titles = [NSMutableArray array];
@@ -168,7 +168,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
     return session ? reinterpret_cast<jlong>(CFBridgingRetain(session)) : 0;
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_update(
+Java_app_natune_desktop_integration_NativeDesktopBridge_update(
     JNIEnv* env, jobject, jlong handle, jstring track, jstring title, jstring artist, jstring album, jstring status,
     jlong position, jlong duration, jdouble speed, jboolean seek, jboolean next, jboolean previous, jboolean advancing) {
     ATSystem* session = (__bridge ATSystem*)reinterpret_cast<void*>(handle);
@@ -201,7 +201,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_update(
     });
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setArtwork(
+Java_app_natune_desktop_integration_NativeDesktopBridge_setArtwork(
     JNIEnv* env, jobject, jlong handle, jstring track, jbyteArray image) {
     ATSystem* session = (__bridge ATSystem*)reinterpret_cast<void*>(handle);
     NSString* trackValue = string(env, track);
@@ -224,19 +224,19 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setArtwork
     });
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_trayAvailable(JNIEnv*, jobject, jlong handle) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_trayAvailable(JNIEnv*, jobject, jlong handle) {
     __block BOOL available = NO;
     ATSystem* session = (__bridge ATSystem*)reinterpret_cast<void*>(handle);
     mainSync(^{ available = !session.closed && session.status != nil && session.status.visible; });
     return available;
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_release(JNIEnv*, jobject, jlong handle) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_release(JNIEnv*, jobject, jlong handle) {
     ATSystem* session = CFBridgingRelease(reinterpret_cast<void*>(handle));
     mainSync(^{ [session dispose]; });
 }
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_pickFiles(
+Java_app_natune_desktop_integration_NativeDesktopBridge_pickFiles(
     JNIEnv* env, jobject, jlong, jboolean folder, jboolean multiple, jstring title) {
     NSString* titleValue = string(env, title);
     __block NSArray<NSURL*>* urls = nil;
@@ -258,7 +258,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_pickFiles(
     return result;
 }
 extern "C" JNIEXPORT void JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_updateTransport(
+Java_app_natune_desktop_integration_NativeDesktopBridge_updateTransport(
     JNIEnv*, jobject, jlong handle, jboolean shuffle, jint repeat) {
     ATSystem* session = (__bridge ATSystem*)reinterpret_cast<void*>(handle);
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -270,7 +270,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_updateTran
     });
 }
 extern "C" JNIEXPORT jint JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_systemThemeDark(JNIEnv*, jobject) {
+Java_app_natune_desktop_integration_NativeDesktopBridge_systemThemeDark(JNIEnv*, jobject) {
     __block jint result = -1;
     mainSync(^{
         NSAppearance* appearance = NSApp.effectiveAppearance;
@@ -281,7 +281,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_systemThem
     return result;
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setAppIdentity(
+Java_app_natune_desktop_integration_NativeDesktopBridge_setAppIdentity(
     JNIEnv*, jobject, jstring, jstring) {
     // App identity is a Windows taskbar/registry concern; macOS identity comes from the app bundle.
     return JNI_FALSE;

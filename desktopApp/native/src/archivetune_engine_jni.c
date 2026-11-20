@@ -22,7 +22,7 @@
 #include "archivetune_device.h"
 #include "archivetune_jni_utf8.h"
 
-#define BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_PlaybackEngineNative_##name
+#define BINDING(name) Java_app_natune_desktop_playback_PlaybackEngineNative_##name
 
 #define SNAPSHOT_FIELDS 9
 #define AE_RENDER_CHANNELS 2 /* interleaved stereo, as documented on ae_engine_render */

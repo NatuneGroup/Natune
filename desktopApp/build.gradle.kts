@@ -83,38 +83,38 @@ kotlin {
 // lyrics, the module host and theme seeds). PlayPlay and the Echo protocol come from :shared-data.
 val desktopPlayPlaySources = layout.buildDirectory.dir("generated/retained-playplay")
 val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlaySources") {
-    val themeSource = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/ui/theme/Theme.kt")
+    val themeSource = rootProject.file("app/src/main/kotlin/app/natune/ui/theme/Theme.kt")
     inputs.file(themeSource)
-    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/librespot")) {
+    from(rootProject.file("app/src/main/kotlin/app/natune/spotify/librespot")) {
         include("SpotifyLibrespotNative.kt")
         filter { line: String -> line.replace("System.loadLibrary(\"natune_librespot\")",
-            "moe.rukamori.archivetune.desktop.DesktopLibrespotLibrary.load()") }
+            "app.natune.desktop.DesktopLibrespotLibrary.load()") }
     }
-    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback")) {
+    from(rootProject.file("app/src/main/kotlin/app/natune/playback")) {
         include("AudioTagger.kt")
         filter { line: String -> line.replace("import timber.log.Timber",
-            "import moe.rukamori.archivetune.desktop.DesktopTagLog as Timber") }
+            "import app.natune.desktop.DesktopTagLog as Timber") }
     }
-    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/lyrics")) {
+    from(rootProject.file("app/src/main/kotlin/app/natune/lyrics")) {
         include("YouTubeLyricsProvider.kt", "YouTubeSubtitleLyricsProvider.kt")
         filter { line: String ->
             when {
                 line == "import android.content.Context" || line.contains("override fun isEnabled(context:") -> ""
-                line.startsWith("package ") -> line + "\n\nimport moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider"
+                line.startsWith("package ") -> line + "\n\nimport app.natune.shared.data.lyrics.LyricsProvider"
                 else -> line.replace("duration: Int,", "durationSec: Int, isrc: String?,").replace("album, duration)", "album, durationSec)")
             }
         }
     }
-    from(rootProject.file("modules/src/main/kotlin/moe/rukamori/archivetune/modules")) {
+    from(rootProject.file("modules/src/main/kotlin/app/natune/modules")) {
         include("*.kt")
         exclude("ModuleRuntimeStorage.kt")
         filter { line: String ->
             when {
-                line == "import android.content.Context" -> "import moe.rukamori.archivetune.modules.ModuleHostEnvironment as Context"
-                line == "import android.util.Base64" -> "import moe.rukamori.archivetune.modules.ModuleBase64 as Base64"
-                line == "import android.net.Uri" -> "import moe.rukamori.archivetune.modules.ModuleUri as Uri"
-                line == "import android.graphics.BitmapFactory" -> "import moe.rukamori.archivetune.modules.ModuleBitmapFactory as BitmapFactory"
-                line == "import android.graphics.Bitmap" -> "import moe.rukamori.archivetune.modules.ModuleBitmap as Bitmap"
+                line == "import android.content.Context" -> "import app.natune.modules.ModuleHostEnvironment as Context"
+                line == "import android.util.Base64" -> "import app.natune.modules.ModuleBase64 as Base64"
+                line == "import android.net.Uri" -> "import app.natune.modules.ModuleUri as Uri"
+                line == "import android.graphics.BitmapFactory" -> "import app.natune.modules.ModuleBitmapFactory as BitmapFactory"
+                line == "import android.graphics.Bitmap" -> "import app.natune.modules.ModuleBitmap as Bitmap"
                 line == "import android.os.SystemClock" -> ""
                 line.contains("context.packageManager.getPackageInfo") -> "    private val version = context.versionName"
                 else -> line.replace("context.applicationContext", "context")
@@ -142,11 +142,11 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
             import kotlinx.serialization.Serializable
             import kotlinx.serialization.encodeToString
             import kotlinx.serialization.json.*
-            import moe.rukamori.archivetune.modules.ModuleBase64 as Base64
-            import moe.rukamori.archivetune.desktop.desktopThemeColor
+            import app.natune.modules.ModuleBase64 as Base64
+            import app.natune.desktop.desktopThemeColor
         """.trimIndent()
         desktopPlayPlaySources.get().asFile.resolve("DesktopThemeSeeds.kt").writeText(
-            notice + "package moe.rukamori.archivetune.ui.theme\n\n" + imports + "\n\n" + model + scheme + codec)
+            notice + "package app.natune.ui.theme\n\n" + imports + "\n\n" + model + scheme + codec)
     }
 }
 kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources); resources.srcDir(rootProject.file("modules/src/main/assets")) }
@@ -230,7 +230,7 @@ val generateDesktopProviderCredentials = tasks.register("generateProviderCredent
     doLast {
         ProviderCredentials.writeKotlinObject(
             desktopProviderCredentialsDirectory.get().asFile,
-            "moe.rukamori.archivetune.desktop",
+            "app.natune.desktop",
             "DesktopBuildCredentials",
             desktopProviderCredentials,
         )
@@ -308,11 +308,11 @@ val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
     inputs.property("natuneNewsUrl", newsUrl)
     outputs.dir(output)
     doLast {
-        val directory = output.get().asFile.resolve("moe/rukamori/archivetune/desktop")
+        val directory = output.get().asFile.resolve("app/natune/desktop")
         directory.mkdirs()
         directory.resolve("DesktopBuildIdentity.kt").writeText(
             """
-            |package moe.rukamori.archivetune.desktop
+            |package app.natune.desktop
             |
             |internal object DesktopBuildIdentity {
             |    const val VERSION_NAME = "$version"
@@ -331,7 +331,7 @@ tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(gener
 
 compose.desktop {
     application {
-        mainClass = "moe.rukamori.archivetune.desktop.MainKt"
+        mainClass = "app.natune.desktop.MainKt"
         // Lets DesktopRuntime reach the X11 toolkit's window-class field on Linux, and LinuxWindowDrag the AWT
         // accessor and toolkit that own the display lock and the X11 window id. Both are module-internal JDK
         // packages; without the second open the drag logs a diagnostic and the caption keeps the system frame.
@@ -369,7 +369,7 @@ compose.desktop {
             }
             macOS {
                 iconFile.set(project.file("packaging/archivetune.icns"))
-                bundleID = "moe.rukamori.archivetune"
+                bundleID = "app.natune"
                 infoPlist {
                     extraKeysRawXml = """
                         <key>CFBundleURLTypes</key><array><dict>
@@ -895,9 +895,9 @@ tasks.named<Test>("jvmTest") {
     // excluded instead of every run failing on the missing library. The app image job runs the task untrimmed, so
     // the engine suites still execute in CI; the default here is the untrimmed task.
     if (providers.gradleProperty("desktopEngineTests").orElse("true").get() != "true") {
-        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackEngineTest")
-        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPortTest")
-        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackStreamTest")
+        filter.excludeTestsMatching("app.natune.desktop.playback.DesktopPlaybackEngineTest")
+        filter.excludeTestsMatching("app.natune.desktop.playback.DesktopPlaybackPortTest")
+        filter.excludeTestsMatching("app.natune.desktop.playback.DesktopPlaybackStreamTest")
     }
 }
 
@@ -910,10 +910,10 @@ tasks.named<Test>("jvmTest") {
  * without the engine closure.
  */
 val desktopWindowTestClasses = listOf(
-    "moe.rukamori.archivetune.desktop.DesktopWindowBoundsTest",
-    "moe.rukamori.archivetune.desktop.DesktopWindowIconTest",
-    "moe.rukamori.archivetune.desktop.DesktopRendererDiagnosticsTest",
-    "moe.rukamori.archivetune.desktop.integration.windows.WindowsWindowChromeTest",
+    "app.natune.desktop.DesktopWindowBoundsTest",
+    "app.natune.desktop.DesktopWindowIconTest",
+    "app.natune.desktop.DesktopRendererDiagnosticsTest",
+    "app.natune.desktop.integration.windows.WindowsWindowChromeTest",
 )
 val jvmTestTask = tasks.named<Test>("jvmTest")
 // `provider { }` reads the collections lazily but is not *derived from the task*, so it adds no dependency on jvmTest

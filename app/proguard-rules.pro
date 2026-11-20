@@ -139,11 +139,11 @@
 
 ## Queue Persistence Rules
 # Keep queue-related classes to prevent serialization issues in release builds
--keep class moe.rukamori.archivetune.models.PersistQueue { *; }
--keep class moe.rukamori.archivetune.models.PersistPlayerState { *; }
--keep class moe.rukamori.archivetune.models.QueueData { *; }
--keep class moe.rukamori.archivetune.models.QueueType { *; }
--keep class moe.rukamori.archivetune.playback.queues.** { *; }
+-keep class app.natune.models.PersistQueue { *; }
+-keep class app.natune.models.PersistPlayerState { *; }
+-keep class app.natune.models.QueueData { *; }
+-keep class app.natune.models.QueueType { *; }
+-keep class app.natune.playback.queues.** { *; }
 
 # Java serialization writes the CLASS NAME and the FIELD NAMES into the stream, so R8 renaming
 # either of them breaks reading a file written by an earlier build. That is what produced
@@ -163,8 +163,8 @@
 # — two unrelated exception types horizontally merged into one class. The app died on launch.
 #
 # Only this app's models are ever written with Java serialization, so only they need the rule.
--keepnames class moe.rukamori.archivetune.** implements java.io.Serializable
--keepclassmembers class moe.rukamori.archivetune.** implements java.io.Serializable {
+-keepnames class app.natune.** implements java.io.Serializable
+-keepclassmembers class app.natune.** implements java.io.Serializable {
     static final long serialVersionUID;
     private static final java.io.ObjectStreamField[] serialPersistentFields;
     !static !transient <fields>;
@@ -262,11 +262,11 @@
 # APKs, where create_room/join_room could never be encoded and no room code
 # ever arrived. Mirrors vivi-music's listentogether keep rules (proven against
 # the metroserver / The Meowery instance).
--keep class moe.rukamori.archivetune.listentogether.** { *; }
--keepclassmembers class moe.rukamori.archivetune.listentogether.** { *; }
+-keep class app.natune.listentogether.** { *; }
+-keepclassmembers class app.natune.listentogether.** { *; }
 # JNI symbols bind this class and its native method names, including release/minified builds.
--keep class moe.rukamori.archivetune.spotify.librespot.SpotifyLibrespotNative { *; }
+-keep class app.natune.spotify.librespot.SpotifyLibrespotNative { *; }
 
 # Optional Social SDK JNI callbacks and the AAR's documented Activity initialization hook.
--keep class moe.rukamori.archivetune.discord.DiscordNativeSdkBridge { *; }
+-keep class app.natune.discord.DiscordNativeSdkBridge { *; }
 -keep class com.discord.socialsdk.DiscordSocialSdkInit { *; }

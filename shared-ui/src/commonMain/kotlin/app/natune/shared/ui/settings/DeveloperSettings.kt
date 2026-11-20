@@ -1,0 +1,86 @@
+package app.natune.shared.ui.settings
+
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import app.natune.shared.domain.settings.*
+import app.natune.shared.ui.resources.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
+/**
+ * Developer switches keep their persisted identities and render their diagnostics only while enabled.
+ * The acoustic audit, Discord debug lines and nerd stats need the live playback target and runtime, so
+ * the host supplies them as slots. An unsupplied slot is a compile error, never a silent empty panel.
+ */
+@Composable
+fun DeveloperSettings(
+    controller: SettingsController,
+    navigate: (String) -> Unit,
+    playerAvailable: Boolean,
+    acousticQualitySection: @Composable (active: Boolean) -> Unit,
+    discordDebugSection: @Composable () -> Unit,
+    nerdStatsSection: @Composable () -> Unit,
+    resumed: Boolean,
+    onFailure: () -> Unit,
+    scrollTo: String? = null,
+    modifier: Modifier = Modifier,
+    /** Android's debug lines and nerd stats have no shared renderer; a host without them keeps their sections off. */
+    androidDebugSections: Boolean = true,
+) {
+    val snapshot by controller.store.snapshots.collectAsState()
+    val preferences = snapshot
+    if (preferences == null) { CircularProgressIndicator(); return }
+    // Collapsing removes the audit from composition, which is what stops its work and frame clocks.
+    var acousticExpanded by remember { mutableStateOf(false) }
+    SettingsPage(
+        rows = developerSettingsRows(onToggleAcoustic = { acousticExpanded = !acousticExpanded }, navigate = navigate),
+        preferences = preferences,
+        controller = controller,
+        scrollTo = scrollTo,
+        resumed = resumed,
+        onFailure = onFailure,
+        modifier = modifier,
+        extraItems = {
+            if (acousticExpanded) {
+                item(key = "acoustic_quality_section") { acousticQualitySection(resumed) }
+            }
+            if (androidDebugSections && preferences[InlineDevShowDiscordDebugKey, false]) {
+                item(key = "discord_debug_section") { discordDebugSection() }
+            }
+            if (androidDebugSections && playerAvailable && preferences[InlineDevShowNerdStatsKey, false]) {
+                item(key = "nerd_stats_section") { nerdStatsSection() }
+            }
+        },
+    )
+}
+
+private fun developerSettingsRows(
+    onToggleAcoustic: () -> Unit,
+    navigate: (String) -> Unit,
+): List<SettingsRow> = listOf(
+    SettingsRow.Action(
+        "acoustic_quality", Res.string.m6_dev_acoustic_quality, run = onToggleAcoustic,
+        description = Res.string.m6_dev_acoustic_quality_desc,
+    ),
+    SettingsRow.Toggle(
+        "dev_show_discord_debug", Res.string.m6_dev_show_discord_debug, InlineDevShowDiscordDebugKey, false,
+        description = Res.string.m6_dev_show_discord_debug_desc,
+    ),
+    SettingsRow.Toggle(
+        "dev_show_nerd_stats", Res.string.m6_dev_show_nerd_stats, InlineDevShowNerdStatsKey, false,
+        description = Res.string.m6_dev_show_nerd_stats_desc,
+    ),
+    SettingsRow.Toggle(
+        "show_codec_on_player", Res.string.m6_dev_show_codec, ShowCodecOnPlayerKey, true,
+        description = Res.string.m6_dev_show_codec_desc,
+    ),
+    SettingsRow.Action(
+        "debug_logs", Res.string.m6_dev_debug_logs, run = { navigate("settings/logcat") },
+        description = Res.string.m6_dev_debug_logs_desc,
+    ),
+    SettingsRow.Action(
+        "crash_logs", Res.string.m6_crash_logs_title, run = { navigate(CrashLogsRoute) },
+        description = Res.string.m6_crash_logs_desc,
+    ),
+)

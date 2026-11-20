@@ -621,7 +621,7 @@ static bool ensureOwner() {
     return ready;
 }
 
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_open(
     JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
@@ -662,7 +662,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
  * The challenge window: the document navigation keeps [documentUrl] as its URL and origin, and the bytes are answered
  * from [html] by the document override, so a script that is domain-locked to the sign-in origin runs there.
  */
-JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+JNIEXPORT jlong JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_openHtml(
     JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
     jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
@@ -700,13 +700,13 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
     return result.get();
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_requestCookies(
     JNIEnv *env, jclass, jlong handle, jlong requestId, jstring origin) {
     const std::string target = utf8FromJava(env, origin);
     post([=]() { requestCookiesOnOwner(handle, requestId, target); });
 }
 
-JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_close(
+JNIEXPORT void JNICALL Java_app_natune_desktop_integration_auth_NativeCookieBrowser_close(
     JNIEnv *, jclass, jlong handle) {
     post([=]() {
         if (Session *session = findSession(handle)) closeSession(*session);

@@ -6,7 +6,7 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 
-package moe.rukamori.archivetune.shazamkit
+package app.natune.shazamkit
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -29,9 +29,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
-import moe.rukamori.archivetune.shazamkit.models.RecognitionResult
-import moe.rukamori.archivetune.shazamkit.models.ShazamRequestJson
-import moe.rukamori.archivetune.shazamkit.models.ShazamResponseJson
+import app.natune.shazamkit.models.RecognitionResult
+import app.natune.shazamkit.models.ShazamRequestJson
+import app.natune.shazamkit.models.ShazamResponseJson
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue

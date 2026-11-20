@@ -159,7 +159,7 @@ gh workflow run build_pull_request.yml \
   available, the job fails closed; re-pin from an archived, verified copy rather
   than skipping the comparison.
 - The final signed file is re-checked for package
-  `moe.rukamori.archivetune`, non-debug, minSdk 24, only `arm64-v8a` and the
+  `app.natune`, non-debug, minSdk 24, only `arm64-v8a` and the
   reserved version; `scripts/apk_size_report.py` measures it. The artifact
   contains exactly one APK plus `SHA256SUMS`, `candidate-metadata.json` and
   `apk-size.json`, is named as a candidate, is retained three days, and is not a

@@ -12,7 +12,7 @@
 #include "archivetune_video.h"
 #include "archivetune_jni_utf8.h"
 
-#define VIDEO_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_VideoArtworkNative_##name
+#define VIDEO_BINDING(name) Java_app_natune_desktop_playback_VideoArtworkNative_##name
 
 /* Sequence, width, height, state, presentation time and duration in microseconds. */
 #define VIDEO_INFO_FIELDS 6

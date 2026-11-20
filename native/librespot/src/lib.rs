@@ -110,7 +110,7 @@ where
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeConnect(
+pub extern "system" fn Java_app_natune_spotify_librespot_SpotifyLibrespotNative_nativeConnect(
     env: JNIEnv<'_>, _object: JObject<'_>, token: JString<'_>, user_id: JString<'_>,
     device_id: JString<'_>, cache_dir: JString<'_>, proxy: JString<'_>, android_api_level: jint,
     expected_generation: jlong, timeout_ms: jlong,
@@ -254,7 +254,7 @@ async fn resolve(session: &Session, uri: SpotifyUri, formats: Vec<i32>) -> Resul
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeResolve(
+pub extern "system" fn Java_app_natune_spotify_librespot_SpotifyLibrespotNative_nativeResolve(
     env: JNIEnv<'_>, _object: JObject<'_>, track_uri: JString<'_>, formats: JIntArray<'_>,
     expected_generation: jlong, timeout_ms: jlong,
 ) -> jstring {
@@ -287,14 +287,14 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeGeneration(
+pub extern "system" fn Java_app_natune_spotify_librespot_SpotifyLibrespotNative_nativeGeneration(
     _env: JNIEnv<'_>, _object: JObject<'_>,
 ) -> jlong {
     catch_unwind(|| state().map(|s| s.generation as jlong).unwrap_or(-1)).unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeSessionValid(
+pub extern "system" fn Java_app_natune_spotify_librespot_SpotifyLibrespotNative_nativeSessionValid(
     _env: JNIEnv<'_>, _object: JObject<'_>,
 ) -> jboolean {
     catch_unwind(|| state().map(|s| s.session.as_ref().is_some_and(|s|
@@ -303,7 +303,7 @@ pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLi
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_moe_rukamori_archivetune_spotify_librespot_SpotifyLibrespotNative_nativeClose(
+pub extern "system" fn Java_app_natune_spotify_librespot_SpotifyLibrespotNative_nativeClose(
     _env: JNIEnv<'_>, _object: JObject<'_>,
 ) {
     let _ = catch_unwind(close);

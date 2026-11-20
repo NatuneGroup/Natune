@@ -1,4 +1,4 @@
-package moe.rukamori.archivetune.build
+package app.natune.build
 
 import org.apache.batik.ext.awt.image.rendered.IndexImage
 import java.awt.image.BufferedImage

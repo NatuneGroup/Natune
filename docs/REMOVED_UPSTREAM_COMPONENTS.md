@@ -27,7 +27,7 @@ comparison.
 
 ## 1. Listen Together — koiverse REST/WS path (deleted)
 
-Files: `app/src/main/kotlin/moe/rukamori/archivetune/together/TogetherOnlineApi.kt`,
+Files: `app/src/main/kotlin/app/natune/together/TogetherOnlineApi.kt`,
 `TogetherOnlineEndpoint.kt`, `TogetherOnlineHost.kt`, root `ArchiveTuneKoiverseServer.txt`,
 plus the `MusicTogetherConnectionMode.ONLINE` branches in `MusicTogetherRepository.kt`
 and `MusicTogetherViewModel.kt`, `startTogetherOnlineHost`/`joinTogetherOnline`/
@@ -63,7 +63,7 @@ plus the LAN `TogetherServer.kt`/`TogetherClient.kt`.
 
 ## 2. Canvas proxy — ArchiveTuneCanvas (deleted)
 
-File: `canvas/src/main/kotlin/moe/rukamori/archivetune/canvas/ArchiveTuneCanvas.kt`.
+File: `canvas/src/main/kotlin/app/natune/canvas/ArchiveTuneCanvas.kt`.
 
 Why: it proxied artwork through `https://artwork-archivetune.koiiverse.cloud/`
 with fallback `https://artwork.boidu.dev/` and attached a bearer token.
@@ -83,7 +83,7 @@ caller's `strictIdentity` filtering still applies to the returned artwork.
 
 ## 3. Inert cipher UI (deleted; the engine module was kept)
 
-Files: `app/src/main/kotlin/moe/rukamori/archivetune/cipher/CipherSettingsRepository.kt`,
+Files: `app/src/main/kotlin/app/natune/cipher/CipherSettingsRepository.kt`,
 `CipherSettingsUseCases.kt`, `ui/screens/settings/ChiperSettings.kt`,
 `viewmodels/ChiperSettingsViewModel.kt`, `utils/MoriCipherUpdateWorker.kt`,
 `MoriCipherManualRefreshHistoryKey` (PreferenceKeys), 25 `mori_cipher_*` strings
@@ -108,7 +108,7 @@ network-connected + battery-not-low, and the DataStore history key
 
 ## 4. Gatekeeper stub (deleted)
 
-File: `app/src/main/kotlin/moe/rukamori/archivetune/viewmodels/GatekeeperViewModel.kt`
+File: `app/src/main/kotlin/app/natune/viewmodels/GatekeeperViewModel.kt`
 plus its `MainActivity.kt` wiring. It was already a stub ("the gate is always
 open", `blockedMessages` never emits) from a prior cleanup; removing it just
 deleted the dead wiring.

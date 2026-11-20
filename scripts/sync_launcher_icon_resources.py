@@ -10,7 +10,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 COMMON_RES = ROOT / 'shared-ui/src/commonMain/composeResources'
 RES = ROOT / 'shared-ui/src/iosMain/composeResources'
-PACKAGE = ROOT / 'shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings'
+PACKAGE = ROOT / 'shared-ui/src/iosMain/kotlin/app/natune/shared/ui/settings'
 icons = json.loads((ROOT / 'IconPack/metadata.json').read_text())
 strings = ET.Element('resources')
 existing_labels = {}
@@ -29,8 +29,8 @@ def shared_label(value, fallback):
         existing_labels[value] = name
     return name
 
-lines = ['package moe.rukamori.archivetune.shared.ui.settings', '',
-         'import moe.rukamori.archivetune.shared.ui.resources.*', '',
+lines = ['package app.natune.shared.ui.settings', '',
+         'import app.natune.shared.ui.resources.*', '',
          '/** The pinned IconPack catalog; regenerate with scripts/sync_launcher_icon_resources.py. */',
          'val SharedLauncherIconCatalog = listOf(',
          '    LauncherIcon("default", Res.string.m6_default, Res.drawable.phone_launcher_default, isDefault = true),']

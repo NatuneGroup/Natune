@@ -5,7 +5,7 @@ installed module manager. Playback behavior and persisted source order stay the
 same during this step.
 
 The plain contracts in
-[`ProviderContracts.kt`](../../shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/provider/ProviderContracts.kt)
+[`ProviderContracts.kt`](../../shared-domain/src/commonMain/kotlin/app/natune/shared/domain/provider/ProviderContracts.kt)
 name a finite set of compiled provider IDs, purposes, platform availability and
 settings destinations. A descriptor describes compiled code; it cannot discover,
 install or execute an implementation. Composition advertises only capabilities
@@ -18,7 +18,7 @@ name and credential ordering. The profile port is an additive boundary here;
 this change does not persist or migrate installed profiles. Platform credential
 owners continue to hold secrets.
 
-[`SourceAttemptPlan.kt`](../../shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/SourceAttemptPlan.kt)
+[`SourceAttemptPlan.kt`](../../shared-domain/src/commonMain/kotlin/app/natune/shared/domain/source/SourceAttemptPlan.kt)
 contains the data-only attempt-plan port and its default adapter over the existing
 source chain. The shared resolver consumes this adapter. Native attempts carry a
 null profile and the DEFAULT credential lane, leaving existing account/Pool
@@ -32,7 +32,7 @@ skipped, sources below YouTube are unreachable unless explicitly pinned, and a
 rejected pin yields to the permitted chain. Download admission, low-data policy,
 matching, deadlines and cancellation remain with their current owners.
 
-[`SpotifyProviderPolicy.kt`](../../shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/source/SpotifyProviderPolicy.kt)
+[`SpotifyProviderPolicy.kt`](../../shared-domain/src/commonMain/kotlin/app/natune/shared/domain/source/SpotifyProviderPolicy.kt)
 uses only enable choices, session-presence flags, stored engine and observed
 products. Android's Spotify preference adapter retains the serialized
 `extension.spotify.metadata.enabled`, `extension.spotify.alternate.enabled` and
