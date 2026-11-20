@@ -174,7 +174,7 @@ class GeniusLyricsProvider(
     private suspend fun getOrNull(
         url: String,
         headers: Map<String, String>,
-    ): String? = runCatching { LyricsHttp.getWithStatus(client, url, headers).body }.getOrNull()
+    ): String? = LyricsHttp.getAnswered(client, url, headers).body
 
     private fun extractLyricsText(html: String): String? {
         val bodies = extractContainerBodies(html)

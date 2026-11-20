@@ -211,11 +211,11 @@ class MegalobizLyricsProvider(
         val lines: List<JsonElement>,
     )
 
-    /** Transport errors read as a miss, like the Android helper's null response. */
+    /** Transport errors and 429/5xx answers propagate and fail the lookup, as the Android helper's did. */
     private suspend fun getOrNull(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): LyricsHttpResponse? = runCatching { LyricsHttp.getWithStatus(client, url, headers) }.getOrNull()
+    ): LyricsHttpResponse? = LyricsHttp.getAnswered(client, url, headers)
 
     private companion object {
         const val API_HOST = "api.megalobiz.com"
