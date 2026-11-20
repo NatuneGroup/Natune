@@ -694,41 +694,6 @@ fun UpdateScreen(
                 )
             }
 
-            // Unofficial fork warning pill. Sits right under the dashboard so the user
-            // sees it before checking for updates or reading commits. Reminds them this is a
-            // personal fork — issues are unlikely to be fixed unless they're serious.
-            item(key = "fork_warning", contentType = "warning") {
-                Surface(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .widthIn(max = maximumContentWidth),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    tonalElevation = 0.dp,
-                ) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.info),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                        Text(
-                            text = stringResource(R.string.fork_warning_unofficial),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
-                }
-            }
-
             item(key = "commit_history", contentType = "commit_history") {
                 CommitHistorySection(
                     commits = commits,

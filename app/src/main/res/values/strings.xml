@@ -1553,7 +1553,6 @@
     <string name="navigation_bar_reset_dimensions">Reset dimensions to default</string>
     <string name="hide_scrollbar">Hide scrollbar</string>
     <string name="hide_scrollbar_desc">Hide scrollbars across the whole app</string>
-    <string name="fork_warning_unofficial">This is an unofficial Fork of Archivetune and is only made for my personal use. If you run into any issues i probably would never fix them unless it\'s serious</string>
     <string name="enable_tidal_lyrics">Enable Tidal lyrics</string>
     <string name="enable_deezer_lyrics">Enable Deezer lyrics</string>
     <string name="hide_from_home">Hide from home</string>

@@ -40,7 +40,7 @@ internal class LyricsHttpStatusException(
 ) : IllegalStateException("Lyrics request answered with HTTP $status")
 
 internal object LyricsHttp {
-    const val USER_AGENT = "ArchiveTune (https://github.com/rukamori)"
+    const val USER_AGENT = "Natune (https://github.com/NatuneGroup/Natune)"
 
     /**
      * Sends a GET. Unlike the Android helper this does not turn transport errors into null:

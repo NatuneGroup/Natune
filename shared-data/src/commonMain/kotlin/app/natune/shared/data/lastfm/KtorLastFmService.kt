@@ -390,7 +390,7 @@ class KtorLastFmService(
         }
 
     companion object {
-        private const val USER_AGENT = "ArchiveTune (https://github.com/rukamori/ArchiveTune)"
+        private const val USER_AGENT = "Natune (https://github.com/NatuneGroup/Natune)"
         private const val MAX_RESPONSE_BYTES = 256 * 1024
 
         /** A local code for a reply that cannot be read. Last.fm never uses 0, and it is treated as retryable. */

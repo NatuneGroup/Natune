@@ -48,7 +48,7 @@ internal fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrim
 internal fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
 
 internal object LyricsProviderHttp {
-    const val USER_AGENT = "ArchiveTune (https://github.com/rukamori)"
+    const val USER_AGENT = "Natune (https://github.com/NatuneGroup/Natune)"
 
     val json =
         Json {
