@@ -129,10 +129,10 @@ import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.utils.defaultStorefront
-import moe.rukamori.archivetune.utils.SpeedDialPin
-import moe.rukamori.archivetune.utils.SpeedDialPinType
+import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPin
+import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.utils.isLocalMediaId
-import moe.rukamori.archivetune.utils.parseSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.audiosource.AmazonTrackPick
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.constants.AmazonEnabledKey
@@ -143,8 +143,8 @@ import moe.rukamori.archivetune.constants.SongSourceOverrideKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
-import moe.rukamori.archivetune.utils.serializeSpeedDialPins
-import moe.rukamori.archivetune.utils.toggleSpeedDialPin
+import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
 import java.time.LocalDateTime
 import kotlin.math.abs
 import kotlin.math.log2

@@ -130,8 +130,8 @@ import moe.rukamori.archivetune.constants.ListenTogetherUsernameKey
 import moe.rukamori.archivetune.listentogether.ConnectionState
 import moe.rukamori.archivetune.listentogether.JoinRequestPayload
 import moe.rukamori.archivetune.listentogether.ListenTogetherEvent
-import moe.rukamori.archivetune.listentogether.ListenTogetherProtocol
-import moe.rukamori.archivetune.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherProtocol
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.constants.ListenTogetherServerUrlKey
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem

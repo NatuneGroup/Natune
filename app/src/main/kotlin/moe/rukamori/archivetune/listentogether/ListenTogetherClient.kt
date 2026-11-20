@@ -9,10 +9,10 @@
  * vivi-music's listentogether.ListenTogetherClient (GPL-3.0).
  */
 
-
-
 package moe.rukamori.archivetune.listentogether
 
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherProtocol
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import android.util.Base64
 import android.Manifest
 import android.app.NotificationChannel

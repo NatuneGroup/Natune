@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.utils
 
+import moe.rukamori.archivetune.shared.domain.update.replacementDownloadOffer
+
 import android.content.Context
 import android.content.Intent
 import android.os.Build
