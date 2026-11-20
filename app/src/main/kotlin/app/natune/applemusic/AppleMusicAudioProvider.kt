@@ -220,8 +220,9 @@ object AppleMusicAudioProvider {
 
     /**
      * Search the catalog and resolve every plausible candidate to a playable stream. The
-     * caller applies the shared metadata-match gate ([app.natune.audiosource
-     * .TitleMatch]) to pick the winner, so candidates are returned in search-rank order.
+     * caller applies the shared metadata-match gate
+     * ([app.natune.shared.domain.source.TitleMatch]) to pick the winner, so candidates are
+     * returned in search-rank order.
      * Empty when the tokens are missing/unauthorized or nothing resolved.
      */
     suspend fun resolveCandidates(

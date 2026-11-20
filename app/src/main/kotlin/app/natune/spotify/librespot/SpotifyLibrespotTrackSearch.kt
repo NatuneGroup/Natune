@@ -2,7 +2,7 @@ package app.natune.spotify.librespot
 
 import java.util.concurrent.TimeUnit
 import app.natune.audiosource.DirectStream
-import app.natune.audiosource.TitleMatch
+import app.natune.shared.domain.source.TitleMatch
 import app.natune.audiosource.executeCancellable
 import app.natune.audiosource.withAudioSourceAttemptDeadline
 import app.natune.constants.AudioSourceType

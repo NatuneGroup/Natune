@@ -8,7 +8,7 @@
  * Playing a track from the signed-in user's own QQ Music account.
  * The shape is the same as every other source here: the playback layer hands over the metadata it
  * knows, this turns it into a playable stream, and the shared
- * [app.natune.audiosource.TitleMatch] gate decides whether what came back really is
+ * [app.natune.shared.domain.source.TitleMatch] gate decides whether what came back really is
  * the right track. What is unusual is that QQ Music is addressed by resource name rather than by
  * track, so the work is: find the catalogue entry, learn its resource id, ask for that resource at
  * the quality the user chose, and — only when the service answers with a protected container rather
@@ -36,7 +36,7 @@ import app.natune.audiosource.DirectStream
 import app.natune.audiosource.executeCancellable
 import app.natune.audiosource.rethrowIfAudioSourceCancelled
 import app.natune.audiosource.withAudioSourceAttemptDeadline
-import app.natune.audiosource.TitleMatch
+import app.natune.shared.domain.source.TitleMatch
 import app.natune.constants.AudioSourceType
 import app.natune.constants.QqAudioQuality
 import okhttp3.OkHttpClient

@@ -45,7 +45,7 @@ import app.natune.audiosource.DirectStream
 import app.natune.audiosource.SongSourceOverride
 import app.natune.audiosource.SongSourceQobuzBackupVideoId
 import app.natune.audiosource.SongSourceQobuzTrackId
-import app.natune.audiosource.TitleMatch
+import app.natune.shared.domain.source.TitleMatch
 import app.natune.audiosource.AudioSourceConfig
 import app.natune.constants.AudioQuality
 import app.natune.constants.AudioQualityKey
