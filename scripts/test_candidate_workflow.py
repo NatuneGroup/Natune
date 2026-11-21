@@ -25,13 +25,13 @@ RELEASE_WORKFLOW = ROOT / ".github/workflows/_release-artifacts.yml"
 CANDIDATE_JOB = "android-release-candidate"
 SIGNING_NAMES = ("KEYSTORE", "KEY_ALIAS", "KEYSTORE_PASSWORD", "KEY_PASSWORD")
 BASELINE_URL = (
-    "https://github.com/NatuneGroup/Natune/releases/download/N20261109/"
+    "https://github.com/NatuneGroup/Natune/releases/download/N202611211020/"
     "app-gms-mobile-arm64-nightly.apk"
 )
-BASELINE_SHA256 = "2cb8bd3fbed1ce396d9b85bd9cf1b1e6e7235a2663d2ff848943780c2d6ff034"
-BASELINE_BYTES = "23617037"
-BASELINE_VERSION_CODE = "1794231625"
-BASELINE_SIGNER_SHA256 = "6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9"
+BASELINE_SHA256 = "69f61cc5fdaf554dc3087c0658c955dd01f68b0e5631a68f9b2378ee51677a92"
+BASELINE_BYTES = "26107388"
+BASELINE_VERSION_CODE = "1795263292"
+BASELINE_SIGNER_SHA256 = "c26a1a6f5bbc62f50330bf5631fd6a7902f3dff7171a68023053d913a2288c17"
 SOURCE_SHA = "a" * 40
 VERSION_NAME = "candidate-" + SOURCE_SHA[:12]
 RESERVED_VERSION_CODE = "1793753800"
@@ -328,6 +328,12 @@ class WorkflowStructureTest(unittest.TestCase):
         self.assertIn(f"BASELINE_BYTES: '{BASELINE_BYTES}'", final)
         self.assertIn(f"BASELINE_VERSION_CODE: '{BASELINE_VERSION_CODE}'", final)
 
+    def test_nightly_pruning_keeps_the_pinned_baseline_release(self):
+        tag = BASELINE_URL.split("/releases/download/")[1].split("/")[0]
+        release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(f"CANDIDATE_BASELINE_TAG: {tag}", release)
+        self.assertIn('"$NIGHTLY_TAG" == "$CANDIDATE_BASELINE_TAG"', release)
+
     def test_published_version_acquisition_is_complete_and_file_backed(self):
         gate = step_block("Validate the reserved version above source and published floors")
         self.assertIn('mktemp "$RUNNER_TEMP/candidate-release-bodies.XXXXXX"', gate)
@@ -373,7 +379,7 @@ class WorkflowStructureTest(unittest.TestCase):
         self.assertIn("NIGHTLY_BUILD_HASH: ${{ github.sha }}", assemble)
         self.assertIn("PULL_REQUEST: 'false'", assemble)
         self.assertIn('VERSION_NAME_OVERRIDE="candidate-${SOURCE_SHA:0:12}"', script)
-        self.assertNotIn("1794231625", script)
+        self.assertNotIn("1795263292", script)
         self.assertNotIn("VERSION_CODE_OVERRIDE: 1793", assemble)
 
     def test_provider_environment_matches_the_release_android_leg(self):
@@ -461,7 +467,7 @@ class CandidatePreflightTest(unittest.TestCase):
                 result = self.preflight(CANDIDATE_VERSION_CODE=value)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("candidate_version_code", result.stdout + result.stderr)
-        for value in ("6834", "1794231626", "2147483647"):
+        for value in ("6834", "1795263293", "2147483647"):
             with self.subTest(value=value):
                 self.assertEqual(0, self.preflight(CANDIDATE_VERSION_CODE=value).returncode)
 
@@ -606,15 +612,15 @@ class VersionGateTest(unittest.TestCase):
         )
 
     def test_version_above_all_floors_passes(self):
-        result = self.gate(1794231626, ["<!-- at-build:1794231625 -->"])
+        result = self.gate(1795263293, ["<!-- at-build:1795263292 -->"])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("newest_published_version_code=1794231625", result.stdout)
+        self.assertIn("newest_published_version_code=1795263292", result.stdout)
 
     def test_equal_or_lower_source_baseline_and_published_codes_fail(self):
         cases = [
-            (6833, ["<!-- at-build:1794231625 -->"], "source floor"),
-            (1794231625, ["<!-- at-build:1794231625 -->"], "measured baseline"),
-            (1794231626, ["<!-- at-build:1800000000 -->"], "newest published build"),
+            (6833, ["<!-- at-build:1795263292 -->"], "source floor"),
+            (1795263292, ["<!-- at-build:1795263292 -->"], "measured baseline"),
+            (1795263293, ["<!-- at-build:1800000000 -->"], "newest published build"),
         ]
         for version, bodies, message in cases:
             with self.subTest(version=version):
@@ -623,20 +629,20 @@ class VersionGateTest(unittest.TestCase):
                 self.assertIn(message, result.stdout + result.stderr)
 
     def test_partial_api_output_then_failure_never_parses(self):
-        result = self.gate(1794231626, ["<!-- at-build:1794231625 -->"], gh_fail=True)
+        result = self.gate(1795263293, ["<!-- at-build:1795263292 -->"], gh_fail=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("API read did not complete", result.stdout + result.stderr)
         self.assertNotIn("newest_published_version_code", result.stdout)
 
     def test_api_failure_without_output_fails_closed(self):
-        result = self.gate(1794231626, [], gh_fail=True)
+        result = self.gate(1795263293, [], gh_fail=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("API read did not complete", result.stdout + result.stderr)
 
     def test_empty_or_no_usable_published_marker_fails_closed(self):
         for bodies in ([], [""], ["no marker"], ["null"]):
             with self.subTest(bodies=bodies):
-                result = self.gate(1794231626, bodies)
+                result = self.gate(1795263293, bodies)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("no usable build declaration", result.stdout + result.stderr)
 
@@ -645,7 +651,7 @@ class VersionGateTest(unittest.TestCase):
             1900000000,
             [
                 "stable notes\n<!-- at-build:1700000000 -->\nmore notes",
-                "nightly notes\n<!-- at-build:1794231625 -->",
+                "nightly notes\n<!-- at-build:1795263292 -->",
                 "<!-- at-build:1800000000 -->",
             ],
         )
@@ -655,11 +661,11 @@ class VersionGateTest(unittest.TestCase):
     def test_malformed_marker_next_to_a_valid_marker_fails_closed(self):
         for malformed in (
             "<!-- at-build:+1800000000 -->",
-            "<!-- at-build:1794231625garbage -->",
-            "<!-- at-build:1794231625 --> trailing",
+            "<!-- at-build:1795263292garbage -->",
+            "<!-- at-build:1795263292 --> trailing",
         ):
             with self.subTest(malformed=malformed):
-                result = self.gate(1794231626, ["<!-- at-build:1794231625 -->", malformed])
+                result = self.gate(1795263293, ["<!-- at-build:1795263292 -->", malformed])
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("malformed at-build declaration", result.stdout + result.stderr)
                 self.assertNotIn("newest_published_version_code", result.stdout)
@@ -670,12 +676,12 @@ class VersionGateTest(unittest.TestCase):
             "<!-- at-build:-1 -->",
             "<!-- at-build:1.5 -->",
             "<!-- at-build:abc -->",
-            "<!-- at-build:01794231625 -->",
-            "<!-- at-build: 1794231625 -->",
-            "at-build:1794231625",
-            "prefix <!-- at-build:1794231625 -->",
-            "<!-- at-build:1794231625",
-            "<!-- at-build:1794231625 ->",
+            "<!-- at-build:01795263292 -->",
+            "<!-- at-build: 1795263292 -->",
+            "at-build:1795263292",
+            "prefix <!-- at-build:1795263292 -->",
+            "<!-- at-build:1795263292",
+            "<!-- at-build:1795263292 ->",
         ):
             with self.subTest(marker=marker):
                 result = self.gate(2147483647, [marker])
@@ -693,7 +699,7 @@ class VersionGateTest(unittest.TestCase):
                 self.assertIn("positive Int range", result.stdout + result.stderr)
 
     def test_source_floor_is_read_from_the_current_build_script(self):
-        result = self.gate(6999, ["<!-- at-build:1794231625 -->"], floor=7000)
+        result = self.gate(6999, ["<!-- at-build:1795263292 -->"], floor=7000)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("source floor 7000", result.stdout + result.stderr)
 
