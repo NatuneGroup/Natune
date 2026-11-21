@@ -11,8 +11,11 @@
 
 package app.natune.listentogether
 
+import app.natune.kmp.data.AndroidListenTogetherGzip
+import app.natune.shared.data.listentogether.ListenTogetherMessageCodec
 import app.natune.shared.data.listentogether.ListenTogetherProtocol
 import app.natune.shared.data.listentogether.ListenTogetherServers
+import app.natune.shared.data.listentogether.MessageFormat
 import android.util.Base64
 import android.Manifest
 import android.app.NotificationChannel
@@ -323,8 +326,6 @@ class ListenTogetherClient @Inject constructor(
     private val _events = MutableSharedFlow<ListenTogetherEvent>()
     val events: SharedFlow<ListenTogetherEvent> = _events.asSharedFlow()
 
-
-
     /**
      * Observe network changes to trigger reconnections
      */
@@ -467,9 +468,8 @@ class ListenTogetherClient @Inject constructor(
         encodeDefaults = true
     }
 
-    // Message codec - starts with JSON (DEPRECATED) for backward compatibility
-    // Automatically upgrades to Protobuf when supported
-    private val codec = MessageCodec(MessageFormat.JSON, false)
+    // Starts with JSON (deprecated, kept for older servers) and upgrades to protobuf when the server speaks it.
+    private val codec = ListenTogetherMessageCodec(MessageFormat.JSON, false, AndroidListenTogetherGzip())
 
     private var webSocket: WebSocket? = null
     private var pingJob: Job? = null
@@ -1166,7 +1166,7 @@ class ListenTogetherClient @Inject constructor(
 
         try {
             // Detect format and auto-upgrade codec if needed
-            val detectedFormat = MessageCodec.detectMessageFormat(data)
+            val detectedFormat = ListenTogetherMessageCodec.detectMessageFormat(data)
             if (detectedFormat == MessageFormat.PROTOBUF && codec.format == MessageFormat.JSON) {
                 codec.format = MessageFormat.PROTOBUF
                 codec.compressionEnabled = true

@@ -1,25 +1,16 @@
-/*
- * ArchiveTune (2026)
- * © vossgraves — github.com/vossgraves
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- *
- * Wire-format tests for the hand-rolled Listen Together protobuf layer. These pin the encoding
- * against app/src/main/proto/listentogether.proto so a future edit to ProtoWire/MessageCodec cannot
- * silently change what the servers receive.
- */
+package app.natune.shared.data.listentogether
 
+// Wire-format tests for the hand-rolled Listen Together protobuf layer, moved from the Android app. They pin
+// the encoding against app/src/main/proto/listentogether.proto so an edit to ListenTogetherWire or the codec
+// cannot silently change what the servers receive.
 
+import app.natune.listentogether.*
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
-package app.natune.listentogether
-
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
-
-class ProtoWireTest {
+class ListenTogetherWireTest {
     @Test
     fun `string field encodes as tag length bytes`() {
         val writer = ProtoWriter()
@@ -114,7 +105,7 @@ class ProtoWireTest {
 
     @Test
     fun `create room payload round trips through the codec`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         val encoded = codec.encode(MessageTypes.CREATE_ROOM, CreateRoomPayload("alice"))
 
         val (type, payload) = codec.decode(encoded)
@@ -126,7 +117,7 @@ class ProtoWireTest {
 
     @Test
     fun `playback action payload round trips with every field`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         val payload = PlaybackActionPayload(
             action = PlaybackActions.PLAY,
             trackId = "track-1",
@@ -156,7 +147,7 @@ class ProtoWireTest {
 
     @Test
     fun `suggest track payload keeps an all defaults track present`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         val encoded = codec.encode(
             MessageTypes.SUGGEST_TRACK,
             SuggestTrackPayload(TrackInfo(id = "", title = "", artist = "", duration = 0L))
@@ -188,7 +179,7 @@ class ProtoWireTest {
         }
         writer.writeFloat(6, 0.8f)
 
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         val decoded = codec.decodePayload(
             MessageTypes.SYNC_STATE,
             writer.toByteArray(),
@@ -206,7 +197,7 @@ class ProtoWireTest {
 
     @Test
     fun `room state decodes users and tracks`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         // JOIN_APPROVED carries RoomState at field 4.
         val joinApproved = ProtoWriter()
         joinApproved.writeString(1, "ROOM")
@@ -248,13 +239,13 @@ class ProtoWireTest {
 
     @Test
     fun `no payload decodes as null`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         assertNull(codec.decodePayload(MessageTypes.BUFFER_READY, ByteArray(0), MessageFormat.PROTOBUF))
     }
 
     @Test
     fun `envelope round trips compression flag`() {
-        val codec = MessageCodec(format = MessageFormat.PROTOBUF)
+        val codec = ListenTogetherMessageCodec(format = MessageFormat.PROTOBUF)
         val (type, payload) = codec.decode(codec.encode(MessageTypes.BUFFER_READY, BufferReadyPayload("t-7")))
         assertEquals(MessageTypes.BUFFER_READY, type)
         assertEquals(BufferReadyPayload("t-7"), codec.decodePayload(type, payload, MessageFormat.PROTOBUF))
