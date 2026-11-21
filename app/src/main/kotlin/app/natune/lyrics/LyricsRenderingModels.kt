@@ -19,11 +19,7 @@ enum class LyricsSourceFormat {
     TTML,
 }
 
-enum class LyricsLineAlignment {
-    START,
-    END,
-    CENTER,
-}
+typealias LyricsLineAlignment = app.natune.shared.ui.lyrics.LyricsLineAlignment
 
 enum class LyricsTextDirection {
     LTR,
