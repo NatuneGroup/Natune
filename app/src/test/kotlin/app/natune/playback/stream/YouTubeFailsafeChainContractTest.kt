@@ -222,7 +222,6 @@ class YouTubeFailsafeChainContractTest {
             },
             innerTuneXRepository = repository { error("Native success must stop fallback") },
             newPipeRepository = repository { error("Native success must stop fallback") },
-            ytdlnisRepository = repository { error("Native success must stop fallback") },
             elapsedRealtime = { testScheduler.currentTime },
         )
         try {
@@ -282,7 +281,6 @@ class YouTubeFailsafeChainContractTest {
         nativeRepository = repository { error("Shipped recovery must not repeat the primary") },
         innerTuneXRepository = innerTubeX,
         newPipeRepository = newPipe,
-        ytdlnisRepository = repository { error("External plugin must stay out of shipped recovery") },
         elapsedRealtime = { 0L },
     )
 

@@ -647,11 +647,10 @@ fun NavGraphBuilder.navigationBuilder(
         route = "settings/player/ytdlp?scrollTo={scrollTo}",
         arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val readRuntime = androidx.compose.runtime.remember(context) {
-            suspend { app.natune.kmp.settings.readAndroidYtDlpRuntime(context) }
+        // Android no longer runs another app's yt-dlp/Python, so the runtime reads as unavailable, as on iOS.
+        app.natune.shared.ui.settings.YtDlpRuntimeSettings {
+            app.natune.shared.ui.settings.YtDlpRuntimeStatus(pythonAvailable = false, scriptAvailable = false)
         }
-        app.natune.shared.ui.settings.YtDlpRuntimeSettings(readRuntime)
     }
     composable(
         route = "settings/sources?scrollTo={scrollTo}",

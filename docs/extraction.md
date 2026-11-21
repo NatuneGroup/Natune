@@ -40,9 +40,12 @@ anonymous visitor, and for downloads they prefer MP4/AAC (jaudiotagger cannot ta
 mode passes `LOW` quality to every tier.
 
 `ResolveAudioStreamUseCase.invoke` (the playback prefetch path uses it to warm the next track) wraps the same stack with its own
-cache keyed by `(mediaId, quality, metered, purpose, authFingerprint, pinnedFormatId)` and adds
-**`YtdlnisStreamRepository`** (an external yt-dlp plugin APK through `ytdlp/CompactYtDlp.kt`, the way
-YTDLnis does) after NewPipe; the plugin is optional, so it is not part of the live chain above.
+cache keyed by `(mediaId, quality, metered, purpose, authFingerprint, pinnedFormatId)` and walks the
+same InnerTubeX and NewPipe tiers. It used to add an external yt-dlp tier that executed another
+app's Python and yt-dlp from that app's library directory (YTDLnis or youtubedl-android). That bridge
+is removed: running another package's binary is a code-injection pattern antivirus engines flag,
+Natune would run whatever that package shipped, and without a `<queries>` entry it could not see
+those packages on Android 11+ anyway.
 `ResolvedAudioStream.source` records which tier won (`NATIVE_INNERTUBE`, `INNERTUBE_X`,
 `NEWPIPE`, `YT_DLP`).
 
