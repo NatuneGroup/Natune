@@ -59,10 +59,10 @@ class ScheduledBackupWorker(
         val treeUri = requireNotNull(settings.directoryUri)
         val fileName =
             if (settings.overwriteExisting) {
-                "${applicationContext.getString(R.string.app_name)}.backup"
+                "${applicationContext.getString(R.string.app_name)}.zip"
             } else {
                 val timestamp = LocalDateTime.now().format(FILE_TIMESTAMP_FORMATTER)
-                "${applicationContext.getString(R.string.app_name)}_$timestamp.backup"
+                "${applicationContext.getString(R.string.app_name)}_$timestamp.zip"
             }
 
         if (settings.overwriteExisting) {
@@ -114,7 +114,7 @@ class ScheduledBackupWorker(
     }
 
     companion object {
-        private const val BACKUP_MIME_TYPE = "application/octet-stream"
+        private const val BACKUP_MIME_TYPE = "application/zip"
         private val FILE_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
     }
 }

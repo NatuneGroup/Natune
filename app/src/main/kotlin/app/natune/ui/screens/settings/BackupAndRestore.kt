@@ -182,7 +182,7 @@ fun BackupAndRestore(
     }
 
     val backupLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             if (uri != null) {
                 viewModel.backup(context, uri, pendingBackupCategories)
             }
@@ -503,7 +503,7 @@ fun BackupAndRestore(
                 showBackupOptionsDialog = false
                 val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
                 backupLauncher.launch(
-                    "${context.getString(R.string.app_name)}_${LocalDateTime.now().format(formatter)}.backup",
+                    "${context.getString(R.string.app_name)}_${LocalDateTime.now().format(formatter)}.zip",
                 )
             },
             onDismiss = { showBackupOptionsDialog = false },

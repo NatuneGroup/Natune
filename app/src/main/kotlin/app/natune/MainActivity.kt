@@ -3755,9 +3755,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isBackupUri(uri: Uri?): Boolean {
-        if (uri == null) return false
-        val path = uri.lastPathSegment?.lowercase(Locale.US)
-        return path?.endsWith(".backup") == true || uri.toString().lowercase(Locale.US).endsWith(".backup")
+        return uri != null && app.natune.backup.BackupArchiveLayout.isBackupFileName(uri.lastPathSegment, uri.toString())
     }
 
     private fun handleIntent(
