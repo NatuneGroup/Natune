@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.natune.LocalBlurPolicy
+import app.natune.shared.ui.home.HomeTopFadeBlur
 import app.natune.ui.component.rememberLiquidGlassEnabled
 import app.natune.LocalStableSystemBarsTopPadding
 import app.natune.R

@@ -63,6 +63,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
+import app.natune.shared.ui.home.HomeAtmosphereBackground
 import kotlinx.coroutines.CoroutineScope
 import app.natune.LocalPlayerAwareWindowInsets
 import app.natune.LocalPlayerConnection

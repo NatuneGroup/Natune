@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import app.natune.LocalBlurPolicy
+import app.natune.shared.ui.home.HomeAtmosphereBackground
 
 /**
  * The Spotify page's background: the app's blurred atmosphere, or the flat surface when blur is off.

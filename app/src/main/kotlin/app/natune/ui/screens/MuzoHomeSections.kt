@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.natune.R
+import app.natune.shared.ui.home.HomeAtmosphereBackground
 
 private val MuzoGutter = 20.dp
 

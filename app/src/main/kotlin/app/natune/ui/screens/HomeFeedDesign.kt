@@ -11,7 +11,6 @@ package app.natune.ui.screens
 import android.os.Build
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -34,7 +33,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -55,12 +53,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +65,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import app.natune.shared.ui.home.HomeTopFadeBlur
+import app.natune.shared.ui.home.homeFeedThumbnailBorder
+import app.natune.shared.ui.home.homeHeroCardWidth
 import kotlinx.coroutines.CoroutineScope
 import app.natune.ui.component.rememberLiquidGlassEnabled
 import app.natune.db.entities.Album
@@ -123,42 +122,11 @@ val HomeShelfCardSpacing = 14.dp
 /** Vertical gap between the end of one shelf and the header of the next (BitChord: 26dp). */
 val HomeShelfBottomSpacing = 26.dp
 
-/** Share of the row a lead-shelf hero card takes, so the next one peeks in past it. */
-private const val HomeHeroCardFraction = 0.70f
-
-/** How wide a hero card is ever allowed to get (tablet ceiling). */
-private val HomeHeroCardMaxWidth = 320.dp
-
 /** A hero card's proportions: a touch taller than it is wide. */
 const val HomeHeroCardRatio = 0.92f
 
 /** Corner radius of a hero card. */
 val HomeHeroCardCorner = 18.dp
-
-/**
- * How wide a hero card should be in a row [available] wide — the shared answer
- * for the real shelf and for the skeleton that stands in for it, which have to
- * agree to the pixel or the feed jumps when the data lands.
- */
-fun homeHeroCardWidth(available: Dp): Dp = minOf(available * HomeHeroCardFraction, HomeHeroCardMaxWidth)
-
-/**
- * The hairline border every thumbnail carries (BitChord thumbnailBorder):
- * 1dp at 15% alpha, white on dark themes and black on light ones, clipped to
- * the artwork's shape. Keeps pale sleeves from dissolving into the background
- * (and dark ones into a dark theme).
- */
-fun Modifier.homeFeedThumbnailBorder(shape: Shape): Modifier =
-    composed {
-        val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-        then(
-            Modifier.border(
-                width = 1.dp,
-                color = if (dark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.15f),
-                shape = shape,
-            ),
-        )
-    }
 
 // Shimmer skeletons (ported from BitChord Skeletons.kt). Grey stand-ins for
 // content still on the wire, laid out to the same metrics as the real rows
@@ -741,142 +709,6 @@ fun HomePullRefreshLine(
 // edge is a line drawn across whatever scrolls under it. Fading out instead
 // leaves the title and actions something to be legible against and the page
 // nothing to be interrupted by.
-
-/**
- * The run the fade needs below the bar to get from full blur to none without
- * the eye finding where it got there. Shortened from BitChord's 120 to 88:
- * the page's first heading sits a fixed distance down the screen, well
- * inside this run, and over 120dp the ramp still had a tenth of its blur
- * left there. The tail is what hides the layer's end, so it cannot be cut;
- * 88 is as short as it goes before the ramp starts to be findable.
- */
-private val HomeTopFadeRun = 88.dp
-
-/**
- * How dark the readability scrim starts, at the very top of the strip.
- * Modest on purpose: it is there to give the glyphs a floor on a pale sleeve,
- * not to grey out the artwork.
- */
-private const val HomeTopScrimPeak = 0.42f
-
-/** Enough stops that the ramp does not band across a near-flat colour. */
-private const val HomeTopScrimStops = 12
-
-/**
- * The top-fade scrim behind the home top bar, keyed to the colour of the page
- * underneath rather than the theme's background so it dissolves into whatever
- * the page actually is. It is a plain gradient, not a blur, so nothing has to
- * tag the list as a haze source (a source records its content into a layer
- * every frame whether or not anything samples it).
- */
-@Composable
-fun HomeTopFadeBlur(
-    pageColor: Color,
-    barHeight: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val height = barHeight + HomeTopFadeRun
-    val scrim =
-        remember(pageColor) {
-            Brush.verticalGradient(
-                // The same eased-out shape as the blur above it, so the two arrive
-                // at nothing together. A scrim that outlasted the blur would leave
-                // a tinted band hanging below a fade that had already finished.
-                colorStops =
-                    Array(HomeTopScrimStops) { i ->
-                        val t = i / (HomeTopScrimStops - 1f)
-                        t to pageColor.copy(alpha = HomeTopScrimPeak * (1f - EaseOutCubic.transform(t)))
-                    },
-            )
-        }
-    Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(height)
-                .background(scrim),
-    )
-}
-
-/**
- * The Home route's backdrop: three soft colour pools over a base the theme owns, so the page
- * reads as a place rather than as a flat sheet the feed happens to sit on. Drawn full-bleed behind
- * everything, loading and empty states included, and only where the blur it sits under is wanted —
- * it is atmosphere for the glass, and on its own it would just be a tinted page.
- */
-@Composable
-fun HomeAtmosphereBackground(modifier: Modifier = Modifier) {
-    val surface = MaterialTheme.colorScheme.surface
-    val dark = surface.luminance() < 0.5f
-    // The page base is drawn from the theme rather than being a colour of its own, so the top-fade
-    // scrim — keyed to the colour of the page underneath it — keeps matching, and a pure-black
-    // page has nothing to mismatch with either.
-    val base =
-        if (dark && surface != Color.Black) {
-            MaterialTheme.colorScheme.surfaceContainerLowest
-        } else {
-            surface
-        }
-    val glow = if (dark) 0.17f else 0.12f
-    Box(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .background(base)
-                .drawWithCache {
-                    val w = size.width
-                    val h = size.height
-                    val violet = Color(0xFF7B4DFF)
-                    val teal = Color(0xFF00B8A9)
-                    val blue = Color(0xFF2E6BFF)
-                    val topWash =
-                        if (dark) {
-                            Brush.verticalGradient(
-                                colors = listOf(Color.White.copy(alpha = 0.045f), Color.Transparent),
-                                startY = 0f,
-                                endY = h * 0.22f,
-                            )
-                        } else {
-                            Brush.verticalGradient(
-                                colors = listOf(Color.White.copy(alpha = 0.5f), Color.Transparent),
-                                startY = 0f,
-                                endY = h * 0.16f,
-                            )
-                        }
-                    val violetBrush =
-                        Brush.radialGradient(
-                            colors = listOf(violet.copy(alpha = glow), Color.Transparent),
-                            center = Offset(w * 0.12f, h * 0.10f),
-                            radius = w * 0.62f,
-                        )
-                    val tealBrush =
-                        Brush.radialGradient(
-                            colors = listOf(teal.copy(alpha = glow * 0.8f), Color.Transparent),
-                            center = Offset(w * 0.98f, h * 0.30f),
-                            radius = w * 0.55f,
-                        )
-                    val blueBrush =
-                        Brush.radialGradient(
-                            colors = listOf(blue.copy(alpha = glow * 0.85f), Color.Transparent),
-                            center = Offset(w * 0.18f, h * 0.92f),
-                            radius = w * 0.70f,
-                        )
-                    val bottomShade =
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = if (dark) 0.30f else 0.05f)),
-                            startY = h * 0.55f,
-                            endY = h,
-                        )
-                    onDrawBehind {
-                        drawRect(violetBrush)
-                        drawRect(tealBrush)
-                        drawRect(blueBrush)
-                        drawRect(bottomShade)
-                        drawRect(topWash)
-                    }
-                },
-    )
-}
 
 // Shared glass screen-header scrim (used by GlassScreenHeader.kt). Delegates to
 // HomeTopFadeBlur: the page-coloured top fade. Early-returns unless liquid
