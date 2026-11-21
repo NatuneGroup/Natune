@@ -12,6 +12,7 @@ import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import app.natune.BuildConfig
 import app.natune.db.InternalDatabase
 import app.natune.db.MusicDatabase
 import app.natune.extensions.zipOutputStream
@@ -100,10 +101,20 @@ class BackupArchiveRepository
                 context.contentResolver.openOutputStream(uri, "wt")
                     ?: throw IllegalStateException("Failed to open backup destination")
             output.buffered().zipOutputStream().use { zipStream ->
+                // The manifest goes first so a reader knows the archive's origin before anything else.
+                zipStream.putNextEntry(ZipEntry(BackupArchiveLayout.MANIFEST))
+                zipStream.write(
+                    BackupArchiveLayout.manifest(
+                        databaseVersion = InternalDatabase.SCHEMA_VERSION,
+                        createdAtMillis = System.currentTimeMillis(),
+                        appVersion = BuildConfig.VERSION_NAME,
+                    ),
+                )
+                zipStream.closeEntry()
                 if (includePreferences) {
                     emit(BackupArchiveStep.EXPORT_SETTINGS, indeterminate = true)
-                    zipStream.putNextEntry(ZipEntry(SETTINGS_XML_FILENAME))
-                    writeBackupSettingsToXml(zipStream, context.dataStore.data.first(), exportCategories)
+                    zipStream.putNextEntry(ZipEntry(BackupArchiveLayout.SETTINGS_JSON))
+                    writeBackupSettingsToJson(zipStream, context.dataStore.data.first(), exportCategories)
                     zipStream.closeEntry()
                     completedUnits++
                 }

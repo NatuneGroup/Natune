@@ -2,6 +2,21 @@ package app.natune.backup
 
 import androidx.datastore.preferences.core.Preferences
 import java.io.OutputStream
+import app.natune.kmp.settings.sharedSnapshot
+import app.natune.shared.data.backup.PortableBackupFormat
+import app.natune.shared.data.persistence.LegacyDataStorePreferences
+
+/** `settings.json` for a `.zip` backup: Natune's typed entries, filtered exactly like the XML export. */
+internal fun writeBackupSettingsToJson(
+    output: OutputStream,
+    preferences: Preferences,
+    categories: Set<BackupArchiveCategory>,
+) {
+    val included = LegacyDataStorePreferences.filtered(preferences.sharedSnapshot()) {
+        BackupExportPolicy.includes(it, categories)
+    }
+    output.write(PortableBackupFormat.encodeRestoreSettings(included))
+}
 
 internal fun writeBackupSettingsToXml(
     output: OutputStream,

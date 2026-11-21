@@ -8,6 +8,8 @@ import java.io.InputStream
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import app.natune.shared.data.backup.BackupSettingsReader
 import app.natune.shared.data.backup.ReadBackupSettings
 
@@ -23,9 +25,26 @@ import app.natune.shared.data.backup.ReadBackupSettings
 internal object BackupArchiveLayout {
     const val MANIFEST = "backup.json"
     const val SETTINGS_JSON = "settings.json"
+    const val FORMAT = "natune.android.backup"
+    const val FORMAT_VERSION = 1
     private const val MAX_MANIFEST_BYTES = 64 * 1024
     private const val TAG = "BackupArchiveLayout"
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** `.zip` is the current backup layout and `.backup` the older one; the restore screen still checks the contents. */
+    fun isBackupFileName(vararg names: String?): Boolean =
+        names.any { name -> name != null && listOf(".backup", ".zip").any { name.lowercase(java.util.Locale.US).endsWith(it) } }
+
+    /** The manifest every Android `.zip` backup starts with; [isForeign] reads its `format` back. */
+    fun manifest(databaseVersion: Int, createdAtMillis: Long, appVersion: String): ByteArray =
+        buildJsonObject {
+            put("format", FORMAT)
+            put("formatVersion", FORMAT_VERSION)
+            put("platform", "ANDROID")
+            put("databaseVersion", databaseVersion)
+            put("createdAtMillis", createdAtMillis)
+            put("appVersion", appVersion)
+        }.toString().encodeToByteArray()
 
     /** True for another app's archive. An unreadable manifest counts as foreign, so its database is never restored. */
     fun isForeign(manifest: ByteArray?, hasSettingsJson: Boolean): Boolean {

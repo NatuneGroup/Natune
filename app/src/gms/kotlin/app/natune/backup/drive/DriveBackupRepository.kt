@@ -14,7 +14,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import app.natune.backup.BackupArchiveLayout
 import app.natune.backup.BackupArchiveRepository
+import app.natune.shared.data.backup.BackupSettingsReader
+import app.natune.shared.domain.backup.BackupArchiveException
 import app.natune.db.InternalDatabase
 import okhttp3.Call
 import okhttp3.Callback
@@ -180,7 +183,7 @@ class DriveBackupRepository @Inject constructor(@ApplicationContext private val 
                         if (count < 0) break
                         expandedSize += count
                         entrySize += count
-                        if (entry.name == BackupArchiveRepository.SETTINGS_XML_FILENAME && entrySize > MAX_SETTINGS_BYTES) {
+                        if (entry.name in SETTINGS_ENTRIES && entrySize > MAX_SETTINGS_BYTES) {
                             throw DriveBackupException(DriveBackupFailure.INVALID)
                         }
                         if (expandedSize > MAX_EXPANDED_BYTES ||
@@ -189,8 +192,20 @@ class DriveBackupRepository @Inject constructor(@ApplicationContext private val 
                     }
                 }
             }
-            if (InternalDatabase.DB_NAME !in names || BackupArchiveRepository.SETTINGS_XML_FILENAME !in names) {
+            // Older uploads carry settings.xml; .zip-layout ones carry backup.json and settings.json.
+            if (InternalDatabase.DB_NAME !in names || names.none { it in SETTINGS_ENTRIES } ||
+                SETTINGS_ENTRIES.all { it in names }
+            ) {
                 throw DriveBackupException(DriveBackupFailure.INVALID)
+            }
+            if (BackupArchiveLayout.SETTINGS_JSON in names) {
+                val bytes = zip.getInputStream(zip.getEntry(BackupArchiveLayout.SETTINGS_JSON)).use { it.readBytes() }
+                try {
+                    BackupSettingsReader.read(bytes, foreign = false)
+                } catch (_: BackupArchiveException) {
+                    throw DriveBackupException(DriveBackupFailure.INVALID)
+                }
+                return@use
             }
             zip.getInputStream(zip.getEntry(BackupArchiveRepository.SETTINGS_XML_FILENAME)).use { input ->
                 val parser = android.util.Xml.newPullParser()
@@ -275,8 +290,11 @@ class DriveBackupRepository @Inject constructor(@ApplicationContext private val 
         val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
         val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
         val ZIP_TYPE = "application/zip".toMediaType()
+        val SETTINGS_ENTRIES = setOf(BackupArchiveRepository.SETTINGS_XML_FILENAME, BackupArchiveLayout.SETTINGS_JSON)
         val ARCHIVE_ENTRIES = setOf(
             BackupArchiveRepository.SETTINGS_XML_FILENAME,
+            BackupArchiveLayout.MANIFEST,
+            BackupArchiveLayout.SETTINGS_JSON,
             InternalDatabase.DB_NAME,
             "${InternalDatabase.DB_NAME}-wal",
             "${InternalDatabase.DB_NAME}-shm",
