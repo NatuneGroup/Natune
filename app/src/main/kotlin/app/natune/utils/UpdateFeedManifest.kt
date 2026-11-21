@@ -120,5 +120,5 @@ internal fun UpdateFeedManifest.toReleaseInfo(
         publishedAt = publishedAt,
         htmlUrl = releaseUrl.ifBlank { "$releasesBaseUrl/tag/$tag" },
         downloadUrl = assetUrl,
-        versionCode = versionCode.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        versionCode = versionCode,
     )

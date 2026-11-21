@@ -291,11 +291,12 @@ fun ChangelogScreen(
                                     val displayDateFormat = remember { SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()) }
                                     val formattedDate =
                                         remember(release.publishedAt) {
+                                            val publishedAt = release.publishedAt.orEmpty()
                                             try {
-                                                val date = dateFormat.parse(release.publishedAt.substring(0, 10))
-                                                date?.let { displayDateFormat.format(it) } ?: release.publishedAt
+                                                val date = dateFormat.parse(publishedAt.substring(0, 10))
+                                                date?.let { displayDateFormat.format(it) } ?: publishedAt
                                             } catch (e: Exception) {
-                                                release.publishedAt
+                                                publishedAt
                                             }
                                         }
 
