@@ -849,6 +849,15 @@
     <string name="backup_category_library_desc">Playlists, songs, history &amp; artists</string>
     <string name="backup_category_settings">App Settings</string>
     <string name="backup_category_settings_desc">Appearance, playback &amp; preferences</string>
+    <string name="media_verdict_hires_title">Hi-Res Lossless</string>
+    <string name="media_verdict_hires_body">Playback received %1$s at %2$s-bit / %3$s kHz, above CD quality. Every sample reaches the decoder as it was mastered.</string>
+    <string name="media_verdict_lossless_title">Lossless</string>
+    <string name="media_verdict_lossless_body">Playback received %1$s at %2$s-bit / %3$s kHz: CD quality, with nothing removed by compression.</string>
+    <string name="media_verdict_lossy_title">Lossy %1$s</string>
+    <string name="media_verdict_lossy_body">%1$s at %2$d kbps. Lossy codecs drop detail the ear is least likely to miss; from about 256 kbps most listeners cannot hear the difference.</string>
+    <string name="media_verdict_lossy_body_unknown_rate">%1$s, a lossy codec: it drops detail the ear is least likely to miss.</string>
+    <string name="media_verdict_unverified_title">Not confirmed yet</string>
+    <string name="media_verdict_unverified_body">The source lists this stream as %1$s, but playback has not reported the format it decoded, so it is not called lossless until it does.</string>
     <string name="backup_category_account">Account Details</string>
     <string name="backup_category_account_desc">YouTube, Spotify, Last.fm, Libre.fm, Discord &amp; proxy credentials</string>
     <string name="backup_account_password">Password for sign-ins</string>
