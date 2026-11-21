@@ -34,6 +34,13 @@ data class Playlist(
 ) : LocalItem() {
     override val id: String
         get() = playlist.id
+
+    /**
+     * The count to show: the songs stored here, or for a YouTube or Spotify playlist nothing has been
+     * downloaded from yet, the size its source reported. songCount alone reads 0 for every unsynced playlist.
+     */
+    val displaySongCount: Int
+        get() = if (songCount == 0) playlist.remoteSongCount ?: 0 else songCount
     override val title: String
         get() = playlist.name
     override val thumbnailUrl: String?

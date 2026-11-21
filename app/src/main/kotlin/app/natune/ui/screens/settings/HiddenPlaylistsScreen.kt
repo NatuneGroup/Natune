@@ -189,7 +189,7 @@ private fun HiddenPlaylistCard(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "${playlist.songCount} ${stringResource(R.string.tracks_label)}",
+                text = "${playlist.displaySongCount} ${stringResource(R.string.tracks_label)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )

@@ -689,7 +689,7 @@ fun LibraryMixScreen(
                                                 color = MaterialTheme.colorScheme.onBackground,
                                             )
                                             Text(
-                                                text = "${playlist.songCount} ${stringResource(R.string.tracks_label)}",
+                                                text = "${playlist.displaySongCount} ${stringResource(R.string.tracks_label)}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,

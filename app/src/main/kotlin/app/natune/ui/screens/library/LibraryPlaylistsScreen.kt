@@ -724,7 +724,7 @@ fun PlaylistListCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = "${playlist.songCount} ${stringResource(R.string.tracks_label)}",
+                    text = "${playlist.displaySongCount} ${stringResource(R.string.tracks_label)}",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
@@ -887,7 +887,7 @@ fun PlaylistGridCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = "${playlist.songCount} ${stringResource(R.string.tracks_label)}",
+            text = "${playlist.displaySongCount} ${stringResource(R.string.tracks_label)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
         )
