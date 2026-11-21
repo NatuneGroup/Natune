@@ -111,7 +111,7 @@ import app.natune.constants.LocalSongsSortTypeKey
 import app.natune.extensions.toMediaItem
 import app.natune.extensions.togglePlayPause
 import app.natune.localmedia.LocalSongScanConfig
-import app.natune.localmedia.SupportedLocalAudio
+import app.natune.shared.data.localmedia.SupportedLocalAudio
 import app.natune.playback.queues.ListQueue
 import app.natune.ui.component.LargeFrostedTopAppBar
 import app.natune.ui.component.LocalMenuState
