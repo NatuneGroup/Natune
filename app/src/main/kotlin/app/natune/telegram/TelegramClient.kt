@@ -70,13 +70,7 @@ sealed interface TelegramAuthState {
     ) : TelegramAuthState
 }
 
-/** Delivery channel of the current login code, for user-facing copy. */
-enum class TelegramCodeType {
-    TELEGRAM_APP,
-    SMS,
-    CALL,
-    OTHER,
-}
+typealias TelegramCodeType = app.natune.shared.domain.telegram.TelegramCodeType
 
 class TelegramApiException(
     val code: Int,

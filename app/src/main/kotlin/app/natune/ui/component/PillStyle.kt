@@ -80,17 +80,9 @@ private val PillBorderWidth = 1.dp
  */
 val LocalNavigationBarHiddenByScroll = compositionLocalOf { false }
 
-enum class PillRole {
-    NAVIGATION_BAR,
-    MINI_PLAYER,
-    STANDALONE,
-}
+typealias PillRole = app.natune.shared.ui.navigation.PillRole
 
-enum class PillBackdrop {
-    NONE,
-    FROSTED,
-    LIQUID_GLASS,
-}
+typealias PillBackdrop = app.natune.shared.ui.navigation.PillBackdrop
 
 private val NavigationBarStyle.floats: Boolean
     get() = this == NavigationBarStyle.FLOATING || this == NavigationBarStyle.APPLE_MUSIC ||
