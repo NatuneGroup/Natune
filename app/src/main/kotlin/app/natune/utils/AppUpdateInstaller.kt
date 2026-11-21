@@ -12,6 +12,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
+import app.natune.shared.domain.settings.UpdateEligibility
+import app.natune.shared.domain.settings.archiveMatchesOffer
+import app.natune.shared.domain.settings.updateEligibility
+import app.natune.shared.domain.update.replacementDownloadOffer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.prepareGet

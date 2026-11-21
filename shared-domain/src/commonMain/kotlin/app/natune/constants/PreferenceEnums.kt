@@ -642,25 +642,7 @@ enum class SaavnAudioQuality {
             runCatching { valueOf(name?.uppercase() ?: "") }.getOrDefault(QUALITY_320)
     }
 }
-enum class UpdateChannel {
-    STABLE,
-    NIGHTLY,
-    ;
-
-    companion object {
-        fun fromStoredName(
-            value: String?,
-            defaultValue: UpdateChannel,
-        ): UpdateChannel =
-            when (value) {
-                // Legacy aliases: "DAILY_NIGHTLY" from before the pre-release channel had a name,
-                // and "CANARY" from installs that had selected the since-removed Canary channel.
-                // Both land on NIGHTLY.
-                "DAILY_NIGHTLY", "CANARY" -> NIGHTLY
-                else -> entries.firstOrNull { it.name == value } ?: defaultValue
-            }
-    }
-}
+typealias UpdateChannel = app.natune.shared.domain.settings.UpdateChannel
 // ──────────────────────────────────────────────────────────────────────────────
 // Inline / fullscreen music-video player preferences
 // ──────────────────────────────────────────────────────────────────────────────

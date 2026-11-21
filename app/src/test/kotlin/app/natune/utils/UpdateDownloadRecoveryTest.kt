@@ -1,6 +1,8 @@
 package app.natune.utils
 
 import app.natune.constants.UpdateChannel
+import app.natune.shared.domain.settings.updateRequestIsCurrent
+import app.natune.shared.domain.update.replacementDownloadOffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

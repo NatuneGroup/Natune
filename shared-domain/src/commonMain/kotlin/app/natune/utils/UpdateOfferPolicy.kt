@@ -1,42 +1,9 @@
 package app.natune.utils
 
-import app.natune.constants.UpdateChannel
+import app.natune.shared.domain.settings.UpdateEligibility
+import app.natune.shared.domain.settings.updateEligibility
 
-/** A resolved release is immutable from its eligibility check through the user's action. */
-data class UpdateOffer(
-    val channel: UpdateChannel,
-    val tag: String,
-    val versionCode: Int,
-    val versionName: String,
-    val notes: String?,
-    val downloadUrl: String,
-) {
-    val identity: String get() = "${channel.name}|$tag|$versionCode"
-}
-
-enum class UpdateEligibility { NEWER, NOT_NEWER, UNKNOWN_BUILD_CODE }
-
-fun updateEligibility(candidateCode: Int?, installedCode: Int): UpdateEligibility =
-    when {
-        candidateCode == null || candidateCode <= 0 -> UpdateEligibility.UNKNOWN_BUILD_CODE
-        candidateCode > installedCode -> UpdateEligibility.NEWER
-        else -> UpdateEligibility.NOT_NEWER
-    }
-
-fun updateRequestIsCurrent(
-    requestChannel: UpdateChannel,
-    requestRevision: Long,
-    selectedChannel: UpdateChannel,
-    selectionRevision: Long,
-): Boolean = requestChannel == selectedChannel && requestRevision == selectionRevision
-
-fun archiveMatchesOffer(
-    candidateCode: Int,
-    archiveCode: Long?,
-    installedCode: Int,
-    sourceMatches: Boolean,
-): Boolean = sourceMatches && updateEligibility(candidateCode, installedCode) == UpdateEligibility.NEWER &&
-    archiveCode == candidateCode.toLong()
+typealias UpdateOffer = app.natune.shared.domain.settings.UpdateOffer
 
 /**
  * What a tap on an update action must do. Deciding this as a pure function keeps every terminal

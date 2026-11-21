@@ -11,6 +11,8 @@ package app.natune.utils
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import app.natune.shared.domain.settings.eligibleUpdateOffer
+import app.natune.shared.domain.settings.updateRequestIsCurrent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
@@ -284,11 +286,9 @@ object Updater {
         channel: UpdateChannel,
         installedCode: Int = BuildConfig.VERSION_CODE,
     ): UpdateOffer? {
+        val url = (if (canDownloadUpdatesDirectly) release.downloadUrl else release.htmlUrl).takeIf { isUpdaterDistribution }
         val code = releaseBuildCode(release, channel)
-        if (!isUpdaterDistribution || updateEligibility(code, installedCode) != UpdateEligibility.NEWER) return null
-        val url = if (canDownloadUpdatesDirectly) release.downloadUrl else release.htmlUrl
-        if (url.isNullOrBlank()) return null
-        return UpdateOffer(channel, release.tagName, code!!, releaseVersionName(release, channel), release.body, url)
+        return eligibleUpdateOffer(channel, release.tagName, code, releaseVersionName(release, channel), release.body, url, installedCode)
     }
 
     private val channelCheckTimes = java.util.concurrent.ConcurrentHashMap<UpdateChannel, Long>()
