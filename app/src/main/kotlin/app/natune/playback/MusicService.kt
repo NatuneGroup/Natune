@@ -272,7 +272,7 @@ import app.natune.audiosource.SongSourceAmazonPickKey
 import app.natune.audiosource.SongSourceOverride
 import app.natune.audiosource.SongSourceQobuzBackupVideoId
 import app.natune.audiosource.SongSourceQobuzTrackId
-import app.natune.audiosource.TitleMatch
+import app.natune.shared.domain.source.TitleMatch
 import app.natune.audiosource.enabledPlaybackSources
 import app.natune.audiosource.canUseCachedPlaybackSource
 import app.natune.audiosource.rethrowIfAudioSourceCancelled

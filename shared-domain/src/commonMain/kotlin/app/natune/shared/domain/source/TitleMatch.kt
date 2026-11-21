@@ -262,7 +262,7 @@ object TitleMatch {
         }
     }
 
-    private fun jaroWinkler(
+    fun jaroWinkler(
         a: String,
         b: String,
     ): Double {

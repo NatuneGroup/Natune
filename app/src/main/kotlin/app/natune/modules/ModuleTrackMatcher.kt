@@ -7,7 +7,7 @@
 
 package app.natune.modules
 
-import app.natune.audiosource.TitleMatch
+import app.natune.shared.domain.source.TitleMatch
 import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.abs

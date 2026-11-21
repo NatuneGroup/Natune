@@ -43,7 +43,7 @@ gradle.projectsEvaluated {
         }
     }
     def contracts = [
-        'DirectStream', 'TitleMatch', 'AudioSourceConfig',
+        'AudioSourceConfig',
         'SongSourceOverride', 'SongSourceQobuzTrackId', 'SongSourceQobuzBackupVideoId', 'CurrentStreamInfo',
         'PlaybackSourceSelection',
     ]
