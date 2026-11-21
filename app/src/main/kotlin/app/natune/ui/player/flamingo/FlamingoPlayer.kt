@@ -168,6 +168,7 @@ import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.Timeline
 import androidx.navigation.NavController
+import app.natune.ui.player.CodecBadge
 import app.natune.LocalDatabase
 import app.natune.db.entities.ArtistEntity
 import moe.rukamori.archivetune.innertube.YouTube
@@ -4507,66 +4508,12 @@ private fun FlamingoQualityIndicator(
     onQualityClick: () -> Unit = {},
 ) {
     if (currentFormat == null) return
-
-    val quality = currentFormat.streamQuality()
-    val isLossless = quality.isLossless
-    val text = quality.label()
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(20.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onQualityClick,
-            ),
+            .height(20.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .overlayEffect()
-                .background(
-                    color = Color(0x14FFFFFF),
-                    shape = FlamingoSmoothCornerShape(5.dp),
-                )
-                .height(20.dp)
-                .padding(horizontal = 7.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (isLossless) {
-                            R.drawable.flamingo_quality_lossless
-                        } else {
-                            R.drawable.player_graphic_eq
-                        },
-                    ),
-                    contentDescription = "quality_badge",
-                    modifier = Modifier
-                        .height(if (isLossless) 9.dp else 10.dp)
-                        .alpha(0.45f),
-                )
-                Spacer(modifier = Modifier.width(5.dp))
-
-                AnimatedContent(
-                    targetState = text,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                ) { thisText ->
-                    Text(
-                        text = thisText,
-                        modifier = Modifier.alpha(0.45f),
-                        fontSize = 11.sp,
-                        lineHeight = 11.sp,
-                    )
-                }
-            }
-        }
+        CodecBadge(format = currentFormat, onClick = onQualityClick)
     }
 }

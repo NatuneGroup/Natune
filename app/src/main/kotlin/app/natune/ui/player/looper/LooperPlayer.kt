@@ -204,25 +204,7 @@ fun LooperPlayerContent(
 
                     val looperQuality = remember(currentFormat) { currentFormat?.streamQuality() }
                     if (looperQuality != null && LocalPlayerPresentation.current.showCodec) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .border(
-                                        width = 0.5.dp,
-                                        color = Color.White.copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(20.dp),
-                                    ).background(
-                                        color = Color.White.copy(alpha = 0.08f),
-                                        shape = RoundedCornerShape(20.dp),
-                                    ).padding(horizontal = 10.dp, vertical = 3.dp),
-                        ) {
-                            Text(
-                                text = looperQuality.label(),
-                                style = LooperTypography.labelSmall,
-                                color = Color.White.copy(alpha = 0.7f),
-                                maxLines = 1,
-                            )
-                        }
+                        app.natune.ui.player.CodecBadge(quality = looperQuality, contentColor = Color.White)
                     }
 
                     Box(
