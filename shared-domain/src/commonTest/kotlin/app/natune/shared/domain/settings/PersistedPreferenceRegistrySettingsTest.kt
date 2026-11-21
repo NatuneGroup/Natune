@@ -13,7 +13,8 @@ class PersistedPreferenceRegistrySettingsTest {
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
         // The retained surface also includes desktop/iOS output preferences and the experimental Android USB driver.
         // Two explicit provider options extend the surface; all old identities and uniqueness checks stay pinned.
-        assertEquals(682, PersistedPreferenceKeys.size)
+        // The four retired Paxsenix proxy toggles (NetEase, Spotify, Musixmatch, YouTube) were removed on purpose.
+        assertEquals(678, PersistedPreferenceKeys.size)
         assertEquals(1, PersistedPreferenceKeys.count { it == DirectUsbDriverKey })
         assertEquals(PreferenceKind.BOOLEAN, DirectUsbDriverKey.kind)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
