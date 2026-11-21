@@ -2138,6 +2138,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ inputs.tag_name }}
+          # The Nightly whose APK the release-candidate job verifies its signer against
+          # (build_pull_request.yml, "Verify the trusted public baseline"). Pruning it would break that job.
+          CANDIDATE_BASELINE_TAG: N202611211020
         run: |
           set -euo pipefail
           KEEP=5
@@ -2158,7 +2161,7 @@ jobs:
               awk -F'\t' -v keep="$KEEP" 'NR > keep { print $1 }'
           )
           for NIGHTLY_TAG in "${SUPERSEDED[@]}"; do
-            if [[ "$NIGHTLY_TAG" == "$TAG_NAME" || "$NIGHTLY_TAG" == "$FEED_TAG" ]]; then
+            if [[ "$NIGHTLY_TAG" == "$TAG_NAME" || "$NIGHTLY_TAG" == "$FEED_TAG" || "$NIGHTLY_TAG" == "$CANDIDATE_BASELINE_TAG" ]]; then
               continue
             fi
             if gh release delete "$NIGHTLY_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
