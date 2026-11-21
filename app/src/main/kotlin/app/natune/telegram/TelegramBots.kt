@@ -22,34 +22,7 @@ import org.json.JSONObject
 import java.util.Base64
 import java.util.UUID
 
-/** A user-saved Telegram bot entry. */
-data class TelegramBot(
-    /** Stable client-side id (UUID). Used as the nav arg when opening a bot's chat screen. */
-    val id: String,
-    /** Bot username without the leading @. Lower-cased to dedupe case variants. */
-    val username: String,
-    /** TDLib chat id of the resolved bot, 0 until first resolution. */
-    val chatId: Long,
-    /** Display title (the bot's first name from TDLib, falls back to @username). */
-    val title: String,
-    /** Epoch millis when the user added the bot. */
-    val addedAtMs: Long,
-    /** Inline JPEG minithumbnail of the bot's profile photo (tiny, ~40px). May be null. */
-    val photoMinithumbnail: ByteArray? = null,
-    /** TDLib file id of the bot's full-size profile photo (0 when the bot has no photo). */
-    val photoFileId: Int = 0,
-) {
-    val displayHandle: String
-        get() = "@$username"
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is TelegramBot) return false
-        return id == other.id
-    }
-
-    override fun hashCode(): Int = id.hashCode()
-}
+typealias TelegramBot = app.natune.shared.domain.telegram.TelegramBot
 
 /** Encodes/decodes the bot list to/from the JSON shape persisted under [app.natune.constants.TelegramBotsKey]. */
 object TelegramBotCodec {

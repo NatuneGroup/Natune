@@ -16,16 +16,7 @@ import android.util.Log
 import app.natune.BuildConfig
 import app.natune.logcat.unredactedDiagnosticReport
 
-/**
- * A reviewable feedback draft: the exact text the user sees before a send, plus the
- * kind used for the server envelope. Building runs off the main thread and never
- * touches the server; that decision stays with the user.
- */
-data class FeedbackDraft(
-    val kind: String,
-    /** The on-screen report body, already redacted and bounded by [FeedbackReport.finish]. */
-    val report: String,
-)
+typealias FeedbackDraft = app.natune.shared.domain.feedback.FeedbackDraft
 
 /**
  * Assembles drafts from the pieces every feedback surface shows. Each draft is built as

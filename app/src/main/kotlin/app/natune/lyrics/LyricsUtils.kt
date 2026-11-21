@@ -22,29 +22,9 @@ import java.io.StringReader
 import org.xmlpull.v1.XmlPullParser
 import kotlin.math.roundToLong
 
-data class LyricsRomanizationPreferences(
-    val romanizeJapanese: Boolean,
-    val romanizeKorean: Boolean,
-    val romanizeChinese: Boolean,
-    val romanizeHindi: Boolean,
-    val romanizeOther: Boolean,
-    /** True when an AI provider is supplying romanisation instead (see [AiLyricsRomanization]). */
-    val aiHandled: Boolean = false,
-) {
-    val isEnabled: Boolean
-        get() =
-            !aiHandled &&
-                (romanizeJapanese || romanizeKorean || romanizeChinese || romanizeHindi || romanizeOther)
+typealias LyricsRomanizationPreferences = app.natune.shared.domain.lyrics.romanization.LyricsRomanizationPreferences
 
-    /** True when romanisation should be rendered at all, whichever engine produced it. */
-    val showsRomanization: Boolean
-        get() = aiHandled || isEnabled
-}
-
-data class LyricsPhonetics(
-    val line: String? = null,
-    val words: List<String?>? = null,
-)
+typealias LyricsPhonetics = app.natune.shared.domain.lyrics.romanization.LyricsPhonetics
 
 @Suppress("RegExpRedundantEscape")
 object LyricsUtils {
