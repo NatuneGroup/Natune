@@ -46,6 +46,7 @@ class CreateBackupUseCase
         suspend operator fun invoke(
             uri: Uri,
             categories: Set<BackupArchiveCategory>,
+            accountPassword: String? = null,
             onProgress: (BackupArchiveProgress) -> Unit = {},
-        ) = repository.createBackup(uri, categories, onProgress)
+        ) = repository.createBackup(uri, categories, accountPassword, onProgress)
     }

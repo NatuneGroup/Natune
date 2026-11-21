@@ -49,10 +49,13 @@ class BackupArchiveRepository
         suspend fun createBackup(
             uri: Uri,
             categories: Set<BackupArchiveCategory>,
+            accountPassword: String? = null,
             onProgress: (BackupArchiveProgress) -> Unit = {},
         ) = operationCoordinator.withLock {
             val exportCategories = categories.intersect(BackupExportPolicy.DEFAULT_CATEGORIES)
-            require(exportCategories.isNotEmpty()) { "A library or settings backup category is required" }
+            // Sign-ins are only written encrypted: without a password the Accounts choice adds nothing.
+            val includeAccounts = BackupArchiveCategory.ACCOUNT in categories && !accountPassword.isNullOrEmpty()
+            require(exportCategories.isNotEmpty() || includeAccounts) { "A library or settings backup category is required" }
 
             val includeSettings = BackupArchiveCategory.SETTINGS in exportCategories
             val includeLibrary = BackupArchiveCategory.LIBRARY in exportCategories
@@ -117,6 +120,13 @@ class BackupArchiveRepository
                     writeBackupSettingsToJson(zipStream, context.dataStore.data.first(), exportCategories)
                     zipStream.closeEntry()
                     completedUnits++
+                }
+                if (includeAccounts) {
+                    zipStream.putNextEntry(ZipEntry(BackupAccountVault.ENTRY))
+                    zipStream.write(
+                        BackupAccountVault.seal(BackupAccountVault.accountsOf(context.dataStore.data.first()), accountPassword!!),
+                    )
+                    zipStream.closeEntry()
                 }
 
                 if (includeSettings) {

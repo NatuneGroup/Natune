@@ -19,16 +19,39 @@ import app.natune.viewmodels.BackupCategory
 import app.natune.viewmodels.BackupRestoreViewModel
 import app.natune.viewmodels.BackupValidationResult
 
+/** How the dialog asks for the password that protects a backup's sign-ins. */
+internal enum class AccountPasswordMode { CREATE, ENTER }
+
+/** `Natune_<time>.zip`, the name every manual backup is offered under. */
+internal fun backupFileName(context: android.content.Context): String =
+    "${context.getString(R.string.app_name)}_${java.time.LocalDateTime.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))}.zip"
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun BackupOptionsDialog(
     title: String,
     availableCategories: List<BackupCategory> = BackupCategory.entries,
     confirmLabel: String,
-    onConfirm: (Set<BackupCategory>) -> Unit,
+    onConfirm: (Set<BackupCategory>, String?) -> Unit,
     onDismiss: () -> Unit,
+    accountPassword: AccountPasswordMode? = null,
 ) {
-    var selected by remember(availableCategories) { mutableStateOf(availableCategories.toSet()) }
+    // Sign-ins are only ever written encrypted, so a new backup starts with Accounts unticked; a restore offers
+    // whatever the archive holds, as before.
+    var selected by remember(availableCategories) {
+        mutableStateOf(
+            if (accountPassword == AccountPasswordMode.CREATE) availableCategories.toSet() - BackupCategory.ACCOUNT
+            else availableCategories.toSet(),
+        )
+    }
+    var password by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val needsPassword = accountPassword != null && BackupCategory.ACCOUNT in selected
+    // On restore the field is optional: older backups carry sign-ins without a password, and a protected one
+    // refuses a wrong or empty password with its own message before anything changes.
+    val passwordReady = !needsPassword || accountPassword == AccountPasswordMode.ENTER ||
+        (password.isNotEmpty() && password == confirmation)
 
     DefaultDialog(
         onDismiss = onDismiss,
@@ -38,9 +61,9 @@ internal fun BackupOptionsDialog(
                 Text(stringResource(android.R.string.cancel))
             }
             TextButton(
-                onClick = { onConfirm(selected) },
+                onClick = { onConfirm(selected, password.takeIf { needsPassword }) },
                 shapes = ButtonDefaults.shapes(),
-                enabled = selected.isNotEmpty(),
+                enabled = selected.isNotEmpty() && passwordReady,
             ) {
                 Text(confirmLabel)
             }
@@ -119,7 +142,64 @@ internal fun BackupOptionsDialog(
                 }
             }
         }
+        if (needsPassword) {
+            AccountPasswordFields(
+                mode = requireNotNull(accountPassword),
+                password = password,
+                onPasswordChange = { password = it },
+                confirmation = confirmation,
+                onConfirmationChange = { confirmation = it },
+            )
+        }
         Spacer(Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun AccountPasswordFields(
+    mode: AccountPasswordMode,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    confirmation: String,
+    onConfirmationChange: (String) -> Unit,
+) {
+    val hidden = androidx.compose.ui.text.input.PasswordVisualTransformation()
+    val keyboard = androidx.compose.foundation.text.KeyboardOptions(
+        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+        Text(
+            stringResource(
+                if (mode == AccountPasswordMode.CREATE) R.string.backup_account_password_create_desc
+                else R.string.backup_account_password_enter_desc,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = onPasswordChange,
+            label = { Text(stringResource(R.string.backup_account_password)) },
+            singleLine = true,
+            visualTransformation = hidden,
+            keyboardOptions = keyboard,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (mode == AccountPasswordMode.CREATE) {
+            OutlinedTextField(
+                value = confirmation,
+                onValueChange = onConfirmationChange,
+                label = { Text(stringResource(R.string.backup_account_password_confirm)) },
+                singleLine = true,
+                visualTransformation = hidden,
+                keyboardOptions = keyboard,
+                isError = confirmation.isNotEmpty() && confirmation != password,
+                supportingText = if (confirmation.isNotEmpty() && confirmation != password) {
+                    { Text(stringResource(R.string.backup_account_password_mismatch)) }
+                } else null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -149,9 +229,10 @@ internal fun BackupRestoreIntentDialog(uri: Uri, viewModel: BackupRestoreViewMod
         title = stringResource(R.string.restore_options_title),
         availableCategories = BackupCategory.entries.filter { it in result.availableCategories },
         confirmLabel = stringResource(R.string.action_restore),
-        onConfirm = { selected ->
+        accountPassword = AccountPasswordMode.ENTER,
+        onConfirm = { selected, password ->
             onDismiss()
-            viewModel.restore(context, uri, selected)
+            viewModel.restore(context, uri, selected, password)
         },
         onDismiss = onDismiss,
     )

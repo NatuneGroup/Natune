@@ -480,6 +480,7 @@ class BackupRestoreViewModel
             context: Context,
             uri: Uri,
             categories: Set<BackupCategory>,
+            accountPassword: String? = null,
         ) {
             if (manualBackupJob?.isActive == true) return
             manualBackupJob =
@@ -489,6 +490,7 @@ class BackupRestoreViewModel
                         createBackupUseCase(
                             uri = uri,
                             categories = categories.mapTo(linkedSetOf()) { BackupArchiveCategory.valueOf(it.name) },
+                            accountPassword = accountPassword,
                         ) { progress ->
                             val step =
                                 when (progress.step) {
@@ -786,6 +788,7 @@ class BackupRestoreViewModel
             context: Context,
             uri: Uri,
             categories: Set<BackupCategory>,
+            accountPassword: String? = null,
         ) {
             viewModelScope.launch(Dispatchers.IO) {
                 backupOperationCoordinator.withLock {
@@ -797,7 +800,7 @@ class BackupRestoreViewModel
                             percent = 0,
                             indeterminate = true,
                         )
-                        AndroidRestoreCoordinator.stage(context, uri, categories)
+                        AndroidRestoreCoordinator.stage(context, uri, categories, accountPassword)
                         emitProgress(
                             title = title,
                             step = context.getString(R.string.restore_step_restarting),

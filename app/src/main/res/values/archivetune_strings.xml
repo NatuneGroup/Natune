@@ -851,6 +851,12 @@
     <string name="backup_category_settings_desc">Appearance, playback &amp; preferences</string>
     <string name="backup_category_account">Account Details</string>
     <string name="backup_category_account_desc">YouTube, Spotify, Last.fm, Libre.fm, Discord &amp; proxy credentials</string>
+    <string name="backup_account_password">Password for sign-ins</string>
+    <string name="backup_account_password_confirm">Repeat the password</string>
+    <string name="backup_account_password_mismatch">The passwords do not match</string>
+    <string name="backup_account_password_create_desc">Sign-ins are encrypted with this password. You need it to restore them, and it cannot be recovered.</string>
+    <string name="backup_account_password_enter_desc">If this backup\'s sign-ins are protected with a password, enter it here.</string>
+    <string name="backup_account_wrong_password">That password does not open this backup\'s sign-ins.</string>
     <string name="internal_service">Internal Service</string>
     <string name="restore_invalid_file">The selected file is not a valid backup archive.</string>
     <string name="restore_missing_content">The backup archive does not contain any restorable data.</string>
