@@ -161,7 +161,7 @@ private fun MediaInfoGridCell(detail: MediaInfoDetail, onCopy: ((String) -> Unit
         Icon(painter = painterResource(detail.iconRes), contentDescription = null, tint = muted, modifier = Modifier.size(20.dp))
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = muted)) { append(detail.label.trimEnd(':')).append(": ") }
+                withStyle(SpanStyle(color = muted)) { append(detail.label.trimEnd(':') + ": ") }
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(detail.value) }
             },
             style = MaterialTheme.typography.bodyLarge,
