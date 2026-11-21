@@ -13,6 +13,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import app.natune.shared.domain.settings.eligibleUpdateOffer
 import app.natune.shared.domain.settings.updateRequestIsCurrent
+import app.natune.shared.domain.update.parseUpdateFeedManifest
+import app.natune.shared.domain.update.selectUpdateFeedAssetUrl
+import app.natune.shared.domain.update.toReleaseInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
@@ -883,15 +886,10 @@ object Updater {
      * THIS device must exist: offering an update whose APK the manifest does not carry is worse
      * than falling back to the API release list.
      */
-    private fun mapUpdateFeedBody(
-        body: String,
-        channel: UpdateChannel,
-        expectedArtifactName: String,
-    ): ReleaseInfo? {
-        val manifest = parseUpdateFeedManifest(body, channel.name.lowercase()) ?: return null
-        val assetUrl = selectUpdateFeedAssetUrl(manifest.assets, expectedArtifactName) ?: return null
-        return manifest.toReleaseInfo(assetUrl, StableReleaseBaseUrl)
-    }
+    private fun mapUpdateFeedBody(body: String, channel: UpdateChannel, expectedArtifactName: String): ReleaseInfo? =
+        parseUpdateFeedManifest(body, channel)?.let { manifest ->
+            selectUpdateFeedAssetUrl(manifest.assets, expectedArtifactName)?.let { manifest.toReleaseInfo(it, StableReleaseBaseUrl) }
+        }
 
     private suspend fun readCachedUpdateFeed(
         channel: UpdateChannel,

@@ -10,6 +10,9 @@ package app.natune.utils
 
 import app.natune.BuildConfig
 import app.natune.constants.UpdateChannel
+import app.natune.shared.domain.update.parseUpdateFeedManifest
+import app.natune.shared.domain.update.selectUpdateFeedAssetUrl
+import app.natune.shared.domain.update.toReleaseInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,7 +46,7 @@ class UpdateFeedDecisionTest {
         """.trimIndent()
 
     private fun releaseFor(versionCode: Long): ReleaseInfo {
-        val manifest = parseUpdateFeedManifest(manifestJson(versionCode), expectedChannel = "nightly")!!
+        val manifest = parseUpdateFeedManifest(manifestJson(versionCode), expectedChannel = UpdateChannel.NIGHTLY)!!
         return manifest.toReleaseInfo(
             assetUrl = selectUpdateFeedAssetUrl(manifest.assets, "app-gms-mobile-arm64-nightly.apk"),
             releasesBaseUrl = "https://github.com/NatuneGroup/Natune/releases",
@@ -98,7 +101,7 @@ class UpdateFeedDecisionTest {
               "assets": []
             }
             """.trimIndent()
-        val manifest = parseUpdateFeedManifest(json, expectedChannel = "stable")!!
+        val manifest = parseUpdateFeedManifest(json, expectedChannel = UpdateChannel.STABLE)!!
         return manifest.toReleaseInfo(assetUrl = null, releasesBaseUrl = "https://github.com/NatuneGroup/Natune/releases")
     }
 
@@ -163,7 +166,7 @@ class UpdateFeedDecisionTest {
         val json =
             manifestJson((BuildConfig.VERSION_CODE + 1).toLong())
                 .replace(Regex("\"releaseUrl\": \"[^\"]*\","), "")
-        val manifest = parseUpdateFeedManifest(json, expectedChannel = "nightly")!!
+        val manifest = parseUpdateFeedManifest(json, expectedChannel = UpdateChannel.NIGHTLY)!!
 
         val release =
             manifest.toReleaseInfo(
@@ -181,7 +184,7 @@ class UpdateFeedDecisionTest {
         // "up to date" instead of silently doing nothing.
         val release = releaseFor(BuildConfig.VERSION_CODE.toLong())
         val selectedAsset = selectUpdateFeedAssetUrl(
-            parseUpdateFeedManifest(manifestJson(BuildConfig.VERSION_CODE.toLong()), "nightly")!!.assets,
+            parseUpdateFeedManifest(manifestJson(BuildConfig.VERSION_CODE.toLong()), UpdateChannel.NIGHTLY)!!.assets,
             "app-gms-mobile-arm64-nightly.apk",
         )
         val offer = Updater.eligibleOffer(release, UpdateChannel.NIGHTLY)
