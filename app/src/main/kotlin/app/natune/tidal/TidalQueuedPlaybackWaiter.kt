@@ -3,6 +3,7 @@ package app.natune.tidal
 import app.natune.audiosource.AudioSourceAttemptScope
 import app.natune.audiosource.AudioSourceAttemptTimeouts
 import app.natune.audiosource.withAudioSourceAttemptDeadline
+import app.natune.shared.data.provider.TidalQueuedPlayback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
