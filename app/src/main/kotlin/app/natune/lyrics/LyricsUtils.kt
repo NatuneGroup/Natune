@@ -807,7 +807,6 @@ object LyricsUtils {
     ): List<LyricsEntry> {
         val parsedLines = TTMLParser.parseTTML(normalizeLyricsText(lyrics))
         if (parsedLines.isEmpty()) return emptyList()
-        val scale = 1.0
 
         return parsedLines
             .map { line ->
@@ -817,17 +816,18 @@ object LyricsUtils {
                         .map { word ->
                             WordTimestamp(
                                 text = word.text,
-                                startTime = word.startTime * scale,
-                                endTime = word.endTime * scale,
+                                startTime = word.startTime,
+                                endTime = word.endTime,
                                 isBackground = word.isBackground,
                             )
                         }.takeIf { it.isNotEmpty() }
 
                 LyricsEntry(
-                    time = (line.startTime * scale * 1000.0).toLong(),
+                    time = (line.startTime * 1000.0).toLong(),
                     text = line.text,
                     words = words,
                     agent = app.natune.shared.domain.lyrics.normalizeTtmlAgent(line.agent),
+                    singers = line.agentNames,
                     providerRomanizedText = line.providerRomanizedText,
                     providerRomanizedWords = line.providerRomanizedWords,
                     providerRomanizedLanguage = line.providerRomanizedLanguage,

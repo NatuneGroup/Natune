@@ -208,6 +208,7 @@ private fun parseEnhancedLyrics(source: String): EnhancedParsedLyrics {
                         WordTimestamp(word.text, word.startTime, word.endTime, word.isBackground)
                     }.takeIf { it.isNotEmpty() },
                     agent = normalizeTtmlAgent(line.agent),
+                    singers = line.agentNames,
                     durationMs = ((line.endTime - line.startTime) * 1000.0).toLong().coerceAtLeast(0L),
                     providerRomanizedText = line.providerRomanizedText,
                     providerRomanizedWords = line.providerRomanizedWords,
@@ -267,6 +268,7 @@ private fun prepareEnhancedLyrics(
                 text?.takeIf(String::isNotBlank)?.let { PreparedLyricsPhonetic(wordIndex, it) }
             }),
             isInstrumental = entry.isInstrumental,
+            singers = ImmutableList.copyOf(entry.singers.distinct()),
         )
     }
     return PreparedLyrics(parsed.sourceFormat, parsed.syncType, ImmutableList.copyOf(lines), preferences)

@@ -23,6 +23,8 @@ data class LyricsEntry(
     val providerTranslationText: String? = null,
     val isRtl: Boolean? = null,
     val romanizedTextFlow: MutableStateFlow<String?> = MutableStateFlow(null),
+    /** Display names of who sings this line, from the lyrics source; empty when the source names nobody. */
+    val singers: List<String> = emptyList(),
 ) : Comparable<LyricsEntry> {
     override fun compareTo(other: LyricsEntry): Int = (time - other.time).toInt()
 
