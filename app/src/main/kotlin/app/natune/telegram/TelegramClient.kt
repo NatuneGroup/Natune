@@ -17,6 +17,7 @@
 
 package app.natune.telegram
 
+import app.natune.shared.domain.telegram.TelegramAuthState
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.delay
@@ -35,40 +36,6 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-
-/** Authorization progress of the Telegram session, driven by TDLib's UpdateAuthorizationState. */
-sealed interface TelegramAuthState {
-    /** No TDLib client running (missing API credentials, or the session was closed). */
-    data object Idle : TelegramAuthState
-
-    /** Client created, waiting for TDLib to report the first authorization state. */
-    data object Connecting : TelegramAuthState
-
-    data object WaitPhoneNumber : TelegramAuthState
-
-    data class WaitCode(
-        val phoneNumber: String,
-        /** Where the current code was delivered (Telegram app, SMS or a phone call). */
-        val codeType: TelegramCodeType,
-        /** True when TDLib offers a resend path (codeInfo.nextType != null). */
-        val canResend: Boolean,
-        /** Seconds the user must wait before a resend is accepted. */
-        val resendTimeoutSeconds: Int,
-    ) : TelegramAuthState
-
-    data class WaitPassword(
-        val passwordHint: String?,
-    ) : TelegramAuthState
-
-    data object Ready : TelegramAuthState
-
-    data object LoggingOut : TelegramAuthState
-
-    /** A TDLib auth state this integration doesn't implement (QR login, registration, …). */
-    data class Unsupported(
-        val stateName: String,
-    ) : TelegramAuthState
-}
 
 typealias TelegramCodeType = app.natune.shared.domain.telegram.TelegramCodeType
 

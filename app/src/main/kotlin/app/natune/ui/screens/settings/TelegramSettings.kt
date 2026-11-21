@@ -44,7 +44,7 @@ import app.natune.R
 import app.natune.constants.TelegramAccountNameKey
 import app.natune.constants.TelegramAccountPhoneKey
 import app.natune.constants.TelegramLosslessOnlyKey
-import app.natune.telegram.TelegramAuthState
+import app.natune.shared.domain.telegram.TelegramAuthState
 import app.natune.telegram.TelegramClient
 import app.natune.ui.component.DefaultDialog
 import app.natune.ui.component.IconButton
