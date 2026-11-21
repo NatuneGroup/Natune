@@ -131,7 +131,7 @@ object PersistentLogCapture {
             directory = logDirectory
             synchronized(lock) { openPart(logDirectory, 0) }
             writeLine(
-                "--------- ArchiveTune session ${Instant.ofEpochMilli(sessionStart)} pid=${Process.myPid()} " +
+                "--------- Natune session ${Instant.ofEpochMilli(sessionStart)} pid=${Process.myPid()} " +
                     "version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) revision=${BuildConfig.FORK_REVISION}",
             )
             importCrashBuffer(logDirectory, processStart)

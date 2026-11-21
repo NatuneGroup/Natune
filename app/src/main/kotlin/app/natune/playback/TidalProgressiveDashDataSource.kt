@@ -130,7 +130,7 @@ internal class TidalProgressiveDashDataSource(
                 .url(url)
                 .header("Accept", "audio/flac,audio/*,*/*;q=0.8")
                 .header("Accept-Encoding", "identity")
-                .header("User-Agent", "ArchiveTune-Android")
+                .header("User-Agent", "Natune-Android")
                 .get()
                 .build()
         return try {

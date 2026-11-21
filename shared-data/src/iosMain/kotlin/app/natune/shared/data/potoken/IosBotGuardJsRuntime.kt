@@ -53,7 +53,7 @@ internal class IosBotGuardJsRuntime private constructor(
         suspend fun create(): IosBotGuardJsRuntime {
             // The runtime's own thread: creation, every evaluate, the async-job queue and the final
             // close all serialize on it; the engine mutex keeps minting single-flight.
-            val worker = newSingleThreadContext("ArchiveTune BotGuard")
+            val worker = newSingleThreadContext("Natune BotGuard")
             // The native handle lives outside withContext: a cancelled resumption can drop the
             // block's return value, and a dropped QuickJS runtime still has to be closed on its
             // own thread before the worker goes away.

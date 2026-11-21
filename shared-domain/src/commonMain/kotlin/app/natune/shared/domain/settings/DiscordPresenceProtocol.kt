@@ -99,8 +99,8 @@ fun buildDiscordIdentifyJson(token: String, osName: String): String = buildJsonO
         put("intents", 0)
         put("properties", buildJsonObject {
             put("os", osName)
-            put("browser", "ArchiveTune")
-            put("device", "ArchiveTune")
+            put("browser", "Natune")
+            put("device", "Natune")
         })
     })
 }.toString()
@@ -158,20 +158,20 @@ fun buildDiscordPresenceJson(
         else -> 2
     }
     val name = when (preferences.discordActivitySource(DiscordActivityNameKey, DiscordSettingsDefaults.ACTIVITY_NAME_SOURCE)) {
-        DiscordActivitySource.APP -> "ArchiveTune"
-        else -> track?.title ?: "ArchiveTune"
+        DiscordActivitySource.APP -> "Natune"
+        else -> track?.title ?: "Natune"
     }
     val details = when (preferences.discordActivitySource(DiscordActivityDetailsKey, DiscordSettingsDefaults.ACTIVITY_DETAILS_SOURCE)) {
         DiscordActivitySource.ARTIST -> track?.artists?.joinToString(", ")?.takeIf(String::isNotEmpty)
         DiscordActivitySource.ALBUM -> track?.album
         DiscordActivitySource.SONG -> track?.title
-        DiscordActivitySource.APP -> "ArchiveTune"
+        DiscordActivitySource.APP -> "Natune"
     }
     val state = when (preferences.discordActivitySource(DiscordActivityStateKey, DiscordSettingsDefaults.ACTIVITY_STATE_SOURCE)) {
         DiscordActivitySource.ARTIST -> track?.artists?.joinToString(", ")?.takeIf(String::isNotEmpty)
         DiscordActivitySource.ALBUM -> track?.album
         DiscordActivitySource.SONG -> track?.title
-        DiscordActivitySource.APP -> "ArchiveTune"
+        DiscordActivitySource.APP -> "Natune"
     }
     val activity = buildJsonObject {
         put("name", name)

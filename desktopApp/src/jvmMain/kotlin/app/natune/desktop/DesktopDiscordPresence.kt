@@ -42,7 +42,7 @@ private const val HELPER_KILL_MILLIS = 500L
  */
 internal fun discordDesktopEntry(executable: String, applicationId: String): String {
     require(executable.none { it.code < 0x20 }) { "the executable path cannot be represented in a desktop entry" }
-    return "[Desktop Entry]\nType=Application\nName=ArchiveTune Discord\n" +
+    return "[Desktop Entry]\nType=Application\nName=Natune Discord\n" +
         "Exec=${desktopExecArgument(executable)} %u\n" +
         "MimeType=x-scheme-handler/discord-$applicationId;\nNoDisplay=true\n"
 }
@@ -419,7 +419,7 @@ internal class DesktopDiscordPresence(
                 val exe = ProcessHandle.current().info().command().orElse(null) ?: return@runCatching
                 val key = "HKCU\\Software\\Classes\\discord-$DISCORD_APPLICATION_ID"
                 listOf(
-                    arrayOf("reg", "add", key, "/ve", "/d", "URL:ArchiveTune Discord", "/f"),
+                    arrayOf("reg", "add", key, "/ve", "/d", "URL:Natune Discord", "/f"),
                     arrayOf("reg", "add", key, "/v", "URL Protocol", "/d", "", "/f"),
                     arrayOf("reg", "add", "$key\\shell\\open\\command", "/ve", "/d", "\"$exe\" \"%1\"", "/f"),
                 ).forEach { command ->

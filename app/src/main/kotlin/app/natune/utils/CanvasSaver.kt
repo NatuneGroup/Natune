@@ -89,7 +89,7 @@ object CanvasSaver {
             Request
                 .Builder()
                 .url(url)
-                .header("User-Agent", "ArchiveTune/1.0 (Android canvas saver)")
+                .header("User-Agent", "Natune/1.0 (Android canvas saver)")
                 .header("Accept", "video/mp4, video/*, */*")
                 .build()
         client.newCall(request).execute().use { response ->
@@ -111,7 +111,7 @@ object CanvasSaver {
                 ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, "$fileName.mp4")
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/ArchiveTune Canvas")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Natune Canvas")
                     put(MediaStore.Video.Media.IS_PENDING, 1)
                 }
             val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -128,7 +128,7 @@ object CanvasSaver {
                 context.contentResolver.update(uri, contentValues, null, null)
                 CanvasSaveResult.Success(
                     uri = uri,
-                    filePath = "${Environment.DIRECTORY_MOVIES}/ArchiveTune Canvas/$fileName.mp4",
+                    filePath = "${Environment.DIRECTORY_MOVIES}/Natune Canvas/$fileName.mp4",
                 )
             } catch (e: Exception) {
                 context.contentResolver.delete(uri, null, null)
@@ -136,7 +136,7 @@ object CanvasSaver {
             }
         } else {
             // Pre-Q: write to public Movies directory directly.
-            val moviesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "ArchiveTune Canvas")
+            val moviesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Natune Canvas")
             if (!moviesDir.exists()) moviesDir.mkdirs()
             val file = File(moviesDir, "$fileName.mp4")
             try {

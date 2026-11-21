@@ -768,7 +768,7 @@ private fun fetchArtworkBytes(url: String): ByteArray? = runCatching {
     connection.connectTimeout = 10_000
     connection.readTimeout = 15_000
     connection.requestMethod = "GET"
-    connection.setRequestProperty("User-Agent", "ArchiveTune")
+    connection.setRequestProperty("User-Agent", "Natune")
     connection.instanceFollowRedirects = true
     connection.useCaches = true
     try {

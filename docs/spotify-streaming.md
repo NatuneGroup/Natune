@@ -24,7 +24,7 @@ exception to the two-accounts rule; see the Librespot section).
 | Sign-in | `SpotifyLoginSheet` in the default WebView profile | `SpotifyLoginSheet(isolatedProfile = "spotify-streaming")` |
 | Settings | Integration → Spotify | Integration → Spotify streaming (`settings/spotify_streaming`) |
 
-The Unofficial STOPIFY method registers a virtual Connect device ("ArchiveTune Player"), issues play commands and
+The Unofficial STOPIFY method registers a virtual Connect device ("Natune Player"), issues play commands and
 reports plays (start, 30 s, finish). None of that may land on the listener's real library, which is
 why the account is separate.
 

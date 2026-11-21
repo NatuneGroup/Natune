@@ -36,7 +36,7 @@ class LinuxSystemIntegration(
         val transport: DesktopTransportState,
     )
     private val published = AtomicReference(Published(null, null, DesktopTransportState()))
-    val busName = "org.mpris.MediaPlayer2.ArchiveTune"
+    val busName = "org.mpris.MediaPlayer2.Natune"
     private val daemon = connection.getRemoteObject("org.freedesktop.DBus", "/org/freedesktop/DBus", DBus::class.java)
     @Volatile private var registeredWatcher: String? = null
     @Volatile private var watcherHostRegistered = false

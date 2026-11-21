@@ -42,7 +42,7 @@ data class YearInMusicUi(
  * to 1080×1920, writes PNG, and shares with the platform's real temporary-file grant/lifecycle.
  */
 data class YearRecapShare(val year: Int, val card: YearRecapCard, val pageIndex: Int, val image: ImageBitmap) {
-    val fileName: String get() = "ArchiveTune_YearInMusic_${year}_${pageIndex + 1}.png"
+    val fileName: String get() = "Natune_YearInMusic_${year}_${pageIndex + 1}.png"
     val targetWidth: Int get() = 1080
     val targetHeight: Int get() = 1920
 }

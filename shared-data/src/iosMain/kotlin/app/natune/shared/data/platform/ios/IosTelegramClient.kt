@@ -122,7 +122,7 @@ class IosTelegramClient(
         client = created
         closedSignal = CompletableDeferred()
         stateFlow.value = TelegramAuthState.Connecting
-        val receiver = newSingleThreadContext("ArchiveTune Telegram receiver")
+        val receiver = newSingleThreadContext("Natune Telegram receiver")
         receiverScope.launch(receiver) { receiveLoop(created, receiver) }
         // Any request makes TDLib publish its first authorization state; the version query has no other effect.
         at_telegram_client_send(created, """{"@type":"getOption","name":"version"}""")

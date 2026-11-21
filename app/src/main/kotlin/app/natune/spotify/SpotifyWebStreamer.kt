@@ -302,7 +302,7 @@ object SpotifyWebStreamer {
                         put("device_type", "computer")
                         put("metadata", JSONObject())
                         put("model", "web_player")
-                        put("name", "ArchiveTune Player")
+                        put("name", "Natune Player")
                         put("platform_identifier", PLATFORM_IDENTIFIER)
                         put("is_group", false)
                         put("is_public", false)

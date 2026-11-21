@@ -305,6 +305,6 @@ class DeezerInstanceResolver(
     private companion object {
         private const val FAILURE_COOLDOWN_MS = 10 * 60 * 1000L
         private const val HEALTH_TIMEOUT_MS = 6_000L
-        private const val USER_AGENT = "ArchiveTune-Android"
+        private const val USER_AGENT = "Natune-Android"
     }
 }

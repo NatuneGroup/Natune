@@ -460,7 +460,7 @@ object Updater {
             client.get("https://api.github.com/repos/$OWNER/releases?per_page=$perPage") {
                 headers {
                     append("Accept", "application/vnd.github+json")
-                    append("User-Agent", "ArchiveTune")
+                    append("User-Agent", "Natune")
                     if (!cachedEtag.isNullOrBlank()) {
                         append("If-None-Match", cachedEtag)
                     }
@@ -577,7 +577,7 @@ object Updater {
                 val response = client.get(pageUrl) {
                     headers {
                         append("Accept", "application/vnd.github+json")
-                        append("User-Agent", "ArchiveTune")
+                        append("User-Agent", "Natune")
                         if (onFirstPage && !cachedEtag.isNullOrBlank() && cachedCommitsForBranch != null) {
                             append("If-None-Match", cachedEtag)
                         }
@@ -923,7 +923,7 @@ object Updater {
                 client.get(updateFeedManifestUrl(channel)) {
                     headers {
                         append("Accept", "application/vnd.github+json")
-                        append("User-Agent", "ArchiveTune")
+                        append("User-Agent", "Natune")
                     }
                 }
             if (response.status.value !in 200..299) return null

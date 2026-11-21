@@ -124,7 +124,7 @@ internal class DesktopAboutRepository(private val http: HttpClient) {
     private suspend fun github(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         http.get(url) {
             header("Accept", "application/vnd.github+json")
-            header("User-Agent", "ArchiveTune")
+            header("User-Agent", "Natune")
             block()
         }
 

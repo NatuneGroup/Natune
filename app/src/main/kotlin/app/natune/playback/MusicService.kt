@@ -1544,7 +1544,7 @@ class MusicService :
         }
         wakeLock =
             (getSystemService(Context.POWER_SERVICE) as PowerManager)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ArchiveTune:Playback")
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Natune:Playback")
                 .also { it.setReferenceCounted(false) }
         lowLatencyWifiLock = LowLatencyWifiLock(this)
         setupAudioFocusRequest()

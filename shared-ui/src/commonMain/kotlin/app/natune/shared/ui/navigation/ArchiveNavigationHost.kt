@@ -61,7 +61,7 @@ fun ArchiveNavigationHost(
     onFailure: () -> Unit = {},
 ) {
     NavigationEntryContent(navigation, modifier) {
-        val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
+        val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered Natune route: ${navigation.route}" }
         val binding = page(route)
         val back = { navigation.back(); Unit }
         val settingsScope = rememberCoroutineScope()

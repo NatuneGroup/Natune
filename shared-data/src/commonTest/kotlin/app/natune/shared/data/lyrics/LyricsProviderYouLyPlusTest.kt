@@ -47,7 +47,7 @@ class LyricsProviderYouLyPlusTest {
                 request.url.toString(),
             )
             assertEquals("application/json", request.headers[HttpHeaders.Accept])
-            assertEquals("ArchiveTune", request.headers[HttpHeaders.UserAgent])
+            assertEquals("Natune", request.headers[HttpHeaders.UserAgent])
         }
 
     @Test

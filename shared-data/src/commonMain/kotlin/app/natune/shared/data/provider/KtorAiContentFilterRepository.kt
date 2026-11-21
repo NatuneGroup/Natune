@@ -71,7 +71,7 @@ class KtorAiContentFilterRepository(
     private suspend fun fetch(name: String): Set<String>? = try {
         withTimeoutOrNull(65_000) {
             client.prepareGet("https://raw.githubusercontent.com/Override92/AiSList/main/AiSList/$name") {
-                header("User-Agent", "ArchiveTune-AiContentFilter")
+                header("User-Agent", "Natune-AiContentFilter")
             }.execute { response ->
                 if (response.status.value !in 200..299) null
                 else response.readBoundedText(5 * 1024 * 1024).lineSequence().map(String::trim)

@@ -255,14 +255,14 @@ class App :
             val config = com.downloader.PRDownloaderConfig.newBuilder()
                 .setReadTimeout(60_000)
                 .setConnectTimeout(15_000)
-                .setUserAgent("ArchiveTune/${BuildConfig.VERSION_NAME}")
+                .setUserAgent("Natune/${BuildConfig.VERSION_NAME}")
                 .build()
             com.downloader.PRDownloader.initialize(this, config)
         }
         CanvasArtworkPlaybackCache.init(this)
         CustomArtworkStore.init(this)
         applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
-        PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
+        PaxsenixLyrics.setUserAgent("Natune", BuildConfig.VERSION_NAME)
         // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up
         // in the in-app logcat viewer with the proper tag, instead of going to
         // System.err (which Android redirects to logcat one line at a time as

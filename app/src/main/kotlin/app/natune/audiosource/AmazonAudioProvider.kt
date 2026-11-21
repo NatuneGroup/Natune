@@ -77,7 +77,7 @@ object AmazonAudioProvider {
 
     private const val TAG = "AmazonAudio"
 
-    private const val USER_AGENT = "Mozilla/5.0 (ArchiveTune)"
+    private const val USER_AGENT = "Mozilla/5.0 (Natune)"
 
     /**
      * The configured origin as an Origin header value: scheme://host with no path, so the base URL's

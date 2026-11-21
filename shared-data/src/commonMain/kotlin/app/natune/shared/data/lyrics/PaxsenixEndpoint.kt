@@ -22,7 +22,7 @@ import kotlinx.serialization.json.Json
 class PaxsenixSettings(
     val baseUrl: String = DEFAULT_BASE_URL,
     val bearerValue: String? = null,
-    val userAgent: String = "ArchiveTune",
+    val userAgent: String = "Natune",
     val storefront: String = "us",
 ) {
     // The bearer value must not reach logs or crash reports that print the settings object.

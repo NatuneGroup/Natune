@@ -1958,7 +1958,7 @@ class TidalInstanceResolver(
         private const val COUNTRY_CODE = "US"
         private const val LOCALE = "en_US"
         private const val DEVICE_TYPE = "BROWSER"
-        private const val DOWNLOAD_USER_AGENT = "ArchiveTune-Android"
+        private const val DOWNLOAD_USER_AGENT = "Natune-Android"
         private const val BROWSER_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/135.0.0.0 Mobile Safari/537.36"

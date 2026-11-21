@@ -59,7 +59,7 @@ internal class IosTelegramArtwork(private val http: HttpClient) {
         val url = "https://itunes.apple.com/search?term=${term.encodeFormUrlComponent()}" +
             "&entity=song&limit=1&media=music"
         val artwork = http.prepareGet(url) {
-            header("User-Agent", "ArchiveTune")
+            header("User-Agent", "Natune")
         }.execute { response ->
             if (!response.status.isSuccess()) return@execute null
             val text = response.readBounded(MAX_TELEGRAM_LOOKUP_BYTES)?.decodeToString() ?: return@execute null

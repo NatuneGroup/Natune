@@ -181,7 +181,7 @@
     <string name="download_source_deezer">Deezer</string>
     <string name="download_source_auto">Auto (FLAC when available)</string>
     <string name="download_cover">Download cover</string>
-    <string name="cover_saved">Cover saved to Pictures/ArchiveTune</string>
+    <string name="cover_saved">Cover saved to Pictures/Natune</string>
     <string name="cover_save_failed">Couldn\'t save cover</string>
     <string name="cover_save_no_artwork">No artwork available for this song</string>
     <string name="cover_saving">Saving cover…</string>
@@ -230,7 +230,7 @@
     <string name="lyrics_now_singing">Now singing: %1$s</string>
     <string name="lyrics_auto_created">Automatically created</string>
     <string name="save_canvas_saving">Saving canvas…</string>
-    <string name="save_canvas_saved">Canvas saved to Movies/ArchiveTune Canvas</string>
+    <string name="save_canvas_saved">Canvas saved to Movies/Natune Canvas</string>
     <string name="save_canvas_save_failed">Couldn\'t save canvas: %1$s</string>
     <string name="save_canvas_not_downloadable">This source uses HLS streaming and can\'t be saved as a single video.</string>
     <string name="save_canvas_already_downloading">A canvas is already being saved. Please wait.</string>

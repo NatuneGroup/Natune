@@ -213,7 +213,7 @@ internal class DesktopArtworkLoader(
         val url = "https://itunes.apple.com/search?term=" + URLEncoder.encode(term, "UTF-8") +
             "&entity=song&limit=1&media=music"
         val artwork = http.prepareGet(url) {
-            header("User-Agent", "ArchiveTune")
+            header("User-Agent", "Natune")
         }.execute { response ->
             if (!response.status.isSuccess()) return@execute null
             val text = response.readBoundedBytes(MAX_TELEGRAM_LOOKUP_BYTES)?.decodeToString() ?: return@execute null
