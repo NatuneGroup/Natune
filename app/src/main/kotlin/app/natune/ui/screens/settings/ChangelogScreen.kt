@@ -291,11 +291,12 @@ fun ChangelogScreen(
                                     val displayDateFormat = remember { SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()) }
                                     val formattedDate =
                                         remember(release.publishedAt) {
+                                            val publishedAt = release.publishedAt.orEmpty()
                                             try {
-                                                val date = dateFormat.parse(release.publishedAt.substring(0, 10))
-                                                date?.let { displayDateFormat.format(it) } ?: release.publishedAt
+                                                val date = dateFormat.parse(publishedAt.substring(0, 10))
+                                                date?.let { displayDateFormat.format(it) } ?: publishedAt
                                             } catch (e: Exception) {
-                                                release.publishedAt
+                                                publishedAt
                                             }
                                         }
 
@@ -319,10 +320,11 @@ fun ChangelogScreen(
 
                                     // Render the release body as bullet-point lines with clickable URLs
                                     // (mirrors vivi-music's ClickableText + buildAnnotatedString pattern).
-                                    if (!release.body.isNullOrBlank()) {
+                                    val body = release.body
+                                    if (!body.isNullOrBlank()) {
                                         Spacer(modifier = Modifier.height(16.dp))
                                         val bodyLines =
-                                            release.body
+                                            body
                                                 .lines()
                                                 .filter { it.isNotBlank() }
                                                 .map { it.removePrefix("-").removePrefix("*").trim() }

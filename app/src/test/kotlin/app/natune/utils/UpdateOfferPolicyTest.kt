@@ -15,7 +15,7 @@ import org.junit.Test
 class UpdateOfferPolicyTest {
     private fun release(code: Int?, name: String = "999.0.0") = ReleaseInfo(
         tagName = "v$name", name = name, body = "notes", publishedAt = "", htmlUrl = "https://example.test/release",
-        downloadUrl = "https://example.test/a.apk", versionCode = code,
+        downloadUrl = "https://example.test/a.apk", versionCode = code?.toLong(),
     )
 
     @Test
@@ -40,7 +40,7 @@ class UpdateOfferPolicyTest {
         for (channel in UpdateChannel.entries) {
             var latest = release(101, "1.0.0")
             val captured = Updater.eligibleOffer(latest, channel, 100)!!
-            latest = latest.copy(versionCode = 102, downloadUrl = "https://example.test/b.apk", body = "new notes")
+            latest = latest.copy(versionCode = 102L, downloadUrl = "https://example.test/b.apk", body = "new notes")
             val newer = Updater.eligibleOffer(latest, channel, 100)!!
             assertEquals("https://example.test/a.apk", captured.downloadUrl)
             assertEquals("notes", captured.notes)

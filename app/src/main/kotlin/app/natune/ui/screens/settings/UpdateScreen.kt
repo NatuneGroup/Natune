@@ -701,7 +701,7 @@ fun UpdateScreen(
                     isExpanded = isExpanded,
                     rotationAngle = rotationAngle,
                     onToggleExpanded = { isExpanded = !isExpanded },
-                    onCommitClick = { commit -> uriHandler.openUri(commit.url) },
+                    onCommitClick = { commit -> uriHandler.openUri(commit.htmlUrl) },
                     modifier =
                         Modifier
                             .fillMaxWidth()

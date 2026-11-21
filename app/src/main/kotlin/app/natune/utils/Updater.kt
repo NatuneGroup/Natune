@@ -57,27 +57,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class GitCommit(
-    val sha: String,
-    val message: String,
-    val author: String,
-    val date: String,
-    val url: String,
-    val authorAvatarUrl: String? = null,
-)
+typealias GitCommit = app.natune.shared.domain.update.GitCommit
 
-data class ReleaseInfo(
-    val tagName: String,
-    val name: String,
-    val body: String?,
-    val publishedAt: String,
-    val htmlUrl: String,
-    val downloadUrl: String? = null,
-    // The monotonic build number (git commit count) the release was built from. Set by the
-    // update-feed manifest mapping; API-sourced releases carry it inside the `at-build:` body
-    // marker instead, which [nightlyBuildNumber] falls back to.
-    val versionCode: Int? = null,
-)
+typealias ReleaseInfo = app.natune.shared.domain.update.ReleaseInfo
 
 private data class ReleasesNetworkResult(
     val status: HttpStatusCode,
@@ -255,7 +237,7 @@ object Updater {
     }
 
     private fun parseReleaseSemVerOrNull(release: ReleaseInfo): SemVer? =
-        parseSemVerOrNull(release.tagName) ?: parseSemVerOrNull(release.name)
+        parseSemVerOrNull(release.tagName) ?: parseSemVerOrNull(release.name.orEmpty())
 
     // The release tag identifies the displayed Nightly build; the inline (build <versionCode>)
     // suffix supplies the verified code used to compare it with the installed VERSION_CODE.
@@ -292,7 +274,7 @@ object Updater {
 
     internal fun releaseBuildCode(release: ReleaseInfo, channel: UpdateChannel): Int? =
         when (channel) {
-            UpdateChannel.STABLE -> release.versionCode
+            UpdateChannel.STABLE -> release.versionCode?.toInt()
                 ?: release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
             UpdateChannel.NIGHTLY -> nightlyBuildNumber(release)
         }
@@ -396,7 +378,7 @@ object Updater {
     // the decision through the strict build-number comparison in [isUpdateAvailable], so a
     // same-SemVer rebuild is still offered and a SemVer bump with a non-greater code is not.
     internal fun getReleaseVersionName(release: ReleaseInfo): String {
-        val name = preferredReleaseVersionNameOrNull(release) ?: release.name.ifBlank { release.tagName }
+        val name = preferredReleaseVersionNameOrNull(release) ?: release.name.orEmpty().ifBlank { release.tagName }
         return releaseBuildCode(release, UpdateChannel.STABLE)?.let { "$name (build $it)" } ?: name
     }
 
@@ -432,7 +414,7 @@ object Updater {
                             item.optString("download_url").takeIf { it.isNotBlank() }
                         }
                             ?: assetDownloadUrl,
-                    versionCode = item.optInt("version_code", -1).takeIf { it > 0 },
+                    versionCode = item.optLong("version_code", -1L).takeIf { it > 0L },
                 ),
             )
         }
@@ -638,7 +620,7 @@ object Updater {
                             message = commit.optString("message", "").lines().firstOrNull() ?: "",
                             author = authorObj?.optString("name", "Unknown") ?: "Unknown",
                             date = authorObj?.optString("date", "") ?: "",
-                            url = commitObj.optString("html_url", ""),
+                            htmlUrl = commitObj.optString("html_url", ""),
                             authorAvatarUrl = githubAuthorObj?.optString("avatar_url")?.takeIf { it.isNotBlank() },
                         ),
                     )
@@ -681,13 +663,13 @@ object Updater {
     private val nightlyBuildMarkerRegex = Regex("""at-build:(\d+)""")
 
     internal fun nightlyBuildNumber(release: ReleaseInfo): Int? =
-        release.versionCode
+        release.versionCode?.toInt()
             ?: release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
-            ?: parseSemVerOrNull(release.name)?.patch
+            ?: parseSemVerOrNull(release.name.orEmpty())?.patch
 
     /** Uses the offered release identity and its verified build code for display and comparison. */
     internal fun getPreReleaseVersionName(release: ReleaseInfo): String {
-        val base = release.tagName.ifBlank { release.name }
+        val base = release.tagName.ifBlank { release.name.orEmpty() }
         val buildNumber = nightlyBuildNumber(release)
         return if (buildNumber != null) "$base (build $buildNumber)" else base
     }
@@ -987,7 +969,7 @@ object Updater {
                         put("message", commit.message)
                         put("author", commit.author)
                         put("date", commit.date)
-                        put("url", commit.url)
+                        put("url", commit.htmlUrl)
                         commit.authorAvatarUrl?.let { put("authorAvatarUrl", it) }
                     },
                 )
@@ -1003,7 +985,7 @@ object Updater {
                     message = commit["message"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     author = commit["author"]?.jsonPrimitive?.contentOrNull.orEmpty().ifEmpty { "Unknown" },
                     date = commit["date"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    url = commit["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    htmlUrl = commit["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     authorAvatarUrl = commit["authorAvatarUrl"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
                 )
             }
