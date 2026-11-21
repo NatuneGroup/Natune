@@ -20,8 +20,11 @@ import app.natune.ui.component.setPlaybackOutputPreference
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun BitPerfectUsbPreference(modifier: Modifier) {
-    val prefs = LocalSettingsPreferenceSnapshot.current
+internal fun BitPerfectUsbPreference(
+    modifier: Modifier,
+    // Player settings is its own route, outside SettingsScreen's provider, so it passes its snapshot.
+    prefs: app.natune.utils.PreferenceSnapshot = LocalSettingsPreferenceSnapshot.current,
+) {
     val restartPrompt = LocalRestartPrompt.current
     val context = LocalContext.current
     val (enabled) = prefs.state(BitPerfectUsbOutputKey, defaultValue = false)
