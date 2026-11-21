@@ -96,7 +96,7 @@ fun TelegramBotsScreen(navController: NavController) {
     )
 
     val authState by TelegramClient.authState.collectAsStateWithLifecycle()
-    val isReady = authState is app.natune.telegram.TelegramAuthState.Ready
+    val isReady = authState is app.natune.shared.domain.telegram.TelegramAuthState.Ready
 
     val bots = remember(rawBots) { TelegramBotCodec.decode(rawBots) }
     val botsState = remember { mutableStateListOf<TelegramBot>() }

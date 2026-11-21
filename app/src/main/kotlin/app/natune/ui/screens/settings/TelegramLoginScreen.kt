@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 import app.natune.LocalPlayerAwareWindowInsets
 import app.natune.R
 import app.natune.telegram.TelegramApiException
-import app.natune.telegram.TelegramAuthState
+import app.natune.shared.domain.telegram.TelegramAuthState
 import app.natune.telegram.TelegramClient
 import app.natune.telegram.TelegramCodeType
 import app.natune.telegram.composeE164
