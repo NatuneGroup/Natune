@@ -54,7 +54,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
@@ -84,7 +87,8 @@ import app.natune.utils.rememberEnumPreference
 import app.natune.utils.rememberPreference
 
 internal val LibraryHeaderContentPadding = 64.dp
-internal val LibraryPullToRefreshIndicatorOffset = 0.dp
+// Below the section chips, which float over the top of every section's list.
+internal val LibraryPullToRefreshIndicatorOffset = LibraryHeaderContentPadding
 
 @Composable
 fun LibraryScreen(navController: NavController) {
@@ -249,7 +253,7 @@ fun LibraryScreen(navController: NavController) {
             ) {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().fadeUnderSectionChips(),
                 ) { page ->
                 when (libraryFilters.getOrElse(page) { LibraryFilter.LIBRARY }) {
                     LibraryFilter.LIBRARY -> {
@@ -597,3 +601,25 @@ fun ExpressiveTabChip(
         )
     }
 }
+
+/**
+ * The section chips float over the top of each section's list with no background of their own, so a list scrolled
+ * up used to show straight through them (a card's button drawn across the Playlists chip). Content now fades out as
+ * it reaches the chips, which keeps the screen's tonal backdrop visible instead of painting a band over it.
+ */
+private fun Modifier.fadeUnderSectionChips(): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val clear = (LibraryHeaderContentPadding - 12.dp).toPx()
+            val opaque = LibraryHeaderContentPadding.toPx()
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    clear / size.height to Color.Transparent,
+                    opaque / size.height to Color.Black,
+                    1f to Color.Black,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
