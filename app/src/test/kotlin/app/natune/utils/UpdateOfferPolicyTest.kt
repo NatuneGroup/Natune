@@ -9,6 +9,10 @@
 package app.natune.utils
 
 import app.natune.constants.UpdateChannel
+import app.natune.shared.domain.settings.UpdateEligibility
+import app.natune.shared.domain.settings.archiveMatchesOffer
+import app.natune.shared.domain.settings.updateEligibility
+import app.natune.shared.domain.settings.updateRequestIsCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
