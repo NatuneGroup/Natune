@@ -5,7 +5,7 @@ package app.natune.shared.data.provider
  * and which status or cancel URL may be contacted. The HTTP loop stays in [TidalInstanceResolver],
  * which owns the clients, the clock and the per-instance cooldowns.
  */
-internal object TidalQueuedPlayback {
+object TidalQueuedPlayback {
     /** Poll cadence when the server gives no usable Retry-After. */
     const val DEFAULT_POLL_INTERVAL_MS = 1_000L
 

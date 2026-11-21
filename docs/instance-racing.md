@@ -108,9 +108,9 @@ ticket reports a failed state, or the attempt deadline passes.
 The hifi-api response does not document the in-progress or failed status bodies, so an unrecognised 200
 keeps polling until the deadline. These shapes have not been checked against a live instance.
 
-Both resolvers implement these rules: `tidal/TidalAudioProvider.kt` on Android, with the URL and
-Retry-After rules in `tidal/TidalQueuedPlayback.kt`, and `shared-data/.../provider/TidalInstanceResolver.kt`
-on KMP, with its rules in `provider/TidalQueuedPlayback.kt`. Change them together.
+Both resolvers implement these rules: `tidal/TidalAudioProvider.kt` on Android and
+`shared-data/.../provider/TidalInstanceResolver.kt` on KMP. They share one copy of the URL and Retry-After
+rules, `shared-data/.../provider/TidalQueuedPlayback.kt`, so a change there reaches both.
 
 ## What the settings screen exposes
 
