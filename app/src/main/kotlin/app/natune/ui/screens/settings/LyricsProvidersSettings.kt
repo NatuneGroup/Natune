@@ -66,10 +66,6 @@ import app.natune.constants.EnableMegalobizLyricsKey
 import app.natune.constants.EnableMusixmatchExperimentalKey
 import app.natune.constants.EnablePaxsenixAppleMusicLyricsKey
 import app.natune.constants.EnablePaxsenixLyricsKey
-import app.natune.constants.EnablePaxsenixMusixmatchLyricsKey
-import app.natune.constants.EnablePaxsenixNeteaseLyricsKey
-import app.natune.constants.EnablePaxsenixSpotifyLyricsKey
-import app.natune.constants.EnablePaxsenixYouTubeLyricsKey
 import app.natune.constants.PaxsenixApiKeyKey
 import app.natune.constants.PaxsenixEndpointKey
 import app.natune.constants.EnableSimpMusicLyricsKey
@@ -80,7 +76,7 @@ import app.natune.constants.EnableYouLyPlusLyricsKey
 import app.natune.constants.LyricsProviderOrderKey
 import app.natune.constants.PrioritizeWordSyncedLyricsKey
 import app.natune.constants.deserializeLyricsProviderOrder
-import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
+import app.natune.shared.data.lyrics.PaxsenixDiagnostics
 import app.natune.shared.data.lyrics.BundledEndpoint
 import app.natune.ui.component.DefaultDialog
 import app.natune.ui.component.IconButton
@@ -126,14 +122,6 @@ fun LyricsProvidersSettings(
         prefs.state(key = EnablePaxsenixLyricsKey, defaultValue = true)
     val (enablePaxsenixAppleMusicLyrics, onEnablePaxsenixAppleMusicLyricsChange) =
         prefs.state(key = EnablePaxsenixAppleMusicLyricsKey, defaultValue = true)
-    val (enablePaxsenixNeteaseLyrics, onEnablePaxsenixNeteaseLyricsChange) =
-        prefs.state(key = EnablePaxsenixNeteaseLyricsKey, defaultValue = false)
-    val (enablePaxsenixSpotifyLyrics, onEnablePaxsenixSpotifyLyricsChange) =
-        prefs.state(key = EnablePaxsenixSpotifyLyricsKey, defaultValue = false)
-    val (enablePaxsenixMusixmatchLyrics, onEnablePaxsenixMusixmatchLyricsChange) =
-        prefs.state(key = EnablePaxsenixMusixmatchLyricsKey, defaultValue = false)
-    val (enablePaxsenixYouTubeLyrics, onEnablePaxsenixYouTubeLyricsChange) =
-        prefs.state(key = EnablePaxsenixYouTubeLyricsKey, defaultValue = false)
     val (paxsenixApiKey, onPaxsenixApiKeyChange) =
         prefs.state(key = PaxsenixApiKeyKey, defaultValue = "")
     val (paxsenixEndpoint, onPaxsenixEndpointChange) =
@@ -520,50 +508,6 @@ fun LyricsProvidersSettings(
                     )
                 }
 
-                item(visible = enablePaxsenixLyrics) {
-                    SwitchPreference(
-                        title = { Text("Paxsenix: NetEase") },
-                        description = stringResource(R.string.paxsenix_endpoint_retired),
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enablePaxsenixNeteaseLyrics,
-                        onCheckedChange = onEnablePaxsenixNeteaseLyricsChange,
-                        isEnabled = providerTogglesEnabled,
-                    )
-                }
-
-                item(visible = enablePaxsenixLyrics) {
-                    SwitchPreference(
-                        title = { Text("Paxsenix: Spotify") },
-                        description = stringResource(R.string.paxsenix_endpoint_retired),
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enablePaxsenixSpotifyLyrics,
-                        onCheckedChange = onEnablePaxsenixSpotifyLyricsChange,
-                        isEnabled = providerTogglesEnabled,
-                    )
-                }
-
-                item(visible = enablePaxsenixLyrics) {
-                    SwitchPreference(
-                        title = { Text("Paxsenix: Musixmatch") },
-                        description = stringResource(R.string.paxsenix_endpoint_retired),
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enablePaxsenixMusixmatchLyrics,
-                        onCheckedChange = onEnablePaxsenixMusixmatchLyricsChange,
-                        isEnabled = providerTogglesEnabled,
-                    )
-                }
-
-                item(visible = enablePaxsenixLyrics) {
-                    SwitchPreference(
-                        title = { Text("Paxsenix: YouTube") },
-                        description = stringResource(R.string.paxsenix_endpoint_retired),
-                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enablePaxsenixYouTubeLyrics,
-                        onCheckedChange = onEnablePaxsenixYouTubeLyricsChange,
-                        isEnabled = providerTogglesEnabled,
-                    )
-                }
-
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("enable_tidal_lyrics"),
@@ -699,26 +643,26 @@ private fun PaxsenixEndpointCheckDialog(
                     state.results.forEach { result ->
                         val label =
                             when (result.status) {
-                                PaxsenixLyrics.PathStatus.AVAILABLE ->
+                                PaxsenixDiagnostics.PathStatus.AVAILABLE ->
                                     stringResource(R.string.paxsenix_check_result_ok, result.provider)
 
-                                PaxsenixLyrics.PathStatus.RETIRED ->
+                                PaxsenixDiagnostics.PathStatus.RETIRED ->
                                     stringResource(R.string.paxsenix_check_result_retired, result.provider)
 
-                                PaxsenixLyrics.PathStatus.UNREACHABLE ->
+                                PaxsenixDiagnostics.PathStatus.UNREACHABLE ->
                                     stringResource(R.string.paxsenix_check_result_failed, result.provider)
                             }
                         val tint =
                             when (result.status) {
-                                PaxsenixLyrics.PathStatus.AVAILABLE -> MaterialTheme.colorScheme.primary
-                                PaxsenixLyrics.PathStatus.RETIRED -> MaterialTheme.colorScheme.error
-                                PaxsenixLyrics.PathStatus.UNREACHABLE -> MaterialTheme.colorScheme.onSurfaceVariant
+                                PaxsenixDiagnostics.PathStatus.AVAILABLE -> MaterialTheme.colorScheme.primary
+                                PaxsenixDiagnostics.PathStatus.RETIRED -> MaterialTheme.colorScheme.error
+                                PaxsenixDiagnostics.PathStatus.UNREACHABLE -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         val iconRes =
                             when (result.status) {
-                                PaxsenixLyrics.PathStatus.AVAILABLE -> R.drawable.check
-                                PaxsenixLyrics.PathStatus.RETIRED -> R.drawable.error
-                                PaxsenixLyrics.PathStatus.UNREACHABLE -> R.drawable.info
+                                PaxsenixDiagnostics.PathStatus.AVAILABLE -> R.drawable.check
+                                PaxsenixDiagnostics.PathStatus.RETIRED -> R.drawable.error
+                                PaxsenixDiagnostics.PathStatus.UNREACHABLE -> R.drawable.info
                             }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
