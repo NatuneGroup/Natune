@@ -107,6 +107,8 @@ internal object AndroidRestoreCoordinator {
             val includeKey: (String) -> Boolean = { BackupPreferenceSelection.includes(it, includeSettings, includeAccount) }
             var hasDb = false
             var settingsKind = SettingsKind.NONE
+            var manifest: ByteArray? = null
+            var settingsJsonStaged = false
             var fontCount = 0
             var totalBytes = 0L
             val seen = HashSet<String>()
@@ -125,10 +127,34 @@ internal object AndroidRestoreCoordinator {
                         val isXml = AndroidRestoreArchivePolicy.isSettingsXml(name)
                         val isPb = AndroidRestoreArchivePolicy.isSettingsPb(name)
                         val isFont = AndroidRestoreArchivePolicy.isFont(name)
+                        val isManifest = name == BackupArchiveLayout.MANIFEST
+                        val isSettingsJson = name == BackupArchiveLayout.SETTINGS_JSON
                         if (!AndroidRestoreArchivePolicy.isAllowed(name)) {
-                            throw IllegalArgumentException("Unknown restore entry")
+                            // Another writer's extra files are ignored and never extracted; a name that tries to
+                            // leave the archive still refuses the whole file.
+                            if (AndroidRestoreArchivePolicy.isTraversal(name)) {
+                                throw IllegalArgumentException("Unknown restore entry")
+                            }
+                            entry = zip.nextEntry
+                            continue
                         }
                         when {
+                            isManifest -> { manifest = BackupArchiveLayout.readManifest(zip) }
+
+                            isSettingsJson && includePreferences -> {
+                                if (settingsKind != SettingsKind.NONE) throw IllegalArgumentException("Ambiguous settings payload")
+                                settingsJsonStaged = true
+                                require(entry.size != 0L) { "Restore settings are empty" }
+                                checkEntrySize(entry, AndroidRestoreLimits.MAX_SETTINGS_BYTES)
+                                totalBytes = copyEntry(
+                                    zip,
+                                    File(stagedDir, BackupArchiveLayout.SETTINGS_JSON),
+                                    name,
+                                    totalBytes,
+                                    AndroidRestoreLimits.MAX_SETTINGS_BYTES,
+                                )
+                            }
+
                             isDb && includeLibrary -> {
                                 if (name == InternalDatabase.DB_NAME) hasDb = true
                                 checkEntrySize(entry, AndroidRestoreLimits.MAX_ENTRY_BYTES)
@@ -142,7 +168,7 @@ internal object AndroidRestoreCoordinator {
                             }
 
                             isXml && includePreferences -> {
-                                if (settingsKind == SettingsKind.PB) throw IllegalArgumentException("Ambiguous settings payload")
+                                if (settingsKind == SettingsKind.PB || settingsJsonStaged) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.XML
                                 require(entry.size != 0L) { "Restore settings are empty" }
                                 checkEntrySize(entry, AndroidRestoreLimits.MAX_SETTINGS_BYTES)
@@ -156,7 +182,7 @@ internal object AndroidRestoreCoordinator {
                             }
 
                             isPb && includePreferences -> {
-                                if (settingsKind == SettingsKind.XML) throw IllegalArgumentException("Ambiguous settings payload")
+                                if (settingsKind == SettingsKind.XML || settingsJsonStaged) throw IllegalArgumentException("Ambiguous settings payload")
                                 settingsKind = SettingsKind.PB
                                 require(entry.size != 0L) { "Restore settings are empty" }
                                 checkEntrySize(entry, AndroidRestoreLimits.MAX_SETTINGS_BYTES)
@@ -193,6 +219,19 @@ internal object AndroidRestoreCoordinator {
             } ?: throw IllegalArgumentException("Restore archive unavailable")
 
             require(seen.isNotEmpty()) { "Empty restore archive" }
+            val foreign = BackupArchiveLayout.isForeign(manifest, settingsJsonStaged)
+            if (foreign && hasDb) {
+                // Another app's song.db is its own schema: Room would treat it as a newer Natune database and
+                // destroy it on open. Only that archive's settings can come across.
+                stagedDir.listFiles()?.filter { AndroidRestoreArchivePolicy.isDatabase(it.name) }?.forEach { it.delete() }
+                hasDb = false
+            }
+            if (settingsJsonStaged) {
+                val stagedJson = File(stagedDir, BackupArchiveLayout.SETTINGS_JSON)
+                BackupArchiveLayout.convertSettingsJsonToXml(stagedJson, File(stagedDir, SETTINGS_XML), foreign, includeKey)
+                stagedJson.delete()
+                settingsKind = SettingsKind.XML
+            }
             require(!includeLibrary || hasDb) { "Backup missing database" }
             require(!includeSettings || settingsKind != SettingsKind.NONE) { "Backup missing settings" }
             if (BackupPreferenceSelection.needsConversion(settingsKind)) {
@@ -587,6 +626,11 @@ internal object AndroidRestoreCoordinator {
             } finally {
                 cursor.close()
             }
+            // Room opens a newer schema with fallbackToDestructiveMigrationOnDowngrade, which would erase the
+            // restored library; a backup from a newer build is refused here instead.
+            require(database.version in 1..InternalDatabase.SCHEMA_VERSION) {
+                "This backup's library is from a newer version of Natune"
+            }
         } finally {
             database.close()
         }
@@ -793,7 +837,12 @@ internal object AndroidRestoreArchivePolicy {
     fun isFont(name: String): Boolean = isBackupFontEntry(name)
 
     fun isAllowed(name: String): Boolean =
-        isDatabase(name) || isSettingsXml(name) || isSettingsPb(name) || isFont(name)
+        isDatabase(name) || isSettingsXml(name) || isSettingsPb(name) || isFont(name) ||
+            name == BackupArchiveLayout.MANIFEST || name == BackupArchiveLayout.SETTINGS_JSON
+
+    /** A name that would resolve outside the staging directory; such an archive is refused, not skipped. */
+    fun isTraversal(name: String): Boolean =
+        name.startsWith("/") || name.contains('\\') || name.split('/').any { it == ".." || it.isEmpty() }
 
     fun fontName(name: String): String =
         name.removePrefix("${BackupArchiveRepository.FONTS_ZIP_PREFIX}/")
