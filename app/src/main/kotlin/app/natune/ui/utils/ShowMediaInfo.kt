@@ -156,13 +156,6 @@ private data class MediaInfoQuickFact(
     val text: String,
 )
 
-private data class MediaInfoDetail(
-    val iconRes: Int,
-    val label: String,
-    val value: String,
-    val multiline: Boolean = false,
-)
-
 private data class MediaInfoMetric(
     val iconRes: Int,
     val labelRes: Int,
@@ -513,16 +506,16 @@ fun ShowMediaInfo(videoId: String) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        quickFacts.forEach { fact ->
-                            MediaInfoQuickPill(
-                                iconRes = fact.iconRes,
-                                text = fact.text,
-                                onClick = { copyToClipboard(context, fact.text) },
-                            )
+                        quickFacts.forEachIndexed { index, fact ->
+                            MediaInfoChip(text = fact.text, accent = index == 0, onClick = { copyToClipboard(context, fact.text) })
                         }
                     }
                 }
             }
+        }
+
+        item(contentType = "Verdict") {
+            MediaInfoExpressiveEntrance(entered = entered, index = 1) { MediaInfoVerdict(currentFormat) }
         }
 
         item(contentType = "Tabs") {
@@ -556,30 +549,10 @@ fun ShowMediaInfo(videoId: String) {
                     ) {
                         when (tab) {
                             MediaInfoTab.Information -> {
-                                MediaInfoExpressiveCard {
-                                    overviewDetails.forEachIndexed { index, item ->
-                                        MediaInfoExpressiveRow(
-                                            iconRes = item.iconRes,
-                                            label = item.label,
-                                            value = item.value,
-                                            showDivider = index != overviewDetails.lastIndex,
-                                            onClick = { copyToClipboard(context, item.value) },
-                                        )
-                                    }
-                                }
+                                MediaInfoGridCard(rows = overviewDetails, onCopy = { copyToClipboard(context, it) })
 
                                 if (creditDetails.isNotEmpty()) {
-                                    MediaInfoExpressiveCard {
-                                        creditDetails.forEachIndexed { index, item ->
-                                            MediaInfoExpressiveRow(
-                                                iconRes = item.iconRes,
-                                                label = item.label,
-                                                value = item.value,
-                                                showDivider = index != creditDetails.lastIndex,
-                                                onClick = { copyToClipboard(context, item.value) },
-                                            )
-                                        }
-                                    }
+                                    MediaInfoGridCard(rows = creditDetails, onCopy = { copyToClipboard(context, it) })
                                 }
 
                                 if (info == null) {
@@ -615,17 +588,7 @@ fun ShowMediaInfo(videoId: String) {
                                         message = pleaseWaitText,
                                     )
                                 } else {
-                                    MediaInfoExpressiveCard {
-                                        technicalDetails.forEachIndexed { index, item ->
-                                            MediaInfoExpressiveRow(
-                                                iconRes = item.iconRes,
-                                                label = item.label,
-                                                value = item.value,
-                                                showDivider = index != technicalDetails.lastIndex,
-                                                onClick = { copyToClipboard(context, item.value) },
-                                            )
-                                        }
-                                    }
+                                    MediaInfoGridCard(rows = technicalDetails, onCopy = { copyToClipboard(context, it) })
                                 }
 
                                 if (isLiveTrack) {
@@ -1026,192 +989,17 @@ private fun MediaInfoExpressiveHero(
     }
 }
 
-@Composable
-private fun MediaInfoQuickPill(
-    iconRes: Int,
-    text: String,
-    onClick: () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MediaInfoExpressiveTabs(
     selectedTab: MediaInfoTab,
     onSelect: (MediaInfoTab) -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(4.dp),
-        ) {
-            MediaInfoTab.entries.forEach { tab ->
-                val selected = tab == selectedTab
-                val selectionScale by animateFloatAsState(
-                    targetValue = if (selected) 1f else 0.94f,
-                    animationSpec = ExpressiveSpring,
-                    label = "tabScale_${tab.name}",
-                )
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color =
-                        if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            Color.Transparent
-                        },
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .graphicsLayer {
-                                scaleX = selectionScale
-                                scaleY = selectionScale
-                            },
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier =
-                            Modifier
-                                .clickable { onSelect(tab) }
-                                .padding(vertical = 10.dp),
-                    ) {
-                        AnimatedVisibility(visible = selected) {
-                            Row {
-                                Icon(
-                                    painter = painterResource(tab.iconRes),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                            }
-                        }
-                        Text(
-                            text = stringResource(tab.labelRes),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color =
-                                if (selected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MediaInfoExpressiveCard(
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun MediaInfoExpressiveRow(
-    iconRes: Int,
-    label: String,
-    value: String,
-    showDivider: Boolean,
-    onClick: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClick)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                modifier = Modifier.size(34.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-            Column(
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-        }
-        if (showDivider) {
-            Box(
-                modifier =
-                    Modifier
-                        .padding(start = 64.dp)
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .alpha(0.5f)
-                        .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-        }
-    }
+    MediaInfoPillTabs(
+        labels = MediaInfoTab.entries.map { stringResource(it.labelRes) },
+        selected = selectedTab.ordinal,
+        onSelect = { onSelect(MediaInfoTab.entries[it]) },
+    )
 }
 
 @Composable
@@ -1320,23 +1108,7 @@ private fun MediaInfoOutputCard(
             )
         }
 
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            details.forEachIndexed { index, item ->
-                MediaInfoExpressiveRow(
-                    iconRes = item.iconRes,
-                    label = item.label,
-                    value = item.value,
-                    showDivider = index != details.lastIndex,
-                    onClick = {},
-                )
-            }
-        }
-    }
+    MediaInfoGridCard(rows = details, color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
 }
 
 @Composable
@@ -1602,36 +1374,7 @@ private fun MediaInfoSectionCard(
     title: String,
     rows: List<MediaInfoDetail>,
 ) {
-    if (rows.isEmpty()) return
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
-            ) {
-                Text(
-                    text = title.uppercase(Locale.ROOT),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            rows.forEachIndexed { index, item ->
-                MediaInfoExpressiveRow(
-                    iconRes = item.iconRes,
-                    label = item.label,
-                    value = item.value,
-                    showDivider = index != rows.lastIndex,
-                    onClick = {},
-                )
-            }
-        }
-    }
+    MediaInfoGridCard(rows = rows, title = title)
 }
 
 @Composable
