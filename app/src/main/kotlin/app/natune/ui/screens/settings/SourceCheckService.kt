@@ -265,7 +265,7 @@ object SourceCheckService {
                 .url(resolverUrl)
                 .get()
                 .header("x-request-source", "muzo")
-                .header("User-Agent", "ArchiveTune-Android")
+                .header("User-Agent", "Natune-Android")
                 .header("Accept", "application/json")
                 .build()
             client.newCall(resolverRequest).execute().use { resolverResponse ->
@@ -365,7 +365,7 @@ object SourceCheckService {
             val request = Request.Builder()
                 .url(url)
                 .get()
-                .header("User-Agent", "ArchiveTune-Android")
+                .header("User-Agent", "Natune-Android")
                 .header("Range", "bytes=0-1")
                 .build()
             client.newCall(request).execute().use { response ->

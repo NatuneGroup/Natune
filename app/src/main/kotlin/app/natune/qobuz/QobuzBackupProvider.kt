@@ -72,7 +72,7 @@ object QobuzBackupProvider {
     private val BASE_URL: String =
         normalizeEndpoint(DEFAULT_ENDPOINT).takeIf { it.startsWith("https://") } ?: DEFAULT_ENDPOINT
 
-    private const val USER_AGENT = "ArchiveTune-Android"
+    private const val USER_AGENT = "Natune-Android"
     private const val SEARCH_CACHE_MS = 10 * 60 * 1000L
 
     /** YouTube video ids are exactly 11 chars of `[A-Za-z0-9_-]`. */

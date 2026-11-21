@@ -94,7 +94,7 @@ internal class ProviderHttp(client: HttpClient) {
             http.prepareRequest(url) {
                 this.method = requestMethod
                 header(HttpHeaders.Accept, "application/json")
-                header(HttpHeaders.UserAgent, "ArchiveTune-Android")
+                header(HttpHeaders.UserAgent, "Natune-Android")
                 params.forEach { (key, value) -> parameter(key, value) }
                 headers.forEach { (key, value) -> header(key, value) }
                 if (body != null) { contentType(ContentType.Application.Json); setBody(body.toString()) }

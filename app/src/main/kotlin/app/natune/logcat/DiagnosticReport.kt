@@ -44,7 +44,7 @@ internal suspend fun unredactedDiagnosticReport(context: Context, capturedText: 
         }
     val exceptionSummary = diagnosticExceptionSummary(errorMessages)
     return buildString {
-            appendLine("ArchiveTune diagnostic report v2")
+            appendLine("Natune diagnostic report v2")
             appendLine("Fork: NatuneGroup/Natune")
             appendLine("Revision: ${BuildConfig.FORK_REVISION} (${BuildConfig.FORK_BRANCH})")
             appendLine("Local modifications: ${BuildConfig.FORK_DIRTY}")

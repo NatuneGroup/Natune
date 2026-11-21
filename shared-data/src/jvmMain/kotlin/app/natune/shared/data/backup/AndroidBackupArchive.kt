@@ -49,7 +49,7 @@ object AndroidBackupArchive {
         val names = entryNames(archive) ?: throw IllegalArgumentException("Not a zip archive")
         val wantsLibrary = SONG_DB in names
         val wantsSettings = names.any { it == SETTINGS_XML || it == SETTINGS_PB }
-        require(wantsLibrary || wantsSettings) { "Not an ArchiveTune backup" }
+        require(wantsLibrary || wantsSettings) { "Not a Natune backup" }
         val categories = buildSet {
             if (wantsLibrary) add(BackupCategory.LIBRARY)
             if (wantsSettings) {

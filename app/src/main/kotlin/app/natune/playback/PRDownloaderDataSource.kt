@@ -473,7 +473,7 @@ internal class PRDownloaderDataSource private constructor(
     }
 
     companion object {
-        private const val DEFAULT_USER_AGENT = "ArchiveTune"
+        private const val DEFAULT_USER_AGENT = "Natune"
         private const val DOWNLOAD_WAIT_TIMEOUT_MINUTES = 30L
 
         /** A failed download gets one retry on a retryable class before open() gives up. */

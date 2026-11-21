@@ -82,7 +82,7 @@ object TelegramCoverProvider {
             Request
                 .Builder()
                 .url(url)
-                .header("User-Agent", "ArchiveTune")
+                .header("User-Agent", "Natune")
                 .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return null

@@ -38,7 +38,7 @@ import app.natune.utils.withAppProxy
  * arcod-style).
  */
 object QobuzAudioProvider {
-    private const val USER_AGENT = "ArchiveTune-Android"
+    private const val USER_AGENT = "Natune-Android"
     private const val SEARCH_LIMIT = 10
     private const val MIN_MATCH_SCORE = 60
     private const val SEARCH_CACHE_MS = 10 * 60 * 1000L

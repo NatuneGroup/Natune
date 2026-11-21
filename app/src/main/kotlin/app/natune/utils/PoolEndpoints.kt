@@ -79,7 +79,7 @@ internal object PoolEndpoints {
                     Request
                         .Builder()
                         .url("$base$path")
-                        .header("User-Agent", "ArchiveTune-Android")
+                        .header("User-Agent", "Natune-Android")
                         // v2 of the pool protocol: sensitive fields are encrypted with a key derived
                         // from the read key; older servers ignore the header.
                         .header("X-Pool-Client", "v2")

@@ -129,7 +129,7 @@ class FeedbackReportTest {
 
     @Test
     fun boundedDraftKeepsTheHeaderAndTheNewestLogLines() {
-        val head = "ArchiveTune feedback report\nError details: boom"
+        val head = "Natune feedback report\nError details: boom"
         val log = (1..20_000).joinToString("\n") { "diagnostic line $it, padded so the log overruns the budget" }
         val report = FeedbackReport.finish(draft(head, log))
         assertTrue(report.startsWith(head))

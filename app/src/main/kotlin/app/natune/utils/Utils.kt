@@ -22,7 +22,7 @@ fun reportException(throwable: Throwable) {
 
     // Use android.util.Log instead of throwable.printStackTrace(). printStackTrace() writes to
     // System.err, which Android redirects to logcat as `W/System.err` one line at a time.
-    Log.w("ArchiveTune", "reportException", throwable)
+    Log.w("Natune", "reportException", throwable)
 }
 
 /**

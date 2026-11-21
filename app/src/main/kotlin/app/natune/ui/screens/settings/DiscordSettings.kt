@@ -402,7 +402,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     val (button2Label) =
         prefs.state(
             key = DiscordActivityButton2LabelKey,
-            defaultValue = "Go to ArchiveTune",
+            defaultValue = "Go to Natune",
         )
     val (button2Enabled) =
         prefs.state(
@@ -1267,7 +1267,7 @@ fun RichPresence(
     button1Enabled: Boolean = true,
     button1UrlSource: String = "songurl",
     button1CustomUrl: String = "",
-    button2Label: String = "Go to ArchiveTune",
+    button2Label: String = "Go to Natune",
     button2Enabled: Boolean = true,
     button2UrlSource: String = "custom",
     button2CustomUrl: String = "https://github.com/NatuneGroup/Natune",

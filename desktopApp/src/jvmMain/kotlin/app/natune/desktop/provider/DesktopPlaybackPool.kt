@@ -517,7 +517,7 @@ internal class DesktopPlaybackPool(
         }
 
     private fun io.ktor.client.request.HttpRequestBuilder.poolHeaders() {
-        header("User-Agent", "ArchiveTune-Desktop")
+        header("User-Agent", "Natune-Desktop")
         // v2 of the feed protocol: sensitive fields are encrypted with a key derived from the read key.
         header("X-Pool-Client", "v2")
         if (readKey.isNotBlank()) header("Authorization", "Bearer $readKey")

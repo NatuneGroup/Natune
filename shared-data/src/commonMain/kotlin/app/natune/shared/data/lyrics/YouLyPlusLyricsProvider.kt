@@ -163,7 +163,7 @@ class YouLyPlusLyricsProvider(
         val REQUEST_HEADERS =
             mapOf(
                 HttpHeaders.Accept to "application/json",
-                HttpHeaders.UserAgent to "ArchiveTune",
+                HttpHeaders.UserAgent to "Natune",
             )
     }
 }

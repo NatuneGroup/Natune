@@ -52,7 +52,7 @@ object DiscordSettingsDefaults {
     const val BUTTON1_LABEL = "Listen on YouTube Music"
     const val BUTTON1_URL_SOURCE = "songurl"
     const val BUTTON2_ENABLED = true
-    const val BUTTON2_LABEL = "Go to ArchiveTune"
+    const val BUTTON2_LABEL = "Go to Natune"
     const val BUTTON2_URL_SOURCE = "custom"
     const val BUTTON2_CUSTOM_URL = "https://github.com/NatuneGroup/Natune"
     const val TRANSLATOR_CONTEXTS = "{song}, {artist}, {album}"

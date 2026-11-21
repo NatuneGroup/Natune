@@ -24,8 +24,8 @@ class DefaultVoiceSearchController : VoiceSearchController {
     override fun startListening(context: Context) {
         _state.value =
             VoiceSearchState.Error(
-                "Voice search requires the GMS build of ArchiveTune. Use the system " +
-                    "voice assistant (e.g. \"OK Google, play X on ArchiveTune\") instead.",
+                "Voice search requires the GMS build of Natune. Use the system " +
+                    "voice assistant (e.g. \"OK Google, play X on Natune\") instead.",
             )
     }
 

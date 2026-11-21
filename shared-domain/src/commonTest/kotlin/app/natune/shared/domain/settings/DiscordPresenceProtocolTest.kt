@@ -94,8 +94,8 @@ class DiscordPresenceProtocolTest {
         assertFalse("presence" in d)
         val properties = d.getValue("properties").jsonObject
         assertEquals("ios", properties.getValue("os").jsonPrimitive.content)
-        assertEquals("ArchiveTune", properties.getValue("browser").jsonPrimitive.content)
-        assertEquals("ArchiveTune", properties.getValue("device").jsonPrimitive.content)
+        assertEquals("Natune", properties.getValue("browser").jsonPrimitive.content)
+        assertEquals("Natune", properties.getValue("device").jsonPrimitive.content)
     }
 
     @Test
@@ -193,7 +193,7 @@ class DiscordPresenceProtocolTest {
         val empty = json.parseToJsonElement(
             buildDiscordPresenceJson(preferences, null, null, null, false, 0L),
         ).jsonObject.getValue("d").jsonObject.getValue("activities").jsonArray.single().jsonObject
-        assertEquals("ArchiveTune", empty.getValue("name").jsonPrimitive.content)
+        assertEquals("Natune", empty.getValue("name").jsonPrimitive.content)
         assertFalse("assets" in empty)
     }
 

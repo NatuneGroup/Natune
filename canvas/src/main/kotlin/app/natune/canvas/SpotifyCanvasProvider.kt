@@ -104,7 +104,7 @@ object SpotifyCanvasProvider {
             // request — without it the server rate-limits the client aggressively.
             defaultRequest {
                 header("x-request-source", "muzo")
-                header("User-Agent", "ArchiveTune-Android")
+                header("User-Agent", "Natune-Android")
                 header("Accept", "application/json")
             }
             expectSuccess = false
@@ -270,7 +270,7 @@ object SpotifyCanvasProvider {
                 header("Authorization", "Bearer $token")
                 header("Accept", "application/x-protobuf")
                 header("Content-Type", "application/x-protobuf")
-                header("User-Agent", "ArchiveTune-Android")
+                header("User-Agent", "Natune-Android")
                 setBody(SpotifyCanvazProtocol.encodeRequest(listOf(trackUri)))
             }
         if (response.status != HttpStatusCode.OK) {

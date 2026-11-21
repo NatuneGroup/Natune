@@ -312,7 +312,7 @@ class AiContentFilterRepository
                 "https://raw.githubusercontent.com/Override92/AiSList/main/AiSList/aislist_blocklist.txt"
             private const val WARNLIST_URL =
                 "https://raw.githubusercontent.com/Override92/AiSList/main/AiSList/aislist_warnlist.txt"
-            private const val USER_AGENT = "ArchiveTune-AiContentFilter"
+            private const val USER_AGENT = "Natune-AiContentFilter"
             private const val MAX_RESPONSE_BYTES = 5 * 1024 * 1024
             private const val BUFFER_SIZE_BYTES = 8 * 1024
             private const val NETWORK_TIMEOUT_SECONDS = 30L

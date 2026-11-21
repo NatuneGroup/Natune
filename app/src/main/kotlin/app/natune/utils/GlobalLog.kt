@@ -174,7 +174,7 @@ class GlobalLogTree : Timber.Tree() {
             // agree on it (the viewer dedupes captured lines by tag): the
             // explicit tag, else the caller class like DebugTree computes, else
             // a fixed fallback name.
-            val effectiveTag = tag ?: inferCallerTag() ?: "ArchiveTune"
+            val effectiveTag = tag ?: inferCallerTag() ?: "Natune"
             val final = if (t != null) "$message\n$t" else message
             GlobalLog.append(priority, effectiveTag, final)
             if (!BuildConfig.DEBUG) {

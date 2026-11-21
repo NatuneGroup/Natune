@@ -252,7 +252,7 @@ private fun YearInMusicRecapScreen(
                             ComposeToImage.saveBitmapAsFile(
                                 context = context,
                                 bitmap = fitted,
-                                fileName = "ArchiveTune_YearInMusic_${content.selectedYear}_${currentPage + 1}",
+                                fileName = "Natune_YearInMusic_${content.selectedYear}_${currentPage + 1}",
                             )
                         val shareIntent =
                             Intent(Intent.ACTION_SEND).apply {

@@ -40,7 +40,7 @@ import app.natune.utils.withAppProxy
 object DeezerInstances {
     private const val TAG = "DeezerInstances"
     private const val FAILURE_COOLDOWN_MS = 10 * 60 * 1000L
-    private const val USER_AGENT = "ArchiveTune-Android"
+    private const val USER_AGENT = "Natune-Android"
 
     private val client =
         OkHttpClient

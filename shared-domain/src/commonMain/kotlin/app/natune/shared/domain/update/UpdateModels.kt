@@ -51,7 +51,7 @@ object UpdateRepository {
     const val API_RELEASES_URL: String = "https://api.github.com/repos/$OWNER/releases"
     const val API_COMMITS_URL: String = "https://api.github.com/repos/$OWNER/commits"
     const val UPDATE_FEED_TAG: String = "update-feed"
-    const val API_USER_AGENT: String = "ArchiveTune"
+    const val API_USER_AGENT: String = "Natune"
     const val API_ACCEPT: String = "application/vnd.github+json"
 }
 

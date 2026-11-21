@@ -18,7 +18,7 @@
     <string name="ios_release_changelog">Changelog</string>
     <string name="ios_icon_title">App icon</string>
     <string name="ios_icon_default">Natune</string>
-    <string name="ios_icon_android">ArchiveTune Android</string>
+    <string name="ios_icon_android">Natune Android</string>
     <string name="ios_modules_title">Source modules</string>
     <string name="ios_modules_enable">Enable modules</string>
     <string name="ios_modules_import">Install .arch package</string>
