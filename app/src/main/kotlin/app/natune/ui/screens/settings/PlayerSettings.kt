@@ -707,9 +707,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     )
                 }
 
-                item { BitPerfectUsbPreference(positions.modifierFor("bit_perfect_usb")) }
+                item { BitPerfectUsbPreference(positions.modifierFor("bit_perfect_usb"), prefs) }
 
-                item { DirectUsbDriverPreference(positions.modifierFor("direct_usb_driver")) }
+                item { DirectUsbDriverPreference(positions.modifierFor("direct_usb_driver"), prefs) }
 
                 item {
                     Column(modifier = positions.modifierFor("usb_exclusive_audio")) {
