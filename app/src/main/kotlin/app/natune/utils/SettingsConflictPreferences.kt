@@ -6,7 +6,6 @@ import androidx.datastore.preferences.core.Preferences
 import app.natune.constants.AppFontPreference
 import app.natune.constants.PlayerBackgroundStyle
 import app.natune.shared.domain.settings.*
-import app.natune.shared.domain.settings.AppFontPreference as SharedFont
 import app.natune.shared.domain.settings.setFontPreference as setSharedFont
 import app.natune.shared.domain.settings.setPlayerBackgroundStyle as setSharedPlayerBackground
 import app.natune.shared.domain.settings.setCacheCapacity as setSharedCacheCapacity
@@ -36,7 +35,7 @@ internal fun PreferenceSnapshot.conflictAwareState(key: Preferences.Key<Boolean>
     )
 
 internal fun MutablePreferences.setFontPreference(font: AppFontPreference) {
-    applySharedPreferenceEdit { setSharedFont(SharedFont.valueOf(font.name)) }
+    applySharedPreferenceEdit { setSharedFont(font) }
 }
 
 internal fun MutablePreferences.setPlayerBackgroundStyle(style: PlayerBackgroundStyle) {

@@ -29,6 +29,7 @@ import app.natune.playback.BitPerfectUsbOutput
 import app.natune.playback.usbdirect.UsbDirectNative
 import app.natune.playback.dsp.UsbExclusiveAudioOutputProvider
 import app.natune.utils.*
+import app.natune.shared.domain.settings.restartSettingValues
 import java.util.UUID
 
 data class RestartPromptState(

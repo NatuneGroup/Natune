@@ -70,11 +70,7 @@ enum class SliderStyle {
     Circular,
     Simple,
 }
-enum class AppFontPreference {
-    DEFAULT,
-    SYSTEM,
-    CUSTOM,
-}
+typealias AppFontPreference = app.natune.shared.domain.settings.AppFontPreference
 enum class PlaylistSuggestionSource {
     PLAYLIST_TITLE,
     PLAYLIST_CONTENT,
