@@ -8,6 +8,9 @@
 
 package app.natune.utils
 
+import app.natune.constants.UpdateChannel
+import app.natune.shared.domain.update.parseUpdateFeedManifest
+import app.natune.shared.domain.update.selectUpdateFeedAssetUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -49,7 +52,7 @@ class UpdateFeedManifestTest {
 
     @Test
     fun validNightlyManifestParses() {
-        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")
+        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = UpdateChannel.NIGHTLY)
 
         assertEquals("nightly", manifest?.channel)
         assertEquals("N202610131530", manifest?.tag)
@@ -71,7 +74,7 @@ class UpdateFeedManifestTest {
                 .replace("\"notes\": \"Nightly build notes\",", "\"notes\": \"Nightly build notes\", \"futureField\": {\"x\": 1},")
                 .replace("\"sha256\": \"deadbeef\"", "\"sha256\": \"deadbeef\", \"checksumV2\": \"zzz\"")
 
-        val manifest = parseUpdateFeedManifest(withExtras, expectedChannel = "nightly")
+        val manifest = parseUpdateFeedManifest(withExtras, expectedChannel = UpdateChannel.NIGHTLY)
 
         assertEquals("N202610131530", manifest?.tag)
         assertEquals(2, manifest?.assets?.size)
@@ -79,42 +82,42 @@ class UpdateFeedManifestTest {
 
     @Test
     fun malformedJsonIsAMiss() {
-        assertNull(parseUpdateFeedManifest("{oops", expectedChannel = "nightly"))
-        assertNull(parseUpdateFeedManifest("not json at all", expectedChannel = "nightly"))
-        assertNull(parseUpdateFeedManifest("", expectedChannel = "nightly"))
+        assertNull(parseUpdateFeedManifest("{oops", expectedChannel = UpdateChannel.NIGHTLY))
+        assertNull(parseUpdateFeedManifest("not json at all", expectedChannel = UpdateChannel.NIGHTLY))
+        assertNull(parseUpdateFeedManifest("", expectedChannel = UpdateChannel.NIGHTLY))
     }
 
     @Test
     fun missingVersionCodeIsAMiss() {
         val withoutVersionCode = validNightlyManifest.replace(Regex("\"versionCode\": \\d+,"), "")
 
-        assertNull(parseUpdateFeedManifest(withoutVersionCode, expectedChannel = "nightly"))
+        assertNull(parseUpdateFeedManifest(withoutVersionCode, expectedChannel = UpdateChannel.NIGHTLY))
     }
 
     @Test
     fun nonPositiveVersionCodeIsAMiss() {
         val zero = validNightlyManifest.replace("\"versionCode\": 6731", "\"versionCode\": 0")
 
-        assertNull(parseUpdateFeedManifest(zero, expectedChannel = "nightly"))
+        assertNull(parseUpdateFeedManifest(zero, expectedChannel = UpdateChannel.NIGHTLY))
     }
 
     @Test
     fun wrongChannelIsAMiss() {
-        assertNull(parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "stable"))
+        assertNull(parseUpdateFeedManifest(validNightlyManifest, expectedChannel = UpdateChannel.STABLE))
     }
 
     @Test
     fun schemaOtherThanOneIsAMiss() {
         val v2 = validNightlyManifest.replace("\"schema\": 1", "\"schema\": 2")
-        assertNull(parseUpdateFeedManifest(v2, expectedChannel = "nightly"))
+        assertNull(parseUpdateFeedManifest(v2, expectedChannel = UpdateChannel.NIGHTLY))
 
         val noSchema = validNightlyManifest.replace("\"schema\": 1,", "")
-        assertNull(parseUpdateFeedManifest(noSchema, expectedChannel = "nightly"))
+        assertNull(parseUpdateFeedManifest(noSchema, expectedChannel = UpdateChannel.NIGHTLY))
     }
 
     @Test
     fun assetSelectionPicksGmsMobileArm64Nightly() {
-        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")!!
+        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = UpdateChannel.NIGHTLY)!!
 
         assertEquals(
             "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
@@ -124,7 +127,7 @@ class UpdateFeedManifestTest {
 
     @Test
     fun assetSelectionPicksFossMobileUniversalNightly() {
-        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")!!
+        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = UpdateChannel.NIGHTLY)!!
 
         assertEquals(
             "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-foss-mobile-universal-nightly.apk",
@@ -134,7 +137,7 @@ class UpdateFeedManifestTest {
 
     @Test
     fun assetSelectionReturnsNullWhenNoAssetMatches() {
-        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")!!
+        val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = UpdateChannel.NIGHTLY)!!
 
         assertNull(selectUpdateFeedAssetUrl(manifest.assets, "app-gms-tv-universal-nightly.apk"))
         assertNull(selectUpdateFeedAssetUrl(emptyList(), "app-gms-mobile-arm64-nightly.apk"))
