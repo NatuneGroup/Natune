@@ -32,11 +32,14 @@ internal fun inspectBackupSettings(name: String, input: InputStream): Set<Backup
     } else {
         LegacyDataStorePreferences.read(bytes).keys.map { it.name }.toSet()
     }
-    return buildSet {
+    return categoriesOf(names)
+}
+
+private fun categoriesOf(names: Collection<String>): Set<BackupArchiveCategory> =
+    buildSet {
         if (names.any { BackupPreferenceSelection.includes(it, settings = true, account = false) }) add(BackupArchiveCategory.SETTINGS)
         if (names.any { BackupPreferenceSelection.includes(it, settings = false, account = true) }) add(BackupArchiveCategory.ACCOUNT)
     }
-}
 
 internal suspend fun validateBackupArchive(
     context: Context,
@@ -57,15 +60,26 @@ internal suspend fun validateBackupArchive(
                 val zipStream = inputStream.zipInputStream()
                 val entryNames = mutableSetOf<String>()
                 val preferenceCategories = mutableSetOf<BackupArchiveCategory>()
+                var manifest: ByteArray? = null
+                var settingsJson: ByteArray? = null
                 zipStream.use { zip ->
                     var entry = zip.nextEntry
                     while (entry != null) {
                         entryNames.add(entry.name)
-                        if (entry.name == BackupArchiveRepository.SETTINGS_XML_FILENAME || entry.name == BackupRestoreViewModel.SETTINGS_FILENAME) {
-                            preferenceCategories += inspectBackupSettings(entry.name, zip)
+                        when (entry.name) {
+                            BackupArchiveRepository.SETTINGS_XML_FILENAME, BackupRestoreViewModel.SETTINGS_FILENAME ->
+                                preferenceCategories += inspectBackupSettings(entry.name, zip)
+                            BackupArchiveLayout.MANIFEST -> manifest = BackupArchiveLayout.readManifest(zip)
+                            // The manifest may follow settings.json, so the archive's origin is known only at the end.
+                            BackupArchiveLayout.SETTINGS_JSON ->
+                                settingsJson = BackupArchiveLayout.readBounded(zip, AndroidRestoreLimits.MAX_SETTINGS_BYTES)
                         }
                         entry = zip.nextEntry
                     }
+                }
+                val foreign = BackupArchiveLayout.isForeign(manifest, settingsJson != null)
+                settingsJson?.let { bytes ->
+                    preferenceCategories += categoriesOf(BackupArchiveLayout.readSettings(bytes, foreign).settings.keys.map { it.name })
                 }
                 if (entryNames.isEmpty()) {
                     return@withContext BackupValidationResult(
@@ -75,7 +89,8 @@ internal suspend fun validateBackupArchive(
                     )
                 }
                 val categories = mutableSetOf<BackupCategory>()
-                val hasDb = entryNames.any { it.startsWith(InternalDatabase.DB_NAME) }
+                // Another app's song.db is its own schema, so its library is never offered.
+                val hasDb = !foreign && entryNames.any { it.startsWith(InternalDatabase.DB_NAME) }
                 preferenceCategories.forEach { categories.add(BackupCategory.valueOf(it.name)) }
                 if (hasDb) {
                     categories.add(BackupCategory.LIBRARY)

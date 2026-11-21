@@ -189,6 +189,9 @@ abstract class InternalDatabase : RoomDatabase() {
     companion object {
         const val DB_NAME = "song.db"
 
+        /** The schema this build opens; a restored database must not be newer. */
+        const val SCHEMA_VERSION = CURRENT_VERSION
+
         fun newInstance(context: Context): MusicDatabase {
             // v39 is additive (song.lyricsOffset only): 38 -> 39 goes through MIGRATION_38_39,
             // never the reconciling rebuild, so the universal range stops at 37.
