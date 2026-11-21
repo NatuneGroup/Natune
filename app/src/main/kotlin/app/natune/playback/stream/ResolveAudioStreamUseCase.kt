@@ -39,7 +39,6 @@ class ResolveAudioStreamUseCase
         private val nativeRepository: AudioStreamRepository,
         private val innerTuneXRepository: AudioStreamRepository,
         private val newPipeRepository: AudioStreamRepository,
-        private val ytdlnisRepository: AudioStreamRepository,
         private val elapsedRealtime: () -> Long,
     ) {
     @Inject
@@ -47,8 +46,7 @@ class ResolveAudioStreamUseCase
         nativeRepository: NativeStreamRepository,
         innerTuneXRepository: InnerTuneXStreamRepository,
         newPipeRepository: NewPipeStreamRepository,
-        ytdlnisRepository: YtdlnisStreamRepository,
-    ) : this(nativeRepository, innerTuneXRepository, newPipeRepository, ytdlnisRepository, SystemClock::elapsedRealtime)
+    ) : this(nativeRepository, innerTuneXRepository, newPipeRepository, SystemClock::elapsedRealtime)
     /**
      * The tiers live behind the shipped resolver, in order: `MusicService` and `DownloadUtil` walk
      * these through [resolveShippedFallback] after `YTPlayerUtils` fails and before echo.
@@ -56,12 +54,8 @@ class ResolveAudioStreamUseCase
     private val shippedFallbackTiers: List<Pair<String, AudioStreamRepository>> =
         listOf("innertubex" to innerTuneXRepository, "newpipe" to newPipeRepository)
 
-    /**
-     * [shippedFallbackTiers] plus the external yt-dlp plugin, which only this class's own [invoke]
-     * reaches: the plugin is an optional APK, so it stays out of the live chain.
-     */
-    private val fallbackTiers: List<AudioStreamRepository> =
-        shippedFallbackTiers.map { it.second } + ytdlnisRepository
+    /** The tiers this class's own [invoke] walks after the native resolver: the same as [shippedFallbackTiers]. */
+    private val fallbackTiers: List<AudioStreamRepository> = shippedFallbackTiers.map { it.second }
 
     private data class CacheKey(
         val mediaId: String,
