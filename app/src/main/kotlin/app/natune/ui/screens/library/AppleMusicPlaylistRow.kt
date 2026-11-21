@@ -141,7 +141,7 @@ fun AppleMusicPlaylistRow(
 private fun playlistSubtitle(playlist: Playlist): String? =
     when {
         playlist.playlist.id == PlaylistEntity.LIKED_PLAYLIST_ID -> null
-        playlist.songCount > 0 -> "${playlist.songCount} ${stringResource(R.string.tracks_label)}"
+        playlist.displaySongCount > 0 -> "${playlist.displaySongCount} ${stringResource(R.string.tracks_label)}"
         else -> null
     }
 
