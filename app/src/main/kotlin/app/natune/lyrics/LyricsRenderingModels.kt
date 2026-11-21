@@ -60,6 +60,7 @@ data class PreparedLyricsLine(
     val romanizedText: String?,
     val phonetics: ImmutableList<PreparedLyricsPhonetic>,
     val isInstrumental: Boolean,
+    val singers: ImmutableList<String> = ImmutableList.of(),
 )
 
 @Immutable
@@ -85,4 +86,15 @@ data class PreparedLyrics(
     val preferences: LyricsRenderingPreferences,
 ) {
     val hasTranslations: Boolean = lines.any { !it.translation.isNullOrBlank() }
+
+    /**
+     * Singer names are worth showing only when the lyrics have more than one voice: lines placed on different sides, or
+     * at least two distinct named singers. A solo track that names its one artist shows nothing.
+     */
+    val showsSingerNames: Boolean =
+        lines.any { it.singers.isNotEmpty() } &&
+            (
+                lines.asSequence().filterNot(PreparedLyricsLine::isInstrumental).map(PreparedLyricsLine::alignment).distinct().count() > 1 ||
+                    lines.asSequence().flatMap { it.singers.asSequence() }.distinct().take(2).count() > 1
+            )
 }

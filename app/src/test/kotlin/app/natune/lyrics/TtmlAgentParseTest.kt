@@ -35,4 +35,26 @@ class TtmlAgentParseTest {
             LyricsUtils.parseTtml(ttml).map { it.agent },
         )
     }
+
+    @Test
+    fun parsedTtmlLinesCarryTheirSingerNames() {
+        val named =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+              <head><metadata>
+                <ttm:agent type="person" xml:id="v1"><ttm:name type="full">Alice</ttm:name></ttm:agent>
+                <ttm:agent type="person" xml:id="v2"><ttm:name type="full">Bob</ttm:name></ttm:agent>
+              </metadata></head>
+              <body><div>
+                <p begin="00:00:01.000" end="00:00:02.000" ttm:agent="v1">lead</p>
+                <p begin="00:00:03.000" end="00:00:04.000" ttm:agent="v1 v2">together</p>
+              </div></body>
+            </tt>
+            """.trimIndent()
+        assertEquals(
+            listOf(listOf("Alice"), listOf("Alice", "Bob")),
+            LyricsUtils.parseTtml(named).map { it.singers },
+        )
+    }
 }
