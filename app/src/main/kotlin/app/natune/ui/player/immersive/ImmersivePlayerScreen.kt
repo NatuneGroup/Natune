@@ -664,10 +664,9 @@ private fun ProgressSection(
                 tint = ImmersiveContentColor,
                 modifier = Modifier.size(17.dp),
             )
-            Text(
-                text = quality.label(),
-                color = ImmersiveContentColor,
-                style = MaterialTheme.typography.labelLarge,
+            app.natune.ui.player.CodecBadge(
+                quality = quality,
+                contentColor = ImmersiveContentColor,
                 modifier = Modifier.padding(start = 5.dp),
             )
             Spacer(modifier = Modifier.weight(1f))

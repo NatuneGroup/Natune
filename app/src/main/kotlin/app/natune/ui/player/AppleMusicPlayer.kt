@@ -2362,34 +2362,5 @@ private fun AppleMusicQualityChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val quality = remember(currentFormat) { currentFormat.streamQuality() }
-    val label = quality.label()
-    val lossless = quality.isLossless
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color.White.copy(alpha = 0.1f),
-        border = BorderStroke(width = 1.dp, color = Color.White.copy(alpha = 0.13f)),
-        modifier = modifier.clickable(onClick = onClick),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Icon(
-                painter = painterResource(
-                    if (lossless) R.drawable.ic_mqa else R.drawable.player_graphic_eq,
-                ),
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.72f),
-                modifier = Modifier.size(if (lossless) 18.dp else 15.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-            )
-        }
-    }
+    CodecBadge(format = currentFormat, modifier = modifier, contentColor = Color.White, onClick = onClick)
 }

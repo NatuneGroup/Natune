@@ -432,29 +432,7 @@ internal fun WavySliderWithLabels(
             }
 
             if (currentFormat != null) {
-                val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
-                Row(
-                    modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(contentColor.copy(alpha = if (isDark) 0.10f else 0.08f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.spatialflow_ic_music_note),
-                        contentDescription = null,
-                        tint = contentSecondary,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = contentSecondary,
-                    )
-                }
+                app.natune.ui.player.CodecBadge(format = currentFormat, contentColor = contentColor)
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
