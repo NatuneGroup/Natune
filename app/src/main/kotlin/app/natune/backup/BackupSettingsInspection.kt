@@ -70,6 +70,8 @@ internal suspend fun validateBackupArchive(
                             BackupArchiveRepository.SETTINGS_XML_FILENAME, BackupRestoreViewModel.SETTINGS_FILENAME ->
                                 preferenceCategories += inspectBackupSettings(entry.name, zip)
                             BackupArchiveLayout.MANIFEST -> manifest = BackupArchiveLayout.readManifest(zip)
+                            // Encrypted sign-ins: offered here, opened with the password when the restore runs.
+                            BackupAccountVault.ENTRY -> preferenceCategories += BackupArchiveCategory.ACCOUNT
                             // The manifest may follow settings.json, so the archive's origin is known only at the end.
                             BackupArchiveLayout.SETTINGS_JSON ->
                                 settingsJson = BackupArchiveLayout.readBounded(zip, AndroidRestoreLimits.MAX_SETTINGS_BYTES)

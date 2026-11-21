@@ -23,6 +23,8 @@ object PortableAndroidBackup {
                     name == "settings.xml" || name == "settings.preferences_pb" -> 8L * 1024 * 1024
                     name == PortableBackupFormat.SETTINGS -> PortableBackupFormat.MAX_SETTINGS_BYTES
                     name == PortableBackupFormat.MANIFEST -> PortableBackupFormat.MAX_MANIFEST_BYTES
+                    // Android's password-protected sign-ins; this reader has no password, so it reads past them.
+                    name == "accounts.enc" -> PortableBackupFormat.MAX_SETTINGS_BYTES
                     name.startsWith("fonts/") && name.removePrefix("fonts/").let {
                         it.isNotBlank() && it.endsWith(".ttf", true) && it.none { c -> c in "/\\\u0000" } && it != ".."
                     } -> 32_000_000L

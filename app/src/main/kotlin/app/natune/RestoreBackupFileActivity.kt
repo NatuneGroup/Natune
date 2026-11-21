@@ -53,6 +53,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import app.natune.ui.component.DefaultDialog
 import app.natune.ui.menu.LoadingScreen
 import app.natune.ui.theme.ArchiveTuneTheme
+import app.natune.ui.screens.settings.AccountPasswordMode
+import app.natune.ui.screens.settings.BackupOptionsDialog
 import app.natune.viewmodels.BackupCategory
 import app.natune.viewmodels.BackupRestoreViewModel
 
@@ -99,7 +101,6 @@ private fun RestoreBackupFileScreen(
 ) {
     val context = LocalContext.current
     var screenState by remember { mutableStateOf<BackupScreenState>(BackupScreenState.Validating) }
-    var selectedCategories by remember { mutableStateOf(BackupCategory.entries.toSet()) }
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     val backupRestoreProgress by viewModel.backupRestoreProgress.collectAsStateWithLifecycle()
@@ -107,7 +108,6 @@ private fun RestoreBackupFileScreen(
     LaunchedEffect(uri) {
         val result = viewModel.validateBackup(context, uri)
         if (result.isValid) {
-            selectedCategories = result.availableCategories
             screenState = BackupScreenState.Ready(availableCategories = result.availableCategories)
             showRestoreDialog = true
         } else {
@@ -151,16 +151,15 @@ private fun RestoreBackupFileScreen(
 
         is BackupScreenState.Ready -> {
             if (showRestoreDialog) {
-                RestoreOptionsDialog(
+                BackupOptionsDialog(
                     title = stringResource(R.string.restore_options_title),
                     confirmLabel = stringResource(R.string.action_restore),
-                    availableCategories = state.availableCategories,
-                    selected = selectedCategories,
-                    onSelectionChanged = { selectedCategories = it },
-                    onConfirm = {
+                    availableCategories = BackupCategory.entries.filter { it in state.availableCategories },
+                    accountPassword = AccountPasswordMode.ENTER,
+                    onConfirm = { categories, password ->
                         showRestoreDialog = false
                         screenState = BackupScreenState.Restoring
-                        viewModel.restore(context, uri, selectedCategories)
+                        viewModel.restore(context, uri, categories, password)
                     },
                     onDismiss = onNavigateBack,
                 )
@@ -179,139 +178,3 @@ private fun RestoreBackupFileScreen(
     }
 }
 
-@Composable
-private fun RestoreOptionsDialog(
-    title: String,
-    confirmLabel: String,
-    availableCategories: Set<BackupCategory>,
-    selected: Set<BackupCategory>,
-    onSelectionChanged: (Set<BackupCategory>) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    DefaultDialog(
-        onDismiss = onDismiss,
-        title = { Text(title) },
-        buttons = {
-            TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
-                Text(stringResource(android.R.string.cancel))
-            }
-            TextButton(
-                onClick = onConfirm,
-                shapes = ButtonDefaults.shapes(),
-                enabled = selected.isNotEmpty(),
-            ) {
-                Text(confirmLabel)
-            }
-        },
-    ) {
-        Spacer(Modifier.height(8.dp))
-        BackupCategory.entries.filter { it in availableCategories }.forEach { category ->
-            val isChecked = category in selected
-            val isAvailable = category in availableCategories
-            val labelRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.string.backup_category_library
-                    BackupCategory.ACCOUNT -> R.string.backup_category_account
-                    BackupCategory.SETTINGS -> R.string.backup_category_settings
-                }
-            val descRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.string.backup_category_library_desc
-                    BackupCategory.ACCOUNT -> R.string.backup_category_account_desc
-                    BackupCategory.SETTINGS -> R.string.backup_category_settings_desc
-                }
-            val iconRes =
-                when (category) {
-                    BackupCategory.LIBRARY -> R.drawable.library_music
-                    BackupCategory.ACCOUNT -> R.drawable.account
-                    BackupCategory.SETTINGS -> R.drawable.settings
-                }
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = Color.Transparent,
-                onClick = {
-                    if (!isAvailable) return@Surface
-                    onSelectionChanged(if (isChecked) selected - category else selected + category)
-                },
-            ) {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 72.dp)
-                            .padding(horizontal = 4.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(40.dp)
-                                .clip(MaterialTheme.shapes.large)
-                                .then(
-                                    if (isAvailable) {
-                                        Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = null,
-                            tint =
-                                if (isAvailable) {
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                                },
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = stringResource(labelRes),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color =
-                                if (isAvailable) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(descRes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color =
-                                if (isAvailable) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                                },
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Checkbox(
-                        checked = isChecked,
-                        onCheckedChange = { checked ->
-                            if (!isAvailable) return@Checkbox
-                            onSelectionChanged(if (checked) selected + category else selected - category)
-                        },
-                        enabled = isAvailable,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-    }
-}

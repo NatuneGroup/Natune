@@ -18,6 +18,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import app.natune.R
 import app.natune.db.InternalDatabase
 import app.natune.playback.MusicService.Companion.PERSISTENT_QUEUE_FILE
 import app.natune.shared.data.backup.RecoveryOutcome
@@ -76,6 +77,7 @@ internal object AndroidRestoreCoordinator {
         context: Context,
         uri: Uri,
         categories: Set<BackupCategory>,
+        accountPassword: String? = null,
     ): StagedRestore = withContext(Dispatchers.IO) {
         val root = restoreRoot(context)
         if (!AndroidRestoreArchivePolicy.canStage(
@@ -109,6 +111,7 @@ internal object AndroidRestoreCoordinator {
             var settingsKind = SettingsKind.NONE
             var manifest: ByteArray? = null
             var settingsJsonStaged = false
+            var accountVault: ByteArray? = null
             var fontCount = 0
             var totalBytes = 0L
             val seen = HashSet<String>()
@@ -140,6 +143,10 @@ internal object AndroidRestoreCoordinator {
                         }
                         when {
                             isManifest -> { manifest = BackupArchiveLayout.readManifest(zip) }
+
+                            name == BackupAccountVault.ENTRY && includeAccount -> {
+                                accountVault = BackupArchiveLayout.readBounded(zip, AndroidRestoreLimits.MAX_SETTINGS_BYTES)
+                            }
 
                             isSettingsJson && includePreferences -> {
                                 if (settingsKind != SettingsKind.NONE) throw IllegalArgumentException("Ambiguous settings payload")
@@ -230,6 +237,14 @@ internal object AndroidRestoreCoordinator {
                 val stagedJson = File(stagedDir, BackupArchiveLayout.SETTINGS_JSON)
                 BackupArchiveLayout.convertSettingsJsonToXml(stagedJson, File(stagedDir, SETTINGS_XML), foreign, includeKey)
                 stagedJson.delete()
+                settingsKind = SettingsKind.XML
+            }
+            accountVault?.takeUnless { foreign }?.let { vault ->
+                // A wrong password stops the restore here, before anything is staged for the next start.
+                val accounts = BackupAccountVault.open(
+                    vault, accountPassword.orEmpty(), context.getString(R.string.backup_account_wrong_password),
+                )
+                BackupAccountVault.mergeIntoStagedXml(File(stagedDir, SETTINGS_XML), accounts, includeKey)
                 settingsKind = SettingsKind.XML
             }
             require(!includeLibrary || hasDb) { "Backup missing database" }
@@ -838,7 +853,8 @@ internal object AndroidRestoreArchivePolicy {
 
     fun isAllowed(name: String): Boolean =
         isDatabase(name) || isSettingsXml(name) || isSettingsPb(name) || isFont(name) ||
-            name == BackupArchiveLayout.MANIFEST || name == BackupArchiveLayout.SETTINGS_JSON
+            name == BackupArchiveLayout.MANIFEST || name == BackupArchiveLayout.SETTINGS_JSON ||
+            name == BackupAccountVault.ENTRY
 
     /** A name that would resolve outside the staging directory; such an archive is refused, not skipped. */
     fun isTraversal(name: String): Boolean =

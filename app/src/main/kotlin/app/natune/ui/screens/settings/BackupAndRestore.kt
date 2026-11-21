@@ -107,9 +107,7 @@ import app.natune.viewmodels.ScheduledBackupScreenState
 import app.natune.viewmodels.ScheduledBackupUiData
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.layout.asPaddingValues
 
 private val CSV_MIME_TYPES =
@@ -142,6 +140,7 @@ fun BackupAndRestore(
     var showRestoreValidationError by rememberSaveable { mutableStateOf(false) }
     var restoreValidationErrorMessage by remember { mutableStateOf("") }
     var pendingBackupCategories by remember { mutableStateOf(BackupCategory.entries.filterNot { it == BackupCategory.ACCOUNT }.toSet()) }
+    var pendingBackupPassword by remember { mutableStateOf<String?>(null) }
     var pendingRestoreCategories by remember { mutableStateOf(BackupCategory.entries.toSet()) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     // Drive-folder picker UX state:
@@ -184,7 +183,7 @@ fun BackupAndRestore(
     val backupLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
             if (uri != null) {
-                viewModel.backup(context, uri, pendingBackupCategories)
+                viewModel.backup(context, uri, pendingBackupCategories, pendingBackupPassword).also { pendingBackupPassword = null }
             }
         }
     val backupDirectoryLauncher =
@@ -497,14 +496,12 @@ fun BackupAndRestore(
         BackupOptionsDialog(
             title = stringResource(R.string.backup_options_title),
             confirmLabel = stringResource(R.string.action_backup),
-            availableCategories = BackupCategory.entries.filterNot { it == BackupCategory.ACCOUNT },
-            onConfirm = { categories ->
+            availableCategories = BackupCategory.entries, accountPassword = AccountPasswordMode.CREATE,
+            onConfirm = { categories, password ->
                 pendingBackupCategories = categories
+                pendingBackupPassword = password
                 showBackupOptionsDialog = false
-                val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
-                backupLauncher.launch(
-                    "${context.getString(R.string.app_name)}_${LocalDateTime.now().format(formatter)}.zip",
-                )
+                backupLauncher.launch(backupFileName(context))
             },
             onDismiss = { showBackupOptionsDialog = false },
         )
@@ -516,12 +513,12 @@ fun BackupAndRestore(
             BackupOptionsDialog(
                 title = stringResource(R.string.restore_options_title),
                 availableCategories = BackupCategory.entries.filter { it in pendingRestoreCategories },
-                confirmLabel = stringResource(R.string.action_restore),
-                onConfirm = { categories ->
+                confirmLabel = stringResource(R.string.action_restore), accountPassword = AccountPasswordMode.ENTER,
+                onConfirm = { categories, password ->
                     pendingRestoreCategories = categories
                     showRestoreOptionsDialog = false
                     pendingRestoreUri = null
-                    viewModel.restore(context, uri, categories)
+                    viewModel.restore(context, uri, categories, password)
                 },
                 onDismiss = {
                     showRestoreOptionsDialog = false
